@@ -32,30 +32,41 @@ function determineAssignee(messageText = '') {
 
 function createReplyText(messageText = '', assignee = '') {
   const normalizedText = (messageText || assignee || '').toString().trim().toLowerCase();
+  const replies = [];
 
   if (normalizedText.includes('テスト')) {
     return '👑 AIマネージャー｜蓮\n接続テストOKです。\nLINE連携は正常に動いています。';
   }
-if (/ホームページ|HP|サイト|Web/.test(normalizedText)) {
-  return '💻 Web担当｜葵\nホームページ制作ですね。\nデザイン・導線・SEOを含めて確認します。';
-}
 
-if (/動画|TikTok|リール|ショート/.test(normalizedText)) {
-  return '🎬 SNS動画担当｜レン\n動画構成ですね。\nバズ導線・再生維持率を考えて提案します。';
-}
-
-if (/AI|システム|自動化|アプリ/.test(normalizedText)) {
-  return '🤖 AI開発担当｜Code\nAIシステム関連ですね。\n構成と実装方法を整理します。';
-}
   if (/(チラシ|広告|デザイン)/.test(normalizedText)) {
-    return '🎨 デザイン担当｜ミオ\nチラシ改善ですね。\n現在のチラシ画像を送ってください。\n反響が増える構成に直していきます。';
+    replies.push('🎨 デザイン担当｜ミオ\nチラシ・広告・デザイン面を確認します。\n反響が増える見せ方を考えます。');
+  }
+
+  if (/(ホームページ|hp|サイト|web)/.test(normalizedText)) {
+    replies.push('💻 Web担当｜葵\nホームページ・Web導線を確認します。\n見やすさ、問い合わせ導線、SEOを整理します。');
+  }
+
+  if (/(動画|tiktok|リール|ショート)/.test(normalizedText)) {
+    replies.push('🎬 SNS動画担当｜レン\n動画・SNS導線を確認します。\nバズ導線と再生維持率を考えて提案します。');
+  }
+
+  if (/(ai|システム|自動化|アプリ)/.test(normalizedText)) {
+    replies.push('🤖 AI開発担当｜Code\nAIシステム・自動化の内容を確認します。\n構成と実装方法を整理します。');
   }
 
   if (/(屋根|外壁|見積)/.test(normalizedText)) {
-    return '👷 見積担当｜匠\n見積・数量拾いですね。\n図面か写真を送ってください。\n屋根面積、外壁面積、付帯部の数量を整理します。';
+    replies.push('👷 見積担当｜匠\n見積・数量拾いの内容を確認します。\n図面や写真があれば送ってください。');
   }
 
-  return '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
+  if (replies.length === 0) {
+    return '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
+  }
+
+  if (replies.length > 1) {
+    replies.unshift('👑 AIマネージャー｜蓮\n複数の担当で進めます。');
+  }
+
+  return replies.join('\n\n');
 }
 
 const AGENT_PROFILES = {
