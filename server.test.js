@@ -1,0 +1,160 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { determineAssignee, createReplyText, shouldReplyToEvent, getReplyText, getReplyPayload, resetConversationState } = require('./server');
+
+test('estimate担当を返す', () => {
+  assert.equal(determineAssignee('屋根の見積もりをお願いします'), 'estimate');
+});
+
+test('sns担当を返す', () => {
+  assert.equal(determineAssignee('SNS投稿の内容を作って'), 'sns');
+});
+
+test('video担当を返す', () => {
+  assert.equal(determineAssignee('ショート動画の台本を作って'), 'video');
+});
+
+test('writer担当を返す', () => {
+  assert.equal(determineAssignee('ブログ用の文章をお願いします'), 'writer');
+});
+
+test('designer担当を返す', () => {
+  assert.equal(determineAssignee('チラシのデザインをお願いします'), 'designer');
+});
+
+test('どれにも当てはまらない場合はleader担当', () => {
+  assert.equal(determineAssignee('会議の件です'), 'leader');
+});
+
+test('テストメッセージには接続テスト用の文面を返す', () => {
+  const reply = createReplyText('テスト');
+
+  assert.match(reply, /接続テストOKです/);
+  assert.match(reply, /LINE連携は正常に動いています/);
+});
+
+test('チラシ・広告・デザインの内容にはデザイン担当の文面を返す', () => {
+  const reply = createReplyText('チラシ改善したいです');
+
+  assert.match(reply, /デザイン担当/);
+  assert.match(reply, /チラシ改善ですね/);
+  assert.match(reply, /現在のチラシ画像を送ってください/);
+});
+
+test('屋根・外壁・見積の内容には見積担当の文面を返す', () => {
+  const reply = createReplyText('屋根の見積もりをお願いします');
+
+  assert.match(reply, /見積担当/);
+  assert.match(reply, /見積・数量拾いですね/);
+  assert.match(reply, /屋根面積/);
+});
+
+test('その他の内容にはAIマネージャーの文面を返す', () => {
+  const reply = createReplyText('その他の依頼です');
+
+  assert.match(reply, /AIマネージャー/);
+  assert.match(reply, /内容を確認しました/);
+});
+
+test('管理者以外のユーザーには返信しない', () => {
+  const event = { source: { userId: 'user-123' } };
+  assert.equal(shouldReplyToEvent(event, 'admin-1'), false);
+});
+
+test('管理者ユーザーには返信する', () => {
+  const event = { source: { userId: 'admin-1' } };
+  assert.equal(shouldReplyToEvent(event, 'admin-1'), true);
+});
+
+test('自分のLINE userIdを返信する', () => {
+  const event = {
+    source: { userId: 'admin-1' },
+    message: { type: 'text', text: '自分のLINE userIdを教えて' },
+  };
+
+  assert.equal(getReplyText(event, 'admin-1'), 'あなたのLINE userIdは次の通りです。\nadmin-1');
+});
+
+test('管理者ID未設定でも自分のLINE userIdを返信する', () => {
+  const event = {
+    source: { userId: 'user-123' },
+    message: { type: 'text', text: '自分のLINE userIdを教えて' },
+  };
+
+  assert.equal(getReplyText(event, ''), 'あなたのLINE userIdは次の通りです。\nuser-123');
+});
+
+test('管理者には4択Quick Replyで目的選択を提案する', () => {
+  const event = {
+    source: { userId: 'admin-1' },
+    message: { type: 'text', text: 'チラシ改善したいです' },
+  };
+
+  const payload = getReplyPayload(event, 'admin-1');
+
+  assert.equal(payload.type, 'text');
+  assert.match(payload.text, /担当|振り分け|要件/);
+  assert.doesNotMatch(payload.text, /マネージャー/);
+  assert.equal(payload.quickReply.items.length, 4);
+  assert.deepEqual(
+    payload.quickReply.items.map((item) => item.action.text),
+    [
+      '問い合わせを増やしたい',
+      '見積依頼を増やしたい',
+      'LINE登録を増やしたい',
+      '信頼感を上げたい',
+    ]
+  );
+});
+
+test('確認系の依頼には確認項目をQuick Replyで提案する', () => {
+  const event = {
+    source: { userId: 'admin-1' },
+    message: { type: 'text', text: '本番公開の確認をしたいです' },
+  };
+
+  const payload = getReplyPayload(event, 'admin-1');
+
+  assert.equal(payload.type, 'text');
+  assert.match(payload.text, /課金、有料API追加、外部契約、本番公開、削除、大量送信は必ず確認/);
+  assert.equal(payload.quickReply.items.length, 4);
+});
+
+test('チラシ改善依頼は担当が順に議論し、最後にleaderがまとめる', () => {
+  const event = {
+    source: { userId: 'admin-1' },
+    message: { type: 'text', text: 'チラシを改善したい' },
+  };
+
+  resetConversationState('admin-1');
+
+  const payloads = getReplyPayload(event, 'admin-1', { splitBySpecialist: true });
+
+  assert.equal(Array.isArray(payloads), true);
+  assert.equal(payloads.length, 5);
+  assert.deepEqual(
+    payloads.map((payload) => payload.agentKey),
+    ['designer', 'marketing', 'writer', 'estimate', 'leader']
+  );
+  assert.match(payloads[0].text, /【デザイナー】/);
+  assert.match(payloads[0].text, /配色|レイアウト/);
+  assert.match(payloads[1].text, /デザイナー|反響|問い合わせ/);
+  assert.match(payloads[2].text, /デザイン|集客|コピー/);
+  assert.match(payloads[3].text, /利益|単価|成約率/);
+  assert.match(payloads[4].text, /最終提案|整理|1つ/);
+});
+
+test('担当の議論は前の意見を踏まえて進む', () => {
+  resetConversationState('admin-1');
+
+  const initialEvent = {
+    source: { userId: 'admin-1' },
+    message: { type: 'text', text: 'チラシを改善したい' },
+  };
+
+  const payloads = getReplyPayload(initialEvent, 'admin-1', { splitBySpecialist: true });
+
+  assert.match(payloads[1].text, /デザイナー/);
+  assert.match(payloads[2].text, /デザイン|集客/);
+  assert.match(payloads[3].text, /先ほどの意見|前の担当|集客/);
+});
