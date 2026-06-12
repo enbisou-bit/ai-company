@@ -1,7 +1,7 @@
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { determineAssignee, createReplyText, shouldReplyToEvent, getReplyText, getReplyPayload, resetConversationState } = require('./server');
-const { costTracker, resetCostTracker } = require('./costTracker');
+const { costTracker, resetCostTracker, calculateOpenAICost, addOpenAIUsage } = require('./costTracker');
 
 afterEach(() => {
   resetCostTracker();
@@ -111,6 +111,51 @@ test('上限超過時に停止判定できる', () => {
   assert.equal(costTracker.isLimitExceeded(), true);
   assert.equal(costTracker.canProcess(), false);
   assert.match(costTracker.getStopText(), /月額上限に達したためAI処理を停止しました/);
+});
+
+test('gpt-4.1-miniの料金計算ができる', () => {
+  const result = calculateOpenAICost('gpt-4.1-mini', 1000000, 1000000);
+
+  assert.equal(result.usd, 2);
+  assert.equal(result.jpy, 320);
+});
+
+test('gpt-4.1-nanoの料金計算ができる', () => {
+  const result = calculateOpenAICost('gpt-4.1-nano', 1000000, 1000000);
+
+  assert.equal(result.usd, 0.5);
+  assert.equal(result.jpy, 80);
+});
+
+test('OpenAI usageを加算できる', () => {
+  resetCostTracker();
+  addOpenAIUsage('gpt-4.1-mini', 1000000, 1000000, 'web', 'text');
+  const summary = costTracker.getSummary();
+
+  assert.equal(summary.monthlyAmount, 320);
+  assert.equal(summary.byAssignee.web, 320);
+  assert.equal(summary.byType.text, 320);
+  assert.equal(summary.modelCosts['gpt-4.1-mini'], 320);
+});
+
+test('モデル別料金が表示される', () => {
+  resetCostTracker();
+  addOpenAIUsage('gpt-4.1-mini', 1000000, 1000000, 'web', 'text');
+  const reply = createReplyText('料金');
+
+  assert.match(reply, /モデル別：/);
+  assert.match(reply, /gpt-4.1-mini：320円/);
+  assert.match(reply, /gpt-4.1-nano：0円/);
+});
+
+test('月額上限を超えたら停止になる', () => {
+  resetCostTracker();
+  costTracker.setMonthlyLimit(300);
+  addOpenAIUsage('gpt-4.1-mini', 1000000, 1000000, 'web', 'text');
+  const summary = costTracker.getSummary();
+
+  assert.equal(summary.stopped, true);
+  assert.equal(summary.monthlyAmount, 320);
 });
 
 test('リセット後は担当別の旧保持オブジェクトもゼロに戻る', () => {
