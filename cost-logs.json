@@ -1,0 +1,18 @@
+{
+  "todayAmount": 0,
+  "monthlyAmount": 0,
+  "monthlyLimit": 1000,
+  "stopped": false,
+  "byAssignee": {
+    "web": 1001,
+    "snsVideo": 0,
+    "aiDevelopment": 0,
+    "estimate": 0
+  },
+  "byType": {
+    "text": 1001,
+    "image": 0,
+    "video": 0,
+    "analysis": 0
+  }
+}

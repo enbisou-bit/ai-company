@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const crypto = require('crypto');
 const axios = require('axios');
+const { costTracker, resetCostTracker } = require('./costTracker');
 
 dotenv.config({ path: '.env.local' });
 
@@ -34,8 +35,16 @@ function createReplyText(messageText = '', assignee = '') {
   const normalizedText = (messageText || assignee || '').toString().trim().toLowerCase();
   const replies = [];
 
+  if (/(料金|コスト)/.test(normalizedText)) {
+    return costTracker.getMeterText();
+  }
+
   if (normalizedText.includes('テスト')) {
     return '👑 AIマネージャー｜蓮\n接続テストOKです。\nLINE連携は正常に動いています。';
+  }
+
+  if ((costTracker.isLimitExceeded() || costTracker.getSummary().stopped) && /(チラシ|広告|デザイン|ホームページ|hp|サイト|web|動画|tiktok|リール|ショート|ai|システム|自動化|アプリ|屋根|外壁|見積)/.test(normalizedText)) {
+    return costTracker.getStopText();
   }
 
   if (/(チラシ|広告|デザイン)/.test(normalizedText)) {
