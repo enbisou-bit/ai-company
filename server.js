@@ -39,11 +39,35 @@ function createReplyText(messageText = '', assignee = '') {
     return costTracker.getMeterText();
   }
 
+  if (normalizedText.includes('停止')) {
+    costTracker.stopProcessing();
+    return '🛑 APIを停止しました。';
+  }
+
+  if (normalizedText.includes('再開')) {
+    costTracker.resumeProcessing();
+    return '✅ APIを再開しました。';
+  }
+
+  if (/^上限変更\s*(\d+)$/.test(normalizedText)) {
+    const limit = Number(normalizedText.match(/^上限変更\s*(\d+)$/)[1]);
+    costTracker.setMonthlyLimit(limit);
+    return `✅ 月額上限を${limit}円に変更しました。`;
+  }
+
+  if (normalizedText.includes('状態')) {
+    return costTracker.getStatusText();
+  }
+
   if (normalizedText.includes('テスト')) {
     return '👑 AIマネージャー｜蓮\n接続テストOKです。\nLINE連携は正常に動いています。';
   }
 
   if ((costTracker.isLimitExceeded() || costTracker.getSummary().stopped) && /(チラシ|広告|デザイン|ホームページ|hp|サイト|web|動画|tiktok|リール|ショート|ai|システム|自動化|アプリ|屋根|外壁|見積)/.test(normalizedText)) {
+    return costTracker.getStopText();
+  }
+
+  if (costTracker.getSummary().stopped) {
     return costTracker.getStopText();
   }
 

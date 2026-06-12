@@ -158,9 +158,32 @@ const costTracker = {
     state.monthlyLimit = Number(limit) || DEFAULT_MONTHLY_LIMIT;
     if (state.monthlyAmount >= state.monthlyLimit) {
       state.stopped = true;
+    } else {
+      state.stopped = false;
     }
     saveState(state);
     return this.getSummary();
+  },
+
+  stopProcessing() {
+    const state = ensureState();
+    state.stopped = true;
+    saveState(state);
+    return this.getSummary();
+  },
+
+  resumeProcessing() {
+    const state = ensureState();
+    state.stopped = false;
+    saveState(state);
+    return this.getSummary();
+  },
+
+  getStatusText() {
+    const summary = this.getSummary();
+    return summary.stopped
+      ? '⚠️ 現在の状態：API停止中です。'
+      : '✅ 現在の状態：APIは正常に動作中です。';
   },
 
   isLimitExceeded() {
@@ -174,7 +197,7 @@ const costTracker = {
   },
 
   getStopText() {
-    return '⚠️ 月額上限に達しました。\nAI処理を停止しています。\n上限を変更する場合は管理者確認が必要です。';
+    return '⚠️ 月額上限に達したためAI処理を停止しました。\nLINEで「上限変更 3000」または「再開」を送ってください。';
   },
 
   getMeterText() {
