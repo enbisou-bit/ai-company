@@ -36,7 +36,17 @@ function createReplyText(messageText = '', assignee = '') {
   if (normalizedText.includes('テスト')) {
     return '👑 AIマネージャー｜蓮\n接続テストOKです。\nLINE連携は正常に動いています。';
   }
+if (/ホームページ|HP|サイト|Web/.test(normalizedText)) {
+  return '💻 Web担当｜葵\nホームページ制作ですね。\nデザイン・導線・SEOを含めて確認します。';
+}
 
+if (/動画|TikTok|リール|ショート/.test(normalizedText)) {
+  return '🎬 SNS動画担当｜レン\n動画構成ですね。\nバズ導線・再生維持率を考えて提案します。';
+}
+
+if (/AI|システム|自動化|アプリ/.test(normalizedText)) {
+  return '🤖 AI開発担当｜Code\nAIシステム関連ですね。\n構成と実装方法を整理します。';
+}
   if (/(チラシ|広告|デザイン)/.test(normalizedText)) {
     return '🎨 デザイン担当｜ミオ\nチラシ改善ですね。\n現在のチラシ画像を送ってください。\n反響が増える構成に直していきます。';
   }
