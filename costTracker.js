@@ -3,6 +3,17 @@ const path = require('path');
 
 const STORAGE_PATH = path.join(__dirname, 'cost-logs.json');
 const DEFAULT_MONTHLY_LIMIT = 1000;
+const USD_TO_JPY = 160;
+const MODEL_PRICES = {
+  'gpt-4.1-mini': {
+    input: 0.40,
+    output: 1.60,
+  },
+  'gpt-4.1-nano': {
+    input: 0.10,
+    output: 0.40,
+  },
+};
 const DEFAULT_STATE = {
   todayAmount: 0,
   monthlyAmount: 0,
@@ -46,6 +57,10 @@ const DEFAULT_STATE = {
       analysis: 0,
     },
   },
+  modelCosts: {
+    'gpt-4.1-mini': 0,
+    'gpt-4.1-nano': 0,
+  },
 };
 
 function normalizeState(state) {
@@ -60,6 +75,7 @@ function normalizeState(state) {
       byAssignee: { ...DEFAULT_STATE.breakdown.byAssignee, ...((state?.breakdown?.byAssignee) || (state?.byAssignee || {})) },
       byType: { ...DEFAULT_STATE.breakdown.byType, ...((state?.breakdown?.byType) || (state?.byType || {})) },
     },
+    modelCosts: { ...DEFAULT_STATE.modelCosts, ...(state?.modelCosts || {}) },
   };
 
   normalizedState.byAssignee = { ...DEFAULT_STATE.byAssignee, ...(normalizedState.byAssignee || {}) };
@@ -68,6 +84,7 @@ function normalizeState(state) {
   normalizedState.departmentCosts = { ...DEFAULT_STATE.departmentCosts, ...(normalizedState.departmentCosts || {}) };
   normalizedState.breakdown.byAssignee = { ...DEFAULT_STATE.breakdown.byAssignee, ...(normalizedState.breakdown?.byAssignee || {}) };
   normalizedState.breakdown.byType = { ...DEFAULT_STATE.breakdown.byType, ...(normalizedState.breakdown?.byType || {}) };
+  normalizedState.modelCosts = { ...DEFAULT_STATE.modelCosts, ...(normalizedState.modelCosts || {}) };
 
   return normalizedState;
 }
@@ -105,6 +122,53 @@ function resetCostTracker() {
   return global.__costTrackerState;
 }
 
+function calculateOpenAICost(model = '', inputTokens = 0, outputTokens = 0) {
+  const pricing = MODEL_PRICES[model] || null;
+  if (!pricing) {
+    return { usd: 0, jpy: 0 };
+  }
+
+  const normalizedInputTokens = Number(inputTokens) || 0;
+  const normalizedOutputTokens = Number(outputTokens) || 0;
+  const inputUsd = (normalizedInputTokens / 1000000) * pricing.input;
+  const outputUsd = (normalizedOutputTokens / 1000000) * pricing.output;
+  const totalUsd = inputUsd + outputUsd;
+
+  return {
+    usd: Number(totalUsd.toFixed(6)),
+    jpy: Number((totalUsd * USD_TO_JPY).toFixed(2)),
+  };
+}
+
+function addOpenAIUsage(model = '', inputTokens = 0, outputTokens = 0, agent = 'web', type = 'text') {
+  const state = ensureState();
+  const { jpy } = calculateOpenAICost(model, inputTokens, outputTokens);
+  const normalizedAmount = Number(jpy) || 0;
+  const normalizedAssignee = agent || 'web';
+  const normalizedType = type || 'text';
+
+  if (state.stopped) {
+    return costTracker.getSummary();
+  }
+
+  state.todayAmount += normalizedAmount;
+  state.monthlyAmount += normalizedAmount;
+  state.byAssignee[normalizedAssignee] = (state.byAssignee[normalizedAssignee] || 0) + normalizedAmount;
+  state.byType[normalizedType] = (state.byType[normalizedType] || 0) + normalizedAmount;
+  state.agentCosts[normalizedAssignee] = (state.agentCosts[normalizedAssignee] || 0) + normalizedAmount;
+  state.departmentCosts[normalizedAssignee] = (state.departmentCosts[normalizedAssignee] || 0) + normalizedAmount;
+  state.breakdown.byAssignee[normalizedAssignee] = (state.breakdown.byAssignee[normalizedAssignee] || 0) + normalizedAmount;
+  state.breakdown.byType[normalizedType] = (state.breakdown.byType[normalizedType] || 0) + normalizedAmount;
+  state.modelCosts[model] = (state.modelCosts[model] || 0) + normalizedAmount;
+
+  if (state.monthlyAmount >= state.monthlyLimit) {
+    state.stopped = true;
+  }
+
+  saveState(state);
+  return costTracker.getSummary();
+}
+
 const costTracker = {
   getSummary() {
     const state = ensureState();
@@ -122,6 +186,7 @@ const costTracker = {
         byAssignee: { ...normalizedState.breakdown.byAssignee },
         byType: { ...normalizedState.breakdown.byType },
       },
+      modelCosts: { ...normalizedState.modelCosts },
       stopped: Boolean(normalizedState.stopped),
     };
   },
@@ -222,6 +287,10 @@ const costTracker = {
       `・動画生成：${summary.byType.video}円`,
       `・分析：${summary.byType.analysis}円`,
       '',
+      'モデル別：',
+      `・gpt-4.1-mini：${summary.modelCosts['gpt-4.1-mini'] || 0}円`,
+      `・gpt-4.1-nano：${summary.modelCosts['gpt-4.1-nano'] || 0}円`,
+      '',
       summary.stopped ? this.getStopText() : '状態：安全運転中です。',
     ].join('\n');
   },
@@ -231,4 +300,8 @@ module.exports = {
   costTracker,
   resetCostTracker,
   DEFAULT_MONTHLY_LIMIT,
+  MODEL_PRICES,
+  USD_TO_JPY,
+  calculateOpenAICost,
+  addOpenAIUsage,
 };

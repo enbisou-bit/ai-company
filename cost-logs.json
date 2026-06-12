@@ -40,5 +40,9 @@
       "video": 0,
       "analysis": 0
     }
+  },
+  "modelCosts": {
+    "gpt-4.1-mini": 0,
+    "gpt-4.1-nano": 0
   }
 }
