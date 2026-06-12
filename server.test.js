@@ -1,7 +1,11 @@
-const test = require('node:test');
+const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { determineAssignee, createReplyText, shouldReplyToEvent, getReplyText, getReplyPayload, resetConversationState } = require('./server');
 const { costTracker, resetCostTracker } = require('./costTracker');
+
+afterEach(() => {
+  resetCostTracker();
+});
 
 test('estimate担当を返す', () => {
   assert.equal(determineAssignee('屋根の見積もりをお願いします'), 'estimate');
@@ -69,6 +73,19 @@ test('料金コマンドで料金メーターが返る', () => {
   assert.match(reply, /AI料金メーター/);
   assert.match(reply, /本日：0円/);
   assert.match(reply, /今月：0円/);
+  assert.match(reply, /月額上限：1000円/);
+  assert.match(reply, /残り：1000円/);
+  assert.match(reply, /担当別：/);
+  assert.match(reply, /・Web担当：0円/);
+  assert.match(reply, /・SNS動画担当：0円/);
+  assert.match(reply, /・AI開発担当：0円/);
+  assert.match(reply, /・見積担当：0円/);
+  assert.match(reply, /処理別：/);
+  assert.match(reply, /・文章AI：0円/);
+  assert.match(reply, /・画像生成：0円/);
+  assert.match(reply, /・動画生成：0円/);
+  assert.match(reply, /・分析：0円/);
+  assert.match(reply, /状態：安全運転中です。/);
 });
 
 test('月額上限が1000円である', () => {
@@ -94,6 +111,50 @@ test('上限超過時に停止判定できる', () => {
   assert.equal(costTracker.isLimitExceeded(), true);
   assert.equal(costTracker.canProcess(), false);
   assert.match(costTracker.getStopText(), /月額上限に達しました/);
+});
+
+test('リセット後は担当別の旧保持オブジェクトもゼロに戻る', () => {
+  resetCostTracker();
+  const summary = costTracker.getSummary();
+
+  assert.deepEqual(summary.byAssignee, {
+    web: 0,
+    snsVideo: 0,
+    aiDevelopment: 0,
+    estimate: 0,
+  });
+  assert.deepEqual(summary.byType, {
+    text: 0,
+    image: 0,
+    video: 0,
+    analysis: 0,
+  });
+  assert.deepEqual(summary.agentCosts, {
+    web: 0,
+    snsVideo: 0,
+    aiDevelopment: 0,
+    estimate: 0,
+  });
+  assert.deepEqual(summary.departmentCosts, {
+    web: 0,
+    snsVideo: 0,
+    aiDevelopment: 0,
+    estimate: 0,
+  });
+  assert.deepEqual(summary.breakdown, {
+    byAssignee: {
+      web: 0,
+      snsVideo: 0,
+      aiDevelopment: 0,
+      estimate: 0,
+    },
+    byType: {
+      text: 0,
+      image: 0,
+      video: 0,
+      analysis: 0,
+    },
+  });
 });
 
 test('その他の内容にはAIマネージャーの文面を返す', () => {

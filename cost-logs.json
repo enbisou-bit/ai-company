@@ -4,15 +4,41 @@
   "monthlyLimit": 1000,
   "stopped": false,
   "byAssignee": {
-    "web": 1001,
+    "web": 0,
     "snsVideo": 0,
     "aiDevelopment": 0,
     "estimate": 0
   },
   "byType": {
-    "text": 1001,
+    "text": 0,
     "image": 0,
     "video": 0,
     "analysis": 0
+  },
+  "agentCosts": {
+    "web": 0,
+    "snsVideo": 0,
+    "aiDevelopment": 0,
+    "estimate": 0
+  },
+  "departmentCosts": {
+    "web": 0,
+    "snsVideo": 0,
+    "aiDevelopment": 0,
+    "estimate": 0
+  },
+  "breakdown": {
+    "byAssignee": {
+      "web": 0,
+      "snsVideo": 0,
+      "aiDevelopment": 0,
+      "estimate": 0
+    },
+    "byType": {
+      "text": 0,
+      "image": 0,
+      "video": 0,
+      "analysis": 0
+    }
   }
 }
