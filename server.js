@@ -3,6 +3,8 @@ const dotenv = require('dotenv');
 const crypto = require('crypto');
 const axios = require('axios');
 const { costTracker, resetCostTracker } = require('./costTracker');
+const { generateReply } = require('./openaiClient');
+const { loadHistory, addMessage } = require('./conversationHistory');
 
 dotenv.config({ path: '.env.local' });
 
@@ -31,7 +33,7 @@ function determineAssignee(messageText = '') {
   return matchedRule ? matchedRule.assignee : 'leader';
 }
 
-function createReplyText(messageText = '', assignee = '') {
+async function createReplyText(messageText = '', assignee = '', userId = '') {
   const normalizedText = (messageText || assignee || '').toString().trim().toLowerCase();
   const replies = [];
 
@@ -91,12 +93,27 @@ function createReplyText(messageText = '', assignee = '') {
     replies.push('👷 見積担当｜匠\n見積・数量拾いの内容を確認します。\n図面や写真があれば送ってください。');
   }
 
+  const memberName = assignee || 'leader';
+
   if (replies.length === 0) {
-    return '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
+    const history = loadHistory(userId, memberName);
+    if (userId) addMessage(userId, memberName, 'user', messageText);
+    const openAiReply = await generateReply({ messageText, assignee, history });
+    const replyText = openAiReply.text || '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
+    if (openAiReply.text && userId) addMessage(userId, memberName, 'assistant', replyText);
+    return replyText;
   }
 
   if (replies.length > 1) {
     replies.unshift('👑 AIマネージャー｜蓮\n複数の担当で進めます。');
+  }
+
+  const history = loadHistory(userId, memberName);
+  if (userId) addMessage(userId, memberName, 'user', messageText);
+  const openAiReply = await generateReply({ messageText, assignee, history });
+  if (openAiReply.text) {
+    if (userId) addMessage(userId, memberName, 'assistant', openAiReply.text);
+    return openAiReply.text;
   }
 
   return replies.join('\n\n');
@@ -271,7 +288,7 @@ function resetConversationState(userId) {
   conversationStates.set(userId, { specialists: {} });
 }
 
-function getReplyPayload(event, configuredAdminUserId = adminUserId, options = {}) {
+async function getReplyPayload(event, configuredAdminUserId = adminUserId, options = {}) {
   const messageText = event?.message?.type === 'text' ? event.message.text || '' : '';
   const normalizedText = (messageText || '').trim().toLowerCase();
   const userId = event?.source?.userId || '';
@@ -348,14 +365,15 @@ function getReplyPayload(event, configuredAdminUserId = adminUserId, options = {
   }
 
   const assignee = determineAssignee(messageText);
+  const replyText = await createReplyText(messageText, assignee, userId);
   return {
     type: 'text',
-    text: createReplyText(messageText, assignee),
+    text: replyText,
   };
 }
 
-function getReplyText(event, configuredAdminUserId = adminUserId) {
-  const replyPayload = getReplyPayload(event, configuredAdminUserId);
+async function getReplyText(event, configuredAdminUserId = adminUserId) {
+  const replyPayload = await getReplyPayload(event, configuredAdminUserId);
 
   return replyPayload?.text || null;
 }
@@ -408,7 +426,7 @@ app.post('/webhook', async (req, res) => {
   for (const event of events) {
     console.log('LINE sender userId:', event?.source?.userId || 'unknown');
     if (event.type === 'message' && event.replyToken) {
-      const replyPayloads = getReplyPayload(event, adminUserId, { splitBySpecialist: true });
+      const replyPayloads = await getReplyPayload(event, adminUserId, { splitBySpecialist: true });
       const payloads = Array.isArray(replyPayloads) ? replyPayloads : [replyPayloads];
 
       if (!payloads.length || payloads.some((payload) => !payload)) {
