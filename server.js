@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const { costTracker, resetCostTracker } = require('./costTracker');
 const { generateReply } = require('./openaiClient');
-const { loadHistory, addMessage } = require('./conversationHistory');
+const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 
 dotenv.config({ path: '.env.local' });
 
@@ -22,6 +22,12 @@ const ASSIGNMENT_RULES = [
   { assignee: 'writer', keywords: ['文章', 'ブログ', '挨拶文', 'メール'] },
   { assignee: 'designer', keywords: ['デザイン', 'チラシ', '画像'] },
 ];
+
+const CONTINUATION_WORDS = ['続き', 'それで', 'さらに', '問い合わせ', 'もっと', '次は'];
+
+function isContinuationMessage(text) {
+  return CONTINUATION_WORDS.some((w) => text.includes(w));
+}
 
 function determineAssignee(messageText = '') {
   const normalizedText = (messageText || '').toLowerCase();
@@ -100,7 +106,10 @@ async function createReplyText(messageText = '', assignee = '', userId = '') {
     if (userId) addMessage(userId, memberName, 'user', messageText);
     const openAiReply = await generateReply({ messageText, assignee, history });
     const replyText = openAiReply.text || '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
-    if (openAiReply.text && userId) addMessage(userId, memberName, 'assistant', replyText);
+    if (openAiReply.text && userId) {
+      addMessage(userId, memberName, 'assistant', replyText);
+      setLastAssignee(userId, memberName);
+    }
     return replyText;
   }
 
@@ -112,7 +121,10 @@ async function createReplyText(messageText = '', assignee = '', userId = '') {
   if (userId) addMessage(userId, memberName, 'user', messageText);
   const openAiReply = await generateReply({ messageText, assignee, history });
   if (openAiReply.text) {
-    if (userId) addMessage(userId, memberName, 'assistant', openAiReply.text);
+    if (userId) {
+      addMessage(userId, memberName, 'assistant', openAiReply.text);
+      setLastAssignee(userId, memberName);
+    }
     return openAiReply.text;
   }
 
@@ -364,7 +376,13 @@ async function getReplyPayload(event, configuredAdminUserId = adminUserId, optio
     return createSpecialistFollowUpPayloads(messageText, userId);
   }
 
-  const assignee = determineAssignee(messageText);
+  // 継続ワードかつ前回担当が存在する場合はそちらを優先
+  let assignee = determineAssignee(messageText);
+  if (userId && isContinuationMessage(normalizedText)) {
+    const lastAssignee = getLastAssignee(userId);
+    if (lastAssignee) assignee = lastAssignee;
+  }
+
   const replyText = await createReplyText(messageText, assignee, userId);
   return {
     type: 'text',
@@ -470,4 +488,5 @@ module.exports = {
   getReplyText,
   getReplyPayload,
   resetConversationState,
+  isContinuationMessage,
 };

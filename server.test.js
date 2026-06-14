@@ -1,8 +1,8 @@
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { determineAssignee, createReplyText, shouldReplyToEvent, getReplyText, getReplyPayload, resetConversationState } = require('./server');
+const { determineAssignee, createReplyText, shouldReplyToEvent, getReplyText, getReplyPayload, resetConversationState, isContinuationMessage } = require('./server');
 const { costTracker, resetCostTracker, calculateOpenAICost, addOpenAIUsage } = require('./costTracker');
-const { loadHistory, clearHistory, addMessage, MAX_HISTORY } = require('./conversationHistory');
+const { loadHistory, clearHistory, addMessage, MAX_HISTORY, getLastAssignee, setLastAssignee, clearLastAssignee } = require('./conversationHistory');
 
 afterEach(() => {
   resetCostTracker();
@@ -479,4 +479,97 @@ test('APIキー未設定時は固定返信で動く', async () => {
 
   assert.match(reply, /Web担当/);
   assert.match(reply, /ホームページ・Web導線を確認します/);
+});
+
+// ── 担当継続テスト ──────────────────────────────
+
+test('継続ワード判定：続き・それで・さらに・問い合わせ・もっと・次は', () => {
+  assert.equal(isContinuationMessage('続きを教えて'), true);
+  assert.equal(isContinuationMessage('それで次は？'), true);
+  assert.equal(isContinuationMessage('さらに詳しく'), true);
+  assert.equal(isContinuationMessage('問い合わせを増やしたい'), true);
+  assert.equal(isContinuationMessage('もっと教えて'), true);
+  assert.equal(isContinuationMessage('次はどうする'), true);
+  assert.equal(isContinuationMessage('全然関係ない話'), false);
+  assert.equal(isContinuationMessage('屋根の見積もり'), false);
+});
+
+test('最後の担当者を保存・取得できる', () => {
+  clearLastAssignee('user-meta-1');
+  setLastAssignee('user-meta-1', 'web');
+  assert.equal(getLastAssignee('user-meta-1'), 'web');
+  clearLastAssignee('user-meta-1');
+});
+
+test('最後の担当者がない場合はnullを返す', () => {
+  clearLastAssignee('user-meta-none');
+  assert.equal(getLastAssignee('user-meta-none'), null);
+});
+
+test('継続ワードで前回担当（web）を引き継ぐ', async () => {
+  resetCostTracker();
+  clearLastAssignee('user-cont-1');
+  setLastAssignee('user-cont-1', 'web');
+
+  const event = {
+    source: { userId: 'user-cont-1' },
+    message: { type: 'text', text: '続きを教えてください' },
+  };
+
+  const payload = await getReplyPayload(event, 'user-cont-1');
+  assert.ok(payload, 'ペイロードが返ること');
+  assert.equal(payload.type, 'text');
+
+  clearLastAssignee('user-cont-1');
+});
+
+test('継続ワードで前回担当（estimate）を引き継ぐ', async () => {
+  resetCostTracker();
+  clearLastAssignee('user-cont-2');
+  setLastAssignee('user-cont-2', 'estimate');
+
+  const event = {
+    source: { userId: 'user-cont-2' },
+    message: { type: 'text', text: 'もっと詳しく教えてください' },
+  };
+
+  const payload = await getReplyPayload(event, 'user-cont-2');
+  assert.ok(payload, 'ペイロードが返ること');
+  assert.equal(payload.type, 'text');
+
+  clearLastAssignee('user-cont-2');
+});
+
+test('前回担当がない場合は継続ワードでもleaderを使う', async () => {
+  resetCostTracker();
+  clearLastAssignee('user-cont-3');
+
+  const event = {
+    source: { userId: 'user-cont-3' },
+    message: { type: 'text', text: '続きをお願いします' },
+  };
+
+  const payload = await getReplyPayload(event, 'user-cont-3');
+  assert.ok(payload, 'ペイロードが返ること');
+
+  clearLastAssignee('user-cont-3');
+});
+
+test('継続ワードなしの通常メッセージは前回担当を無視する', async () => {
+  resetCostTracker();
+  clearLastAssignee('user-cont-4');
+  setLastAssignee('user-cont-4', 'estimate');
+
+  const event = {
+    source: { userId: 'user-cont-4' },
+    message: { type: 'text', text: 'ショート動画を作ってください' },
+  };
+
+  const payload = await getReplyPayload(event, 'user-cont-4');
+  assert.ok(payload, 'ペイロードが返ること');
+  // 見積担当ではなくSNS動画担当の返答になること
+  assert.match(payload.text, /SNS動画担当|動画|レン/);
+  assert.doesNotMatch(payload.text, /見積担当/);
+
+  clearLastAssignee('user-cont-4');
 });

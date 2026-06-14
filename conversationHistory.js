@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const CONV_DIR = path.join(__dirname, 'data', 'conversations');
+const META_PATH = path.join(CONV_DIR, '_meta.json');
 const MAX_HISTORY = 20;
 
 function ensureDir() {
@@ -51,4 +52,50 @@ function clearHistory(userId, memberName) {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
-module.exports = { loadHistory, saveHistory, addMessage, clearHistory, MAX_HISTORY, CONV_DIR };
+// ── 最後の担当者メタデータ ──────────────────────────
+
+function loadMeta() {
+  ensureDir();
+  try {
+    if (!fs.existsSync(META_PATH)) return {};
+    return JSON.parse(fs.readFileSync(META_PATH, 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveMeta(meta) {
+  ensureDir();
+  fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2), 'utf8');
+}
+
+function getLastAssignee(userId) {
+  if (!userId) return null;
+  return loadMeta()[userId] || null;
+}
+
+function setLastAssignee(userId, memberName) {
+  if (!userId || !memberName) return;
+  const meta = loadMeta();
+  meta[userId] = memberName;
+  saveMeta(meta);
+}
+
+function clearLastAssignee(userId) {
+  if (!userId) return;
+  const meta = loadMeta();
+  delete meta[userId];
+  saveMeta(meta);
+}
+
+module.exports = {
+  loadHistory,
+  saveHistory,
+  addMessage,
+  clearHistory,
+  getLastAssignee,
+  setLastAssignee,
+  clearLastAssignee,
+  MAX_HISTORY,
+  CONV_DIR,
+};
