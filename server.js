@@ -424,6 +424,25 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// ── 認証API ──────────────────────────────────────
+// WEB_APP_PASSWORD が未設定の場合は認証スキップ（ローカル開発用）
+app.get('/api/auth-required', (req, res) => {
+  res.json({ required: Boolean(process.env.WEB_APP_PASSWORD) });
+});
+
+app.post('/api/login', express.json(), (req, res) => {
+  const serverPassword = process.env.WEB_APP_PASSWORD;
+  if (!serverPassword) {
+    return res.json({ ok: true });
+  }
+  const { password } = req.body || {};
+  if (!password || password !== serverPassword) {
+    return res.status(401).json({ ok: false, message: '合言葉が違います' });
+  }
+  res.json({ ok: true });
+});
+// ─────────────────────────────────────────────────
+
 app.post('/webhook', async (req, res) => {
   const signature = req.headers['x-line-signature'];
   const body = req.rawBody;
