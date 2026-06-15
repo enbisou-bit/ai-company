@@ -88,6 +88,53 @@ function clearLastAssignee(userId) {
   saveMeta(meta);
 }
 
+// ── タスクストレージ（DB化準備：将来SQLite/Supabaseへ差し替え可能） ──
+
+const TASKS_DIR = path.join(__dirname, 'data', 'tasks');
+const TASKS_FILE = path.join(TASKS_DIR, 'tasks.json');
+
+function ensureTasksDir() {
+  if (!fs.existsSync(TASKS_DIR)) fs.mkdirSync(TASKS_DIR, { recursive: true });
+}
+
+function loadAllTasks() {
+  ensureTasksDir();
+  try {
+    if (!fs.existsSync(TASKS_FILE)) return [];
+    return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8')) || [];
+  } catch { return []; }
+}
+
+function writeAllTasks(tasks) {
+  ensureTasksDir();
+  fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2), 'utf8');
+}
+
+function saveTask(task) {
+  if (!task || !task.taskId) return;
+  const tasks = loadAllTasks();
+  const idx = tasks.findIndex(t => t.taskId === task.taskId);
+  if (idx >= 0) tasks[idx] = { ...tasks[idx], ...task, updatedAt: new Date().toISOString() };
+  else tasks.unshift({ ...task, createdAt: task.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() });
+  writeAllTasks(tasks);
+}
+
+function getTasks(userId) {
+  const tasks = loadAllTasks();
+  return userId ? tasks.filter(t => !t.userId || t.userId === userId) : tasks;
+}
+
+function updateTaskStatus(taskId, status) {
+  if (!taskId || !status) return false;
+  const tasks = loadAllTasks();
+  const task = tasks.find(t => t.taskId === taskId);
+  if (!task) return false;
+  task.status = status;
+  task.updatedAt = new Date().toISOString();
+  writeAllTasks(tasks);
+  return true;
+}
+
 module.exports = {
   loadHistory,
   saveHistory,
@@ -98,4 +145,8 @@ module.exports = {
   clearLastAssignee,
   MAX_HISTORY,
   CONV_DIR,
+  // タスクストレージ
+  saveTask,
+  getTasks,
+  updateTaskStatus,
 };
