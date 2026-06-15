@@ -1,11 +1,1 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "ai-company",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-p", "3333", "."],
-      "port": 3333
-    }
-  ]
-}
+{"version":"0.0.1","configurations":[{"name":"ai-company","runtimeExecutable":"npx","runtimeArgs":["serve","-p","4000","."],"port":4000}]}

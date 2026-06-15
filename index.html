@@ -135,12 +135,52 @@
     flex-shrink: 0;
     background: rgba(0,212,255,0.06);
     border: 1px solid var(--border);
+    position: relative;
   }
 
   .member-btn.active .avatar {
     border-color: var(--accent);
     background: rgba(0,212,255,0.15);
   }
+
+  /* オンライン状態ドット */
+  .status-indicator {
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--sidebar-bg);
+  }
+  .status-indicator.online  { background: #4cffb0; box-shadow: 0 0 4px #4cffb0; }
+  .status-indicator.idle    { background: #ffd166; box-shadow: 0 0 4px #ffd166; }
+  .status-indicator.offline { background: #444460; }
+
+  /* サイドバー下部の凡例 */
+  #status-legend {
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+    margin-top: auto;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    color: var(--text-dim);
+  }
+  .legend-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .legend-dot.online  { background: #4cffb0; }
+  .legend-dot.idle    { background: #ffd166; }
+  .legend-dot.offline { background: #444460; }
 
   .member-info .name {
     font-size: 11px;
@@ -1404,6 +1444,11 @@
     <div id="search-results-body"></div>
   </div>
   <div id="member-list"></div>
+  <div id="status-legend">
+    <div class="legend-item"><div class="legend-dot online"></div>オンライン</div>
+    <div class="legend-item"><div class="legend-dot idle"></div>待機中</div>
+    <div class="legend-item"><div class="legend-dot offline"></div>オフライン</div>
+  </div>
 </nav>
 
 <!-- MAIN -->
@@ -1491,6 +1536,27 @@ const CATEGORIES = [
   },
 ];
 
+// オンライン状態マップ
+const MEMBER_STATUS = {
+  leader:     'online',
+  strategy:   'online',
+  secretary:  'online',
+  reviewer:   'idle',
+  sns:        'online',
+  video:      'online',
+  nurture:    'idle',
+  branding:   'idle',
+  writer:     'online',
+  designer:   'online',
+  lp:         'idle',
+  analyst:    'offline',
+  researcher: 'offline',
+  sales:      'online',
+  cs:         'online',
+};
+
+const STATUS_LABEL = { online: 'オンライン', idle: '待機中', offline: 'オフライン' };
+
 const STORAGE_KEY = 'ai-company-chat-history-v1';
 
 let currentMember = null;
@@ -1574,8 +1640,9 @@ CATEGORIES.forEach(cat => {
     const btn = document.createElement('button');
     btn.className = 'member-btn';
     btn.id = 'btn-' + m.id;
+    const st = MEMBER_STATUS[m.id] || 'offline';
     btn.innerHTML = `
-      <div class="avatar">${m.emoji}</div>
+      <div class="avatar">${m.emoji}<span class="status-indicator ${st}" title="${STATUS_LABEL[st]}"></span></div>
       <div class="member-info">
         <div class="name">${m.name}</div>
         <div class="role">${m.role}</div>
