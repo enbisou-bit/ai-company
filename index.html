@@ -2738,19 +2738,6 @@ async function sendMessage() {
   document.getElementById('send-btn').disabled = true;
   showTyping();
 
-  // 担当ごとのシステムプロンプト（埋め込み優先）＋JSON形式指示
-  const basePrompt = SYSTEM_PROMPTS[currentMember.id]
-    || personaCache[currentMember.id]
-    || `あなたは縁美創の${currentMember.role}です。専門的にサポートしてください。`;
-
-  const systemPrompt = basePrompt + `
-
-【返答形式】必ず以下のJSON形式のみで返してください。
-{"reply":"返答テキスト","suggestions":["選択肢1","選択肢2","選択肢3","選択肢4"]}
-・reply: メインの返答（必須）
-・suggestions: 次の選択肢（0〜4件）。不要なら[]
-・JSON以外は一切出力しないでください`;
-
   // 最新20件まで保持
   const MAX_HISTORY = 20;
   if (chatHistory[currentMember.id].length > MAX_HISTORY) {
@@ -2762,27 +2749,21 @@ async function sendMessage() {
   const apiMessages = chatHistory[currentMember.id].map(h => ({ role: h.role, content: h.content }));
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': window._apiKey || '',
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: apiMessages,
-      })
+        message: text,
+        memberId: currentMember.id,
+        history: apiMessages.slice(0, -1),
+      }),
     });
 
     const data = await res.json();
     removeTyping();
 
-    if (data.content?.[0]?.text) {
-      const { reply, suggestions } = parseAIResponse(data.content[0].text);
+    if (data.ok && data.reply) {
+      const { reply, suggestions } = parseAIResponse(data.reply);
 
       // Leader自動振り分け
       if (currentMember.id === 'leader') {
@@ -2797,12 +2778,13 @@ async function sendMessage() {
 
       // 4択提案ボタン
       if (suggestions.length > 0) renderSuggestionButtons(suggestions);
-    } else if (data.error) {
-      addBubble('ai', `⚠️ エラー: ${data.error.message}`, currentMember, false);
+    } else {
+      addBubble('ai', `⚠️ エラー: ${data.error || '不明なエラー'}`, currentMember, false);
     }
   } catch (e) {
     removeTyping();
-    addBubble('ai', `⚠️ 接続エラーが発生しました。\nAPIキーと接続を確認してください。`, currentMember, false);
+    console.error('sendMessage error:', e);
+    addBubble('ai', `⚠️ 通信エラー: ${e.message || 'サーバーに接続できません'}`, currentMember, false);
   }
 
   isTyping = false;
@@ -3394,21 +3376,6 @@ document.getElementById('search-input').addEventListener('keydown', e => {
   });
 })();
 
-// ── APIキー ──
-window.addEventListener('load', () => {
-  const key = localStorage.getItem('enbisou_api_key');
-  if (key) {
-    window._apiKey = key;
-  } else {
-    setTimeout(() => {
-      const k = prompt('Anthropic APIキーを入力してください（ブラウザに保存されます）:');
-      if (k && k.trim()) {
-        localStorage.setItem('enbisou_api_key', k.trim());
-        window._apiKey = k.trim();
-      }
-    }, 400);
-  }
-});
 </script>
 </body>
 </html>

@@ -443,6 +443,28 @@ app.post('/api/login', express.json(), (req, res) => {
 });
 // ─────────────────────────────────────────────────
 
+// ── Web UI チャット API ───────────────────────────
+app.post('/api/chat', async (req, res) => {
+  const { message, memberId, history } = req.body || {};
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ ok: false, error: 'message は必須です' });
+  }
+  try {
+    const result = await generateReply({
+      messageText: message,
+      assignee: memberId || 'leader',
+      history: Array.isArray(history) ? history.slice(-20) : [],
+    });
+    const reply = result.text
+      || JSON.stringify({ reply: 'AIに接続できませんでした。OPENAI_API_KEYを確認してください。', suggestions: [] });
+    return res.json({ ok: true, reply });
+  } catch (e) {
+    console.error('/api/chat error:', e.message);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+// ─────────────────────────────────────────────────
+
 app.post('/webhook', async (req, res) => {
   const signature = req.headers['x-line-signature'];
   const body = req.rawBody;
