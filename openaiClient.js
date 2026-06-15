@@ -131,4 +131,5 @@ module.exports = {
   generateReply,
   buildSystemPrompt,
   OPENAI_MODEL,
+  LINE_AGENT_PROFILES,
 };

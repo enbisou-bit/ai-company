@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const path = require('path');
 const { costTracker, resetCostTracker } = require('./costTracker');
-const { generateReply } = require('./openaiClient');
+const { generateReply, LINE_AGENT_PROFILES } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 
 dotenv.config({ path: '.env.local' });
@@ -17,15 +17,20 @@ const adminUserId = process.env.ADMIN_LINE_USER_ID || '';
 const conversationStates = new Map();
 
 // LINE返信用: AIのJSON返答からreplyだけ取り出し、suggestionsを番号付き文章化
-function extractReplyForLINE(rawText) {
-  if (!rawText) return rawText;
+// agentId を渡すと先頭に担当名を付ける
+function extractReplyForLINE(rawText, agentId = '') {
+  const agentName = agentId && LINE_AGENT_PROFILES[agentId]
+    ? LINE_AGENT_PROFILES[agentId].name
+    : '';
+  const prefix = agentName ? agentName + '\n' : '';
+  if (!rawText) return prefix || '';
   try {
     const start = rawText.indexOf('{');
     const end = rawText.lastIndexOf('}');
     if (start !== -1 && end > start) {
       const parsed = JSON.parse(rawText.slice(start, end + 1));
       if (typeof parsed.reply === 'string') {
-        let result = parsed.reply;
+        let result = prefix + parsed.reply;
         if (Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
           result += '\n\n選べる候補：\n' + parsed.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n');
         }
@@ -33,7 +38,7 @@ function extractReplyForLINE(rawText) {
       }
     }
   } catch {}
-  return rawText;
+  return prefix + rawText;
 }
 
 const ASSIGNMENT_RULES = [
@@ -126,8 +131,8 @@ async function createReplyText(messageText = '', assignee = '', userId = '') {
     const history = loadHistory(userId, memberName);
     if (userId) addMessage(userId, memberName, 'user', messageText);
     const openAiReply = await generateReply({ messageText, assignee, history });
-    const rawText = openAiReply.text || '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
-    const replyText = extractReplyForLINE(rawText);
+    const rawText = openAiReply.text || '内容を確認しました。どの担当で進めるか判断します。';
+    const replyText = extractReplyForLINE(rawText, memberName);
     if (openAiReply.text && userId) {
       addMessage(userId, memberName, 'assistant', replyText);
       setLastAssignee(userId, memberName);
@@ -143,7 +148,7 @@ async function createReplyText(messageText = '', assignee = '', userId = '') {
   if (userId) addMessage(userId, memberName, 'user', messageText);
   const openAiReply = await generateReply({ messageText, assignee, history });
   if (openAiReply.text) {
-    const lineText = extractReplyForLINE(openAiReply.text);
+    const lineText = extractReplyForLINE(openAiReply.text, memberName);
     if (userId) {
       addMessage(userId, memberName, 'assistant', lineText);
       setLastAssignee(userId, memberName);

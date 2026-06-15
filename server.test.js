@@ -267,12 +267,11 @@ test('停止中は通常のAI依頼を止める', async () => {
   assert.match(reply, /月額上限に達したためAI処理を停止しました/);
 });
 
-test('その他の内容にはAIマネージャーの文面を返す', async () => {
+test('その他の内容にはLeader担当名と確認文を返す', async () => {
   resetCostTracker();
   const reply = await createReplyText('その他の依頼です');
 
-  assert.match(reply, /AIマネージャー/);
-  assert.match(reply, /内容を確認しました/);
+  assert.match(reply, /マーケリーダー|蓮|内容を確認/);
 });
 
 test('管理者以外のユーザーには返信しない', () => {

@@ -196,12 +196,18 @@
     font-size: 11px;
     font-weight: 600;
     line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .member-info .role {
     font-size: 9px;
     color: var(--text-dim);
     margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .member-btn.active .member-info .name {
@@ -414,6 +420,10 @@
     font-weight: 700;
     color: var(--accent);
     transition: all 0.3s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
   }
 
   #current-info .current-role {
@@ -576,6 +586,15 @@
   }
 
   .msg.user .msg-name { text-align: right; }
+
+  .msg-time {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    opacity: 0.6;
+    letter-spacing: 0.3px;
+  }
+  .msg.user .msg-time { text-align: right; }
 
   /* empty state */
   #empty-state {
@@ -1587,43 +1606,69 @@
     #task-panel { width: 100%; min-width: unset; }
 
     /* topbar: 折れ防止 */
-    #topbar { padding: 8px 10px; gap: 6px; flex-wrap: nowrap; }
-    #current-avatar { width: 28px; height: 28px; font-size: 13px; }
+    #topbar {
+      padding: 6px 10px;
+      gap: 6px;
+      flex-wrap: nowrap;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #current-avatar { width: 26px; height: 26px; font-size: 12px; flex-shrink: 0; }
+    #current-info {
+      min-width: 0;
+      flex: 1 1 0;
+      overflow: hidden;
+    }
     #current-info .current-label { display: none; }
     #current-info .current-name {
       font-size: 12px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 110px;
+      max-width: 100%;
     }
     #current-info .current-role { display: none; }
 
-    /* 右側ボタン群: 横スクロール */
+    /* 右側ボタン群: 横スクロール、幅固定 */
     #topbar-right {
+      flex-shrink: 0;
       gap: 4px;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
-      max-width: calc(100vw - 180px);
-      flex-shrink: 0;
+      max-width: 160px;
     }
     #topbar-right::-webkit-scrollbar { display: none; }
     #delegation-log-open-btn { display: none !important; }
-    #status-dot { display: none; }
-    #delete-btn  { font-size: 9px; padding: 3px 6px; }
-    #task-open-btn { font-size: 9px; padding: 3px 6px; white-space: nowrap; }
+    #status-dot    { display: none !important; }
+    #save-indicator { display: none !important; }
+    #md-indicator  { display: none !important; }
+    #delete-btn    { font-size: 9px; padding: 3px 5px; }
+    #task-open-btn { font-size: 9px; padding: 3px 5px; white-space: nowrap; }
 
-    /* 入力欄 */
-    #input-area { padding: 8px 10px; gap: 6px; }
-    #msg-input { font-size: 13px; }
+    /* 入力欄: キーボード表示時に隠れない */
+    #input-area {
+      padding: 8px 10px;
+      gap: 6px;
+      position: sticky;
+      bottom: 0;
+    }
+    #msg-input { font-size: 16px; } /* iOS zoom防止 */
+    #send-btn  { width: 38px; height: 38px; flex-shrink: 0; }
 
-    /* 4択ボタン: スマホで縦並び */
-    .suggestion-btns { flex-direction: column; gap: 6px; }
-    .suggestion-btn  { white-space: normal; text-align: left; }
+    /* chat-area: キーボード分を確保 */
+    #chat-area { padding: 12px 10px; }
+
+    /* サイドバー内メンバー名 */
+    .member-btn { padding: 6px 7px; }
+
+    /* 4択ボタン: スマホで折り返し */
+    .suggestion-btns { flex-direction: column; gap: 6px; padding-left: 10px; }
+    .suggestion-btn  { white-space: normal; text-align: left; min-height: 40px; }
 
     /* 振り分けカード */
     .dispatch-members { flex-wrap: wrap; }
+    .leader-dispatch-card { margin-left: 10px; max-width: calc(100% - 10px); }
   }
 </style>
 </head>
@@ -2667,7 +2712,7 @@ async function selectMember(m) {
   } else {
     // 保存済み履歴を復元
     chatHistory[m.id].forEach(h => {
-      addBubble(h.role === 'user' ? 'user' : 'ai', h.content, m, false);
+      addBubble(h.role === 'user' ? 'user' : 'ai', h.content, m, false, false, h.timestamp || null);
     });
     if (document.getElementById('save-indicator')) {
       document.getElementById('save-indicator').style.display = 'block';
@@ -2682,7 +2727,7 @@ async function selectMember(m) {
 }
 
 // ── バブル追加 ──
-function addBubble(who, text, member, save = true, showTaskify = false) {
+function addBubble(who, text, member, save = true, showTaskify = false, timestamp = null) {
   const chat = document.getElementById('chat-area');
   const empty = document.getElementById('empty-state');
   if (empty) empty.remove();
@@ -2703,8 +2748,17 @@ function addBubble(who, text, member, save = true, showTaskify = false) {
   bubble.className = 'bubble';
   bubble.textContent = text;
 
+  // タイムスタンプ
+  const timeEl = document.createElement('div');
+  timeEl.className = 'msg-time';
+  try {
+    const d = timestamp ? new Date(timestamp) : new Date();
+    timeEl.textContent = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  } catch { timeEl.textContent = ''; }
+
   inner.appendChild(nameEl);
   inner.appendChild(bubble);
+  inner.appendChild(timeEl);
 
   // タスク化・依頼ボタン（AIの返答のみ）
   if (who === 'ai' && showTaskify) {
@@ -2777,10 +2831,11 @@ async function sendMessage() {
 
   // 履歴にユーザーメッセージ追加
   if (!chatHistory[currentMember.id]) chatHistory[currentMember.id] = [];
-  chatHistory[currentMember.id].push({ role: 'user', content: text });
+  const userTs = new Date().toISOString();
+  chatHistory[currentMember.id].push({ role: 'user', content: text, timestamp: userTs });
   saveToStorage();
   updateDeleteBtn();
-  addBubble('user', text, currentMember, false);
+  addBubble('user', text, currentMember, false, false, userTs);
 
   isTyping = true;
   input.disabled = true;
@@ -2813,22 +2868,29 @@ async function sendMessage() {
 
     if (data.ok && data.reply) {
       const { reply, suggestions } = parseAIResponse(data.reply);
+      const aiTs = new Date().toISOString();
 
-      // Leader自動振り分け
-      if (currentMember.id === 'leader') {
-        const assignedIds = routeLeaderMessage(text);
-        if (assignedIds.length > 0) handleLeaderDispatch(text, assignedIds);
-      }
-
-      chatHistory[currentMember.id].push({ role: 'assistant', content: reply });
+      // ① 返信を先に描画（ここより後の例外が返信表示を妨げない）
+      chatHistory[currentMember.id].push({ role: 'assistant', content: reply, timestamp: aiTs });
       saveToStorage();
       updateDeleteBtn();
-      addBubble('ai', reply, currentMember, false, true);
+      addBubble('ai', reply, currentMember, false, true, aiTs);
 
-      // 4択提案ボタン
+      // ② 4択提案ボタン
       if (suggestions.length > 0) renderSuggestionButtons(suggestions);
+
+      // ③ Leader自動振り分け（例外が出ても返信は既に表示済み）
+      if (currentMember.id === 'leader') {
+        try {
+          const assignedIds = routeLeaderMessage(text);
+          if (assignedIds.length > 0) handleLeaderDispatch(text, assignedIds);
+        } catch (dispatchErr) {
+          console.error('Leader dispatch error:', dispatchErr);
+        }
+      }
     } else {
-      addBubble('ai', `⚠️ エラー: ${data.error || '不明なエラー'}`, currentMember, false);
+      console.error('/api/chat error response:', data);
+      addBubble('ai', `⚠️ ${data.error || 'AIに接続できません（OPENAI_API_KEYを確認）'}`, currentMember, false);
     }
   } catch (e) {
     removeTyping();
