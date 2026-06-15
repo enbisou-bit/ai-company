@@ -53,24 +53,34 @@
   }
 
   #sidebar-header .logo {
-    font-size: 10px;
-    letter-spacing: 3px;
+    font-size: 9px;
+    letter-spacing: 2px;
     color: var(--accent);
     text-transform: uppercase;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
+    opacity: 0.8;
   }
 
   #sidebar-header h1 {
-    font-size: 14px;
-    font-weight: 700;
+    font-size: 15px;
+    font-weight: 800;
     color: #fff;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+  }
+
+  #sidebar-header h1 .company-en {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    display: block;
+    letter-spacing: 2px;
   }
 
   #sidebar-header .tagline {
     font-size: 10px;
     color: var(--text-dim);
-    margin-top: 3px;
+    margin-top: 4px;
   }
 
   .category {
@@ -1575,6 +1585,45 @@
     #overlay.open { display: block; }
     #md-indicator { display: none !important; }
     #task-panel { width: 100%; min-width: unset; }
+
+    /* topbar: 折れ防止 */
+    #topbar { padding: 8px 10px; gap: 6px; flex-wrap: nowrap; }
+    #current-avatar { width: 28px; height: 28px; font-size: 13px; }
+    #current-info .current-label { display: none; }
+    #current-info .current-name {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 110px;
+    }
+    #current-info .current-role { display: none; }
+
+    /* 右側ボタン群: 横スクロール */
+    #topbar-right {
+      gap: 4px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      max-width: calc(100vw - 180px);
+      flex-shrink: 0;
+    }
+    #topbar-right::-webkit-scrollbar { display: none; }
+    #delegation-log-open-btn { display: none !important; }
+    #status-dot { display: none; }
+    #delete-btn  { font-size: 9px; padding: 3px 6px; }
+    #task-open-btn { font-size: 9px; padding: 3px 6px; white-space: nowrap; }
+
+    /* 入力欄 */
+    #input-area { padding: 8px 10px; gap: 6px; }
+    #msg-input { font-size: 13px; }
+
+    /* 4択ボタン: スマホで縦並び */
+    .suggestion-btns { flex-direction: column; gap: 6px; }
+    .suggestion-btn  { white-space: normal; text-align: left; }
+
+    /* 振り分けカード */
+    .dispatch-members { flex-wrap: wrap; }
   }
 </style>
 </head>
@@ -1753,8 +1802,8 @@
 <!-- SIDEBAR -->
 <nav id="sidebar">
   <div id="sidebar-header">
-    <div class="logo">AI COMPANY</div>
-    <h1>🏢 縁美創</h1>
+    <div class="logo">AI COMPANY PORTAL</div>
+    <h1>🏢 縁美創<span class="company-en">AI COMPANY</span></h1>
     <div class="tagline">専属AIチームがサポートします</div>
   </div>
   <div id="search-box">

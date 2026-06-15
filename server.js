@@ -16,6 +16,26 @@ const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 const adminUserId = process.env.ADMIN_LINE_USER_ID || '';
 const conversationStates = new Map();
 
+// LINE返信用: AIのJSON返答からreplyだけ取り出し、suggestionsを番号付き文章化
+function extractReplyForLINE(rawText) {
+  if (!rawText) return rawText;
+  try {
+    const start = rawText.indexOf('{');
+    const end = rawText.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      const parsed = JSON.parse(rawText.slice(start, end + 1));
+      if (typeof parsed.reply === 'string') {
+        let result = parsed.reply;
+        if (Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0) {
+          result += '\n\n選べる候補：\n' + parsed.suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n');
+        }
+        return result;
+      }
+    }
+  } catch {}
+  return rawText;
+}
+
 const ASSIGNMENT_RULES = [
   { assignee: 'estimate', keywords: ['見積', '面積', '屋根', '外壁'] },
   { assignee: 'sns', keywords: ['sns', '投稿', 'tiktok', 'インスタ'] },
@@ -106,7 +126,8 @@ async function createReplyText(messageText = '', assignee = '', userId = '') {
     const history = loadHistory(userId, memberName);
     if (userId) addMessage(userId, memberName, 'user', messageText);
     const openAiReply = await generateReply({ messageText, assignee, history });
-    const replyText = openAiReply.text || '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
+    const rawText = openAiReply.text || '👑 AIマネージャー｜蓮\n内容を確認しました。\nどの担当で進めるか判断します。';
+    const replyText = extractReplyForLINE(rawText);
     if (openAiReply.text && userId) {
       addMessage(userId, memberName, 'assistant', replyText);
       setLastAssignee(userId, memberName);
@@ -122,11 +143,12 @@ async function createReplyText(messageText = '', assignee = '', userId = '') {
   if (userId) addMessage(userId, memberName, 'user', messageText);
   const openAiReply = await generateReply({ messageText, assignee, history });
   if (openAiReply.text) {
+    const lineText = extractReplyForLINE(openAiReply.text);
     if (userId) {
-      addMessage(userId, memberName, 'assistant', openAiReply.text);
+      addMessage(userId, memberName, 'assistant', lineText);
       setLastAssignee(userId, memberName);
     }
-    return openAiReply.text;
+    return lineText;
   }
 
   return replies.join('\n\n');
@@ -444,7 +466,7 @@ app.post('/api/login', express.json(), (req, res) => {
 // ─────────────────────────────────────────────────
 
 // ── Web UI チャット API ───────────────────────────
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', express.json(), async (req, res) => {
   const { message, memberId, history } = req.body || {};
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ ok: false, error: 'message は必須です' });
