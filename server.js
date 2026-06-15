@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const crypto = require('crypto');
 const axios = require('axios');
+const path = require('path');
 const { costTracker, resetCostTracker } = require('./costTracker');
 const { generateReply } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
@@ -417,8 +418,10 @@ app.use(
   })
 );
 
+app.use(express.static(path.join(__dirname)));
+
 app.get('/', (req, res) => {
-  res.send('LINE webhook server is running');
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.post('/webhook', async (req, res) => {
