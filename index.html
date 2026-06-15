@@ -587,14 +587,22 @@
 
   .msg.user .msg-name { text-align: right; }
 
+  /* LINE風タイムスタンプ */
+  .bubble-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .msg.user .bubble-row { flex-direction: row-reverse; }
   .msg-time {
     font-size: 10px;
     color: var(--text-dim);
-    margin-top: 3px;
-    opacity: 0.6;
-    letter-spacing: 0.3px;
+    opacity: 0.65;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding-bottom: 2px;
+    letter-spacing: 0.2px;
   }
-  .msg.user .msg-time { text-align: right; }
 
   /* empty state */
   #empty-state {
@@ -629,28 +637,30 @@
 
   /* ── INPUT ── */
   #input-area {
-    padding: 12px 18px;
+    padding: 8px 14px;
     border-top: 1px solid var(--border);
     background: rgba(13,13,26,0.97);
     backdrop-filter: blur(10px);
     display: flex;
     gap: 8px;
     flex-shrink: 0;
+    align-items: flex-end;
+    min-height: 54px;
   }
 
   #msg-input {
     flex: 1;
     background: var(--card-bg);
     border: 1px solid var(--border);
-    border-radius: 9px;
+    border-radius: 22px;
     color: var(--text);
     font-size: 13.5px;
-    padding: 10px 13px;
+    padding: 9px 14px;
     resize: none;
     outline: none;
     font-family: inherit;
-    min-height: 42px;
-    max-height: 110px;
+    min-height: 38px;
+    max-height: 100px;
     transition: border-color 0.2s;
     line-height: 1.5;
   }
@@ -664,9 +674,9 @@
   #msg-input:disabled { opacity: 0.4; }
 
   #send-btn {
-    width: 42px;
-    height: 42px;
-    border-radius: 9px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
     background: var(--accent);
     border: none;
     cursor: pointer;
@@ -1476,10 +1486,10 @@
     border-radius: 18px;
     color: var(--accent);
     font-size: 12px;
-    padding: 8px 15px;
+    padding: 5px 13px;
     cursor: pointer;
     transition: all 0.2s;
-    min-height: 36px;
+    min-height: 30px;
     font-family: inherit;
     white-space: nowrap;
   }
@@ -1491,40 +1501,65 @@
 
   /* ── Leader振り分けカード ── */
   .leader-dispatch-card {
-    background: rgba(123,94,167,0.08);
-    border: 1px solid rgba(123,94,167,0.3);
-    border-left: 3px solid #7b5ea7;
-    border-radius: 9px;
+    background: linear-gradient(135deg, rgba(13,13,30,0.95), rgba(20,15,45,0.9));
+    border: 1px solid rgba(0,212,255,0.2);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
     padding: 10px 13px;
     margin: 2px 0 6px 36px;
     animation: fadeUp 0.2s ease;
     max-width: calc(85% - 36px);
+    box-shadow: 0 2px 14px rgba(0,0,0,0.35);
   }
   .dispatch-header {
     font-size: 10px;
     font-weight: 700;
-    color: #b08ee0;
-    margin-bottom: 7px;
+    color: var(--accent);
+    margin-bottom: 8px;
     letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .dispatch-active-badge {
+    font-size: 9px;
+    background: rgba(76,255,176,0.12);
+    border: 1px solid rgba(76,255,176,0.3);
+    border-radius: 8px;
+    color: #4cffb0;
+    padding: 1px 6px;
+    margin-left: auto;
+    animation: pulse 2s infinite;
   }
   .dispatch-members {
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
-    margin-bottom: 5px;
+    gap: 6px;
+    margin-bottom: 6px;
   }
   .dispatch-tag {
     font-size: 11px;
     background: rgba(123,94,167,0.15);
     border: 1px solid rgba(123,94,167,0.3);
-    border-radius: 4px;
-    padding: 2px 8px;
+    border-radius: 6px;
+    padding: 4px 10px;
     color: #c4a8f0;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
   }
-  .dispatch-tag:hover { background: rgba(123,94,167,0.28); }
-  .dispatch-note { font-size: 10px; color: var(--text-dim); }
+  .dispatch-status-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: #4cffb0;
+    box-shadow: 0 0 4px #4cffb0;
+    flex-shrink: 0;
+    animation: pulse 2s infinite;
+  }
+  .dispatch-tag:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.25); }
+  .dispatch-note { font-size: 9px; color: var(--text-dim); }
 
   /* ── 社員追加ボタン（サイドバー） ── */
   #member-add-btn {
@@ -1646,29 +1681,36 @@
     #delete-btn    { font-size: 9px; padding: 3px 5px; }
     #task-open-btn { font-size: 9px; padding: 3px 5px; white-space: nowrap; }
 
-    /* 入力欄: キーボード表示時に隠れない */
+    /* 入力欄: LINE風コンパクト、キーボード時に隠れない */
     #input-area {
-      padding: 8px 10px;
+      padding: 6px 8px;
       gap: 6px;
       position: sticky;
       bottom: 0;
+      min-height: 52px;
+      padding-bottom: max(6px, env(safe-area-inset-bottom));
     }
-    #msg-input { font-size: 16px; } /* iOS zoom防止 */
-    #send-btn  { width: 38px; height: 38px; flex-shrink: 0; }
+    #msg-input {
+      font-size: 16px; /* iOS zoom防止 */
+      min-height: 34px;
+      padding: 7px 12px;
+      border-radius: 18px;
+    }
+    #send-btn  { width: 34px; height: 34px; flex-shrink: 0; }
 
     /* chat-area: キーボード分を確保 */
-    #chat-area { padding: 12px 10px; }
+    #chat-area { padding: 10px 8px; }
 
     /* サイドバー内メンバー名 */
     .member-btn { padding: 6px 7px; }
 
-    /* 4択ボタン: スマホで折り返し */
-    .suggestion-btns { flex-direction: column; gap: 6px; padding-left: 10px; }
-    .suggestion-btn  { white-space: normal; text-align: left; min-height: 40px; }
+    /* 4択ボタン: スマホで縦並び・コンパクト */
+    .suggestion-btns { flex-direction: column; gap: 5px; padding-left: 8px; }
+    .suggestion-btn  { white-space: normal; text-align: left; min-height: 34px; padding: 5px 11px; font-size: 11px; }
 
     /* 振り分けカード */
     .dispatch-members { flex-wrap: wrap; }
-    .leader-dispatch-card { margin-left: 10px; max-width: calc(100% - 10px); }
+    .leader-dispatch-card { margin-left: 8px; max-width: calc(100% - 8px); }
   }
 </style>
 </head>
@@ -2266,27 +2308,49 @@ function routeLeaderMessage(text) {
   return [...matched].slice(0, 3);
 }
 
+// 担当別カラー定義（振り分けカード）
+const DISPATCH_COLORS = {
+  sns:        { bg:'rgba(255,60,120,0.14)',  border:'rgba(255,60,120,0.45)',  text:'#ff7090' },
+  video:      { bg:'rgba(0,180,255,0.12)',   border:'rgba(0,180,255,0.45)',   text:'#00b4ff' },
+  designer:   { bg:'rgba(180,100,255,0.14)', border:'rgba(180,100,255,0.45)', text:'#c480ff' },
+  writer:     { bg:'rgba(255,200,50,0.12)',  border:'rgba(255,200,50,0.4)',   text:'#ffc832' },
+  strategy:   { bg:'rgba(0,255,180,0.10)',   border:'rgba(0,255,180,0.35)',   text:'#00ffb4' },
+  analyst:    { bg:'rgba(100,200,255,0.12)', border:'rgba(100,200,255,0.4)',  text:'#64c8ff' },
+  researcher: { bg:'rgba(150,220,255,0.10)', border:'rgba(150,220,255,0.35)', text:'#96dcff' },
+  nurture:    { bg:'rgba(255,150,200,0.12)', border:'rgba(255,150,200,0.35)', text:'#ff96c8' },
+  branding:   { bg:'rgba(255,230,80,0.10)',  border:'rgba(255,230,80,0.35)',  text:'#ffe650' },
+  lp:         { bg:'rgba(80,200,180,0.12)',  border:'rgba(80,200,180,0.4)',   text:'#50c8b4' },
+  sales:      { bg:'rgba(80,220,80,0.12)',   border:'rgba(80,220,80,0.4)',    text:'#50dc50' },
+  cs:         { bg:'rgba(100,180,255,0.12)', border:'rgba(100,180,255,0.4)',  text:'#64b4ff' },
+  leader:     { bg:'rgba(0,212,255,0.10)',   border:'rgba(0,212,255,0.4)',    text:'#00d4ff' },
+  secretary:  { bg:'rgba(200,200,255,0.10)', border:'rgba(200,200,255,0.3)',  text:'#c8c8ff' },
+  reviewer:   { bg:'rgba(255,200,100,0.10)', border:'rgba(255,200,100,0.3)', text:'#ffc864' },
+};
+const DISPATCH_COLOR_DEFAULT = { bg:'rgba(123,94,167,0.15)', border:'rgba(123,94,167,0.3)', text:'#c4a8f0' };
+
 function handleLeaderDispatch(userText, assignedIds) {
   if (!assignedIds || assignedIds.length === 0) return;
   const assignedMembers = assignedIds.map(id => ALL_MEMBERS[id]).filter(Boolean);
   if (assignedMembers.length === 0) return;
 
-  // チャットに振り分けカードを表示
+  // チャットに振り分けカードを表示（担当別カラー）
   const chat = document.getElementById('chat-area');
   const card = document.createElement('div');
   card.className = 'leader-dispatch-card';
-  const memberTags = assignedMembers.map(m =>
-    `<span class="dispatch-tag" onclick="selectMember(ALL_MEMBERS['${m.id}'])" title="クリックで切替">${m.emoji} ${m.name}</span>`
-  ).join('');
+  const memberTags = assignedMembers.map(m => {
+    const c = DISPATCH_COLORS[m.id] || DISPATCH_COLOR_DEFAULT;
+    return `<span class="dispatch-tag" onclick="selectMember(ALL_MEMBERS['${m.id}'])" title="${m.name}に切替" style="background:${c.bg};border-color:${c.border};color:${c.text}"><span class="dispatch-status-dot"></span>${m.emoji} ${m.name}</span>`;
+  }).join('');
   card.innerHTML = `
-    <div class="dispatch-header">🔀 以下の担当に振り分けました</div>
+    <div class="dispatch-header">🔀 以下の担当に振り分けました<span class="dispatch-active-badge">🟢 稼働中</span></div>
     <div class="dispatch-members">${memberTags}</div>
     <div class="dispatch-note">タグをクリックすると各担当に切り替えられます</div>`;
   chat.appendChild(card);
   chat.scrollTop = chat.scrollHeight;
 
-  // 各担当にタスクを自動作成
+  // 各担当にタスク自動作成 + 履歴に依頼を記録
   const shortTitle = userText.length > 50 ? userText.slice(0, 50) + '…' : userText;
+  const dispatchTs = new Date().toISOString();
   assignedMembers.forEach(m => {
     tasks.unshift({
       id: genId(),
@@ -2295,11 +2359,19 @@ function handleLeaderDispatch(userText, assignedIds) {
       memberId: m.id,
       memberName: `${m.emoji} ${m.name}`,
       priority: 'mid',
-      status: 'todo',
-      createdAt: new Date().toISOString(),
+      status: 'doing',
+      createdAt: dispatchTs,
       sourceType: 'leader_dispatch',
     });
+    // 各担当の履歴に依頼通知を追加
+    if (!chatHistory[m.id]) chatHistory[m.id] = [];
+    chatHistory[m.id].push({
+      role: 'assistant',
+      content: `👑 Leaderから依頼が届きました\n「${shortTitle}」について対応をお願いします。`,
+      timestamp: dispatchTs,
+    });
   });
+  saveToStorage();
   saveTasks();
   updateTaskBadge();
 }
@@ -2757,8 +2829,11 @@ function addBubble(who, text, member, save = true, showTaskify = false, timestam
   } catch { timeEl.textContent = ''; }
 
   inner.appendChild(nameEl);
-  inner.appendChild(bubble);
-  inner.appendChild(timeEl);
+  const bubbleRow = document.createElement('div');
+  bubbleRow.className = 'bubble-row';
+  bubbleRow.appendChild(bubble);
+  bubbleRow.appendChild(timeEl);
+  inner.appendChild(bubbleRow);
 
   // タスク化・依頼ボタン（AIの返答のみ）
   if (who === 'ai' && showTaskify) {
@@ -3112,8 +3187,8 @@ function renderDelegationCardsInChat() {
         <select class="delegation-status-select" onchange="changeDelegationStatus('${dlg.id}',this.value)">
           <option value="pending"   ${dlg.status==='pending'   ?'selected':''}>⚪ 未確認</option>
           <option value="confirmed" ${dlg.status==='confirmed' ?'selected':''}>🔵 確認済み</option>
-          <option value="working"   ${dlg.status==='working'   ?'selected':''}>🟣 作業中</option>
-          <option value="done"      ${dlg.status==='done'      ?'selected':''}>✅ 完了</option>
+          <option value="working"   ${dlg.status==='working'   ?'selected':''}>🟡 作業中</option>
+          <option value="done"      ${dlg.status==='done'      ?'selected':''}>🟢 完成</option>
         </select>
         <span class="delegation-priority-badge ${dlg.priority}">${priorityLabels[dlg.priority]}</span>
         <span style="font-size:9px;color:var(--text-dim);">${new Date(dlg.createdAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</span>
@@ -3325,9 +3400,9 @@ function renderTaskList() {
       ${t.body ? `<div class="task-card-body">${escapeHtml(t.body)}</div>` : ''}
       <div class="task-card-footer">
         <select class="task-status-select" onchange="changeTaskStatus('${t.id}', this.value)">
-          <option value="todo" ${t.status==='todo'?'selected':''}>⚪ 未着手</option>
-          <option value="doing" ${t.status==='doing'?'selected':''}>🔵 進行中</option>
-          <option value="done" ${t.status==='done'?'selected':''}>✅ 完了</option>
+          <option value="todo"  ${t.status==='todo' ?'selected':''}>⚪ 未着手</option>
+          <option value="doing" ${t.status==='doing'?'selected':''}>🟡 作業中</option>
+          <option value="done"  ${t.status==='done' ?'selected':''}>🟢 完成</option>
         </select>
         ${t.memberName ? `<span class="task-member-badge">${t.memberName}</span>` : ''}
         <span class="task-date">${date}</span>
