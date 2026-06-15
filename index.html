@@ -1104,11 +1104,51 @@
     margin-bottom: 7px;
     animation: fadeUp 0.2s ease;
     border-left: 3px solid transparent;
+    transition: border-color 0.15s, background 0.15s;
   }
   .task-card.priority-high  { border-left-color: #ff6b6b; }
   .task-card.priority-mid   { border-left-color: #ffd166; }
   .task-card.priority-low   { border-left-color: #4ecdc4; }
   .task-card.status-done    { opacity: 0.55; }
+  .task-card.task-navigable { cursor: pointer; }
+  .task-card.task-navigable:hover {
+    border-color: rgba(0,212,255,0.35);
+    background: rgba(0,212,255,0.04);
+  }
+  /* タスク担当チップ */
+  .task-member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 10px;
+    padding: 2px 8px;
+    color: var(--accent);
+    white-space: nowrap;
+    margin-bottom: 5px;
+  }
+  /* 元メッセージ引用 */
+  .task-source-msg {
+    font-size: 10px;
+    color: var(--text-dim);
+    border-left: 2px solid var(--border);
+    padding: 2px 7px;
+    margin-bottom: 5px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+  }
+  /* 担当へ移動ヒント */
+  .task-nav-hint {
+    font-size: 9px;
+    color: var(--accent);
+    opacity: 0.7;
+    margin-left: auto;
+    white-space: nowrap;
+  }
 
   .task-card-top {
     display: flex;
@@ -2355,12 +2395,14 @@ function handleLeaderDispatch(userText, assignedIds) {
     tasks.unshift({
       id: genId(),
       title: `【Leader依頼】${shortTitle}`,
-      body: userText,
+      body: shortTitle,
       memberId: m.id,
       memberName: `${m.emoji} ${m.name}`,
       priority: 'mid',
       status: 'doing',
       createdAt: dispatchTs,
+      updatedAt: dispatchTs,
+      sourceMessage: userText,
       sourceType: 'leader_dispatch',
     });
     // 各担当の履歴に依頼通知を追加
@@ -3323,6 +3365,7 @@ function submitTask() {
   if (!title) { document.getElementById('tf-title').focus(); return; }
   const memberId = document.getElementById('tf-member').value;
   const member = memberId ? ALL_MEMBERS[memberId] : null;
+  const now = new Date().toISOString();
   tasks.unshift({
     id: genId(),
     title,
@@ -3331,7 +3374,9 @@ function submitTask() {
     memberName: member ? `${member.emoji} ${member.name}` : null,
     priority: document.getElementById('tf-priority').value,
     status: 'todo',
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    sourceMessage: '',
   });
   saveTasks();
   closeTaskForm();
@@ -3351,7 +3396,13 @@ function setFilter(type, val, btn) {
 
 function changeTaskStatus(id, newStatus) {
   const t = tasks.find(t => t.id === id);
-  if (t) { t.status = newStatus; saveTasks(); renderTaskList(); updateTaskBadge(); }
+  if (t) {
+    t.status = newStatus;
+    t.updatedAt = new Date().toISOString();
+    saveTasks();
+    renderTaskList();
+    updateTaskBadge();
+  }
 }
 
 function deleteTask(id) {
@@ -3385,29 +3436,44 @@ function renderTaskList() {
   }
 
   list.innerHTML = '';
-  const statusLabel = { todo: '未着手', doing: '進行中', done: '完了' };
   const priorityLabel = { high: '高', mid: '中', low: '低' };
 
   filtered.forEach(t => {
     const card = document.createElement('div');
-    card.className = `task-card priority-${t.priority} status-${t.status}`;
+    const navigable = t.memberId && ALL_MEMBERS[t.memberId];
+    card.className = `task-card priority-${t.priority} status-${t.status}${navigable ? ' task-navigable' : ''}`;
+    if (navigable) card.title = `クリックで ${ALL_MEMBERS[t.memberId].name} との会話に切替`;
+
     const date = new Date(t.createdAt).toLocaleDateString('ja-JP', { month:'numeric', day:'numeric' });
+    const updDate = t.updatedAt && t.updatedAt !== t.createdAt
+      ? ' · 更新' + new Date(t.updatedAt).toLocaleDateString('ja-JP', { month:'numeric', day:'numeric' })
+      : '';
+
     card.innerHTML = `
+      ${t.memberName ? `<div class="task-member-chip">${t.memberName}${navigable ? ' →' : ''}</div>` : ''}
       <div class="task-card-top">
         <div class="task-card-title">${escapeHtml(t.title)}</div>
-        <span class="task-priority-badge">${priorityLabel[t.priority]}</span>
+        <span class="task-priority-badge">${priorityLabel[t.priority] || ''}</span>
       </div>
-      ${t.body ? `<div class="task-card-body">${escapeHtml(t.body)}</div>` : ''}
+      ${t.sourceMessage && t.sourceMessage !== t.body ? `<div class="task-source-msg">💬 ${escapeHtml(t.sourceMessage.slice(0, 60))}${t.sourceMessage.length > 60 ? '…' : ''}</div>` : ''}
+      ${t.body && t.body !== t.sourceMessage ? `<div class="task-card-body">${escapeHtml(t.body)}</div>` : ''}
       <div class="task-card-footer">
         <select class="task-status-select" onchange="changeTaskStatus('${t.id}', this.value)">
           <option value="todo"  ${t.status==='todo' ?'selected':''}>⚪ 未着手</option>
           <option value="doing" ${t.status==='doing'?'selected':''}>🟡 作業中</option>
           <option value="done"  ${t.status==='done' ?'selected':''}>🟢 完成</option>
         </select>
-        ${t.memberName ? `<span class="task-member-badge">${t.memberName}</span>` : ''}
-        <span class="task-date">${date}</span>
-        <button class="task-delete-btn" onclick="deleteTask('${t.id}')">✕</button>
+        <span class="task-date">${date}${updDate}</span>
+        <button class="task-delete-btn" onclick="event.stopPropagation();deleteTask('${t.id}')">✕</button>
       </div>`;
+
+    if (navigable) {
+      card.addEventListener('click', e => {
+        if (e.target.closest('select, button')) return;
+        selectMember(ALL_MEMBERS[t.memberId]);
+        document.getElementById('task-panel').classList.remove('open');
+      });
+    }
     list.appendChild(card);
   });
 }
