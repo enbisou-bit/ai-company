@@ -8930,7 +8930,28 @@ async function atRunWorkflow() {
 
   // Phase42修正: Auto Task開始と同時に Workflow Live を即時オープン
   // pendingTasks を _wlLastResults にセットして Brain/WL実行中として表示する
-  _wlLastResults = pendingTasks.slice(); // pending カードを WL に反映
+  // Phase43-2: 固定4担当のプリポピュレートカードを生成（未含みの担当のみ追加）
+  const _wlExistingIds = new Set(pendingTasks.map(function(t) { return t.agentId; }));
+  const _wlPreCards = WL_FIXED_WORKFLOW_AGENTS
+    .filter(function(a) { return !_wlExistingIds.has(a.agentId); })
+    .map(function(a) {
+      return {
+        id:            'wl-prepop-' + a.agentId,
+        agentId:       a.agentId,
+        instruction:   '',
+        dependsOn:     [],
+        provider:      a.provider,
+        providerUsed:  null,
+        modelUsed:     null,
+        status:        'pending',
+        result:        null,
+        collaborators: [],
+        isPostProcess: a.isPostProcess || false,
+        isLeaderFinal: a.isLeaderFinal || false,
+        isPrePopulated: true,   // マージ時にプリポピュレートと識別するフラグ
+      };
+    });
+  _wlLastResults = pendingTasks.slice().concat(_wlPreCards); // 全担当カードを WL に反映
   _wlLastHistory = [];                   // 実行履歴はまだなし
   _wlLastBrain   = null;                 // Brain解析はまだなし
   (function() {
@@ -17808,6 +17829,27 @@ let _wlLastBrain   = null; // Phase40: Company Brain 解析結果
 // Claude を使う担当 = Phase37 CLAUDE_AGENTS に対応したクライアント側定数
 const _WL_CLAUDE_AGENTS = new Set(['writer', 'reviewer', 'strategy']);
 
+// Phase43-2: Workflow開始時に表示する固定4担当（常に最初から表示）
+const WL_FIXED_WORKFLOW_AGENTS = [
+  { agentId: 'writer',   provider: 'claude', isPostProcess: false },
+  { agentId: 'reviewer', provider: 'claude', isPostProcess: true  },
+  { agentId: 'strategy', provider: 'claude', isPostProcess: true  },
+  { agentId: 'leader',   provider: 'openai', isPostProcess: true, isLeaderFinal: true },
+];
+
+// Phase43-2: 実データとプリポピュレートカードをマージ（重複はagentIdで管理）
+function _wlMergeWithPrePopulated(incoming, current) {
+  if (!incoming || incoming.length === 0) return current;
+  // 実データに含まれていないプリポピュレートカードだけ残す
+  const incomingAgentIds = new Set(incoming.map(function(t) { return t.agentId + (t.isLeaderFinal ? '_lf' : ''); }));
+  const kept = current.filter(function(t) {
+    if (!t.isPrePopulated) return false;
+    const key = t.agentId + (t.isLeaderFinal ? '_lf' : '');
+    return !incomingAgentIds.has(key);
+  });
+  return incoming.concat(kept);
+}
+
 let _wlProgressTimer    = null; // ポーリングタイマー
 let _wlProgressWorkflowId = null;
 
@@ -17828,8 +17870,10 @@ async function wlProgressPoll(workflowId) {
     const res  = await fetch('/api/workflow-progress?workflowId=' + encodeURIComponent(workflowId));
     const data = await res.json();
     if (!data.ok || !data.found) return;
-    // 取得した進捗で WL グローバルを更新して再描画
-    _wlLastResults = Array.isArray(data.workflowTasks) ? data.workflowTasks : _wlLastResults;
+    // Phase43-2: 実データとプリポピュレートカードをマージして更新
+    if (Array.isArray(data.workflowTasks)) {
+      _wlLastResults = _wlMergeWithPrePopulated(data.workflowTasks, _wlLastResults);
+    }
     _wlLastHistory = Array.isArray(data.taskHistory)   ? data.taskHistory   : _wlLastHistory;
     if (data.brainResult) _wlLastBrain = data.brainResult;
     renderWorkflowLive();
