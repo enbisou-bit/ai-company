@@ -1742,6 +1742,47 @@
     border-left-color: rgba(180,140,255,0.5);
     background: rgba(120,80,200,0.04);
   }
+  /* Phase42: Leader Final Response カード */
+  .at-postprocess-separator.is-leader-final {
+    color: #f5c842;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+  .at-postprocess-separator.is-leader-final::before,
+  .at-postprocess-separator.is-leader-final::after {
+    border-top-color: rgba(245,200,66,0.3);
+  }
+  .at-result-card.is-leader-final {
+    border-left: 3px solid rgba(245,200,66,0.7);
+    background: rgba(245,200,66,0.04);
+    box-shadow: 0 0 12px rgba(245,200,66,0.08);
+  }
+  .at-result-card.is-leader-final .at-result-header {
+    border-bottom: 1px solid rgba(245,200,66,0.15);
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+  .at-result-card.is-leader-final .at-result-body {
+    white-space: pre-wrap;
+    line-height: 1.65;
+    font-size: 12.5px;
+  }
+  .at-leader-final-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(245,200,66,0.12);
+  }
+  .at-leader-final-stat {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
 
   /* ── Phase8: AI社員ライブ状況（Live Status Strip） ───────── */
   #ai-live-strip {
@@ -5288,15 +5329,15 @@
         <div class="ap-config-row"><span>出力単価（Output Price）</span><span class="ap-config-val dim">モデルにより異なる</span></div>
       </div>
       <div class="ap-config-card claude">
-        <div class="ap-config-title">⚪ Claude（Anthropic） <span class="ap-status-badge inactive">未導入</span></div>
-        <div class="ap-config-row"><span>ステータス（Status）</span><span class="ap-config-val dim">未導入 / 無効</span></div>
+        <div class="ap-config-title">🟣 Claude（Anthropic） <span class="ap-status-badge inactive" id="ap-claude-badge">確認中…</span></div>
+        <div class="ap-config-row"><span>ステータス（Status）</span><span class="ap-config-val dim" id="ap-claude-status-val">確認中…</span></div>
         <div class="ap-config-row">
           <span>月上限（Monthly Limit）</span>
           <span><input class="ap-limit-input" id="ap-claude-limit" type="number" min="0" value="20" onchange="saveProviderLimit('claude', this.value)"> USD</span>
         </div>
-        <div class="ap-config-row"><span>入力単価（Input Price）</span><span class="ap-config-val dim">将来設定予定</span></div>
-        <div class="ap-config-row"><span>出力単価（Output Price）</span><span class="ap-config-val dim">将来設定予定</span></div>
-        <div class="ap-inactive-notice">⚠ Claude APIは現在未導入です。設定のみ可能。将来のAPI導入時に有効化されます。</div>
+        <div class="ap-config-row"><span>入力単価（Input Price）</span><span class="ap-config-val dim">Sonnet: $3/$15・Opus: $15/$75 per 1M tokens</span></div>
+        <div class="ap-config-row"><span>出力単価（Output Price）</span><span class="ap-config-val dim">モデルにより異なる</span></div>
+        <div class="ap-inactive-notice" id="ap-claude-inactive-notice">確認中…</div>
       </div>
       <div>
         <div class="ap-agent-section-title">AI社員 × Provider / Model 設定</div>
@@ -8607,16 +8648,17 @@ function atRenderResults(tasks) {
       : '';
 
     // Phase6 後処理カード（Reviewer / Strategy）の区切り表示
+    // Phase42: Leader Final も対応
     if (t.isPostProcess && i > 0) {
-      const labels = { reviewer: '👀 品質レビュー', strategy: '🧠 戦略統合' };
+      const labels = { reviewer: '👀 品質レビュー', strategy: '🧠 戦略統合', leader: '👑 Leader Final Response — 最終成果物' };
       const sep = document.createElement('div');
-      sep.className = 'at-postprocess-separator';
+      sep.className = 'at-postprocess-separator' + (t.isLeaderFinal ? ' is-leader-final' : '');
       sep.textContent = labels[t.agentId] || '── 後処理 ──';
       area.appendChild(sep);
     }
 
     const card = document.createElement('div');
-    card.className = 'at-result-card' + (t.isPostProcess ? ' is-postprocess' : '');
+    card.className = 'at-result-card' + (t.isPostProcess ? ' is-postprocess' : '') + (t.isLeaderFinal ? ' is-leader-final' : '');
     card.id = 'at-card-' + t.id;
     card.dataset.agentId = t.agentId; // atTriggerLeaderFinal で参照
 
@@ -8661,6 +8703,13 @@ function atRenderResults(tasks) {
       ${showCollab ? collabHtml : ''}
       <div class="at-result-body" id="at-body-${t.id}">${t.result ? escapeHtml(t.result) : (t.skippedReason ? `⏭ ${escapeHtml(t.skippedReason)}` : '（待機中）')}</div>
       ${acHtml}
+      ${t.isLeaderFinal && t.status === 'completed' ? `<div class="at-leader-final-stats">
+        <span class="at-leader-final-stat">📝 ${(t.replyLength || (t.result||'').length).toLocaleString()}文字</span>
+        <span class="at-leader-final-stat">${(() => { const pv=t.providerUsed||'openai'; const m=t.modelUsed||''; if(pv==='claude'){const s=m.includes('opus')?'Opus 4.8':m.includes('sonnet')?'Sonnet 4.6':m;return '🟣 Claude '+s;} return '🔵 OpenAI'; })()}</span>
+        ${t.responseMs ? `<span class="at-leader-final-stat">⏱ ${(t.responseMs/1000).toFixed(1)}s</span>` : ''}
+        ${t.fallback ? '<span class="at-leader-final-stat">⚠️ Fallback</span>' : ''}
+        <span class="at-leader-final-stat">✅ チャット返信済</span>
+      </div>` : ''}
       ${timeHtml}
     `;
     area.appendChild(card);
@@ -8857,10 +8906,19 @@ async function atRunWorkflow() {
   }
 
   // 結果エリアに初期カードを表示（status: pending）
-  // collaborators（相談可能担当）は pending 時点では空配列として表示
-  const pendingTasks = tasks.map(t => ({
-    ...t, provider: 'openai', status: 'pending', result: null, collaborators: [],
-  }));
+  // Phase42修正②: 予定 Provider を Claude/OpenAI 別に正しく設定
+  const pendingTasks = tasks.map(t => {
+    const isClaude = _WL_CLAUDE_AGENTS.has(t.agentId);
+    return {
+      ...t,
+      provider:     isClaude ? 'claude' : 'openai',
+      providerUsed: null, // 完了後に確定
+      modelUsed:    null,
+      status:       'pending',
+      result:       null,
+      collaborators: [],
+    };
+  });
   atRenderResults(pendingTasks);
 
   // Phase8/9: ライブ状況ストリップを初期化してポーリング開始
@@ -8869,6 +8927,23 @@ async function atRunWorkflow() {
 
   // Phase11: Auto Task 開始時 — workflowId に紐づくタスクを「依頼中」に更新
   atTaskProgressUpdate(_atCurrentWorkflowId, null, 'requested');
+
+  // Phase42修正: Auto Task開始と同時に Workflow Live を即時オープン
+  // pendingTasks を _wlLastResults にセットして Brain/WL実行中として表示する
+  _wlLastResults = pendingTasks.slice(); // pending カードを WL に反映
+  _wlLastHistory = [];                   // 実行履歴はまだなし
+  _wlLastBrain   = null;                 // Brain解析はまだなし
+  (function() {
+    var wlPanel = document.getElementById('workflow-live-panel');
+    if (wlPanel && !wlPanel.classList.contains('open')) {
+      wlPanel.classList.add('open');
+    }
+  })();
+  renderWorkflowLive(); // pending 状態のカードを描画
+
+  // Phase42修正①: WLリアルタイムポーリング開始
+  // サーバーが onProgress で書き込む /api/workflow-progress を2秒ごとに取得
+  wlProgressStartPolling(_atCurrentWorkflowId);
 
   try {
     const res  = await fetch('/api/auto-task', {
@@ -8887,6 +8962,7 @@ async function atRunWorkflow() {
     atRenderResults(data.results);
     // Phase8: 最終結果でライブ状況を更新してポーリング停止
     aiLiveApplyResults(data.results);
+    wlProgressStopPolling(); // Phase42修正: WLポーリング停止（APIが完了したため）
     // Phase38: Workflow Live Panel へ結果を反映（グローバル保存 → render）
     _wlLastResults  = Array.isArray(data.results)     ? data.results     : [];
     _wlLastHistory  = Array.isArray(data.taskHistory) ? data.taskHistory : [];
@@ -8911,6 +8987,34 @@ async function atRunWorkflow() {
       atSetWorkflowStatus('⚠️ 一部タスク失敗 — ' + parts.join('、'), 'error');
     }
 
+    // Phase42: Leader Final Response — サーバー生成済みの場合はchatHistoryへ保存
+    // 二重生成防止: _atLeaderFinalDone に workflowId を登録して atAutoLeaderFinal() をスキップ
+    let _phase42Success = false;
+    if (data.leaderFinalResult && data.leaderFinalResult.text) {
+      _atLeaderFinalDone.add(_atCurrentWorkflowId);
+      if (!chatHistory['leader']) chatHistory['leader'] = [];
+      // 修正②: Leader チャットに完成成果物として保存（suggestions:[] で4択を出さない）
+      chatHistory['leader'].push({
+        role: 'assistant',
+        content: data.leaderFinalResult.text,
+        timestamp: new Date().toISOString(),
+        fromAutoTask: true,
+        isLeaderFinal: true,
+        suggestions: [], // 修正⑥: Auto Taskでは4択不要
+      });
+      unreadCount['leader'] = (unreadCount['leader'] || 0) + 1;
+      latestPreview['leader'] = data.leaderFinalResult.text.slice(0, 28) + '…';
+      updateMemberBadge('leader');
+      // 修正⑥: 既存の4択ボタンをクリア
+      document.querySelectorAll('.suggestion-btns').forEach(el => el.remove());
+      // 修正②: 現在Leaderチャットが表示中なら即時再描画
+      if (currentMember && currentMember.id === 'leader') {
+        reRenderChatArea(currentMember);
+      }
+      atSetWorkflowStatus('✅ Leader最終成果物まで完了 — チャット返信済', 'done');
+      _phase42Success = true;
+    }
+
     _atMarkComplete(); // ✅ 自動タスク完了 — ボタン状態を更新
 
     // taskHistory（タスク履歴）をフロントに蓄積
@@ -8922,7 +9026,7 @@ async function atRunWorkflow() {
     // 完了した担当の結果をchatHistory（会話履歴）に追加
     // 既存のSupabase保存はサーバー側で実行済み
     data.results.forEach(t => {
-      if (t.status === 'completed' && t.result && ALL_MEMBERS[t.agentId]) {
+      if (t.status === 'completed' && t.result && ALL_MEMBERS[t.agentId] && !t.isLeaderFinal) {
         if (!chatHistory[t.agentId]) chatHistory[t.agentId] = [];
         chatHistory[t.agentId].push({
           role: 'assistant',
@@ -8938,8 +9042,24 @@ async function atRunWorkflow() {
     });
     saveToStorage();
 
+    // 修正③④: Leader Final成功 + Workflowエラーなし → 3秒後に Auto Task + WL を自動クローズ
+    // 条件: Leader Final成功 / chatHistory保存済 / チャット返信済 / Workflow成功（エラータスクなし）
+    if (_phase42Success) {
+      const _errCount = (data.results || []).filter(t => t.status === 'error' && !t.isPostProcess).length;
+      if (_errCount === 0) {
+        setTimeout(() => {
+          // Auto Taskモーダルを閉じる
+          closeAutoTaskPanel();
+          // Workflow Live を閉じる（修正⑤: toggleWorkflowLive で再表示は常に可能）
+          const _wlP = document.getElementById('workflow-live-panel');
+          if (_wlP && _wlP.classList.contains('open')) _wlP.classList.remove('open');
+        }, 3000);
+      }
+    }
+
   } catch (e) {
-    aiLiveStopPolling(); // Phase8: エラー時もポーリング停止
+    aiLiveStopPolling();      // Phase8: エラー時もポーリング停止
+    wlProgressStopPolling();  // Phase42修正: WLポーリングも停止
     alert('通信エラー: ' + e.message);
     // エラー時のボタン状態
     runBtn.textContent = '⚠️ 実行失敗';
@@ -10359,6 +10479,43 @@ function renderProviderSettings() {
   document.getElementById('ap-openai-limit').value = AI_PROVIDER_LIMITS.openai;
   document.getElementById('ap-claude-limit').value = AI_PROVIDER_LIMITS.claude;
 
+  // Phase43-1: Claude実状態をAI Provider設定パネルへ同期
+  fetchClaudeStatus().then(() => {
+    const cl = getClaudeSummary();
+    const badge  = document.getElementById('ap-claude-badge');
+    const stVal  = document.getElementById('ap-claude-status-val');
+    const notice = document.getElementById('ap-claude-inactive-notice');
+    if (!badge || !stVal || !notice) return;
+    if (cl.configured && cl.status === 'ready') {
+      badge.textContent = '接続済み';
+      badge.className = 'ap-status-badge active';
+      stVal.textContent = `稼働中 / Writer・Reviewer・Strategy担当`;
+      stVal.className = 'ap-config-val';
+      notice.textContent = '✅ Claude API 接続済み。Writer / Reviewer / Strategy が Claude を使用しています。';
+      notice.style.color = '#c89ef2';
+      notice.style.background = 'rgba(160,80,220,0.06)';
+      notice.style.borderColor = 'rgba(160,80,220,0.25)';
+    } else if (cl.configured) {
+      badge.textContent = '設定済み';
+      badge.className = 'ap-status-badge active';
+      stVal.textContent = `設定済み / ${cl.statusLabel}`;
+      stVal.className = 'ap-config-val';
+      notice.textContent = '🟣 Claude API Key 設定済み。接続確認は Claude準備パネルで行えます。';
+      notice.style.color = '#c89ef2';
+      notice.style.background = 'rgba(160,80,220,0.06)';
+      notice.style.borderColor = 'rgba(160,80,220,0.25)';
+    } else {
+      badge.textContent = '未設定';
+      badge.className = 'ap-status-badge inactive';
+      stVal.textContent = '未設定 / OpenAI Fallback中';
+      stVal.className = 'ap-config-val dim';
+      notice.textContent = '⚠ ANTHROPIC_API_KEY 未設定。Claude担当はOpenAIへFallback中です。';
+      notice.style.color = '';
+      notice.style.background = '';
+      notice.style.borderColor = '';
+    }
+  });
+
   const list = document.getElementById('ap-agent-list');
   list.innerHTML = COST_DB_AGENTS.map(a => {
     const s = AI_MODEL_SETTINGS[a.id] || { provider: 'none', model: 'none', temperature: 0.5, maxTokens: 2000, thinking: 'medium' };
@@ -10374,7 +10531,7 @@ function renderProviderSettings() {
         <select class="ap-select ${prov}" id="ap-prov-${a.id}"
           onchange="onAgentProviderChange('${a.id}', this)">
           <option value="openai" ${prov === 'openai' ? 'selected' : ''}>OpenAI</option>
-          <option value="claude" ${prov === 'claude' ? 'selected' : ''}>Claude（未導入）</option>
+          <option value="claude" ${prov === 'claude' ? 'selected' : ''}>Claude（Anthropic）</option>
           <option value="none"   ${prov === 'none'   ? 'selected' : ''}>未設定</option>
         </select>
       </div>
@@ -13546,7 +13703,7 @@ function generateKnowledge() {
 
   // ── 判断・決定 (decision) — AI_MODEL_SETTINGSの変更・_learningCandidatesのcandidateから ──
   items.push({ id: 'ke_' + (++seq), category: 'decision', text: 'AIモデル選定: OpenAI gpt-4.1-nano/mini（コスト最適化）', source: 'Knowledge', confidence: 'high', mergedCount: 1 });
-  items.push({ id: 'ke_' + (++seq), category: 'decision', text: 'Claude API: 未導入・将来実装予定（CR_CHECKLIST readyScore=70%）', source: 'Knowledge', confidence: 'high', mergedCount: 1 });
+  items.push({ id: 'ke_' + (++seq), category: 'decision', text: 'Claude API: Writer/Reviewer/Strategy がClaude担当（Phase42完了・稼働中）', source: 'Knowledge', confidence: 'high', mergedCount: 1 });
   items.push({ id: 'ke_' + (++seq), category: 'decision', text: 'データ永続化: Supabase（localStorage逆戻り禁止）', source: '社長指示', confidence: 'high', mergedCount: 1 });
   const candidates = (_learningCandidates || []).filter(c => c.state === 'candidate');
   candidates.slice(0, 3).forEach(c => {
@@ -13844,16 +14001,16 @@ const CR_CHECKLIST = [
   { label: 'ユーザー承認',            key: 'approve', status: 'not-yet', val: '未承認' },
 ];
 
-// 安全確認リスト（safety confirmation）
+// 安全確認リスト（safety confirmation）— Phase43-1: 実状態に合わせて更新
 const CR_SAFETY = [
-  'Claude APIはまだ呼び出していません',
-  'APIキー未登録',
-  'Anthropic SDK未追加',
-  '課金なし（今回）',
-  'OpenAI処理は変更なし',
-  'Provider設定だけClaude予定',
-  '料金メーターはClaude枠ゼロ表示',
-  'ユーザー許可なしに接続しない',
+  'Writer / Reviewer / Strategy は Claude 担当（Phase42完了）',
+  'Leader は OpenAI 担当（変更なし）',
+  '課金はAPI Key設定済みの場合のみ発生',
+  'OpenAI処理は変更なし・Fallback維持',
+  '料金メーターでClaude利用額を監視中',
+  'Supabaseへの保存は維持されている',
+  'ユーザー許可なしに新規API契約はしない',
+  '既存機能は削除・変更なし',
 ];
 
 let _crOpen = false;
@@ -13861,8 +14018,13 @@ let _crOpen = false;
 function toggleClaudeReady() {
   _crOpen = !_crOpen;
   const panel = document.getElementById('claude-ready-panel');
-  if (_crOpen) { panel.classList.add('open'); renderClaudeReady(); }
-  else          { panel.classList.remove('open'); }
+  if (_crOpen) {
+    panel.classList.add('open');
+    // Phase43-1: 開くたびに最新のClaude接続状態を取得してから描画
+    fetchClaudeStatus().then(() => renderClaudeReady()).catch(() => renderClaudeReady());
+  } else {
+    panel.classList.remove('open');
+  }
 }
 
 function renderClaudeReady() {
@@ -13884,11 +14046,24 @@ function renderClaudeReady() {
     };
   });
 
+  // Phase43-1: 実接続状態からチェックリストを動的生成
+  const cl = getClaudeSummary();
+  const dynamicChecklist = CR_CHECKLIST.map(c => {
+    if (c.key === 'apiKey') {
+      if (cl.configured) return { ...c, status: 'ready', val: '設定済み ✓' };
+    }
+    if (c.key === 'sdk') {
+      if (cl.configured) return { ...c, status: 'ready', val: '導入済み ✓ (claudeClient.js)' };
+    }
+    if (c.key === 'approve') {
+      if (cl.configured && cl.status === 'ready') return { ...c, status: 'ready', val: '承認済み（稼働中）' };
+    }
+    return c;
+  });
+
   // Ready Score 計算（ready score calculation）
-  // 準備済み項目 = provider設定3 + model設定3 + 料金メーター + cost上限
-  // 未完了 = APIキー・SDK・ユーザー承認
-  const readyItems  = CR_CHECKLIST.filter(c => c.status === 'ready').length;
-  const totalItems  = CR_CHECKLIST.length;
+  const readyItems  = dynamicChecklist.filter(c => c.status === 'ready').length;
+  const totalItems  = dynamicChecklist.length;
   const readyScore  = Math.round(readyItems / totalItems * 100);
   const scoreColor  = readyScore >= 70 ? '#c060ee' : readyScore >= 50 ? '#ffd166' : '#ff8888';
 
@@ -13958,7 +14133,7 @@ function renderClaudeReady() {
               <div class="cr-agent-name">${escapeHtml(a.name)}</div>
               <div style="font-size:9px;color:var(--text-dim);">${escapeHtml(a.role)}</div>
             </div>
-            <span class="cr-agent-status">接続待ち</span>
+            <span class="cr-agent-status" style="${(() => { const tr = _claudeTestResult && _claudeTestResult[a.id]; const prov = (AI_MODEL_SETTINGS[a.id]||{}).provider; if (tr?.success) return 'color:#64dc8c;'; if (prov==='claude') return 'color:#c89ef2;'; return ''; })()}">${(() => { const tr = _claudeTestResult && _claudeTestResult[a.id]; const prov = (AI_MODEL_SETTINGS[a.id]||{}).provider; if (tr?.success) return '接続済み ✅'; if (tr && !tr.success) return '接続エラー ❌'; if (prov==='claude') return '設定済み 🟣'; return '設定待ち'; })()}</span>
           </div>
           <div class="cr-check-row">
             <span class="cr-check-label">Provider</span>
@@ -13969,8 +14144,8 @@ function renderClaudeReady() {
             <span class="cr-check-val ${a.modelOk ? 'ready' : 'not-yet'}">${a.modelOk ? escapeHtml(a.currentModel) : '⚠ ' + escapeHtml(a.currentModel)}</span>
           </div>
           <div class="cr-check-row">
-            <span class="cr-check-label">予定Model</span>
-            <span class="cr-check-val planned">${escapeHtml(a.model)}（未導入）</span>
+            <span class="cr-check-label">使用Model</span>
+            <span class="cr-check-val ${a.modelOk ? 'ready' : 'planned'}">${a.modelOk ? escapeHtml(a.currentModel) + ' ✓' : escapeHtml(a.model) + '（未設定）'}</span>
           </div>
           ${(() => {
             const tr = _claudeTestResult && _claudeTestResult[a.id];
@@ -14007,7 +14182,7 @@ function renderClaudeReady() {
     <!-- 接続前チェック -->
     <div>
       <div class="cr-section-title">🔍 接続前チェック（Pre-connection Checklist）</div>
-      ${CR_CHECKLIST.map(c => {
+      ${dynamicChecklist.map(c => {
         const s = statusMap[c.status] || statusMap['not-yet'];
         return `<div class="cr-check-row">
           <span class="cr-check-label">${s.pfx} ${escapeHtml(c.label)}</span>
@@ -17629,6 +17804,40 @@ let _wlLastResults = [];
 let _wlLastHistory = [];
 let _wlLastBrain   = null; // Phase40: Company Brain 解析結果
 
+// Phase42修正: Workflow Live リアルタイム進捗ポーリング
+// Claude を使う担当 = Phase37 CLAUDE_AGENTS に対応したクライアント側定数
+const _WL_CLAUDE_AGENTS = new Set(['writer', 'reviewer', 'strategy']);
+
+let _wlProgressTimer    = null; // ポーリングタイマー
+let _wlProgressWorkflowId = null;
+
+function wlProgressStartPolling(workflowId) {
+  wlProgressStopPolling();
+  _wlProgressWorkflowId = workflowId;
+  _wlProgressTimer = setInterval(() => wlProgressPoll(_wlProgressWorkflowId), 2000);
+}
+
+function wlProgressStopPolling() {
+  if (_wlProgressTimer) { clearInterval(_wlProgressTimer); _wlProgressTimer = null; }
+  _wlProgressWorkflowId = null;
+}
+
+async function wlProgressPoll(workflowId) {
+  if (!workflowId) return;
+  try {
+    const res  = await fetch('/api/workflow-progress?workflowId=' + encodeURIComponent(workflowId));
+    const data = await res.json();
+    if (!data.ok || !data.found) return;
+    // 取得した進捗で WL グローバルを更新して再描画
+    _wlLastResults = Array.isArray(data.workflowTasks) ? data.workflowTasks : _wlLastResults;
+    _wlLastHistory = Array.isArray(data.taskHistory)   ? data.taskHistory   : _wlLastHistory;
+    if (data.brainResult) _wlLastBrain = data.brainResult;
+    renderWorkflowLive();
+    // 完了フラグが立ったらポーリング停止
+    if (data.done) wlProgressStopPolling();
+  } catch (_) { /* ポーリング中エラーは無視 */ }
+}
+
 function toggleWorkflowLive() {
   const p = document.getElementById('workflow-live-panel');
   if (!p) return;
@@ -17715,9 +17924,11 @@ function renderWorkflowLive() {
       var fbBadge = t.fallback ? '<span class="wl-fallback-badge">Fallback</span>' : '';
       var sep = '';
       if (t.isPostProcess) {
-        sep = '<div class="wl-section-title" style="margin-top:8px;">'
-            + (t.agentId === 'reviewer' ? '── 品質レビュー' : '── 戦略統合')
-            + '</div>';
+        var sepLabel = t.isLeaderFinal ? '── 👑 Leader Final'
+                     : t.agentId === 'reviewer' ? '── 品質レビュー'
+                     : t.agentId === 'strategy'  ? '── 戦略統合'
+                     : '── 後処理';
+        sep = '<div class="wl-section-title" style="margin-top:8px;' + (t.isLeaderFinal ? 'color:#f5c842;' : '') + '">' + sepLabel + '</div>';
       }
 
       // Phase39: 相談（Collaboration）サブ行
@@ -17765,9 +17976,10 @@ function renderWorkflowLive() {
       var pvStr  = h.providerUsed === 'claude' ? ' · 🟣 Claude'
                  : h.providerUsed === 'openai_fallback' ? ' · 🟡 Fallback'
                  : h.providerUsed ? ' · 🔵 OpenAI' : '';
-      var isConsult   = h.action === 'auto_consult' || h.action === 'consult';
-      var isKnowledge = h.action === 'knowledge_loaded';
-      var isBrain     = h.action === 'brain_analyze';
+      var isConsult     = h.action === 'auto_consult' || h.action === 'consult';
+      var isKnowledge   = h.action === 'knowledge_loaded';
+      var isBrain       = h.action === 'brain_analyze';
+      var isLeaderFinal = h.action === 'leader_final';
       var extraTag = '';
       if (isKnowledge) {
         var knCount = (h.ruleCount || 0) + (h.patternCount || 0);
@@ -17775,13 +17987,18 @@ function renderWorkflowLive() {
       } else if (isBrain) {
         var bPri = h.brainPriority ? escapeHtml(h.brainPriority) : '';
         extraTag = bPri ? '<span class="wl-tl-consult-tag" style="background:rgba(124,77,255,0.3);color:#ce93d8">🧠 ' + bPri + '</span>' : '';
+      } else if (isLeaderFinal) {
+        var lfChars = h.replyLength ? h.replyLength + '文字' : '';
+        var lfPvStr = h.replyProvider === 'claude' ? '🟣 Claude' : h.replyProvider ? '🔵 OpenAI' : '';
+        extraTag = '<span class="wl-tl-consult-tag" style="background:rgba(245,200,66,0.25);color:#f5c842">👑 最終成果物</span>'
+          + (lfChars ? '<span class="wl-tl-consult-reason">' + lfChars + (lfPvStr ? ' · ' + lfPvStr : '') + '</span>' : '');
       } else if (isConsult) {
         var clv = h.consultLevel ? h.consultLevel : '';
         var creason = h.consultReason ? escapeHtml(h.consultReason) : '';
         extraTag = '<span class="wl-tl-consult-tag">🤝 ' + (clv ? clv + ' ' : '') + '相談</span>'
           + (creason ? '<span class="wl-tl-consult-reason">' + creason + '</span>' : '');
       }
-      var rowCls = isKnowledge ? ' wl-tl-knowledge' : isConsult ? ' wl-tl-consult' : '';
+      var rowCls = isKnowledge ? ' wl-tl-knowledge' : isLeaderFinal ? ' wl-tl-consult' : isConsult ? ' wl-tl-consult' : '';
       var isLast = (j === hist.length - 1);
       tlRows += '<div class="wl-tl-row' + rowCls + '">'
         + '<div class="wl-tl-left">'
