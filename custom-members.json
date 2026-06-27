@@ -1,0 +1,9 @@
+[
+  {
+    "id": "tax",
+    "name": "税務担当",
+    "emoji": "📝",
+    "description": "税務申告・節税対策・確定申告・税務相談",
+    "agentRole": "worker"
+  }
+]

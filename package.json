@@ -5,9 +5,12 @@
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev-check": "powershell -ExecutionPolicy Bypass -File ./dev-check.ps1"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
+    "@supabase/supabase-js": "^2.108.2",
     "axios": "^1.7.9",
     "dotenv": "^16.4.1",
     "express": "^4.21.2"

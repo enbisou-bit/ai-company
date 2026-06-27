@@ -5,6 +5,9 @@ const CONV_DIR = path.join(__dirname, 'data', 'conversations');
 const META_PATH = path.join(CONV_DIR, '_meta.json');
 const MAX_HISTORY = 20;
 
+// channel: 'web' | 'line' — 3軸（userId + channel + memberName）で履歴を完全分離
+const VALID_CHANNELS = ['web', 'line'];
+
 function ensureDir() {
   if (!fs.existsSync(CONV_DIR)) {
     fs.mkdirSync(CONV_DIR, { recursive: true });
@@ -15,15 +18,21 @@ function sanitize(str) {
   return (str || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
-function historyPath(userId, memberName) {
-  return path.join(CONV_DIR, `${sanitize(userId)}_${sanitize(memberName)}.json`);
+function normalizeChannel(channel) {
+  const ch = (channel || 'line').toLowerCase();
+  return VALID_CHANNELS.includes(ch) ? ch : 'line';
 }
 
-function loadHistory(userId, memberName) {
+// ファイル名: {userId}_{channel}_{memberName}.json
+function historyPath(userId, channel, memberName) {
+  return path.join(CONV_DIR, `${sanitize(userId)}_${normalizeChannel(channel)}_${sanitize(memberName)}.json`);
+}
+
+function loadHistory(userId, memberName, channel) {
   if (!userId || !memberName) return [];
   ensureDir();
   try {
-    const filePath = historyPath(userId, memberName);
+    const filePath = historyPath(userId, normalizeChannel(channel), memberName);
     if (!fs.existsSync(filePath)) return [];
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) || [];
   } catch {
@@ -31,24 +40,24 @@ function loadHistory(userId, memberName) {
   }
 }
 
-function saveHistory(userId, memberName, messages) {
+function saveHistory(userId, memberName, messages, channel) {
   if (!userId || !memberName) return;
   ensureDir();
   const trimmed = (messages || []).slice(-MAX_HISTORY);
-  fs.writeFileSync(historyPath(userId, memberName), JSON.stringify(trimmed, null, 2), 'utf8');
+  fs.writeFileSync(historyPath(userId, normalizeChannel(channel), memberName), JSON.stringify(trimmed, null, 2), 'utf8');
 }
 
-function addMessage(userId, memberName, role, content) {
-  const history = loadHistory(userId, memberName);
+function addMessage(userId, memberName, role, content, channel) {
+  const history = loadHistory(userId, memberName, channel);
   history.push({ role, content, timestamp: new Date().toISOString() });
   const trimmed = history.slice(-MAX_HISTORY);
-  saveHistory(userId, memberName, trimmed);
+  saveHistory(userId, memberName, trimmed, channel);
   return trimmed;
 }
 
-function clearHistory(userId, memberName) {
+function clearHistory(userId, memberName, channel) {
   if (!userId || !memberName) return;
-  const filePath = historyPath(userId, memberName);
+  const filePath = historyPath(userId, normalizeChannel(channel), memberName);
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
