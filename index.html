@@ -640,6 +640,40 @@
     background: rgba(255,209,0,0.15); color: #ffd100; border: 1px solid rgba(255,209,0,0.3);
   }
 
+  /* Phase43-3: Workflow Progress Bar */
+  #wl-progress {
+    flex-shrink: 0;
+    padding: 10px 18px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: none; /* Workflow実行中のみ表示 */
+  }
+  #wl-progress.visible { display: block; }
+  .wl-pb-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .wl-pb-title { font-size: 10px; color: rgba(255,255,255,0.35); letter-spacing: 0.05em; }
+  .wl-pb-label { font-size: 11px; font-weight: 700; color: #dde2f0; }
+  .wl-pb-status {
+    font-size: 9px; padding: 2px 7px; border-radius: 4px; font-weight: 600;
+  }
+  .wl-pb-status.running  { background: rgba(255,210,0,0.15); color: #ffd166; }
+  .wl-pb-status.done     { background: rgba(80,220,120,0.15); color: #64dc8c; }
+  .wl-pb-status.error    { background: rgba(255,80,80,0.15);  color: #ff8888; }
+  .wl-pb-track {
+    height: 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden; margin-bottom: 5px;
+  }
+  .wl-pb-fill {
+    height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, #7c4dff, #c89ef2);
+    transition: width 0.4s ease;
+  }
+  .wl-pb-fill.done   { background: linear-gradient(90deg, #32b86c, #64dc8c); }
+  .wl-pb-fill.error  { background: linear-gradient(90deg, #cc3333, #ff8888); }
+  .wl-pb-counts { font-size: 10px; color: rgba(255,255,255,0.35); }
+
   /* Phase41: Knowledge セクション in Brain カード */
   .wl-brain-knowledge { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(124,77,255,0.15); }
   .wl-brain-kn-title { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
@@ -5742,6 +5776,20 @@
     <div id="wl-header">
       <h3>📡 Workflow Live <span id="wl-status-label" style="font-weight:400;color:rgba(255,255,255,0.4);font-size:11px;"></span></h3>
       <button id="wl-close" onclick="toggleWorkflowLive()" title="閉じる">✕</button>
+    </div>
+    <!-- Phase43-3: Workflow Progress Bar（実行中のみ表示） -->
+    <div id="wl-progress">
+      <div class="wl-pb-header">
+        <span class="wl-pb-title">WORKFLOW PROGRESS</span>
+        <span class="wl-pb-status running" id="wl-pb-status">進行中</span>
+      </div>
+      <div class="wl-pb-track">
+        <div class="wl-pb-fill" id="wl-pb-fill" style="width:0%;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="wl-pb-counts" id="wl-pb-counts">0 / 4 完了</span>
+        <span class="wl-pb-label" id="wl-pb-pct">0%</span>
+      </div>
     </div>
     <div id="wl-body">
       <div id="wl-placeholder" style="color:rgba(255,255,255,0.3);font-size:12px;text-align:center;padding:40px 0;line-height:1.8;">
@@ -17956,6 +18004,59 @@ function renderWorkflowLive() {
     var done  = results.filter(function(t) { return t.status === 'completed'; }).length;
     var total = results.length;
     if (label) label.textContent = done + '/' + total + ' 完了';
+
+    // Phase43-3: Workflow Progress Bar 更新
+    (function() {
+      var pbEl     = document.getElementById('wl-progress');
+      var pbFill   = document.getElementById('wl-pb-fill');
+      var pbStatus = document.getElementById('wl-pb-status');
+      var pbCounts = document.getElementById('wl-pb-counts');
+      var pbPct    = document.getElementById('wl-pb-pct');
+      if (!pbEl || !pbFill || !pbStatus || !pbCounts || !pbPct) return;
+
+      // 固定4担当の完了状態を集計（agentIdで判定）
+      var WL_TRACKED = ['leader', 'writer', 'reviewer', 'strategy'];
+      var DONE_STATUSES = new Set(['completed', 'done', 'success', 'final', 'finished']);
+      var trackedDone = 0;
+      var hasRunning  = false;
+      var hasError    = false;
+      WL_TRACKED.forEach(function(aid) {
+        // 同一agentIdが複数ある場合（leaderFinal含む）は最後の完了を優先
+        var matched = results.filter(function(t) { return t.agentId === aid; });
+        var isDone  = matched.some(function(t) {
+          return DONE_STATUSES.has(t.status) || (t.isLeaderFinal && t.status === 'completed');
+        });
+        var isRun   = matched.some(function(t) { return t.status === 'running'; });
+        var isErr   = matched.some(function(t) { return t.status === 'error'; });
+        if (isDone)  trackedDone++;
+        if (isRun)   hasRunning = true;
+        if (isErr)   hasError   = true;
+      });
+
+      var trackedTotal = WL_TRACKED.length; // 4
+      var pct = Math.round(trackedDone / trackedTotal * 100);
+      var allDone = trackedDone >= trackedTotal;
+
+      // バーとステータスを更新
+      pbFill.style.width = pct + '%';
+      pbFill.className   = 'wl-pb-fill' + (allDone ? ' done' : hasError ? ' error' : '');
+      pbCounts.textContent = trackedDone + ' / ' + trackedTotal + ' 完了';
+      pbPct.textContent    = pct + '%';
+
+      if (allDone) {
+        pbStatus.textContent = '完了';
+        pbStatus.className   = 'wl-pb-status done';
+      } else if (hasError) {
+        pbStatus.textContent = 'エラーあり';
+        pbStatus.className   = 'wl-pb-status error';
+      } else {
+        pbStatus.textContent = '進行中';
+        pbStatus.className   = 'wl-pb-status running';
+      }
+
+      // results がある場合はProgress Barを表示（初期プレースホルダー時は非表示）
+      pbEl.classList.add('visible');
+    })();
 
     // エージェントカード
     var cardsHtml = '';
