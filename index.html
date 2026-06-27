@@ -640,6 +640,40 @@
     background: rgba(255,209,0,0.15); color: #ffd100; border: 1px solid rgba(255,209,0,0.3);
   }
 
+  /* Phase41: Knowledge セクション in Brain カード */
+  .wl-brain-knowledge { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(124,77,255,0.15); }
+  .wl-brain-kn-title { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
+  .wl-brain-kn-row { display: flex; gap: 6px; margin-bottom: 3px; font-size: 10px; }
+  .wl-brain-kn-lbl { color: rgba(255,255,255,0.35); min-width: 76px; flex-shrink: 0; }
+  .wl-brain-kn-val { color: rgba(255,255,255,0.65); line-height: 1.5; }
+  .wl-brain-kn-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(80,180,255,0.15); color: #80cfff; border: 1px solid rgba(80,180,255,0.25); margin-right: 3px; }
+  /* Phase41: Timeline knowledge_loaded 行 */
+  .wl-tl-row.wl-tl-knowledge { background: rgba(80,180,255,0.06); border-radius: 4px; padding: 1px 4px; }
+  .wl-tl-knowledge-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(80,180,255,0.2); color: #80cfff; margin-left: 4px; }
+
+  /* Phase40: Company Brain カード */
+  .wl-brain-card {
+    background: linear-gradient(135deg, rgba(33,33,66,0.9) 0%, rgba(20,20,50,0.95) 100%);
+    border: 1px solid rgba(124,77,255,0.4);
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  }
+  .wl-brain-header {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+    padding-bottom: 7px; border-bottom: 1px solid rgba(124,77,255,0.2);
+  }
+  .wl-brain-icon { font-size: 16px; }
+  .wl-brain-title { font-size: 12px; font-weight: 700; color: #ce93d8; flex: 1; }
+  .wl-brain-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; font-size: 11px; }
+  .wl-brain-lbl { color: rgba(255,255,255,0.4); min-width: 72px; flex-shrink: 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .wl-brain-val { color: rgba(255,255,255,0.85); }
+  .wl-brain-flow { color: rgba(255,255,255,0.7); font-size: 10px; line-height: 1.5; }
+  .wl-brain-badge {
+    font-size: 10px; padding: 1px 7px; border-radius: 10px; font-weight: 700;
+  }
+  .wl-pri-high { background: rgba(255,80,80,0.2); color: #ff8080; border: 1px solid rgba(255,80,80,0.3); }
+  .wl-pri-med  { background: rgba(255,209,0,0.15); color: #ffd100; border: 1px solid rgba(255,209,0,0.3); }
+  .wl-pri-low  { background: rgba(80,220,120,0.15); color: #50dc78; border: 1px solid rgba(80,220,120,0.3); }
+
   /* Phase39: 相談サブ行 */
   .wl-card-consult { margin-top: 5px; }
   .wl-consult-row {
@@ -5669,8 +5703,9 @@
       <button id="wl-close" onclick="toggleWorkflowLive()" title="閉じる">✕</button>
     </div>
     <div id="wl-body">
-      <div id="wl-placeholder" style="color:rgba(255,255,255,0.3);font-size:12px;text-align:center;padding:40px 0;">
-        Auto Task を実行すると<br>リアルタイム表示されます
+      <div id="wl-placeholder" style="color:rgba(255,255,255,0.3);font-size:12px;text-align:center;padding:40px 0;line-height:1.8;">
+        Auto Task を実行すると<br>Company Brain 解析 + AI社員の実行状況が<br>ここに表示されます。<br><br>
+        <span style="font-size:10px;color:rgba(255,255,255,0.18);">※ページ更新後は再度 Auto Task を実行してください</span>
       </div>
     </div>
   </div>
@@ -8855,6 +8890,7 @@ async function atRunWorkflow() {
     // Phase38: Workflow Live Panel へ結果を反映（グローバル保存 → render）
     _wlLastResults  = Array.isArray(data.results)     ? data.results     : [];
     _wlLastHistory  = Array.isArray(data.taskHistory) ? data.taskHistory : [];
+    _wlLastBrain    = data.brainResult || null; // Phase40: Company Brain 解析結果
     renderWorkflowLive();
 
     // error / skipped が出た場合に警告バナーを表示
@@ -17591,6 +17627,7 @@ _mmRenderBar();
 // グローバルデータストア（Auto Task 完了時に保存）
 let _wlLastResults = [];
 let _wlLastHistory = [];
+let _wlLastBrain   = null; // Phase40: Company Brain 解析結果
 
 function toggleWorkflowLive() {
   const p = document.getElementById('workflow-live-panel');
@@ -17628,6 +17665,8 @@ function _wlStatusInfo(status) {
 
 function _wlAgentMeta(agentId) {
   const fallback = {
+    knowledge: { label: 'Knowledge', icon: '📚' },
+    brain: { label: 'Company Brain', icon: '🧠' },
     leader: { label: 'Leader', icon: '👑' }, writer: { label: 'Writer', icon: '✍️' },
     reviewer: { label: 'Reviewer', icon: '👀' }, strategy: { label: 'Strategy', icon: '🧠' },
     sns: { label: 'SNS', icon: '📱' }, video: { label: 'Video', icon: '🎬' },
@@ -17657,8 +17696,9 @@ function renderWorkflowLive() {
     const label = document.getElementById('wl-status-label');
     if (!body) { console.warn('[WL] wl-body not found'); return; }
 
-    // データなし → プレースホルダーを維持
-    if (!results || results.length === 0) return;
+    // Phase40: results もbrainResultもなければプレースホルダーを維持
+    // brainResultだけある場合はBrainカードを描画する
+    if ((!results || results.length === 0) && !_wlLastBrain) return;
 
     var done  = results.filter(function(t) { return t.status === 'completed'; }).length;
     var total = results.length;
@@ -17712,7 +17752,7 @@ function renderWorkflowLive() {
         + '</div>';
     }
 
-    // タイムライン
+    // タイムライン（Phase41: knowledge_loaded / brain_analyze を先頭に表示）
     var hist = Array.isArray(taskHistory) ? taskHistory : [];
     var tlRows = '';
     for (var j = 0; j < hist.length; j++) {
@@ -17725,23 +17765,32 @@ function renderWorkflowLive() {
       var pvStr  = h.providerUsed === 'claude' ? ' · 🟣 Claude'
                  : h.providerUsed === 'openai_fallback' ? ' · 🟡 Fallback'
                  : h.providerUsed ? ' · 🔵 OpenAI' : '';
-      var isConsult = h.action === 'auto_consult' || h.action === 'consult';
-      var consultTag = '';
-      if (isConsult) {
+      var isConsult   = h.action === 'auto_consult' || h.action === 'consult';
+      var isKnowledge = h.action === 'knowledge_loaded';
+      var isBrain     = h.action === 'brain_analyze';
+      var extraTag = '';
+      if (isKnowledge) {
+        var knCount = (h.ruleCount || 0) + (h.patternCount || 0);
+        extraTag = '<span class="wl-tl-knowledge-tag">📚 ' + knCount + '件</span>';
+      } else if (isBrain) {
+        var bPri = h.brainPriority ? escapeHtml(h.brainPriority) : '';
+        extraTag = bPri ? '<span class="wl-tl-consult-tag" style="background:rgba(124,77,255,0.3);color:#ce93d8">🧠 ' + bPri + '</span>' : '';
+      } else if (isConsult) {
         var clv = h.consultLevel ? h.consultLevel : '';
         var creason = h.consultReason ? escapeHtml(h.consultReason) : '';
-        consultTag = '<span class="wl-tl-consult-tag">🤝 ' + (clv ? clv + ' ' : '') + '相談</span>'
+        extraTag = '<span class="wl-tl-consult-tag">🤝 ' + (clv ? clv + ' ' : '') + '相談</span>'
           + (creason ? '<span class="wl-tl-consult-reason">' + creason + '</span>' : '');
       }
+      var rowCls = isKnowledge ? ' wl-tl-knowledge' : isConsult ? ' wl-tl-consult' : '';
       var isLast = (j === hist.length - 1);
-      tlRows += '<div class="wl-tl-row' + (isConsult ? ' wl-tl-consult' : '') + '">'
+      tlRows += '<div class="wl-tl-row' + rowCls + '">'
         + '<div class="wl-tl-left">'
         +   '<div class="wl-tl-dot ' + hsi.dotCls + '"></div>'
         +   (isLast ? '' : '<div class="wl-tl-line"></div>')
         + '</div>'
         + '<div class="wl-tl-content">'
         +   '<div class="wl-tl-time">' + ts + '</div>'
-        +   '<div class="wl-tl-label">' + escapeHtml(frMeta.label) + ' → ' + escapeHtml(toMeta.label) + ' ' + consultTag + '</div>'
+        +   '<div class="wl-tl-label">' + escapeHtml(frMeta.label) + ' → ' + escapeHtml(toMeta.label) + ' ' + extraTag + '</div>'
         +   '<div class="wl-tl-sub">' + h.status + pvStr + msStr + '</div>'
         + '</div>'
         + '</div>';
@@ -17751,8 +17800,73 @@ function renderWorkflowLive() {
       ? '<div><div class="wl-section-title">Timeline</div><div id="wl-timeline">' + tlRows + '</div></div>'
       : '';
 
+    // Phase40+41: Company Brain カード（最上部）＋ Knowledge セクション
+    var brainSectionHtml = '';
+    if (_wlLastBrain) {
+      var b      = _wlLastBrain;
+      var pvb    = _wlProviderLabel(b.provider, b.model, null);
+      var bMs    = b.responseMs ? _wlMs(b.responseMs) : '';
+      var priCls = b.priority === 'HIGH' ? 'wl-pri-high' : b.priority === 'MEDIUM' ? 'wl-pri-med' : 'wl-pri-low';
+      var cmxCls = b.complexity === 'HIGH' ? 'wl-pri-high' : b.complexity === 'MEDIUM' ? 'wl-pri-med' : 'wl-pri-low';
+      var membersArr = Array.isArray(b.recommendedMembers) ? b.recommendedMembers : [];
+      var flowStr = membersArr.length > 0
+        ? membersArr.map(function(id) { var m = _wlAgentMeta(id); return m.icon + ' ' + escapeHtml(m.label); }).join(' → ')
+        : '（解析中）';
+      var consultArr = Array.isArray(b.needConsultation) ? b.needConsultation : [];
+      var consultStr = consultArr.length > 0
+        ? consultArr.map(function(id) { return escapeHtml(_wlAgentMeta(id).label); }).join(', ')
+        : 'なし';
+
+      // Phase41: Knowledge セクション
+      var knHtml = '';
+      var kn = b.knowledge;
+      if (kn && kn.totalCount > 0) {
+        var knRows = '';
+        if (kn.rules && kn.rules.length > 0)
+          knRows += '<div class="wl-brain-kn-row"><span class="wl-brain-kn-lbl">Rules</span><span class="wl-brain-kn-val">' + kn.rules.slice(0, 2).map(function(r) { return escapeHtml(r.slice(0, 50)) + (r.length > 50 ? '…' : ''); }).join(' / ') + '</span></div>';
+        if (kn.successPatterns && kn.successPatterns.length > 0)
+          knRows += '<div class="wl-brain-kn-row"><span class="wl-brain-kn-lbl">Success</span><span class="wl-brain-kn-val">' + kn.successPatterns.slice(0, 2).map(function(s) { return escapeHtml(s.slice(0, 50)) + (s.length > 50 ? '…' : ''); }).join(' / ') + '</span></div>';
+        if (kn.decisions && kn.decisions.length > 0)
+          knRows += '<div class="wl-brain-kn-row"><span class="wl-brain-kn-lbl">Decision</span><span class="wl-brain-kn-val">' + escapeHtml((kn.decisions[0] || '').slice(0, 60)) + '</span></div>';
+        if (kn.brand && kn.brand.length > 0)
+          knRows += '<div class="wl-brain-kn-row"><span class="wl-brain-kn-lbl">Brand</span><span class="wl-brain-kn-val">' + escapeHtml((kn.brand[0] || '').slice(0, 60)) + '</span></div>';
+        if (kn.writingStyle && kn.writingStyle.length > 0)
+          knRows += '<div class="wl-brain-kn-row"><span class="wl-brain-kn-lbl">Writing</span><span class="wl-brain-kn-val">' + escapeHtml((kn.writingStyle[0] || '').slice(0, 60)) + '</span></div>';
+        if (knRows) {
+          knHtml = '<div class="wl-brain-knowledge">'
+            + '<div class="wl-brain-kn-title">📚 Knowledge'
+            + ' <span class="wl-brain-kn-badge">' + kn.totalCount + '件</span>'
+            + ' <span class="wl-brain-kn-badge" style="background:rgba(80,220,120,0.1);color:#50dc78;border-color:rgba(80,220,120,0.2)">' + escapeHtml(kn.source) + '</span>'
+            + ' <span class="wl-brain-kn-badge" style="background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.35);border-color:transparent">' + _wlMs(kn.lookupMs) + '</span>'
+            + '</div>'
+            + knRows
+            + '</div>';
+        }
+      } else if (b.usedKnowledge === false || (kn && kn.totalCount === 0)) {
+        knHtml = '<div class="wl-brain-knowledge"><div class="wl-brain-kn-title">📚 Knowledge <span class="wl-brain-kn-badge" style="color:rgba(255,255,255,0.3);background:transparent;border-color:rgba(255,255,255,0.1)">データなし</span></div></div>';
+      }
+
+      brainSectionHtml =
+        '<div class="wl-brain-card">'
+        + '<div class="wl-brain-header">'
+        +   '<span class="wl-brain-icon">🧠</span>'
+        +   '<span class="wl-brain-title">Company Brain 解析完了</span>'
+        +   '<span class="wl-card-provider ' + pvb.cls + '">' + pvb.text + '</span>'
+        +   (bMs ? '<span class="wl-card-time" style="margin-left:6px">' + bMs + '</span>' : '')
+        + '</div>'
+        + '<div class="wl-brain-row"><span class="wl-brain-lbl">Goal</span><span class="wl-brain-val">' + escapeHtml(b.goal || '') + '</span></div>'
+        + '<div class="wl-brain-row"><span class="wl-brain-lbl">Priority</span><span class="wl-brain-badge ' + priCls + '">' + escapeHtml(b.priority || 'MEDIUM') + '</span></div>'
+        + '<div class="wl-brain-row"><span class="wl-brain-lbl">Complexity</span><span class="wl-brain-badge ' + cmxCls + '">' + escapeHtml(b.complexity || 'MEDIUM') + '</span></div>'
+        + '<div class="wl-brain-row"><span class="wl-brain-lbl">Workflow</span><span class="wl-brain-val wl-brain-flow">' + flowStr + '</span></div>'
+        + '<div class="wl-brain-row"><span class="wl-brain-lbl">Strategy</span><span class="wl-brain-val">' + (b.needStrategy ? '✅ 必要' : '— 不要') + '</span></div>'
+        + '<div class="wl-brain-row"><span class="wl-brain-lbl">Consult</span><span class="wl-brain-val">' + consultStr + '</span></div>'
+        + knHtml
+        + '</div>';
+    }
+
     body.innerHTML =
-      '<div>'
+      brainSectionHtml
+      + '<div>'
       + '<div class="wl-section-title">AI社員 実行状況</div>'
       + '<div id="wl-flow">' + cardsHtml + '</div>'
       + '</div>'

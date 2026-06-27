@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const path = require('path');
 const { costTracker, resetCostTracker } = require('./costTracker');
-const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, ORGANIZATION_MAP } = require('./openaiClient');
+const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent } = require('./claudeClient');
 
@@ -730,7 +730,7 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
 
   try {
     // Phase37: agentCaller を渡すことで Claude/OpenAI を動的ルーティング
-    const { workflowTasks, taskHistory } = await runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult, workflowId, agentCaller: workflowAgentCaller });
+    const { workflowTasks, taskHistory, brainResult } = await runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult, workflowId, agentCaller: workflowAgentCaller });
 
     // taskHistory（タスク履歴）をサーバーメモリに蓄積
     // 将来は Supabase の task_history テーブルへ永続化予定
@@ -764,7 +764,7 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
       console.warn('/api/auto-task Supabase保存エラー:', dbErr.message);
     }
 
-    return res.json({ ok: true, results: workflowTasks, taskHistory });
+    return res.json({ ok: true, results: workflowTasks, taskHistory, brainResult: brainResult || null });
   } catch (e) {
     console.error('/api/auto-task error:', e.message);
     return res.status(500).json({ ok: false, error: e.message });

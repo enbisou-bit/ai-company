@@ -1589,6 +1589,176 @@ const AGENT_WORKFLOW_CONFIG = {
 //         requestedAt  : 依頼日時
 //         completedAt  : 完了日時
 // ══════════════════════════════════════════════════════════════
+// Phase41: Knowledge Lookup — Company Brain より先に実行
+// Supabase の knowledge_library + company_memory を読み込む
+// ══════════════════════════════════════════════════════════════
+async function runKnowledgeLookup(userMessage) {
+  const startMs = Date.now();
+  const result = {
+    rules: [], preferences: [], brand: [], writingStyle: [],
+    successPatterns: [], mistakes: [], decisions: [], forbidden: [],
+    source: 'fallback', lookupMs: 0, totalCount: 0,
+  };
+
+  try {
+    const { getLibrary }  = require('./lib/knowledgeDb');
+    const { getMemories } = require('./lib/companyMemoryDb');
+
+    const [allKn, successMem, failMem, improveMem, highMem] = await Promise.allSettled([
+      getLibrary(null),
+      getMemories({ memoryType: 'success',     limit: 5 }),
+      getMemories({ memoryType: 'failure',      limit: 3 }),
+      getMemories({ memoryType: 'improvement',  limit: 3 }),
+      getMemories({ memoryType: 'high_rating',  limit: 3 }),
+    ]);
+
+    const entries     = (allKn.status      === 'fulfilled' && allKn.value.entries)   ? allKn.value.entries   : [];
+    const successes   = (successMem.status === 'fulfilled' && successMem.value.data) ? successMem.value.data : [];
+    const failures    = (failMem.status    === 'fulfilled' && failMem.value.data)    ? failMem.value.data    : [];
+    const improvements= (improveMem.status === 'fulfilled' && improveMem.value.data) ? improveMem.value.data : [];
+    const highRatings = (highMem.status    === 'fulfilled' && highMem.value.data)    ? highMem.value.data    : [];
+
+    // knowledge_library をジャンル別にマッピング
+    const byGenre = {};
+    entries.forEach(function(e) { if (!byGenre[e.genre]) byGenre[e.genre] = []; byGenre[e.genre].push(e); });
+
+    result.rules        = (byGenre['一般']    || []).slice(0, 5).map(function(e) { return e.title + ': ' + e.content; });
+    result.brand        = (byGenre['branding'] || []).slice(0, 3).map(function(e) { return e.title + ': ' + e.content; });
+    result.writingStyle = ((byGenre['sns'] || []).concat(byGenre['動画'] || [])).slice(0, 3).map(function(e) { return e.title + ': ' + e.content; });
+    result.preferences  = ((byGenre['lp'] || []).concat(byGenre['営業'] || [])).slice(0, 3).map(function(e) { return e.title + ': ' + e.content; });
+    // rulesが空なら全エントリの先頭を使用
+    if (result.rules.length === 0) {
+      result.rules = entries.slice(0, 5).map(function(e) { return '[' + e.genre + '] ' + e.title + ': ' + e.content; });
+    }
+    result.forbidden = (byGenre['ai'] || []).slice(0, 3).map(function(e) { return e.title + ': ' + e.content; });
+
+    // company_memory からパターン抽出
+    result.successPatterns = successes.concat(highRatings).map(function(m) { return m.summary || ''; }).filter(Boolean).slice(0, 5);
+    result.mistakes        = failures.map(function(m) { return m.complaint || m.reason || m.summary || ''; }).filter(Boolean).slice(0, 3);
+    result.decisions       = improvements.map(function(m) { return m.after_text || m.summary || ''; }).filter(Boolean).slice(0, 3);
+
+    result.source     = 'db';
+    result.totalCount = entries.length + successes.length + failures.length + improvements.length + highRatings.length;
+
+  } catch (e) {
+    result.source = 'error';
+    console.warn('[Phase41 Knowledge] lookup error:', e.message);
+  }
+
+  result.lookupMs = Date.now() - startMs;
+  console.log('[Phase41 Knowledge] source=' + result.source + ' total=' + result.totalCount + ' ms=' + result.lookupMs);
+  return result;
+}
+
+// Knowledge を Brain プロンプトへ注入するためのコンテキスト文字列を生成
+function _buildKnowledgeContext(kd) {
+  if (!kd) return '';
+  var lines = ['', '=== Company Knowledge（参照データ） ==='];
+  if (kd.rules        && kd.rules.length        > 0) { lines.push('【会社ルール】');    kd.rules.forEach(function(r)        { lines.push('• ' + r); }); }
+  if (kd.successPatterns && kd.successPatterns.length > 0) { lines.push('【成功パターン】'); kd.successPatterns.forEach(function(s) { lines.push('• ' + s); }); }
+  if (kd.mistakes     && kd.mistakes.length     > 0) { lines.push('【失敗・苦情】');    kd.mistakes.forEach(function(m)     { lines.push('• ' + m); }); }
+  if (kd.decisions    && kd.decisions.length    > 0) { lines.push('【改善決定】');      kd.decisions.forEach(function(d)    { lines.push('• ' + d); }); }
+  if (kd.brand        && kd.brand.length        > 0) { lines.push('【ブランド】');      kd.brand.forEach(function(b)        { lines.push('• ' + b); }); }
+  if (kd.writingStyle && kd.writingStyle.length > 0) { lines.push('【文体・スタイル】'); kd.writingStyle.forEach(function(w) { lines.push('• ' + w); }); }
+  if (kd.forbidden    && kd.forbidden.length    > 0) { lines.push('【禁止事項】');      kd.forbidden.forEach(function(f)    { lines.push('• ' + f); }); }
+  lines.push('===');
+  return lines.join('\n');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase40: Company Brain — 案件解析エンジン
+// Leaderより先に案件を解析し、Goal/Priority/Complexity/Workflow を決定する
+// ══════════════════════════════════════════════════════════════
+const BRAIN_SYSTEM_PROMPT = [
+  'あなたはENBISOUのCompany Brain（会社全体の頭脳）です。',
+  '依頼内容を分析し、必ず以下のJSON形式のみで返答してください。余分なテキストは含めないでください。',
+  '',
+  '{',
+  '  "goal": "案件の目的（30字以内・日本語）",',
+  '  "priority": "LOW|MEDIUM|HIGH",',
+  '  "complexity": "LOW|MEDIUM|HIGH",',
+  '  "recommendedMembers": ["agentId1", "agentId2"],',
+  '  "needStrategy": true,',
+  '  "needConsultation": ["agentId"],',
+  '  "workflow": ["agentId1", "agentId2", "reviewer", "strategy", "leader"]',
+  '}',
+  '',
+  'メンバーID: leader/strategy/secretary/reviewer/sns/video/nurture/branding/writer/designer/lp/analyst/researcher/sales/cs',
+  '',
+  'Priority判定: HIGH=緊急・売上直結・経営判断 / MEDIUM=重要だが余裕あり / LOW=通常業務',
+  'Complexity判定: HIGH=戦略的・全員連携・相談推奨 / MEDIUM=複数担当・Reviewer+Strategy必要 / LOW=単純・1担当完結',
+].join('\n');
+
+async function runCompanyBrain(userMessage, agentCaller, knowledgeData) {
+  const startMs = Date.now();
+  // Phase41: Knowledge を Brain プロンプトへ注入
+  const knCtx = _buildKnowledgeContext(knowledgeData);
+  const systemPrompt = knCtx ? BRAIN_SYSTEM_PROMPT + '\n' + knCtx : BRAIN_SYSTEM_PROMPT;
+  const question = '【依頼内容】\n' + userMessage + '\n\nこの依頼をCompany Knowledgeも参考にして分析し、JSON形式で返してください。';
+  let rawText = '';
+  let provider = 'openai';
+  let model    = null;
+  let fallback = false;
+
+  try {
+    if (agentCaller) {
+      // strategy（claude-opus-4-8）をBrainとして使用
+      const cr = await agentCaller('strategy', systemPrompt, question, []);
+      rawText  = cr.text     || '';
+      provider = cr.provider;
+      model    = cr.model    || null;
+      fallback = cr.fallback || false;
+    } else {
+      rawText = await callOpenAI(systemPrompt, question, []) || '';
+    }
+  } catch (e) {
+    rawText = '';
+    console.warn('[Brain] API error:', e.message);
+  }
+  const responseMs = Date.now() - startMs;
+
+  // JSON解析
+  let parsed = null;
+  try {
+    const s = rawText.indexOf('{');
+    const e = rawText.lastIndexOf('}');
+    if (s !== -1 && e > s) parsed = JSON.parse(rawText.slice(s, e + 1));
+  } catch (_) {}
+
+  // Phase41: knowledge 統計を brainResult へ付加
+  const kd = knowledgeData || {};
+  return {
+    goal:               (parsed && typeof parsed.goal === 'string')                         ? parsed.goal               : userMessage.slice(0, 30),
+    priority:           (parsed && ['LOW','MEDIUM','HIGH'].includes(parsed.priority))        ? parsed.priority           : 'MEDIUM',
+    complexity:         (parsed && ['LOW','MEDIUM','HIGH'].includes(parsed.complexity))      ? parsed.complexity         : 'MEDIUM',
+    recommendedMembers: (parsed && Array.isArray(parsed.recommendedMembers))                 ? parsed.recommendedMembers : [],
+    needStrategy:       (parsed && parsed.needStrategy !== undefined)                        ? !!parsed.needStrategy     : true,
+    needConsultation:   (parsed && Array.isArray(parsed.needConsultation))                   ? parsed.needConsultation   : [],
+    workflow:           (parsed && Array.isArray(parsed.workflow))                           ? parsed.workflow           : [],
+    provider,
+    model,
+    responseMs,
+    fallback,
+    // Phase41: Knowledge フィールド
+    usedKnowledge:  !!knowledgeData,
+    ruleCount:      (kd.rules         || []).length,
+    patternCount:   (kd.successPatterns || []).length,
+    knowledge: knowledgeData ? {
+      rules:          kd.rules          || [],
+      brand:          kd.brand          || [],
+      writingStyle:   kd.writingStyle   || [],
+      successPatterns:kd.successPatterns|| [],
+      mistakes:       kd.mistakes       || [],
+      decisions:      kd.decisions      || [],
+      preferences:    kd.preferences    || [],
+      forbidden:      kd.forbidden      || [],
+      source:         kd.source         || 'fallback',
+      totalCount:     kd.totalCount     || 0,
+      lookupMs:       kd.lookupMs       || 0,
+    } : null,
+  };
+}
+
 async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2 }) {
   // Phase39: ワークフロー全体の相談回数カウンター（最大 maxConsultations 回）
   let _consultCount = 0;
@@ -1616,6 +1786,89 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
 
   // taskHistory（タスク履歴）の配列。将来の画面表示・分析・AI間相談ログに使う
   const taskHistory = [];
+
+  // ── Phase41: Knowledge Lookup — Brain より先に実行 ────────────────────
+  let knowledgeResult = null;
+  const knowledgeHist = {
+    historyId:   'hist-knowledge-' + Date.now(),
+    from:        'knowledge',
+    to:          'brain',
+    taskId:      null,
+    action:      'knowledge_loaded',
+    instruction: userMessage,
+    status:      'running',
+    requestedAt: new Date().toISOString(),
+    completedAt: null,
+    workflowId:  workflowId || null,
+    note:        'Knowledge Lookup: 参照中',
+  };
+  taskHistory.push(knowledgeHist);
+
+  try {
+    knowledgeResult = await runKnowledgeLookup(userMessage);
+    knowledgeHist.status           = 'completed';
+    knowledgeHist.completedAt      = new Date().toISOString();
+    knowledgeHist.responseMs       = knowledgeResult.lookupMs;
+    knowledgeHist.knowledgeUsed    = true;
+    knowledgeHist.ruleCount        = knowledgeResult.rules.length;
+    knowledgeHist.patternCount     = knowledgeResult.successPatterns.length;
+    knowledgeHist.knowledgeSummary = 'rules:' + knowledgeResult.rules.length + ' patterns:' + knowledgeResult.successPatterns.length + ' mistakes:' + knowledgeResult.mistakes.length;
+    knowledgeHist.note             = 'Knowledge Loaded: ' + knowledgeResult.totalCount + '件 (' + knowledgeResult.source + ') ' + knowledgeResult.lookupMs + 'ms';
+  } catch (knErr) {
+    knowledgeHist.status      = 'error';
+    knowledgeHist.completedAt = new Date().toISOString();
+    knowledgeHist.note        = 'Knowledge Lookup エラー（Brainは続行）: ' + knErr.message;
+    knowledgeResult = { rules: [], preferences: [], brand: [], writingStyle: [], successPatterns: [], mistakes: [], decisions: [], forbidden: [], source: 'error', lookupMs: 0, totalCount: 0 };
+    console.warn('[Phase41 Knowledge] Fallback（空データで続行）:', knErr.message);
+  }
+  // ── Knowledge Lookup ここまで ─────────────────────────────────────────
+
+  // ── Phase40: Company Brain — Leaderより先に案件解析 ───────────────────
+  let brainResult = null;
+  const brainHist = {
+    historyId:   'hist-brain-' + Date.now(),
+    from:        'brain',
+    to:          'leader',
+    taskId:      null,
+    action:      'brain_analyze',
+    instruction: userMessage,
+    status:      'running',
+    requestedAt: new Date().toISOString(),
+    completedAt: null,
+    workflowId:  workflowId || null,
+    note:        'Company Brain: 案件解析中',
+  };
+  taskHistory.push(brainHist);
+
+  try {
+    // Phase41: knowledgeResult を Brain へ渡す
+    brainResult = await runCompanyBrain(userMessage, agentCaller, knowledgeResult);
+    brainHist.status            = 'completed';
+    brainHist.completedAt       = new Date().toISOString();
+    brainHist.providerUsed      = brainResult.provider;
+    brainHist.modelUsed         = brainResult.model;
+    brainHist.responseMs        = brainResult.responseMs;
+    brainHist.fallback          = brainResult.fallback;
+    brainHist.brainGoal         = brainResult.goal;
+    brainHist.brainPriority     = brainResult.priority;
+    brainHist.brainComplexity   = brainResult.complexity;
+    brainHist.brainMembers      = brainResult.recommendedMembers;
+    brainHist.brainWorkflow     = brainResult.workflow;
+    brainHist.brainConsultation = brainResult.needConsultation;
+    // Phase41: Knowledge 統計
+    brainHist.knowledgeUsed     = brainResult.usedKnowledge;
+    brainHist.ruleCount         = brainResult.ruleCount;
+    brainHist.patternCount      = brainResult.patternCount;
+    brainHist.knowledgeSummary  = 'rules:' + brainResult.ruleCount + ' patterns:' + brainResult.patternCount;
+    brainHist.note              = 'Company Brain: 解析完了 Goal=' + brainResult.goal + ' Priority=' + brainResult.priority + ' Knowledge=' + brainResult.ruleCount + '件';
+    console.log('[Phase40 Brain]', JSON.stringify({ goal: brainResult.goal, priority: brainResult.priority, complexity: brainResult.complexity, members: brainResult.recommendedMembers, knowledgeRules: brainResult.ruleCount }));
+  } catch (brainErr) {
+    brainHist.status      = 'error';
+    brainHist.completedAt = new Date().toISOString();
+    brainHist.note        = 'Company Brain エラー: ' + brainErr.message;
+    console.warn('[Phase40 Brain] error:', brainErr.message);
+  }
+  // ── Company Brain ここまで ──────────────────────────────────────────────
 
   // enabled: false のタスクは最初に "skipped"（スキップ）にしておく
   workflowTasks.forEach(t => {
@@ -2149,7 +2402,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
   }
   // ── 後処理ここまで ────────────────────────────────────────────────────
 
-  return { workflowTasks, taskHistory };
+  return { workflowTasks, taskHistory, brainResult };
 }
 
 module.exports = {
@@ -2170,5 +2423,7 @@ module.exports = {
   CONSULTATION_LEVELS,
   shouldAutoConsult,
   runAutoTaskWorkflow,
+  runCompanyBrain,
+  runKnowledgeLookup,
   ORGANIZATION_MAP,
 };
