@@ -744,6 +744,10 @@
   .wl-tl-time  { font-size: 9.5px; color: rgba(255,255,255,0.3); font-variant-numeric: tabular-nums; }
   .wl-tl-label { font-size: 11px; color: #c8d0e8; margin-top: 1px; }
   .wl-tl-sub   { font-size: 9.5px; color: rgba(255,255,255,0.3); margin-top: 1px; }
+  /* Phase43-4: 改善Timelineアイコン */
+  .wl-tl-step-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; line-height: 1; width: 18px; text-align: center; }
+  .wl-tl-row.wl-tl-workflow-done .wl-tl-label { color: #64dc8c; font-weight: 700; }
+  .wl-tl-row.wl-tl-workflow-done .wl-tl-step-icon { font-size: 14px; }
 
   /* モバイル */
   @media (max-width: 640px) {
@@ -18108,57 +18112,114 @@ function renderWorkflowLive() {
         + '</div>';
     }
 
-    // タイムライン（Phase41: knowledge_loaded / brain_analyze を先頭に表示）
+    // Phase43-4: 改善Timeline（_wlLastResults + taskHistory から段階的ステップ表示）
     var hist = Array.isArray(taskHistory) ? taskHistory : [];
-    var tlRows = '';
-    for (var j = 0; j < hist.length; j++) {
-      var h      = hist[j];
-      var hsi    = _wlStatusInfo(h.status);
-      var toMeta = _wlAgentMeta(h.to || '');
-      var frMeta = _wlAgentMeta(h.from || 'leader');
-      var ts     = h.requestedAt ? new Date(h.requestedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-      var msStr  = h.responseMs ? ' · ' + _wlMs(h.responseMs) : '';
-      var pvStr  = h.providerUsed === 'claude' ? ' · 🟣 Claude'
-                 : h.providerUsed === 'openai_fallback' ? ' · 🟡 Fallback'
-                 : h.providerUsed ? ' · 🔵 OpenAI' : '';
-      var isConsult     = h.action === 'auto_consult' || h.action === 'consult';
-      var isKnowledge   = h.action === 'knowledge_loaded';
-      var isBrain       = h.action === 'brain_analyze';
-      var isLeaderFinal = h.action === 'leader_final';
-      var extraTag = '';
-      if (isKnowledge) {
-        var knCount = (h.ruleCount || 0) + (h.patternCount || 0);
-        extraTag = '<span class="wl-tl-knowledge-tag">📚 ' + knCount + '件</span>';
-      } else if (isBrain) {
-        var bPri = h.brainPriority ? escapeHtml(h.brainPriority) : '';
-        extraTag = bPri ? '<span class="wl-tl-consult-tag" style="background:rgba(124,77,255,0.3);color:#ce93d8">🧠 ' + bPri + '</span>' : '';
-      } else if (isLeaderFinal) {
-        var lfChars = h.replyLength ? h.replyLength + '文字' : '';
-        var lfPvStr = h.replyProvider === 'claude' ? '🟣 Claude' : h.replyProvider ? '🔵 OpenAI' : '';
-        extraTag = '<span class="wl-tl-consult-tag" style="background:rgba(245,200,66,0.25);color:#f5c842">👑 最終成果物</span>'
-          + (lfChars ? '<span class="wl-tl-consult-reason">' + lfChars + (lfPvStr ? ' · ' + lfPvStr : '') + '</span>' : '');
-      } else if (isConsult) {
-        var clv = h.consultLevel ? h.consultLevel : '';
-        var creason = h.consultReason ? escapeHtml(h.consultReason) : '';
-        extraTag = '<span class="wl-tl-consult-tag">🤝 ' + (clv ? clv + ' ' : '') + '相談</span>'
-          + (creason ? '<span class="wl-tl-consult-reason">' + creason + '</span>' : '');
+
+    // taskHistoryから時刻を取得するヘルパー
+    function _wlFindHistTime(aid, stKey) {
+      for (var hi = 0; hi < hist.length; hi++) {
+        var h = hist[hi];
+        var matchAgent = (h.to === aid || h.from === aid);
+        var matchSt    = (h.status === stKey || h.action === stKey);
+        if (matchAgent && matchSt) {
+          var rawT = h.completedAt || h.requestedAt || '';
+          if (rawT) return new Date(rawT).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
       }
-      var rowCls = isKnowledge ? ' wl-tl-knowledge' : isLeaderFinal ? ' wl-tl-consult' : isConsult ? ' wl-tl-consult' : '';
-      var isLast = (j === hist.length - 1);
-      tlRows += '<div class="wl-tl-row' + rowCls + '">'
+      return '';
+    }
+
+    var tlSteps  = []; // { icon, label, time, sub, isDone }
+    var seenKeys = new Set(); // 重複防止: agentId + '_' + status
+    var DONE_ST  = new Set(['completed', 'done', 'success', 'final', 'finished']);
+
+    // Step 1: Workflow開始
+    var wfStartTime = '';
+    if (hist.length > 0 && hist[0].requestedAt) {
+      wfStartTime = new Date(hist[0].requestedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } else if (results.length > 0 && results[0].startedAt) {
+      wfStartTime = new Date(results[0].startedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    tlSteps.push({ icon: '🟣', label: 'Workflow 開始', time: wfStartTime, sub: '' });
+
+    // Step 2: 担当ごとのステップ（WL_TRACKED順 → その他の順で処理）
+    var WL_TL_ORDER = ['writer', 'reviewer', 'strategy', 'leader'];
+    var orderedRes  = [];
+    WL_TL_ORDER.forEach(function(aid) {
+      results.forEach(function(t) { if (t.agentId === aid) orderedRes.push(t); });
+    });
+    results.forEach(function(t) {
+      if (WL_TL_ORDER.indexOf(t.agentId) === -1) orderedRes.push(t);
+    });
+
+    orderedRes.forEach(function(t) {
+      // pre-populated pending はタイムラインに出さない（ノイズ防止）
+      if (t.status === 'pending' && t.isPrePopulated) return;
+
+      var meta   = _wlAgentMeta(t.agentId);
+      var agLbl  = t.isLeaderFinal ? 'Leader Final' : meta.label;
+      var sfx    = t.isLeaderFinal ? '_lf' : '';
+      var pvUsed = t.providerUsed || t.provider || '';
+      var pvStr  = pvUsed === 'claude' ? ' · 🟣 Claude'
+                 : pvUsed === 'openai_fallback' ? ' · 🟡 Fallback'
+                 : pvUsed ? ' · 🔵 OpenAI' : '';
+      var msStr  = t.responseMs ? ' · ' + _wlMs(t.responseMs) : '';
+
+      if (DONE_ST.has(t.status)) {
+        var k = t.agentId + '_done' + sfx;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          tlSteps.push({ icon: '🟢', label: agLbl + ' 完了', time: _wlFindHistTime(t.agentId, 'completed'), sub: pvStr + msStr, isDone: true });
+        }
+      } else if (t.status === 'running') {
+        var k = t.agentId + '_running' + sfx;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          tlSteps.push({ icon: '🔵', label: agLbl + ' 実行中', time: _wlFindHistTime(t.agentId, 'running'), sub: pvStr });
+        }
+      } else if (t.status === 'error') {
+        var k = t.agentId + '_error' + sfx;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          tlSteps.push({ icon: '🔴', label: agLbl + ' エラー', time: '', sub: '' });
+        }
+      } else if (t.status === 'pending') {
+        var k = t.agentId + '_pending' + sfx;
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k);
+          tlSteps.push({ icon: '🟡', label: agLbl + ' 待機中', time: '', sub: '' });
+        }
+      }
+    });
+
+    // Step 3: Workflow完了エントリ（全4担当完了時）
+    var allDoneForTl = WL_TL_ORDER.every(function(aid) {
+      return results.some(function(t) { return t.agentId === aid && DONE_ST.has(t.status); });
+    });
+    if (allDoneForTl && !seenKeys.has('workflow_done')) {
+      seenKeys.add('workflow_done');
+      tlSteps.push({ icon: '🏁', label: '✅ Workflow 完了', time: '', sub: '', isWorkflowDone: true });
+    }
+
+    // tlSteps → HTML
+    var tlRows = '';
+    for (var si2 = 0; si2 < tlSteps.length; si2++) {
+      var step      = tlSteps[si2];
+      var isLastRow = (si2 === tlSteps.length - 1);
+      tlRows += '<div class="wl-tl-row' + (step.isWorkflowDone ? ' wl-tl-workflow-done' : '') + '">'
         + '<div class="wl-tl-left">'
-        +   '<div class="wl-tl-dot ' + hsi.dotCls + '"></div>'
-        +   (isLast ? '' : '<div class="wl-tl-line"></div>')
+        +   '<div class="wl-tl-step-icon">' + step.icon + '</div>'
+        +   (isLastRow ? '' : '<div class="wl-tl-line"></div>')
         + '</div>'
         + '<div class="wl-tl-content">'
-        +   '<div class="wl-tl-time">' + ts + '</div>'
-        +   '<div class="wl-tl-label">' + escapeHtml(frMeta.label) + ' → ' + escapeHtml(toMeta.label) + ' ' + extraTag + '</div>'
-        +   '<div class="wl-tl-sub">' + h.status + pvStr + msStr + '</div>'
+        +   (step.time ? '<div class="wl-tl-time">' + escapeHtml(step.time) + '</div>' : '')
+        +   '<div class="wl-tl-label">' + escapeHtml(step.label) + '</div>'
+        +   (step.sub ? '<div class="wl-tl-sub">' + step.sub + '</div>' : '')
         + '</div>'
         + '</div>';
     }
 
-    var tlHtml = hist.length > 0
+    var tlHtml = tlSteps.length > 1  // 「開始」だけの場合は非表示
       ? '<div><div class="wl-section-title">Timeline</div><div id="wl-timeline">' + tlRows + '</div></div>'
       : '';
 
