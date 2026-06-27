@@ -749,9 +749,40 @@
   .wl-tl-row.wl-tl-workflow-done .wl-tl-label { color: #64dc8c; font-weight: 700; }
   .wl-tl-row.wl-tl-workflow-done .wl-tl-step-icon { font-size: 14px; }
 
+  /* Phase43-5: 再表示ボタン */
+  #wl-reopen-btn {
+    position: fixed;
+    bottom: 72px; right: 16px;
+    background: rgba(124,77,255,0.92);
+    color: #f0eaff;
+    border: none;
+    border-radius: 20px;
+    padding: 7px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    gap: 5px;
+    z-index: 490;
+    box-shadow: 0 2px 14px rgba(124,77,255,0.35);
+    transition: background 0.15s, box-shadow 0.15s;
+    white-space: nowrap;
+  }
+  #wl-reopen-btn:hover { background: rgba(124,77,255,1); box-shadow: 0 3px 18px rgba(124,77,255,0.5); }
+  #wl-reopen-btn.visible { display: flex; }
+
+  /* Phase43-5: UIポリッシュ */
+  #wl-body { min-height: 0; }
+  .wl-agent-card { min-height: 46px; }
+  .wl-card-provider { word-break: break-word; }
+
   /* モバイル */
   @media (max-width: 640px) {
     #workflow-live-panel { width: 100vw; border-left: none; border-top: 1px solid rgba(255,255,255,0.08); top: auto; height: 60vh; }
+    #wl-progress { padding: 8px 12px; }
+    .wl-agent-card { padding: 8px 10px; }
+    #wl-reopen-btn { bottom: 60px; right: 10px; font-size: 10px; padding: 6px 11px; }
   }
 
   /* ── Phase36-3: Mega Menu Navigation ── */
@@ -5774,6 +5805,9 @@
   </div>
   <!-- Mega Menu Dropdown (position:fixed — outside overflow:hidden context) -->
   <div id="mega-menu-dropdown" onmouseenter="_mmNavEnter()" onmouseleave="_mmNavLeave()"></div>
+
+  <!-- Phase43-5: Workflow Live 再表示ボタン -->
+  <button id="wl-reopen-btn" onclick="toggleWorkflowLive()" title="直近Workflowを再表示">📡 直近Workflow</button>
 
   <!-- Phase38: Workflow Live Panel -->
   <div id="workflow-live-panel">
@@ -17937,12 +17971,15 @@ async function wlProgressPoll(workflowId) {
 function toggleWorkflowLive() {
   const p = document.getElementById('workflow-live-panel');
   if (!p) return;
+  const btn = document.getElementById('wl-reopen-btn');
   if (p.classList.contains('open')) {
     p.classList.remove('open');
+    // パネルを閉じたらデータがあれば再表示ボタンを出す
+    if (btn && _wlLastResults.length > 0) btn.classList.add('visible');
   } else {
-    // 開くときに最新データで再描画
     renderWorkflowLive();
     p.classList.add('open');
+    if (btn) btn.classList.remove('visible');
   }
 }
 
@@ -18298,6 +18335,14 @@ function renderWorkflowLive() {
     // パネルを自動オープン
     var panel = document.getElementById('workflow-live-panel');
     if (panel) panel.classList.add('open');
+
+    // Phase43-5: 再表示ボタンの表示制御（パネルが開いている間は非表示）
+    (function() {
+      var btn = document.getElementById('wl-reopen-btn');
+      if (!btn) return;
+      var isOpen = panel && panel.classList.contains('open');
+      btn.classList.toggle('visible', !isOpen && results.length > 0);
+    })();
 
   } catch (err) {
     console.error('[WL] renderWorkflowLive error:', err);
