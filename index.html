@@ -870,6 +870,24 @@
   .oe-mt-structure   { background: rgba(200,140,255,0.2); color: rgba(210,160,255,0.9); border: 1px solid rgba(200,140,255,0.3); }
   .oe-memory-text    { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.5; }
   .oe-memory-footer  { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 6px; text-align: right; }
+  /* Phase45-4 Knowledge Candidates */
+  .oe-know-section   { margin-top: 14px; background: rgba(15,25,40,0.7); border: 1px solid rgba(80,160,255,0.25); border-radius: 10px; padding: 12px 14px; }
+  .oe-know-title     { font-size: 11px; font-weight: 700; color: rgba(100,180,255,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
+  .oe-know-item      { display: flex; align-items: flex-start; gap: 7px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .oe-know-item:last-child { border-bottom: none; }
+  .oe-know-cat       { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+  .oe-kc-success_pattern { background: rgba(80,200,120,0.2);  color: rgba(80,220,120,0.9);  border: 1px solid rgba(80,200,120,0.3); }
+  .oe-kc-mistake         { background: rgba(255,80,80,0.15);  color: rgba(255,100,80,0.9);  border: 1px solid rgba(255,80,80,0.25); }
+  .oe-kc-forbidden       { background: rgba(255,40,40,0.15);  color: rgba(255,80,60,0.9);   border: 1px solid rgba(255,40,40,0.25); }
+  .oe-kc-writing_style   { background: rgba(255,200,80,0.2);  color: rgba(255,220,80,0.9);  border: 1px solid rgba(255,200,80,0.3); }
+  .oe-kc-brand           { background: rgba(255,220,80,0.2);  color: rgba(255,230,80,0.9);  border: 1px solid rgba(255,220,80,0.3); }
+  .oe-kc-cta             { background: rgba(255,160,80,0.2);  color: rgba(255,180,80,0.9);  border: 1px solid rgba(255,160,80,0.3); }
+  .oe-kc-structure       { background: rgba(200,140,255,0.2); color: rgba(210,160,255,0.9); border: 1px solid rgba(200,140,255,0.3); }
+  .oe-kc-preference      { background: rgba(100,160,255,0.2); color: rgba(140,190,255,0.9); border: 1px solid rgba(100,160,255,0.3); }
+  .oe-kc-rule            { background: rgba(80,220,200,0.2);  color: rgba(80,230,200,0.9);  border: 1px solid rgba(80,220,200,0.3); }
+  .oe-kc-decision        { background: rgba(180,100,255,0.2); color: rgba(200,130,255,0.9); border: 1px solid rgba(180,100,255,0.3); }
+  .oe-know-text      { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.5; }
+  .oe-know-footer    { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 6px; text-align: right; }
 
   /* Phase44-4: Draft Status chip */
   #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
@@ -18584,7 +18602,7 @@ const OUTPUT_SCHEMA_V1 = {
   ],
   optional: [
     'detection', 'quality', 'exports', 'memoryRefs',
-    'providerRefs', 'reviewNotes', 'finalPackage', 'learningItems', 'memoryCandidates'
+    'providerRefs', 'reviewNotes', 'finalPackage', 'learningItems', 'memoryCandidates', 'knowledgeCandidates'
   ],
   fieldRules: {
     id:            'string',
@@ -18864,6 +18882,70 @@ function createCompanyMemoryCandidates(draft) {
       outputType:   draft.type || 'document',
       qualityScore: score,
       confidence:   conf,
+      status:       'candidate',
+      createdAt:    new Date().toISOString(),
+    };
+  });
+}
+
+// ══════════════════════════════════════════════════
+// Phase45-4: Memory → Knowledge反映準備
+// ══════════════════════════════════════════════════
+
+const COMPANY_KNOWLEDGE_CANDIDATE_VERSION = '1.0.0';
+
+const KNOWLEDGE_CATEGORIES = {
+  RULE:            'rule',
+  PREFERENCE:      'preference',
+  BRAND:           'brand',
+  WRITING_STYLE:   'writing_style',
+  SUCCESS_PATTERN: 'success_pattern',
+  MISTAKE:         'mistake',
+  DECISION:        'decision',
+  FORBIDDEN:       'forbidden',
+  CTA:             'cta',
+  STRUCTURE:       'structure',
+};
+
+const KNOWLEDGE_CATEGORY_LABELS = {
+  rule:            '📏 ルール',
+  preference:      '💡 優先事項',
+  brand:           '🏷 ブランド',
+  writing_style:   '✍ 文体',
+  success_pattern: '✅ 成功パターン',
+  mistake:         '❌ ミス',
+  decision:        '🎯 判断',
+  forbidden:       '🚫 禁止',
+  cta:             '📣 CTA',
+  structure:       '🏗 構成',
+};
+
+const _MEMORY_TO_KNOWLEDGE_MAP = {
+  success:     KNOWLEDGE_CATEGORIES.SUCCESS_PATTERN,
+  improvement: KNOWLEDGE_CATEGORIES.MISTAKE,
+  warning:     KNOWLEDGE_CATEGORIES.FORBIDDEN,
+  style:       KNOWLEDGE_CATEGORIES.WRITING_STYLE,
+  brand:       KNOWLEDGE_CATEGORIES.BRAND,
+  cta:         KNOWLEDGE_CATEGORIES.CTA,
+  structure:   KNOWLEDGE_CATEGORIES.STRUCTURE,
+};
+
+let _companyKnowledgeCandidateBuffer = [];
+
+function createKnowledgeCandidatesFromMemory(draft) {
+  if (!draft || !draft.memoryCandidates || draft.memoryCandidates.length === 0) return [];
+  var seq = 0;
+  return draft.memoryCandidates.map(function(mem) {
+    var kCat = _MEMORY_TO_KNOWLEDGE_MAP[mem.type] || KNOWLEDGE_CATEGORIES.PREFERENCE;
+    return {
+      id:           'know_' + Date.now() + '_' + (seq++),
+      version:      COMPANY_KNOWLEDGE_CANDIDATE_VERSION,
+      category:     kCat,
+      text:         mem.text,
+      source:       'memoryCandidates',
+      outputType:   draft.type || 'document',
+      qualityScore: (draft.quality && draft.quality.overall) || null,
+      confidence:   mem.confidence ? Math.max(0, mem.confidence - 0.05) : 0.75,
       status:       'candidate',
       createdAt:    new Date().toISOString(),
     };
@@ -19153,8 +19235,10 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _lastOutputDraft.updatedAt = new Date().toISOString();
   _lastOutputDraft.quality       = evaluateOutputQuality(_lastOutputDraft);
   _lastOutputDraft.learningItems    = extractLearningItems(_lastOutputDraft);
-  _lastOutputDraft.memoryCandidates = createCompanyMemoryCandidates(_lastOutputDraft);
+  _lastOutputDraft.memoryCandidates    = createCompanyMemoryCandidates(_lastOutputDraft);
   _companyMemoryBuffer = (_lastOutputDraft.memoryCandidates || []).concat(_companyMemoryBuffer).slice(0, 50);
+  _lastOutputDraft.knowledgeCandidates = createKnowledgeCandidatesFromMemory(_lastOutputDraft);
+  _companyKnowledgeCandidateBuffer = (_lastOutputDraft.knowledgeCandidates || []).concat(_companyKnowledgeCandidateBuffer).slice(0, 50);
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
   // WLが開いていれば再描画してDraft Statusを更新
@@ -19606,6 +19690,13 @@ function serializeOutputDraft(format) {
       });
       lines.push('Buffer: ' + _companyMemoryBuffer.length + ' items');
     }
+    if (d.knowledgeCandidates && d.knowledgeCandidates.length) {
+      lines.push('\n--- Knowledge Candidates ---');
+      d.knowledgeCandidates.forEach(function(kc) {
+        lines.push('[' + (kc.category || '') + '] ' + kc.text);
+      });
+      lines.push('Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items');
+    }
     return lines.join('\n');
   }
 
@@ -19653,6 +19744,16 @@ function serializeOutputDraft(format) {
     });
     mdLines.push('');
     mdLines.push('*Memory Buffer: ' + _companyMemoryBuffer.length + ' items*');
+    mdLines.push('');
+  }
+  if (d.knowledgeCandidates && d.knowledgeCandidates.length) {
+    mdLines.push('## Knowledge Candidates');
+    d.knowledgeCandidates.forEach(function(kc) {
+      var catLabel = KNOWLEDGE_CATEGORY_LABELS[kc.category] || kc.category;
+      mdLines.push('- **' + catLabel + '** ' + kc.text);
+    });
+    mdLines.push('');
+    mdLines.push('*Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items*');
     mdLines.push('');
   }
   return mdLines.join('\n');
@@ -19735,6 +19836,26 @@ function buildLearningItemsHtml() {
   return '<div class="oe-learning-section">'
     + '<div class="oe-learning-title">🧠 Learning Items（' + items.length + '件）</div>'
     + rows
+    + '</div>';
+}
+
+// Phase45-4: Knowledge Candidates HTML生成
+function buildKnowledgeCandidatesHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.knowledgeCandidates || _lastOutputDraft.knowledgeCandidates.length === 0) return '';
+  var esc   = escapeHtml;
+  var items = _lastOutputDraft.knowledgeCandidates;
+  var rows  = items.map(function(kc) {
+    var catClass = 'oe-kc-' + (kc.category || 'preference');
+    var catLabel = KNOWLEDGE_CATEGORY_LABELS[kc.category] || kc.category;
+    return '<div class="oe-know-item">'
+      + '<span class="oe-know-cat ' + catClass + '">' + esc(catLabel) + '</span>'
+      + '<span class="oe-know-text">' + esc(kc.text) + '</span>'
+      + '</div>';
+  }).join('');
+  return '<div class="oe-know-section">'
+    + '<div class="oe-know-title">📚 Knowledge Candidates（' + items.length + '件）</div>'
+    + rows
+    + '<div class="oe-know-footer">Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items</div>'
     + '</div>';
 }
 
@@ -19892,6 +20013,7 @@ function renderOutputEnginePanel() {
     + buildQualityScoreHtml()
     + buildLearningItemsHtml()
     + buildMemoryCandidatesHtml()
+    + buildKnowledgeCandidatesHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
