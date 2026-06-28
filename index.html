@@ -841,6 +841,20 @@
   .oe-quality-list     { list-style: none; padding: 0; margin: 2px 0 6px; }
   .oe-quality-list li  { font-size: 10px; color: rgba(255,255,255,0.6); padding: 2px 0 2px 12px; position: relative; }
   .oe-quality-list li::before { content: '・'; position: absolute; left: 0; color: rgba(80,220,120,0.6); }
+  /* Phase45-2 Learning Engine */
+  .oe-learning-section { margin-top: 14px; background: rgba(20,20,40,0.7); border: 1px solid rgba(100,160,255,0.25); border-radius: 10px; padding: 12px 14px; }
+  .oe-learning-title   { font-size: 11px; font-weight: 700; color: rgba(140,180,255,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
+  .oe-learning-item    { display: flex; align-items: flex-start; gap: 7px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .oe-learning-item:last-child { border-bottom: none; }
+  .oe-learning-cat     { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+  .oe-lc-success_pattern { background: rgba(80,200,120,0.2); color: rgba(80,220,120,0.9); border: 1px solid rgba(80,200,120,0.3); }
+  .oe-lc-improvement     { background: rgba(100,160,255,0.2); color: rgba(140,190,255,0.9); border: 1px solid rgba(100,160,255,0.3); }
+  .oe-lc-cta             { background: rgba(255,160,80,0.2);  color: rgba(255,180,80,0.9);  border: 1px solid rgba(255,160,80,0.3); }
+  .oe-lc-structure       { background: rgba(200,140,255,0.2); color: rgba(210,160,255,0.9); border: 1px solid rgba(200,140,255,0.3); }
+  .oe-lc-brand           { background: rgba(255,220,80,0.2);  color: rgba(255,230,80,0.9);  border: 1px solid rgba(255,220,80,0.3); }
+  .oe-lc-style           { background: rgba(255,120,200,0.2); color: rgba(255,150,210,0.9); border: 1px solid rgba(255,120,200,0.3); }
+  .oe-lc-warning         { background: rgba(255,80,80,0.15);  color: rgba(255,100,80,0.9);  border: 1px solid rgba(255,80,80,0.25); }
+  .oe-learning-text    { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.5; }
 
   /* Phase44-4: Draft Status chip */
   #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
@@ -18555,7 +18569,7 @@ const OUTPUT_SCHEMA_V1 = {
   ],
   optional: [
     'detection', 'quality', 'exports', 'memoryRefs',
-    'providerRefs', 'reviewNotes', 'finalPackage'
+    'providerRefs', 'reviewNotes', 'finalPackage', 'learningItems'
   ],
   fieldRules: {
     id:            'string',
@@ -18707,6 +18721,76 @@ function evaluateOutputQuality(draft) {
     learning:    learning,
     evaluatedAt: new Date().toISOString(),
   };
+}
+
+// ══════════════════════════════════════════════════
+// Phase45-2: Learning Engine
+// ══════════════════════════════════════════════════
+
+const OUTPUT_LEARNING_VERSION = '1.0.0';
+
+const LEARNING_CATEGORIES = {
+  SUCCESS_PATTERN: 'success_pattern',
+  IMPROVEMENT:     'improvement',
+  WARNING:         'warning',
+  STYLE:           'style',
+  CTA:             'cta',
+  STRUCTURE:       'structure',
+  BRAND:           'brand',
+};
+
+const LEARNING_CATEGORY_LABELS = {
+  success_pattern: '✅ 成功パターン',
+  improvement:     '📈 改善',
+  warning:         '⚠ 注意',
+  style:           '🎨 スタイル',
+  cta:             '🎯 CTA',
+  structure:       '🏗 構成',
+  brand:           '🏷 ブランド',
+};
+
+function _classifyLearningText(text) {
+  var t = (text || '').toLowerCase();
+  if (t.indexOf('cta') !== -1 || t.indexOf('行動') !== -1 || t.indexOf('ボタン') !== -1) return LEARNING_CATEGORIES.CTA;
+  if (t.indexOf('構成') !== -1 || t.indexOf('structure') !== -1 || t.indexOf('セクション') !== -1) return LEARNING_CATEGORIES.STRUCTURE;
+  if (t.indexOf('ブランド') !== -1 || t.indexOf('brand') !== -1 || t.indexOf('トーン') !== -1) return LEARNING_CATEGORIES.BRAND;
+  if (t.indexOf('スタイル') !== -1 || t.indexOf('デザイン') !== -1 || t.indexOf('ビジュアル') !== -1) return LEARNING_CATEGORIES.STYLE;
+  return LEARNING_CATEGORIES.IMPROVEMENT;
+}
+
+function extractLearningItems(draft) {
+  if (!draft || !draft.quality) return [];
+  var q      = draft.quality;
+  var type   = draft.type || 'document';
+  var score  = q.overall || 0;
+  var items  = [];
+  var now    = new Date().toISOString();
+  var seq    = 0;
+  function addItem(category, label, text, source) {
+    items.push({
+      id:         'learn_' + Date.now() + '_' + (seq++),
+      version:    OUTPUT_LEARNING_VERSION,
+      category:   category,
+      label:      label,
+      text:       text,
+      source:     source,
+      outputType: type,
+      score:      score,
+      createdAt:  now,
+    });
+  }
+  (q.strengths || []).forEach(function(s) {
+    addItem(LEARNING_CATEGORIES.SUCCESS_PATTERN, '成功パターン', s, 'quality.strengths');
+  });
+  (q.improvements || []).forEach(function(s) {
+    addItem(LEARNING_CATEGORIES.IMPROVEMENT, '改善ポイント', s, 'quality.improvements');
+  });
+  (q.learning || []).forEach(function(s) {
+    var cat = _classifyLearningText(s);
+    var lbl = LEARNING_CATEGORY_LABELS[cat] || '改善';
+    addItem(cat, lbl.replace(/^..\s*/, ''), s, 'quality.learning');
+  });
+  return items;
 }
 
 // ══════════════════════════════════════════════════
@@ -18990,7 +19074,8 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _lastOutputDraft.status    = OUTPUT_STATUS.READY;
   _lastOutputDraft.builtAt   = new Date().toISOString();
   _lastOutputDraft.updatedAt = new Date().toISOString();
-  _lastOutputDraft.quality   = evaluateOutputQuality(_lastOutputDraft);
+  _lastOutputDraft.quality       = evaluateOutputQuality(_lastOutputDraft);
+  _lastOutputDraft.learningItems = extractLearningItems(_lastOutputDraft);
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
   // WLが開いていれば再描画してDraft Statusを更新
@@ -19429,6 +19514,12 @@ function serializeOutputDraft(format) {
       lines.push('Improvements:');
       (q2.improvements || []).forEach(function(s) { lines.push('  ・' + s); });
     }
+    if (d.learningItems && d.learningItems.length) {
+      lines.push('\n--- Learning Items ---');
+      d.learningItems.forEach(function(item) {
+        lines.push('[' + (item.category || '') + '] ' + item.text);
+      });
+    }
     return lines.join('\n');
   }
 
@@ -19458,6 +19549,14 @@ function serializeOutputDraft(format) {
     mdLines.push('');
     mdLines.push('**Learning:**');
     (q3.learning || []).forEach(function(s) { mdLines.push('- ' + s); });
+    mdLines.push('');
+  }
+  if (d.learningItems && d.learningItems.length) {
+    mdLines.push('## Learning Items');
+    d.learningItems.forEach(function(item) {
+      var catLabel = LEARNING_CATEGORY_LABELS[item.category] || item.category;
+      mdLines.push('- **' + catLabel + '** ' + item.text);
+    });
     mdLines.push('');
   }
   return mdLines.join('\n');
@@ -19521,6 +19620,25 @@ function buildQualityScoreHtml() {
     + (strengthsHtml ? '<div class="oe-quality-sub">Strengths</div><ul class="oe-quality-list">' + strengthsHtml + '</ul>' : '')
     + (improvHtml    ? '<div class="oe-quality-sub">Improvements</div><ul class="oe-quality-list">' + improvHtml + '</ul>' : '')
     + (learnHtml     ? '<div class="oe-quality-sub">Learning</div><ul class="oe-quality-list">' + learnHtml + '</ul>' : '')
+    + '</div>';
+}
+
+// Phase45-2: Learning Items HTML生成
+function buildLearningItemsHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.learningItems || _lastOutputDraft.learningItems.length === 0) return '';
+  var esc   = escapeHtml;
+  var items = _lastOutputDraft.learningItems;
+  var rows  = items.map(function(item) {
+    var catClass = 'oe-lc-' + (item.category || 'improvement');
+    var catLabel = LEARNING_CATEGORY_LABELS[item.category] || item.category;
+    return '<div class="oe-learning-item">'
+      + '<span class="oe-learning-cat ' + catClass + '">' + esc(catLabel) + '</span>'
+      + '<span class="oe-learning-text">' + esc(item.text) + '</span>'
+      + '</div>';
+  }).join('');
+  return '<div class="oe-learning-section">'
+    + '<div class="oe-learning-title">🧠 Learning Items（' + items.length + '件）</div>'
+    + rows
     + '</div>';
 }
 
@@ -19656,6 +19774,7 @@ function renderOutputEnginePanel() {
     + detectionHtml
     + buildOutputPackageHtml()
     + buildQualityScoreHtml()
+    + buildLearningItemsHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
