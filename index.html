@@ -6025,6 +6025,8 @@
       <span class="wl-ot-keys"  id="wl-ot-keys"></span>
       <!-- Phase44-3: 担当割当行 -->
       <div id="wl-ot-roles"></div>
+      <!-- Phase45-7: Injected Knowledge表示 -->
+      <div id="wl-injected-knowledge" style="display:none;margin-top:4px;width:100%;font-size:9px;color:rgba(200,220,255,0.6);"></div>
     </div>
     <!-- Phase43-3: Workflow Progress Bar（実行中のみ表示） -->
     <div id="wl-progress">
@@ -9255,6 +9257,14 @@ async function atRunWorkflow() {
   // Phase44-2: 成果物タイプ自動判定
   _lastOutputDetection = detectOutputType(userMessage);
   _lastOutputDraft     = createOutputDraft(_lastOutputDetection.type, userMessage);
+  // Phase45-7: Knowledge取得・選定（失敗してもWorkflowを止めない）
+  _lastInjectedKnowledge = [];
+  try {
+    var _ki_raw = await fetchKnowledgeForOutputType(_lastOutputDetection.type);
+    _lastInjectedKnowledge = selectRelevantKnowledge(_ki_raw, _lastOutputDetection.type, userMessage);
+  } catch (_ki_err) {
+    _lastInjectedKnowledge = [];
+  }
   (function() {
     var wlPanel = document.getElementById('workflow-live-panel');
     if (wlPanel && !wlPanel.classList.contains('open')) {
@@ -9271,7 +9281,7 @@ async function atRunWorkflow() {
     const res  = await fetch('/api/auto-task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, knowledgeContext: getRoutedKnowledgeContext('leader') }),
+      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext() }),
     });
     const data = await res.json();
 
@@ -18299,10 +18309,23 @@ function renderWorkflowLive() {
           otRoles.innerHTML = roleHtml;
           otRoles.classList.add('visible');
         }
+        // Phase45-7: Injected Knowledge表示
+        var wlIk = document.getElementById('wl-injected-knowledge');
+        if (wlIk) {
+          if (_lastInjectedKnowledge && _lastInjectedKnowledge.length > 0) {
+            wlIk.innerHTML = '🧠 Injected Knowledge：' + _lastInjectedKnowledge.length + '件 — '
+              + _lastInjectedKnowledge.map(function(k) { return (k.title || '').slice(0, 25); }).join(' / ');
+            wlIk.style.display = 'block';
+          } else {
+            wlIk.style.display = 'none';
+          }
+        }
       } else {
         otEl.classList.remove('visible');
         var otRoles2 = document.getElementById('wl-ot-roles');
         if (otRoles2) otRoles2.classList.remove('visible');
+        var wlIk2 = document.getElementById('wl-injected-knowledge');
+        if (wlIk2) wlIk2.style.display = 'none';
       }
     })();
 
@@ -19276,6 +19299,130 @@ function buildKnowledgeSavePreviewHtml() {
 }
 
 // ══════════════════════════════════════════════════
+// Phase45-7: Knowledge Inject
+// ══════════════════════════════════════════════════
+
+let _lastInjectedKnowledge = [];
+
+// outputTypeに関連するジャンルを決定
+var _KI_GENRE_MAP = {
+  instagram_carousel: ['instagram_carousel','cta','structure','brand','success_pattern'],
+  instagram_post:     ['instagram_post','cta','brand','success_pattern'],
+  flyer:              ['flyer','cta','structure','brand'],
+  lp:                 ['lp','cta','structure','brand','conversion'],
+  pdf:                ['pdf','structure','writing_style','preference'],
+  document:           ['document','structure','writing_style','preference'],
+  html:               ['html','cta','structure','brand'],
+  tiktok_video:       ['tiktok_video','cta','structure','success_pattern'],
+};
+var _KI_ALWAYS_GENRES = ['cta','structure','brand','success_pattern','preference','writing_style'];
+
+async function fetchKnowledgeForOutputType(outputType) {
+  try {
+    var res = await fetch('/api/knowledge-library');
+    var data = await res.json();
+    if (!data.ok) return [];
+    var lib = data.library || {};
+    // library は { genre: [{id,genre,title,content,source,added_at}...] } の形
+    var items = [];
+    var targetGenres = (_KI_GENRE_MAP[outputType] || []).concat(_KI_ALWAYS_GENRES);
+    var seen = {};
+    Object.keys(lib).forEach(function(genre) {
+      if (targetGenres.indexOf(genre) !== -1) {
+        (lib[genre] || []).forEach(function(item) {
+          if (!seen[item.id]) {
+            seen[item.id] = true;
+            items.push(item);
+          }
+        });
+      }
+    });
+    return items;
+  } catch (e) {
+    return [];
+  }
+}
+
+function selectRelevantKnowledge(items, outputType, sourceText) {
+  if (!items || items.length === 0) return [];
+  var norm = (sourceText || '').toLowerCase();
+  var typeGenres = _KI_GENRE_MAP[outputType] || [];
+  var priorityGenres = ['cta','structure','brand','success_pattern'];
+  var scored = items.map(function(item) {
+    var score = 0;
+    var genre = (item.genre || '');
+    // outputType一致
+    if (genre === outputType) score += 30;
+    // typeGenres内
+    if (typeGenres.indexOf(genre) !== -1) score += 20;
+    // 優先ジャンル
+    if (priorityGenres.indexOf(genre) !== -1) score += 10;
+    // output_engine由来
+    if ((item.source || '').indexOf('output_engine') !== -1) score += 8;
+    // sourceTextキーワード近似
+    var titleNorm = (item.title || '').toLowerCase();
+    var contentNorm = (item.content || '').toLowerCase();
+    if (norm && (titleNorm.indexOf(norm.slice(0, 8)) !== -1 || contentNorm.indexOf(norm.slice(0, 8)) !== -1)) score += 5;
+    // 新しさ (added_atが文字列なので辞書順で近似)
+    if (item.added_at) score += 1;
+    var reason = genre === outputType ? 'outputType一致'
+      : typeGenres.indexOf(genre) !== -1 ? 'タイプ関連'
+      : priorityGenres.indexOf(genre) !== -1 ? '優先ジャンル'
+      : 'Knowledge参照';
+    return { item: item, score: score, reason: reason };
+  });
+  scored.sort(function(a, b) { return b.score - a.score; });
+  return scored.slice(0, 5).map(function(s) {
+    return {
+      title:     s.item.title || '',
+      content:   s.item.content || '',
+      genre:     s.item.genre || '',
+      source:    s.item.source || '',
+      relevance: s.score,
+      reason:    s.reason,
+    };
+  });
+}
+
+function getInjectedKnowledgeContext() {
+  if (!_lastInjectedKnowledge || _lastInjectedKnowledge.length === 0) return '';
+  var lines = [
+    '',
+    '【Injected Company Knowledge】',
+    '※過去Workflowで蓄積されたKnowledgeです。参考情報として活用してください。',
+  ];
+  _lastInjectedKnowledge.forEach(function(k) {
+    var label = k.genre ? '[' + k.genre + ']' : '';
+    var text  = k.title || '';
+    lines.push('- ' + label + ' ' + text);
+  });
+  lines.push('【END Injected Knowledge】');
+  return lines.join('\n');
+}
+
+function buildInjectedKnowledgeHtml() {
+  if (!_lastInjectedKnowledge) return '';
+  var esc = escapeHtml;
+  if (_lastInjectedKnowledge.length === 0) {
+    return '<div style="margin-top:8px;padding:6px 10px;background:rgba(80,120,200,0.05);border:1px solid rgba(80,120,200,0.15);border-radius:6px;">'
+      + '<div style="font-size:10px;font-weight:700;color:rgba(140,180,255,0.7);margin-bottom:3px;">🧠 Injected Knowledge</div>'
+      + '<div style="font-size:10px;color:rgba(255,255,255,0.3);">注入Knowledgeなし（保存済み0件）</div>'
+      + '</div>';
+  }
+  var items = _lastInjectedKnowledge.map(function(k) {
+    var genreLabel = KNOWLEDGE_CATEGORY_LABELS && KNOWLEDGE_CATEGORY_LABELS[k.genre] ? KNOWLEDGE_CATEGORY_LABELS[k.genre] : k.genre || '';
+    return '<div style="font-size:10px;color:rgba(255,255,255,0.55);padding:2px 0;">'
+      + '<span style="color:rgba(140,180,255,0.65);font-weight:600;">[' + esc(k.genre || '') + ']</span> '
+      + esc((k.title || '').slice(0, 60)) + (k.title && k.title.length > 60 ? '…' : '')
+      + '</div>';
+  }).join('');
+  return '<div style="margin-top:8px;padding:6px 10px;background:rgba(80,120,200,0.05);border:1px solid rgba(80,120,200,0.2);border-radius:6px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(140,180,255,0.8);margin-bottom:4px;">🧠 Injected Knowledge <span style="font-weight:400;color:rgba(140,180,255,0.5);">(' + _lastInjectedKnowledge.length + '件)</span></div>'
+    + items
+    + '</div>';
+}
+
+// ══════════════════════════════════════════════════
 // Phase44-1: Output Engine 基盤
 // ══════════════════════════════════════════════════
 
@@ -20118,6 +20265,13 @@ function serializeOutputDraft(format) {
       mdLines.push('');
     }
   }
+  if (_lastInjectedKnowledge && _lastInjectedKnowledge.length > 0) {
+    mdLines.push('## Injected Knowledge');
+    _lastInjectedKnowledge.forEach(function(k) {
+      mdLines.push('- [' + (k.genre || '') + '] ' + (k.title || ''));
+    });
+    mdLines.push('');
+  }
   return mdLines.join('\n');
 }
 
@@ -20397,6 +20551,7 @@ function renderOutputEnginePanel() {
     + buildLearningItemsHtml()
     + buildMemoryCandidatesHtml()
     + buildKnowledgeCandidatesHtml()
+    + buildInjectedKnowledgeHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
