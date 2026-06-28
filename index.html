@@ -19043,6 +19043,144 @@ function buildCarouselPackageHtml() {
     + '</div>';
 }
 
+// Phase44-6: チラシ Package
+function buildFlyerPackageHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var f = _lastOutputDraft.fields;
+  var esc = escapeHtml;
+  var copyLines = [];
+  if (f.catchcopy) copyLines.push('【キャッチコピー】\n' + f.catchcopy);
+  if (f.body) copyLines.push('【本文】\n' + f.body);
+  if (f.offer) copyLines.push('【オファー】\n' + f.offer);
+  if (f.designNotes) copyLines.push('【デザイン指示】\n' + f.designNotes);
+  return '<div class="oe-pkg-section">'
+    + '<div class="oe-pkg-title">📄 チラシ パッケージ</div>'
+    + (f.catchcopy ? '<div class="oe-pkg-label">キャッチコピー</div><div class="oe-field-val">' + esc(f.catchcopy) + '</div>' : '<div class="oe-empty-val">キャッチコピー未生成</div>')
+    + (f.body ? '<div class="oe-pkg-label">本文</div><div class="oe-field-val">' + esc(f.body) + '</div>' : '')
+    + (f.offer ? '<div class="oe-pkg-label">オファー</div><div class="oe-field-val">' + esc(f.offer) + '</div>' : '')
+    + (f.designNotes ? '<div class="oe-pkg-label">デザイン指示</div><div class="oe-field-val">' + esc(f.designNotes) + '</div>' : '')
+    + '<div class="oe-pkg-label">コピー用まとめ</div>'
+    + '<textarea class="oe-copy-area" readonly>' + esc(copyLines.join('\n\n')) + '</textarea>'
+    + '</div>';
+}
+
+// Phase44-6: LP Package
+function buildLpPackageHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var f = _lastOutputDraft.fields;
+  var esc = escapeHtml;
+  var copyLines = [];
+  if (f.headline) copyLines.push('【ヘッドライン】\n' + f.headline);
+  if (f.sections && f.sections.length) copyLines.push('【セクション構成】\n' + f.sections.join('\n'));
+  if (f.cta) copyLines.push('【CTA】\n' + f.cta);
+  if (f.html) copyLines.push('【HTML】\n' + f.html);
+  var sectionsHtml = '';
+  if (f.sections && f.sections.length) {
+    sectionsHtml = f.sections.map(function(s, i) {
+      return '<div class="oe-slide-card"><div class="oe-slide-num">セクション ' + (i + 1) + '</div><div class="oe-field-val">' + esc(s) + '</div></div>';
+    }).join('');
+  }
+  return '<div class="oe-pkg-section">'
+    + '<div class="oe-pkg-title">🌐 LP パッケージ</div>'
+    + (f.headline ? '<div class="oe-pkg-label">ヘッドライン</div><div class="oe-field-val">' + esc(f.headline) + '</div>' : '<div class="oe-empty-val">ヘッドライン未生成</div>')
+    + (sectionsHtml ? '<div class="oe-pkg-label">セクション構成</div>' + sectionsHtml : '')
+    + (f.cta ? '<div class="oe-pkg-label">CTA</div><div class="oe-field-val">' + esc(f.cta) + '</div>' : '')
+    + (f.html ? '<div class="oe-pkg-label">HTML</div><div class="oe-field-val" style="font-family:monospace;font-size:11px;">' + esc(f.html.slice(0, 500)) + (f.html.length > 500 ? '…' : '') + '</div>' : '')
+    + '<div class="oe-pkg-label">コピー用まとめ</div>'
+    + '<textarea class="oe-copy-area" readonly>' + esc(copyLines.join('\n\n')) + '</textarea>'
+    + '</div>';
+}
+
+// Phase44-6: Document / PDF Package
+function buildDocumentPackageHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var f = _lastOutputDraft.fields;
+  var esc = escapeHtml;
+  var copyLines = [];
+  if (f.summary) copyLines.push('【要約】\n' + f.summary);
+  if (f.sections && f.sections.length) copyLines.push('【セクション】\n' + f.sections.join('\n'));
+  var sectionsHtml = '';
+  if (f.sections && f.sections.length) {
+    sectionsHtml = f.sections.map(function(s, i) {
+      return '<div class="oe-slide-card"><div class="oe-slide-num">セクション ' + (i + 1) + '</div><div class="oe-field-val">' + esc(s) + '</div></div>';
+    }).join('');
+  }
+  return '<div class="oe-pkg-section">'
+    + '<div class="oe-pkg-title">📋 ドキュメント パッケージ</div>'
+    + (f.summary ? '<div class="oe-pkg-label">要約</div><div class="oe-field-val">' + esc(f.summary) + '</div>' : '<div class="oe-empty-val">要約未生成</div>')
+    + (sectionsHtml ? '<div class="oe-pkg-label">セクション構成</div>' + sectionsHtml : '')
+    + '<div class="oe-pkg-label">コピー用まとめ</div>'
+    + '<textarea class="oe-copy-area" readonly>' + esc(copyLines.join('\n\n')) + '</textarea>'
+    + '</div>';
+}
+
+// Phase44-6: HTML Package
+function buildHtmlPackageHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var f = _lastOutputDraft.fields;
+  var esc = escapeHtml;
+  var copyLines = [];
+  if (f.copy) copyLines.push('【コピー】\n' + f.copy);
+  if (f.sections && f.sections.length) copyLines.push('【セクション】\n' + f.sections.join('\n'));
+  if (f.htmlStructure) copyLines.push('【HTML構造】\n' + f.htmlStructure);
+  var sectionsHtml = '';
+  if (f.sections && f.sections.length) {
+    sectionsHtml = f.sections.map(function(s, i) {
+      return '<div class="oe-slide-card"><div class="oe-slide-num">セクション ' + (i + 1) + '</div><div class="oe-field-val">' + esc(s) + '</div></div>';
+    }).join('');
+  }
+  return '<div class="oe-pkg-section">'
+    + '<div class="oe-pkg-title">💻 HTML パッケージ</div>'
+    + (f.copy ? '<div class="oe-pkg-label">コピー</div><div class="oe-field-val">' + esc(f.copy) + '</div>' : '')
+    + (sectionsHtml ? '<div class="oe-pkg-label">セクション構成</div>' + sectionsHtml : '')
+    + (f.htmlStructure ? '<div class="oe-pkg-label">HTML構造</div><div class="oe-field-val" style="font-family:monospace;font-size:11px;">' + esc(f.htmlStructure.slice(0, 500)) + (f.htmlStructure.length > 500 ? '…' : '') + '</div>' : '<div class="oe-empty-val">HTML構造未生成</div>')
+    + '<div class="oe-pkg-label">コピー用まとめ</div>'
+    + '<textarea class="oe-copy-area" readonly>' + esc(copyLines.join('\n\n')) + '</textarea>'
+    + '</div>';
+}
+
+// Phase44-6: 汎用 Package（未対応タイプのフォールバック）
+function buildGenericPackageHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var f = _lastOutputDraft.fields;
+  var esc = escapeHtml;
+  var copyLines = [];
+  var rows = Object.keys(f).map(function(key) {
+    var val = f[key];
+    var display = '';
+    if (Array.isArray(val)) {
+      display = val.length + '件';
+      copyLines.push('【' + key + '】\n' + val.join('\n'));
+    } else if (val && val.toString().trim()) {
+      display = esc(val.toString().slice(0, 200)) + (val.toString().length > 200 ? '…' : '');
+      copyLines.push('【' + key + '】\n' + val);
+    } else {
+      display = '<span class="oe-empty-val">空</span>';
+    }
+    return '<div class="oe-pkg-label">' + esc(key) + '</div><div class="oe-field-val">' + display + '</div>';
+  }).join('');
+  return '<div class="oe-pkg-section">'
+    + '<div class="oe-pkg-title">📦 成果物 パッケージ</div>'
+    + (rows || '<div class="oe-empty-val">フィールド未生成</div>')
+    + '<div class="oe-pkg-label">コピー用まとめ</div>'
+    + '<textarea class="oe-copy-area" readonly>' + esc(copyLines.join('\n\n')) + '</textarea>'
+    + '</div>';
+}
+
+// Phase44-6: 汎用ディスパッチャー
+function buildOutputPackageHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  switch (_lastOutputDraft.type) {
+    case OUTPUT_TYPES.INSTAGRAM_CAROUSEL: return buildCarouselPackageHtml();
+    case OUTPUT_TYPES.FLYER: return buildFlyerPackageHtml();
+    case OUTPUT_TYPES.LP: return buildLpPackageHtml();
+    case OUTPUT_TYPES.PDF:
+    case OUTPUT_TYPES.DOCUMENT: return buildDocumentPackageHtml();
+    case OUTPUT_TYPES.HTML: return buildHtmlPackageHtml();
+    default: return buildGenericPackageHtml();
+  }
+}
+
 function renderOutputEnginePanel() {
   var body = document.getElementById('oe-body');
   if (!body) return;
@@ -19124,7 +19262,7 @@ function renderOutputEnginePanel() {
     + '<div class="oe-status-sub">登録済み成果物タイプ: ' + typeCount + ' 種</div>'
     + '</div>'
     + detectionHtml
-    + buildCarouselPackageHtml()
+    + buildOutputPackageHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
     + '<div class="oe-type-grid">' + typeCards + '</div>'
