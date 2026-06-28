@@ -19413,6 +19413,76 @@ function selectRelevantKnowledge(items, outputType, sourceText) {
   });
 }
 
+// Phase46-3: Knowledge Compare Mode
+const KNOWLEDGE_COMPARE_MODE = {
+  WITH_KNOWLEDGE:    'with_knowledge',
+  WITHOUT_KNOWLEDGE: 'without_knowledge',
+  GUIDE_ONLY:        'guide_only',
+};
+const _KCM_LABELS = {
+  with_knowledge:    '通常',
+  without_knowledge: 'Knowledgeなし',
+  guide_only:        'Guideのみ',
+};
+
+let _knowledgeCompareMode = KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+
+function switchKnowledgeCompareMode(mode) {
+  if (!KNOWLEDGE_COMPARE_MODE[mode.toUpperCase().replace(/-/g,'_')] && Object.values(KNOWLEDGE_COMPARE_MODE).indexOf(mode) === -1) return;
+  _knowledgeCompareMode = mode;
+  // ボタンアクティブ状態更新
+  Object.values(KNOWLEDGE_COMPARE_MODE).forEach(function(m) {
+    var btn = document.getElementById('kcm-btn-' + m);
+    if (btn) {
+      btn.style.background = m === mode ? 'rgba(140,180,255,0.2)'  : 'rgba(255,255,255,0.05)';
+      btn.style.color      = m === mode ? 'rgba(180,210,255,0.95)' : 'rgba(255,255,255,0.4)';
+      btn.style.borderColor= m === mode ? 'rgba(140,180,255,0.5)'  : 'rgba(255,255,255,0.1)';
+    }
+  });
+  // Output EngineパネルのCompare Status更新
+  var statusEl = document.getElementById('kcm-status');
+  if (statusEl) statusEl.textContent = '現在：' + (_KCM_LABELS[mode] || mode);
+}
+
+function buildKnowledgeCompareModeUiHtml() {
+  var cur = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+  function btn(mode, label) {
+    var active = cur === mode;
+    return '<button id="kcm-btn-' + mode + '"'
+      + ' onclick="switchKnowledgeCompareMode(\'' + mode + '\')"'
+      + ' style="font-size:9px;padding:3px 8px;border-radius:8px;cursor:pointer;transition:all 0.15s;'
+      + 'border:1px solid ' + (active ? 'rgba(140,180,255,0.5)' : 'rgba(255,255,255,0.1)') + ';'
+      + 'background:' + (active ? 'rgba(140,180,255,0.2)' : 'rgba(255,255,255,0.05)') + ';'
+      + 'color:'      + (active ? 'rgba(180,210,255,0.95)' : 'rgba(255,255,255,0.4)') + ';">'
+      + label + '</button>';
+  }
+  return '<div style="margin-top:8px;padding:7px 10px;background:rgba(80,100,180,0.06);border:1px solid rgba(80,100,180,0.18);border-radius:7px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(160,190,255,0.8);margin-bottom:5px;">🔬 Knowledge Compare</div>'
+    + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px;">'
+    +   btn(KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE,    '通常')
+    +   btn(KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE, 'Knowledgeなし')
+    +   btn(KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY,        'Guideのみ')
+    + '</div>'
+    + '<div id="kcm-status" style="font-size:9px;color:rgba(160,190,255,0.55);">現在：' + (_KCM_LABELS[cur] || cur) + '</div>'
+    + '<div style="font-size:9px;color:rgba(255,255,255,0.25);margin-top:3px;">※ 切替は次回Workflow開始から有効</div>'
+    + '</div>';
+}
+
+function buildKnowledgeCompareSummaryHtml() {
+  var mode = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+  var kiN  = (_lastInjectedKnowledge && _lastInjectedKnowledge.length) || 0;
+  var hasGuide = !!_lastLeaderExecutionGuide;
+  var injLabel = mode === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE    ? 'Injected ' + kiN + ' items + Guide'
+               : mode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE ? 'なし（比較モード）'
+               : /* GUIDE_ONLY */ 'Guide only';
+  var modeLabel = _KCM_LABELS[mode] || mode;
+  return '<div style="margin-top:5px;padding:5px 8px;background:rgba(80,100,180,0.05);border:1px solid rgba(80,100,180,0.12);border-radius:5px;">'
+    + '<div style="font-size:9px;color:rgba(160,190,255,0.7);font-weight:700;">Compare Summary</div>'
+    + '<div style="font-size:9px;color:rgba(255,255,255,0.45);">Mode: <strong>' + modeLabel + '</strong></div>'
+    + '<div style="font-size:9px;color:rgba(255,255,255,0.45);">Leader Injection: ' + injLabel + '</div>'
+    + '</div>';
+}
+
 // Phase46-2: Leader Execution Guide
 let _lastLeaderExecutionGuide = null;
 
@@ -19472,6 +19542,29 @@ function buildLeaderExecutionGuide(knowledgeItems, outputType) {
 }
 
 function getInjectedKnowledgeContext() {
+  var mode = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+
+  // Phase46-3: WITHOUT_KNOWLEDGEモードはLeaderへ渡さない
+  if (mode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE) return '';
+
+  // Phase46-3: GUIDE_ONLYモードはGuideだけ渡す（Knowledge一覧はスキップ）
+  if (mode === KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY) {
+    if (!_lastLeaderExecutionGuide) return '';
+    var g0 = _lastLeaderExecutionGuide;
+    var hasAny0 = g0.priorities.length || g0.avoid.length || g0.structureHints.length || g0.brandHints.length || g0.ctaHints.length;
+    if (!hasAny0) return '';
+    var guideLines = ['', '【Leader Execution Guide】'];
+    if (g0.priorities.length)    { guideLines.push('Priority:');   g0.priorities.forEach(function(p){ guideLines.push('- ' + p); }); }
+    if (g0.avoid.length)         { guideLines.push('Avoid:');      g0.avoid.forEach(function(a){ guideLines.push('- ' + a); }); }
+    if (g0.structureHints.length){ guideLines.push('Structure:');  g0.structureHints.forEach(function(s){ guideLines.push('- ' + s); }); }
+    if (g0.brandHints.length)    { guideLines.push('Brand:');      g0.brandHints.forEach(function(b){ guideLines.push('- ' + b); }); }
+    if (g0.ctaHints.length)      { guideLines.push('CTA:');        g0.ctaHints.forEach(function(c){ guideLines.push('- ' + c); }); }
+    if (g0.summary) guideLines.push('Summary: ' + g0.summary);
+    guideLines.push('【END Leader Execution Guide】');
+    return guideLines.join('\n');
+  }
+
+  // WITH_KNOWLEDGE（通常）
   if (!_lastInjectedKnowledge || _lastInjectedKnowledge.length === 0) return '';
   var lines = [
     '',
@@ -19598,19 +19691,25 @@ function buildInjectedKnowledgeHtml() {
 }
 
 function buildLeaderContextPreviewHtml() {
+  var mode    = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+  var modeLabel = _KCM_LABELS[mode] || mode;
+  var kiN     = (_lastInjectedKnowledge && _lastInjectedKnowledge.length) || 0;
+  var injLabel = mode === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE    ? 'yes（' + kiN + '件 + Guide）'
+               : mode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE ? 'no（比較モード）'
+               : 'guide only';
   var ctx = getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext();
-  if (!ctx || !ctx.trim()) return '';
-  var esc     = escapeHtml;
-  var preview = ctx.slice(0, 1000) + (ctx.length > 1000 ? '\n…（省略）' : '');
-  var uid     = 'ki-lcp-' + Date.now();
+  var esc = escapeHtml;
+  var preview = (ctx || '').slice(0, 1000) + ((ctx || '').length > 1000 ? '\n…（省略）' : '');
+  var uid = 'ki-lcp-' + Date.now();
   return '<div style="margin-top:8px;padding:7px 10px;background:rgba(100,60,180,0.06);border:1px solid rgba(124,77,255,0.2);border-radius:7px;">'
     + '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="(function(){var el=document.getElementById(\'' + uid + '\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()">'
     +   '<span style="font-size:10px;font-weight:700;color:rgba(200,158,242,0.85);">📋 Leader Context Preview</span>'
-    +   '<span style="font-size:9px;color:rgba(200,158,242,0.45);">' + esc(ctx.length) + '文字 ▼ クリックで展開</span>'
+    +   '<span style="font-size:9px;color:rgba(200,158,242,0.45);">' + esc((ctx||'').length) + '文字 ▼ クリックで展開</span>'
     + '</div>'
+    + '<div style="font-size:9px;color:rgba(160,190,255,0.55);margin-top:3px;">Compare Mode: <strong>' + esc(modeLabel) + '</strong> &nbsp;Injected to Leader: <strong>' + esc(injLabel) + '</strong></div>'
     + '<div id="' + uid + '" style="display:none;margin-top:6px;">'
     +   '<pre style="font-size:9px;color:rgba(255,255,255,0.55);white-space:pre-wrap;word-break:break-all;margin:0;padding:6px;background:rgba(0,0,0,0.3);border-radius:4px;max-height:260px;overflow-y:auto;">'
-    +   esc(preview)
+    +   esc(preview || '（このモードではLeaderへKnowledgeを渡しません）')
     +   '</pre>'
     + '</div>'
     + '</div>';
@@ -19636,6 +19735,7 @@ function buildKiDebugHtml() {
     +   '<div>OutputType: ' + escapeHtml(outputType) + '</div>'
     +   '<div>WorkflowID: ' + escapeHtml(workflowId) + '</div>'
     +   '<div>Fetch Status: ' + escapeHtml(statusStr) + '</div>'
+    +   '<div>Compare Mode: ' + escapeHtml(_KCM_LABELS[_knowledgeCompareMode] || _knowledgeCompareMode || '—') + '</div>'
     + '</div>'
     + '</div>';
 }
@@ -20325,6 +20425,7 @@ function serializeOutputDraft(format) {
     if (_knowledgeSaveHistory && _knowledgeSaveHistory.length) jsonObj._knowledgeSaveHistory = _knowledgeSaveHistory.slice(0, 10);
     if (_lastInjectedKnowledge && _lastInjectedKnowledge.length) jsonObj._injectedKnowledge = _lastInjectedKnowledge;
     if (_lastLeaderExecutionGuide) jsonObj._leaderExecutionGuide = _lastLeaderExecutionGuide;
+    jsonObj._knowledgeCompareMode = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -20512,6 +20613,20 @@ function serializeOutputDraft(format) {
     if (eg.ctaHints.length)      { mdLines.push('**CTA:**');        eg.ctaHints.forEach(function(x){ mdLines.push('- ' + x); }); }
     mdLines.push('');
   }
+  // Phase46-3: Knowledge Compare
+  (function() {
+    var mode   = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+    var kiN    = (_lastInjectedKnowledge && _lastInjectedKnowledge.length) || 0;
+    var injStr = mode === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE    ? 'yes'
+               : mode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE ? 'no'
+               : 'guide_only';
+    mdLines.push('## Knowledge Compare');
+    mdLines.push('Mode: ' + (mode));
+    mdLines.push('Leader Injection: ' + injStr);
+    mdLines.push('Injected Items: ' + kiN);
+    mdLines.push('Guide: ' + (_lastLeaderExecutionGuide ? 'yes' : 'no'));
+    mdLines.push('');
+  })();
   return mdLines.join('\n');
 }
 
@@ -20793,6 +20908,8 @@ function renderOutputEnginePanel() {
     + buildKnowledgeCandidatesHtml()
     + buildInjectedKnowledgeHtml()
     + buildLeaderExecutionGuideHtml()
+    + buildKnowledgeCompareSummaryHtml()
+    + buildKnowledgeCompareModeUiHtml()
     + buildLeaderContextPreviewHtml()
     + buildKiDebugHtml()
     + buildExportUiHtml()
