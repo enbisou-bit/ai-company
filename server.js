@@ -730,7 +730,21 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
 
   try {
     // Phase37: agentCaller を渡すことで Claude/OpenAI を動的ルーティング
-    const { workflowTasks, taskHistory, brainResult } = await runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult, workflowId, agentCaller: workflowAgentCaller });
+    // Phase42修正: onProgress で逐次進捗をグローバルストアへ書き込む
+    if (!global.__workflowProgress) global.__workflowProgress = {};
+    const _wfId = workflowId || ('wf-' + Date.now());
+    global.__workflowProgress[_wfId] = { workflowTasks: [], taskHistory: [], brainResult: null, updatedAt: Date.now() };
+
+    const { workflowTasks, taskHistory, brainResult, leaderFinalResult } = await runAutoTaskWorkflow({
+      userMessage, tasks, autonomousConsult, workflowId: _wfId, agentCaller: workflowAgentCaller,
+      onProgress: (state) => {
+        global.__workflowProgress[_wfId] = { ...state, updatedAt: Date.now() };
+      },
+    });
+
+    // 完了後もストアを最新状態に更新（cleanup は1時間後）
+    global.__workflowProgress[_wfId] = { workflowTasks, taskHistory, brainResult, done: true, updatedAt: Date.now() };
+    setTimeout(() => { if (global.__workflowProgress) delete global.__workflowProgress[_wfId]; }, 3600000);
 
     // taskHistory（タスク履歴）をサーバーメモリに蓄積
     // 将来は Supabase の task_history テーブルへ永続化予定
@@ -764,11 +778,25 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
       console.warn('/api/auto-task Supabase保存エラー:', dbErr.message);
     }
 
-    return res.json({ ok: true, results: workflowTasks, taskHistory, brainResult: brainResult || null });
+    return res.json({ ok: true, results: workflowTasks, taskHistory, brainResult: brainResult || null, leaderFinalResult: leaderFinalResult || null });
   } catch (e) {
     console.error('/api/auto-task error:', e.message);
     return res.status(500).json({ ok: false, error: e.message });
   }
+});
+// ─────────────────────────────────────────────────
+
+// ── Phase42修正: Workflow進捗リアルタイム取得 API ─────────────────────────
+// GET /api/workflow-progress?workflowId=xxx
+// Auto Task実行中に逐次進捗をポーリングで取得する専用エンドポイント
+app.get('/api/workflow-progress', (req, res) => {
+  const { workflowId } = req.query;
+  if (!workflowId) return res.json({ ok: false, error: 'workflowId is required' });
+  if (!global.__workflowProgress || !global.__workflowProgress[workflowId]) {
+    return res.json({ ok: true, found: false, workflowTasks: [], taskHistory: [], brainResult: null, done: false });
+  }
+  const p = global.__workflowProgress[workflowId];
+  return res.json({ ok: true, found: true, workflowTasks: p.workflowTasks || [], taskHistory: p.taskHistory || [], brainResult: p.brainResult || null, done: p.done || false, updatedAt: p.updatedAt });
 });
 // ─────────────────────────────────────────────────
 

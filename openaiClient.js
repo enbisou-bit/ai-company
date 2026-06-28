@@ -1061,21 +1061,23 @@ async function leaderSummary(userMessage, memberReplies, strategyReply) {
 // ══════════════════════════════════════════════════════════════
 // OpenAI 共通呼び出し
 // ══════════════════════════════════════════════════════════════
-async function callOpenAI(systemPrompt, userMessage, history = []) {
+async function callOpenAI(systemPrompt, userMessage, history = [], options = {}) {
   if (!OPENAI_API_KEY || !costTracker.canProcess()) return null;
   try {
     const historyMessages = (history || []).map(({ role, content }) => ({ role, content }));
+    const body = {
+      model: OPENAI_MODEL,
+      input: [
+        { role: 'system', content: systemPrompt },
+        ...historyMessages,
+        { role: 'user', content: userMessage },
+      ],
+      temperature: 0.7,
+    };
+    if (options.max_output_tokens) body.max_output_tokens = options.max_output_tokens;
     const response = await axios.post(
       OPENAI_API_URL,
-      {
-        model: OPENAI_MODEL,
-        input: [
-          { role: 'system', content: systemPrompt },
-          ...historyMessages,
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.7,
-      },
+      body,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -1589,6 +1591,185 @@ const AGENT_WORKFLOW_CONFIG = {
 //         requestedAt  : 依頼日時
 //         completedAt  : 完了日時
 // ══════════════════════════════════════════════════════════════
+// Phase42: Leader Final Response Engine — Workflow 最終ステップ
+// Brain / Knowledge / AI社員 / Reviewer / Strategy を統合し最終成果物を生成する
+// ══════════════════════════════════════════════════════════════
+const LEADER_FINAL_PROMPT = [
+  'あなたはENBISOUのLeader（会社代表・最終責任者）です。',
+  'AI社員全員の成果・Reviewer・Strategyを受け取り、「そのまま使える完成成果物」を統合出力してください。',
+  '',
+  '【最重要】「提案します」「検討してください」は禁止。完成した文章・コピー・構成をそのまま出力すること。',
+  '方針ではなく成果物。要約ではなく完成品。',
+  '',
+  '---',
+  '',
+  '# 完成成果物',
+  '',
+  '案件種別を依頼内容から判断し、以下の対応フォーマットで出力してください。',
+  '',
+  '## SNS / Instagram / TikTok 案件の場合',
+  '### Instagram投稿（カルーセル）',
+  '【1枚目】タイトル：〇〇 / 本文：〇〇 / ビジュアル：〇〇',
+  '【2枚目】タイトル：〇〇 / 本文：〇〇 / ビジュアル：〇〇',
+  '（必要枚数分）',
+  '',
+  '### キャプション（そのままコピペできる完成文）',
+  '（投稿文全文）',
+  '',
+  '### CTA',
+  '（行動喚起の具体的文章）',
+  '',
+  '### ハッシュタグ',
+  '#○○ #○○ #○○（20個程度）',
+  '',
+  '### TikTok / 動画',
+  '冒頭フック（0〜3秒）：（実際のセリフ）',
+  '構成：（秒数付き台本）',
+  'CTA：（実際のセリフ）',
+  '',
+  '### 画像生成プロンプト',
+  '（Canva / Midjourney で使えるプロンプト）',
+  '',
+  '## LP / ランディングページ案件の場合',
+  '### ファーストビュー',
+  'キャッチコピー：（実際の文章）',
+  'サブコピー：（実際の文章）',
+  'CTA：（ボタンテキスト）',
+  '',
+  '### ボディセクション',
+  '（使えるLP文章をセクション別に全文）',
+  '',
+  '## 広告 / 営業 / 提案案件の場合',
+  '### 広告コピー',
+  'メインコピー：（実際の文章）',
+  'ボディコピー：（実際の文章）',
+  '',
+  '### 営業トーク台本',
+  '（使えるセールストーク全文）',
+  '',
+  '---',
+  '',
+  '## ブランドメッセージ（全案件共通）',
+  '（ブランドの核心メッセージ・世界観・トーン）',
+  '',
+  '## 実行順序',
+  '今日：（具体的タスク）',
+  '今週：（具体的タスク）',
+  '来週：（具体的タスク）',
+  '',
+  '## 次にやること',
+  '（優先タスク・担当・期限を箇条書き）',
+  '① ',
+  '② ',
+  '③ ',
+  '',
+  '---',
+  '',
+  '上記フォーマットをMarkdownで出力。JSON不要。余分な前置き禁止。文字数制限なし、必要な分だけ出力すること。',
+].join('\n');
+
+async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult, knowledgeResult, agentCaller }) {
+  const startMs = Date.now();
+
+  // 完了した通常タスクの結果を収集（後処理・LeaderFinal除く）
+  const mainTasks = (workflowTasks || []).filter(function(t) {
+    return t.status === 'completed' && t.result && !t.isPostProcess;
+  });
+  const reviewerTask = (workflowTasks || []).find(function(t) { return t.agentId === 'reviewer' && t.isPostProcess; });
+  const strategyTask = (workflowTasks || []).find(function(t) { return t.agentId === 'strategy' && t.isPostProcess; });
+
+  // Claude が JSON形式 {"reply":"...","suggestions":[...]} で返す場合は reply フィールドを抽出する
+  function _extractReply(raw) {
+    if (!raw) return '';
+    var r = raw.trim();
+    if (r.charAt(0) === '{') {
+      try {
+        var ps = r.indexOf('{'); var pe = r.lastIndexOf('}');
+        if (ps !== -1 && pe > ps) {
+          var parsed = JSON.parse(r.slice(ps, pe + 1));
+          if (parsed.reply) return parsed.reply;
+        }
+      } catch (_) {}
+    }
+    return r;
+  }
+
+  // memberReplies 形式（成果物生成のため全文を渡す）
+  const memberReplies = mainTasks.map(function(t) {
+    var profile = LINE_AGENT_PROFILES[t.agentId];
+    var reply = _extractReply(t.result || '');
+    return { id: t.agentId, name: profile ? profile.name : t.agentId, reply: reply.slice(0, 1200) };
+  });
+
+  var reviewerText = (reviewerTask && reviewerTask.result) ? reviewerTask.result.slice(0, 600) : '';
+  var strategyText = (strategyTask && strategyTask.result) ? strategyTask.result.slice(0, 600) : '';
+
+  // Brain / Knowledge コンテキスト
+  var brainCtx = brainResult
+    ? 'Goal:' + brainResult.goal + ' / Priority:' + brainResult.priority + ' / Complexity:' + brainResult.complexity
+    : '';
+  var knCount = (knowledgeResult && knowledgeResult.totalCount) ? knowledgeResult.totalCount : 0;
+
+  // 統合プロンプト
+  var repliesText = memberReplies.map(function(r) { return '【' + r.name + '】\n' + r.reply; }).join('\n\n');
+  var parts = [
+    '【依頼内容（これが案件の核心）】', userMessage, '',
+    brainCtx ? '【Company Brain解析】' + brainCtx : '',
+    knCount > 0 ? '【参照Knowledge】' + knCount + '件' : '',
+    '',
+    '【AI社員の成果（これを統合して完成成果物を作ること）】',
+    repliesText, '',
+    reviewerText ? '【Reviewerの品質フィードバック】\n' + reviewerText : '',
+    strategyText ? '【Strategyの統合提言】\n' + strategyText : '',
+    '',
+    '上記AI社員の成果を統合し、「そのまま使える完成成果物」を指定フォーマットで出力してください。',
+    '要約・方針・提案は不要。完成した文章・コピー・構成をそのまま出力してください。',
+  ].filter(Boolean);
+  var question = parts.join('\n');
+
+  var text = '';
+  var provider = 'openai';
+  var model    = null;
+  var fallback = false;
+
+  try {
+    // Leader Final は常に OpenAI で完成成果物（長文）を生成するため max_output_tokens: 4096 を指定
+    // agentCaller 経由では max_output_tokens を渡せないため callOpenAI を直接使用する
+    text = await callOpenAI(LEADER_FINAL_PROMPT, question, [], { max_output_tokens: 4096 }) || '';
+    provider = 'openai';
+    model    = OPENAI_MODEL;
+    fallback = false;
+    // JSON返答のフォールバック解析（leaderSummary互換）
+    if (text.trimStart().startsWith('{')) {
+      try {
+        var ps = text.indexOf('{'); var pe = text.lastIndexOf('}');
+        if (ps !== -1 && pe > ps) {
+          var parsed = JSON.parse(text.slice(ps, pe + 1));
+          if (parsed.reply) text = parsed.reply;
+        }
+      } catch (_) {}
+    }
+  } catch (e) {
+    text = '';
+    console.warn('[Phase42 LeaderFinal] API error:', e.message);
+  }
+
+  var responseMs = Date.now() - startMs;
+  console.log('[Phase42 LeaderFinal] done provider=' + provider + ' chars=' + text.length + ' ms=' + responseMs);
+
+  return {
+    text,
+    provider,
+    model,
+    responseMs,
+    fallback,
+    replyLength:      text.length,
+    integratedCount:  memberReplies.length,
+    knowledgeCount:   knCount,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
 // Phase41: Knowledge Lookup — Company Brain より先に実行
 // Supabase の knowledge_library + company_memory を読み込む
 // ══════════════════════════════════════════════════════════════
@@ -1759,7 +1940,7 @@ async function runCompanyBrain(userMessage, agentCaller, knowledgeData) {
   };
 }
 
-async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2 }) {
+async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null }) {
   // Phase39: ワークフロー全体の相談回数カウンター（最大 maxConsultations 回）
   let _consultCount = 0;
   // tasks に provider / enabled / collaborators / status / result / タイムスタンプ を付与
@@ -1786,6 +1967,9 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
 
   // taskHistory（タスク履歴）の配列。将来の画面表示・分析・AI間相談ログに使う
   const taskHistory = [];
+
+  // Phase42修正: TDZ防止のため onProgress 参照より前に宣言・初期化
+  let brainResult = null;
 
   // ── Phase41: Knowledge Lookup — Brain より先に実行 ────────────────────
   let knowledgeResult = null;
@@ -1821,10 +2005,11 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
     knowledgeResult = { rules: [], preferences: [], brand: [], writingStyle: [], successPatterns: [], mistakes: [], decisions: [], forbidden: [], source: 'error', lookupMs: 0, totalCount: 0 };
     console.warn('[Phase41 Knowledge] Fallback（空データで続行）:', knErr.message);
   }
+  if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
   // ── Knowledge Lookup ここまで ─────────────────────────────────────────
 
   // ── Phase40: Company Brain — Leaderより先に案件解析 ───────────────────
-  let brainResult = null;
+  // brainResult は上部で宣言済み（TDZ防止のため）
   const brainHist = {
     historyId:   'hist-brain-' + Date.now(),
     from:        'brain',
@@ -1868,6 +2053,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
     brainHist.note        = 'Company Brain エラー: ' + brainErr.message;
     console.warn('[Phase40 Brain] error:', brainErr.message);
   }
+  if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
   // ── Company Brain ここまで ──────────────────────────────────────────────
 
   // enabled: false のタスクは最初に "skipped"（スキップ）にしておく
@@ -1939,6 +2125,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
     for (const task of ready) {
       task.status = 'running';          // 進行状態を「実行中」に更新
       task.startedAt = new Date().toISOString();
+      if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
 
       // taskHistory（タスク履歴）に「依頼元 → 依頼先」を記録
       // from（依頼元）: 前工程がある場合はその担当、なければ "leader"
@@ -2168,6 +2355,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         histEntry.completedAt = task.completedAt;
         histEntry.note        = e.message;
       }
+      if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
     }
   }
 
@@ -2287,6 +2475,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
       rvHist.completedAt       = reviewerTask.completedAt;
       rvHist.note              = rvErr.message;
     }
+    if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
 
     // ─ Strategy（優先順位・改善案・リスク統合）────────────────────────
     const strategyCfg  = AGENT_WORKFLOW_CONFIG['strategy'] || { provider: 'openai' };
@@ -2399,10 +2588,90 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
       stHist.completedAt       = strategyTask.completedAt;
       stHist.note              = stErr.message;
     }
+    if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
   }
   // ── 後処理ここまで ────────────────────────────────────────────────────
 
-  return { workflowTasks, taskHistory, brainResult };
+  // ── Phase42: Leader Final Response Engine ──────────────────────────────
+  let leaderFinalResult = null;
+
+  const lfHist = {
+    historyId:   'hist-leader-final-' + Date.now(),
+    from:        'strategy',
+    to:          'leader',
+    taskId:      'at-postprocess-leader-final',
+    action:      'leader_final',
+    instruction: userMessage,
+    status:      'running',
+    requestedAt: new Date().toISOString(),
+    completedAt: null,
+    workflowId:  workflowId || null,
+    note:        'Leader Final Response: 生成中',
+  };
+  taskHistory.push(lfHist);
+
+  const leaderFinalTask = {
+    id:            'at-postprocess-leader-final',
+    agentId:       'leader',
+    instruction:   userMessage,
+    dependsOn:     [],
+    provider:      'openai',
+    enabled:       true,
+    collaborators: [],
+    status:        'running',
+    result:        null,
+    startedAt:     new Date().toISOString(),
+    completedAt:   null,
+    isPostProcess: true,
+    isLeaderFinal: true,
+  };
+  workflowTasks.push(leaderFinalTask);
+
+  try {
+    leaderFinalResult = await runLeaderFinalResponse({
+      userMessage,
+      workflowTasks,
+      brainResult,
+      knowledgeResult,
+      agentCaller,
+    });
+
+    leaderFinalTask.result       = leaderFinalResult.text;
+    leaderFinalTask.status       = 'completed';
+    leaderFinalTask.completedAt  = new Date().toISOString();
+    leaderFinalTask.providerUsed = leaderFinalResult.provider;
+    leaderFinalTask.modelUsed    = leaderFinalResult.model;
+    leaderFinalTask.responseMs   = leaderFinalResult.responseMs;
+    leaderFinalTask.fallback     = leaderFinalResult.fallback;
+    leaderFinalTask.replyLength  = leaderFinalResult.replyLength;
+
+    lfHist.status         = 'completed';
+    lfHist.completedAt    = leaderFinalTask.completedAt;
+    lfHist.providerUsed   = leaderFinalResult.provider;
+    lfHist.modelUsed      = leaderFinalResult.model;
+    lfHist.responseMs     = leaderFinalResult.responseMs;
+    lfHist.fallback       = leaderFinalResult.fallback;
+    lfHist.leaderFinal    = leaderFinalResult.text;
+    lfHist.leaderSummary  = leaderFinalResult.text.slice(0, 200);
+    lfHist.replyLength    = leaderFinalResult.replyLength;
+    lfHist.replyProvider  = leaderFinalResult.provider;
+    lfHist.replyModel     = leaderFinalResult.model;
+    lfHist.replyMs        = leaderFinalResult.responseMs;
+    lfHist.note           = 'Leader Final Response: 完了 ' + leaderFinalResult.replyLength + '文字';
+
+  } catch (lfErr) {
+    leaderFinalTask.status      = 'error';
+    leaderFinalTask.result      = 'Leader Final Responseエラー: ' + lfErr.message;
+    leaderFinalTask.completedAt = new Date().toISOString();
+    lfHist.status               = 'error';
+    lfHist.completedAt          = leaderFinalTask.completedAt;
+    lfHist.note                 = 'Leader Final エラー: ' + lfErr.message;
+    console.warn('[Phase42 LeaderFinal] error:', lfErr.message);
+  }
+  if (onProgress) onProgress({ workflowTasks: workflowTasks.slice(), taskHistory: taskHistory.slice(), brainResult });
+  // ── Leader Final ここまで ──────────────────────────────────────────────
+
+  return { workflowTasks, taskHistory, brainResult, leaderFinalResult };
 }
 
 module.exports = {
@@ -2425,5 +2694,6 @@ module.exports = {
   runAutoTaskWorkflow,
   runCompanyBrain,
   runKnowledgeLookup,
+  runLeaderFinalResponse,
   ORGANIZATION_MAP,
 };

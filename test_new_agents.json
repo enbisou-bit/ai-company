@@ -1,0 +1,30 @@
+﻿[
+    {
+        "Agent":  "estimate",
+        "Reply":  "【現状仮説】\n①TikTokの具体的な課題や目的が不明です。\n②ターゲット層や現状のアカウント状況が不明です。\n③どのようなコンテンツや戦略を検討していますかが不明です。\n\n【確認したいこと】\n・TikTokアカウントの目的は何ですか。\n・ターゲット層は誰ですか。\n・現状のフォロワー数や投稿頻度を教えてください。"
+    },
+    {
+        "Agent":  "photo",
+        "Reply":  "ERROR: Invalid JSON primitive: ."
+    },
+    {
+        "Agent":  "image",
+        "Reply":  "ERROR: Invalid JSON primitive: ."
+    },
+    {
+        "Agent":  "contract",
+        "Reply":  "ERROR: Invalid JSON primitive: ."
+    },
+    {
+        "Agent":  "recruit",
+        "Reply":  "ERROR: Invalid JSON primitive: ."
+    },
+    {
+        "Agent":  "finance",
+        "Reply":  "ERROR: Invalid JSON primitive: ."
+    },
+    {
+        "Agent":  "legal",
+        "Reply":  "ERROR: Invalid JSON primitive: ."
+    }
+]
