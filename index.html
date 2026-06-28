@@ -19042,6 +19042,75 @@ function createKnowledgeCandidatesFromMemory(draft) {
 }
 
 // ══════════════════════════════════════════════════
+// Phase45-6A: Company Knowledge保存準備
+// ══════════════════════════════════════════════════
+
+const COMPANY_KNOWLEDGE_VERSION = '1.0.0';
+
+const COMPANY_KNOWLEDGE_RECORD_SCHEMA = {
+  version:  COMPANY_KNOWLEDGE_VERSION,
+  table:    'company_knowledge',
+  required: [
+    'id', 'version', 'category', 'text', 'source', 'outputType',
+    'qualityScore', 'confidence', 'status', 'recommendation',
+    'createdAt', 'approvedAt'
+  ],
+  optional: [
+    'tags', 'usageCount', 'lastUsedAt',
+    'originDraftId', 'originWorkflowId', 'notes'
+  ],
+  note: 'Schema only. DB table is not created in Phase45-6A.'
+};
+
+function getApprovedKnowledgeCandidates(draft) {
+  if (!draft || !draft.knowledgeCandidates) return [];
+  return draft.knowledgeCandidates.filter(function(kc) { return kc.status === 'approved'; });
+}
+
+function createCompanyKnowledgeRecord(candidate, draft) {
+  var d = draft || {};
+  return {
+    id:                'ck_' + Date.now() + '_' + Math.floor(Math.random() * 9999),
+    version:           COMPANY_KNOWLEDGE_VERSION,
+    category:          candidate.category,
+    text:              candidate.text,
+    source:            'knowledgeCandidates',
+    outputType:        candidate.outputType || d.type || 'document',
+    qualityScore:      candidate.qualityScore || (d.quality && d.quality.overall) || null,
+    confidence:        candidate.confidence  || 0.7,
+    status:            'approved',
+    recommendation:    candidate.recommendation || null,
+    createdAt:         new Date().toISOString(),
+    approvedAt:        candidate.approvedAt || new Date().toISOString(),
+    tags:              [candidate.category, candidate.outputType || d.type || 'document'],
+    usageCount:        0,
+    lastUsedAt:        null,
+    originDraftId:     d.id || null,
+    originWorkflowId:  null,
+    notes:             '',
+  };
+}
+
+function buildKnowledgeSavePreviewHtml() {
+  var approved = getApprovedKnowledgeCandidates(_lastOutputDraft);
+  if (approved.length === 0) return '';
+  var records = approved.map(function(c) { return createCompanyKnowledgeRecord(c, _lastOutputDraft); });
+  var esc = escapeHtml;
+  var rows = records.map(function(r) {
+    var catLabel = KNOWLEDGE_CATEGORY_LABELS[r.category] || r.category;
+    return '<div style="font-size:10px;color:rgba(255,255,255,0.5);padding:2px 0;">📄 ' + esc(catLabel) + ': ' + esc(r.text.slice(0, 50)) + (r.text.length > 50 ? '…' : '') + '</div>';
+  }).join('');
+  return '<div style="margin-top:10px;padding:8px 10px;background:rgba(80,200,120,0.06);border:1px solid rgba(80,200,120,0.2);border-radius:7px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(80,220,120,0.8);margin-bottom:5px;">💾 Knowledge Save Preparation</div>'
+    + '<div style="font-size:10px;color:rgba(255,255,255,0.45);">Approved candidates: <strong style="color:rgba(80,220,120,0.8);">' + approved.length + '</strong></div>'
+    + '<div style="font-size:10px;color:rgba(255,255,255,0.45);">Ready records: <strong style="color:rgba(80,220,120,0.8);">' + records.length + '</strong></div>'
+    + '<div style="font-size:10px;color:rgba(255,255,255,0.35);">Target table: <span style="color:rgba(140,190,255,0.7);">company_knowledge</span></div>'
+    + '<div style="font-size:10px;color:rgba(255,200,80,0.6);">Status: 準備のみ / 未保存</div>'
+    + rows
+    + '</div>';
+}
+
+// ══════════════════════════════════════════════════
 // Phase44-1: Output Engine 基盤
 // ══════════════════════════════════════════════════
 
@@ -19854,6 +19923,15 @@ function serializeOutputDraft(format) {
     mdLines.push('*Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items*');
     mdLines.push('');
   }
+  var approvedKc = getApprovedKnowledgeCandidates(d);
+  if (approvedKc.length > 0) {
+    mdLines.push('## Knowledge Save Preparation');
+    mdLines.push('**Approved:** ' + approvedKc.length);
+    mdLines.push('**Ready Records:** ' + approvedKc.length);
+    mdLines.push('**Target:** company_knowledge');
+    mdLines.push('**Status:** 準備のみ / 未保存');
+    mdLines.push('');
+  }
   return mdLines.join('\n');
 }
 
@@ -19973,6 +20051,7 @@ function buildKnowledgeCandidatesHtml() {
   return '<div class="oe-know-section">'
     + '<div class="oe-know-title">📚 Knowledge Candidates（' + items.length + '件）</div>'
     + rows
+    + buildKnowledgeSavePreviewHtml()
     + '<div class="oe-know-footer">Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items</div>'
     + '</div>';
 }
