@@ -9273,6 +9273,8 @@ async function atRunWorkflow() {
     _lastInjectedKnowledge = [];
     _kiLastFetchStatus = 'failed';
   }
+  // Phase46-2: Leader Execution Guide生成
+  _lastLeaderExecutionGuide = buildLeaderExecutionGuide(_lastInjectedKnowledge, _lastOutputDetection.type);
   (function() {
     var wlPanel = document.getElementById('workflow-live-panel');
     if (wlPanel && !wlPanel.classList.contains('open')) {
@@ -18333,9 +18335,13 @@ function renderWorkflowLive() {
             var kiLines = _lastInjectedKnowledge.map(function(k) {
               return '・' + (k.genre ? '[' + k.genre + '] ' : '') + (k.title || '').slice(0, 28);
             }).join('　');
+            var kiGuideSummary = (_lastLeaderExecutionGuide && _lastLeaderExecutionGuide.summary)
+              ? '<br><span style="color:rgba(255,210,80,0.6);">🎯 ' + _lastLeaderExecutionGuide.summary + '</span>'
+              : '';
             wlIk.innerHTML = '<span style="color:rgba(140,180,255,0.7);font-weight:700;">🧠 Injected ' + kiN + '件</span>'
               + ' <span style="color:rgba(140,180,255,0.4);">（取得元 ' + kiRaw + '件）</span><br>'
-              + '<span style="color:rgba(200,220,255,0.5);">' + kiLines + '</span>';
+              + '<span style="color:rgba(200,220,255,0.5);">' + kiLines + '</span>'
+              + kiGuideSummary;
             wlIk.style.display = 'block';
           }
         }
@@ -19407,6 +19413,64 @@ function selectRelevantKnowledge(items, outputType, sourceText) {
   });
 }
 
+// Phase46-2: Leader Execution Guide
+let _lastLeaderExecutionGuide = null;
+
+function buildLeaderExecutionGuide(knowledgeItems, outputType) {
+  var guide = {
+    outputType:     outputType || 'unknown',
+    priorities:     [],
+    avoid:          [],
+    structureHints: [],
+    brandHints:     [],
+    ctaHints:       [],
+    summary:        '',
+  };
+  if (!knowledgeItems || knowledgeItems.length === 0) return guide;
+
+  var _CTA_GENRES   = ['cta'];
+  var _STR_GENRES   = ['structure'];
+  var _BRD_GENRES   = ['brand'];
+  var _AVOID_GENRES = ['mistake', 'forbidden', 'warning'];
+  var _PRIO_GENRES  = ['success_pattern', 'preference', 'rule', 'decision', 'writing_style'];
+
+  knowledgeItems.forEach(function(k) {
+    var genre   = (k.genre   || '').toLowerCase();
+    var title   = (k.title   || '').replace(/^\[.*?\]\s*/, '').trim(); // カテゴリプレフィックスを除去
+    var reason  = (k.reason  || '').toLowerCase();
+    var text    = title || (k.content || '').slice(0, 60);
+    if (!text) return;
+
+    if (_CTA_GENRES.indexOf(genre) !== -1) {
+      if (guide.ctaHints.length < 5) guide.ctaHints.push(text);
+    } else if (_STR_GENRES.indexOf(genre) !== -1) {
+      if (guide.structureHints.length < 5) guide.structureHints.push(text);
+    } else if (_BRD_GENRES.indexOf(genre) !== -1) {
+      if (guide.brandHints.length < 5) guide.brandHints.push(text);
+    } else if (_AVOID_GENRES.indexOf(genre) !== -1) {
+      if (guide.avoid.length < 5) guide.avoid.push(text);
+    } else if (_PRIO_GENRES.indexOf(genre) !== -1) {
+      if (guide.priorities.length < 5) guide.priorities.push(text);
+    } else {
+      // 分類できないもの → priorities
+      if (guide.priorities.length < 5) guide.priorities.push(text);
+    }
+  });
+
+  // Summary生成（簡易）
+  var focusParts = [];
+  if (guide.ctaHints.length)       focusParts.push('CTA');
+  if (guide.structureHints.length)  focusParts.push('構成');
+  if (guide.brandHints.length)      focusParts.push('ブランド');
+  if (guide.priorities.length)      focusParts.push('優先事項');
+  if (guide.avoid.length)           focusParts.push('注意事項あり');
+  guide.summary = focusParts.length > 0
+    ? '今回は' + focusParts.join(' / ') + 'を優先して成果物を作る'
+    : 'Knowledgeなし';
+
+  return guide;
+}
+
 function getInjectedKnowledgeContext() {
   if (!_lastInjectedKnowledge || _lastInjectedKnowledge.length === 0) return '';
   var lines = [
@@ -19420,7 +19484,76 @@ function getInjectedKnowledgeContext() {
     lines.push('- ' + label + ' ' + text);
   });
   lines.push('【END Injected Knowledge】');
+
+  // Phase46-2: Leader Execution Guideを追加
+  if (_lastLeaderExecutionGuide && (
+    _lastLeaderExecutionGuide.priorities.length ||
+    _lastLeaderExecutionGuide.avoid.length ||
+    _lastLeaderExecutionGuide.structureHints.length ||
+    _lastLeaderExecutionGuide.brandHints.length ||
+    _lastLeaderExecutionGuide.ctaHints.length
+  )) {
+    var g = _lastLeaderExecutionGuide;
+    lines.push('');
+    lines.push('【Leader Execution Guide】');
+    if (g.priorities.length) {
+      lines.push('Priority:');
+      g.priorities.forEach(function(p) { lines.push('- ' + p); });
+    }
+    if (g.avoid.length) {
+      lines.push('Avoid:');
+      g.avoid.forEach(function(a) { lines.push('- ' + a); });
+    }
+    if (g.structureHints.length) {
+      lines.push('Structure:');
+      g.structureHints.forEach(function(s) { lines.push('- ' + s); });
+    }
+    if (g.brandHints.length) {
+      lines.push('Brand:');
+      g.brandHints.forEach(function(b) { lines.push('- ' + b); });
+    }
+    if (g.ctaHints.length) {
+      lines.push('CTA:');
+      g.ctaHints.forEach(function(c) { lines.push('- ' + c); });
+    }
+    if (g.summary) lines.push('Summary: ' + g.summary);
+    lines.push('【END Leader Execution Guide】');
+  }
+
   return lines.join('\n');
+}
+
+function buildLeaderExecutionGuideHtml() {
+  var g = _lastLeaderExecutionGuide;
+  if (!g) return '';
+  var esc = escapeHtml;
+  var hasAny = g.priorities.length || g.avoid.length || g.structureHints.length || g.brandHints.length || g.ctaHints.length;
+  if (!hasAny) {
+    return '<div style="margin-top:8px;padding:6px 10px;background:rgba(255,200,80,0.04);border:1px solid rgba(255,200,80,0.12);border-radius:7px;">'
+      + '<div style="font-size:10px;font-weight:700;color:rgba(255,200,80,0.6);">🎯 Leader Execution Guide</div>'
+      + '<div style="font-size:10px;color:rgba(255,255,255,0.25);">Guideなし（Knowledge 0件）</div>'
+      + '</div>';
+  }
+
+  function renderSection(label, items, color) {
+    if (!items || !items.length) return '';
+    return '<div style="margin-top:5px;">'
+      + '<div style="font-size:9px;font-weight:700;color:' + color + ';margin-bottom:2px;">' + esc(label) + '</div>'
+      + items.map(function(t) {
+          return '<div style="font-size:10px;color:rgba(255,255,255,0.65);padding:1px 0 1px 8px;border-left:2px solid ' + color.replace('0.8','0.3') + ';">・' + esc(t) + '</div>';
+        }).join('')
+      + '</div>';
+  }
+
+  return '<div style="margin-top:8px;padding:7px 10px;background:rgba(255,200,60,0.05);border:1px solid rgba(255,200,60,0.2);border-radius:7px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(255,210,80,0.9);margin-bottom:2px;">🎯 Leader Execution Guide</div>'
+    + '<div style="font-size:9px;color:rgba(255,200,80,0.55);margin-bottom:5px;">' + esc(g.summary) + '</div>'
+    + renderSection('Priority',   g.priorities,     'rgba(80,220,120,0.8)')
+    + renderSection('Avoid',      g.avoid,           'rgba(255,100,80,0.8)')
+    + renderSection('Structure',  g.structureHints,  'rgba(140,180,255,0.8)')
+    + renderSection('Brand',      g.brandHints,      'rgba(200,140,255,0.8)')
+    + renderSection('CTA',        g.ctaHints,        'rgba(255,180,60,0.8)')
+    + '</div>';
 }
 
 function buildInjectedKnowledgeHtml() {
@@ -20191,6 +20324,7 @@ function serializeOutputDraft(format) {
     if (_lastKnowledgeSaveResult) jsonObj._knowledgeSaveResult = _lastKnowledgeSaveResult;
     if (_knowledgeSaveHistory && _knowledgeSaveHistory.length) jsonObj._knowledgeSaveHistory = _knowledgeSaveHistory.slice(0, 10);
     if (_lastInjectedKnowledge && _lastInjectedKnowledge.length) jsonObj._injectedKnowledge = _lastInjectedKnowledge;
+    if (_lastLeaderExecutionGuide) jsonObj._leaderExecutionGuide = _lastLeaderExecutionGuide;
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -20359,6 +20493,23 @@ function serializeOutputDraft(format) {
     _lastInjectedKnowledge.forEach(function(k) {
       mdLines.push('- [' + (k.genre || '') + '] ' + (k.title || ''));
     });
+    mdLines.push('');
+  }
+  if (_lastLeaderExecutionGuide && (
+    _lastLeaderExecutionGuide.priorities.length ||
+    _lastLeaderExecutionGuide.avoid.length ||
+    _lastLeaderExecutionGuide.structureHints.length ||
+    _lastLeaderExecutionGuide.brandHints.length ||
+    _lastLeaderExecutionGuide.ctaHints.length
+  )) {
+    var eg = _lastLeaderExecutionGuide;
+    mdLines.push('## Leader Execution Guide');
+    if (eg.summary) mdLines.push('**Summary:** ' + eg.summary);
+    if (eg.priorities.length)    { mdLines.push('**Priority:**');   eg.priorities.forEach(function(x){ mdLines.push('- ' + x); }); }
+    if (eg.avoid.length)         { mdLines.push('**Avoid:**');      eg.avoid.forEach(function(x){ mdLines.push('- ' + x); }); }
+    if (eg.structureHints.length){ mdLines.push('**Structure:**');  eg.structureHints.forEach(function(x){ mdLines.push('- ' + x); }); }
+    if (eg.brandHints.length)    { mdLines.push('**Brand:**');      eg.brandHints.forEach(function(x){ mdLines.push('- ' + x); }); }
+    if (eg.ctaHints.length)      { mdLines.push('**CTA:**');        eg.ctaHints.forEach(function(x){ mdLines.push('- ' + x); }); }
     mdLines.push('');
   }
   return mdLines.join('\n');
@@ -20641,6 +20792,7 @@ function renderOutputEnginePanel() {
     + buildMemoryCandidatesHtml()
     + buildKnowledgeCandidatesHtml()
     + buildInjectedKnowledgeHtml()
+    + buildLeaderExecutionGuideHtml()
     + buildLeaderContextPreviewHtml()
     + buildKiDebugHtml()
     + buildExportUiHtml()
