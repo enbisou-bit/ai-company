@@ -785,6 +785,22 @@
     #wl-reopen-btn { bottom: 60px; right: 10px; font-size: 10px; padding: 6px 11px; }
   }
 
+  /* ── Phase44-2: Workflow Live Output Type バナー ── */
+  #wl-output-type {
+    flex-shrink: 0;
+    padding: 7px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: none;
+    align-items: center;
+    gap: 8px;
+    background: rgba(124,77,255,0.06);
+  }
+  #wl-output-type.visible { display: flex; }
+  .wl-ot-icon  { font-size: 14px; flex-shrink: 0; }
+  .wl-ot-label { font-size: 11px; font-weight: 700; color: #c89ef2; }
+  .wl-ot-conf  { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(124,77,255,0.2); color: #c89ef2; font-weight: 600; }
+  .wl-ot-keys  { font-size: 9px; color: rgba(255,255,255,0.3); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   /* ── Phase44-1: Output Engine Panel ── */
   #output-engine-panel {
     display: none;
@@ -5880,6 +5896,13 @@
       <h3>📡 Workflow Live <span id="wl-status-label" style="font-weight:400;color:rgba(255,255,255,0.4);font-size:11px;"></span></h3>
       <button id="wl-close" onclick="toggleWorkflowLive()" title="閉じる">✕</button>
     </div>
+    <!-- Phase44-2: Output Type バナー（判定後のみ表示） -->
+    <div id="wl-output-type">
+      <span class="wl-ot-icon" id="wl-ot-icon">📦</span>
+      <span class="wl-ot-label" id="wl-ot-label">—</span>
+      <span class="wl-ot-conf"  id="wl-ot-conf">0%</span>
+      <span class="wl-ot-keys"  id="wl-ot-keys"></span>
+    </div>
     <!-- Phase43-3: Workflow Progress Bar（実行中のみ表示） -->
     <div id="wl-progress">
       <div class="wl-pb-header">
@@ -9105,6 +9128,10 @@ async function atRunWorkflow() {
   _wlLastResults = pendingTasks.slice().concat(_wlPreCards); // 全担当カードを WL に反映
   _wlLastHistory = [];                   // 実行履歴はまだなし
   _wlLastBrain   = null;                 // Brain解析はまだなし
+
+  // Phase44-2: 成果物タイプ自動判定
+  _lastOutputDetection = detectOutputType(userMessage);
+  _lastOutputDraft     = createOutputDraft(_lastOutputDetection.type, userMessage);
   (function() {
     var wlPanel = document.getElementById('workflow-live-panel');
     if (wlPanel && !wlPanel.classList.contains('open')) {
@@ -18112,6 +18139,28 @@ function renderWorkflowLive() {
     var total = results.length;
     if (label) label.textContent = done + '/' + total + ' 完了';
 
+    // Phase44-2: Output Type バナー更新
+    (function() {
+      var otEl   = document.getElementById('wl-output-type');
+      var otIcon = document.getElementById('wl-ot-icon');
+      var otLbl  = document.getElementById('wl-ot-label');
+      var otConf = document.getElementById('wl-ot-conf');
+      var otKeys = document.getElementById('wl-ot-keys');
+      if (!otEl) return;
+      if (_lastOutputDetection) {
+        var def = _lastOutputDetection.definition;
+        if (otIcon) otIcon.textContent = def ? def.icon : '📦';
+        if (otLbl)  otLbl.textContent  = _lastOutputDetection.label;
+        if (otConf) otConf.textContent = _lastOutputDetection.confidence + '%';
+        if (otKeys) otKeys.textContent = _lastOutputDetection.matchedKeywords.length > 0
+          ? 'Matched: ' + _lastOutputDetection.matchedKeywords.join(' / ')
+          : '（キーワード未マッチ）';
+        otEl.classList.add('visible');
+      } else {
+        otEl.classList.remove('visible');
+      }
+    })();
+
     // Phase43-3: Workflow Progress Bar 更新
     (function() {
       var pbEl     = document.getElementById('wl-progress');
@@ -18595,6 +18644,57 @@ function toggleOutputEnginePanel() {
   }
 }
 
+// ══════════════════════════════════════════════════
+// Phase44-2: 成果物タイプ自動判定
+// ══════════════════════════════════════════════════
+
+const OUTPUT_TYPE_KEYWORDS = {
+  [OUTPUT_TYPES.INSTAGRAM_CAROUSEL]: ['instagram', 'インスタ', 'カルーセル', 'スライド', '10枚', '投稿画像', 'リール'],
+  [OUTPUT_TYPES.INSTAGRAM_POST]:     ['instagram投稿', 'インスタ投稿', '投稿文', 'キャプション'],
+  [OUTPUT_TYPES.TIKTOK_VIDEO]:       ['tiktok', 'ティックトック', 'ショート動画', '動画案', '動画台本'],
+  [OUTPUT_TYPES.YOUTUBE_SHORTS]:     ['youtube', 'ユーチューブ', 'shorts', 'ショート'],
+  [OUTPUT_TYPES.LP]:                 ['lp', 'ランディングページ', '販売ページ', 'セールスページ'],
+  [OUTPUT_TYPES.FLYER]:              ['チラシ', 'フライヤー', 'a4', '両面', 'ビラ'],
+  [OUTPUT_TYPES.PDF]:                ['pdf', '資料', '提案書', 'レポート', '報告書'],
+  [OUTPUT_TYPES.HTML]:               ['html', 'webサイト', 'ホームページ', 'ウェブ'],
+  [OUTPUT_TYPES.POWERPOINT]:         ['powerpoint', 'ppt', 'pptx', 'プレゼン', 'スライド資料'],
+  [OUTPUT_TYPES.EXCEL]:              ['excel', '表', 'スプレッドシート', '集計', '一覧表'],
+  [OUTPUT_TYPES.IMAGE_PROMPT]:       ['画像生成', '画像プロンプト', '写真生成', 'midjourney', 'stable diffusion'],
+  [OUTPUT_TYPES.VIDEO_PROMPT]:       ['動画生成', '動画プロンプト', 'runway', 'kling', 'veo', 'flow'],
+  [OUTPUT_TYPES.DOCUMENT]:           ['文章', '構成', '原稿', 'まとめ', 'ドキュメント', '記事'],
+};
+
+let _lastOutputDetection = null;
+let _lastOutputDraft     = null;
+
+function detectOutputType(text) {
+  var lower = (text || '').toLowerCase();
+  var bestType  = OUTPUT_TYPES.DOCUMENT;
+  var bestScore = 0;
+  var bestKeys  = [];
+
+  Object.keys(OUTPUT_TYPE_KEYWORDS).forEach(function(type) {
+    var keywords = OUTPUT_TYPE_KEYWORDS[type];
+    var matched  = keywords.filter(function(kw) { return lower.indexOf(kw.toLowerCase()) !== -1; });
+    var score    = matched.length / keywords.length;
+    if (matched.length > 0 && score > bestScore) {
+      bestScore = score;
+      bestType  = type;
+      bestKeys  = matched;
+    }
+  });
+
+  var confidence = bestScore > 0 ? Math.min(Math.round(bestScore * 100 + 40), 99) : 30;
+  var def = getOutputTypeDefinition(bestType);
+  return {
+    type:            bestType,
+    label:           def ? def.label : bestType,
+    confidence:      confidence,
+    matchedKeywords: bestKeys,
+    definition:      def,
+  };
+}
+
 function renderOutputEnginePanel() {
   var body = document.getElementById('oe-body');
   if (!body) return;
@@ -18619,12 +18719,35 @@ function renderOutputEnginePanel() {
         + '</div>';
     }).join('');
 
+  // 直近判定結果セクション
+  var detectionHtml = '';
+  if (_lastOutputDetection && _lastOutputDraft) {
+    var dDef = _lastOutputDetection.definition;
+    var dIcon = dDef ? dDef.icon : '📦';
+    var srcPreview = (_lastOutputDraft.sourceText || '').slice(0, 50) + ((_lastOutputDraft.sourceText || '').length > 50 ? '…' : '');
+    detectionHtml =
+      '<div class="oe-status-card" style="border-color:rgba(124,77,255,0.4);background:linear-gradient(135deg,rgba(30,15,50,0.9),rgba(15,10,30,0.95));">'
+      + '<div class="oe-status-title">直近の判定結果</div>'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      +   '<span style="font-size:18px;">' + dIcon + '</span>'
+      +   '<span class="oe-status-value" style="color:#c89ef2;">' + _lastOutputDetection.label + '</span>'
+      +   '<span class="oe-status-chip oe-s-draft">' + getOutputStatusLabel(_lastOutputDraft.status) + '</span>'
+      + '</div>'
+      + '<div class="oe-status-sub">信頼度: <strong style="color:#c89ef2;">' + _lastOutputDetection.confidence + '%</strong></div>'
+      + (_lastOutputDetection.matchedKeywords.length > 0
+          ? '<div class="oe-status-sub">Matched: ' + _lastOutputDetection.matchedKeywords.join(' / ') + '</div>'
+          : '')
+      + (srcPreview ? '<div class="oe-status-sub" style="margin-top:4px;font-style:italic;">元依頼: ' + srcPreview + '</div>' : '')
+      + '</div>';
+  }
+
   body.innerHTML =
     '<div class="oe-status-card">'
     + '<div class="oe-status-title">OUTPUT ENGINE STATUS</div>'
     + '<div class="oe-status-value">✅ 準備完了</div>'
     + '<div class="oe-status-sub">登録済み成果物タイプ: ' + typeCount + ' 種</div>'
     + '</div>'
+    + detectionHtml
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
     + '<div class="oe-type-grid">' + typeCards + '</div>'
