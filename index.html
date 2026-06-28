@@ -19427,6 +19427,83 @@ const _KCM_LABELS = {
 
 let _knowledgeCompareMode = KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
 
+// Phase46-4: Compare Log（max30件）
+let _knowledgeCompareLog = [];
+const COMPARE_LOG_MAX = 30;
+
+function recordKnowledgeCompareEntry(draft) {
+  if (!draft || !draft.quality) return;
+  var entry = {
+    id:          'kcl-' + Date.now(),
+    recordedAt:  new Date().toISOString(),
+    mode:        _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE,
+    modeLabel:   _KCM_LABELS[_knowledgeCompareMode] || _knowledgeCompareMode,
+    outputType:  draft.type || 'unknown',
+    overallScore: draft.quality.overall || 0,
+    qualityStatus: draft.quality.status || '',
+    injectedCount: (_lastInjectedKnowledge && _lastInjectedKnowledge.length) || 0,
+    hasGuide:    !!_lastLeaderExecutionGuide,
+    sourceText:  (draft.sourceText || '').slice(0, 60),
+  };
+  _knowledgeCompareLog = [entry].concat(_knowledgeCompareLog).slice(0, COMPARE_LOG_MAX);
+}
+
+function getCompareSummaryByMode() {
+  var byMode = {};
+  _knowledgeCompareLog.forEach(function(e) {
+    if (!byMode[e.mode]) byMode[e.mode] = { count: 0, totalScore: 0, label: e.modeLabel };
+    byMode[e.mode].count++;
+    byMode[e.mode].totalScore += e.overallScore;
+  });
+  return byMode;
+}
+
+function buildCompareLogHtml() {
+  if (_knowledgeCompareLog.length === 0) return '';
+  var esc = escapeHtml;
+  var summary = getCompareSummaryByMode();
+
+  var summaryRows = Object.keys(summary).map(function(mode) {
+    var s = summary[mode];
+    var avg = s.count > 0 ? Math.round(s.totalScore / s.count) : 0;
+    var barColor = avg >= 85 ? '#5ddb8e' : avg >= 70 ? '#f0b840' : '#e06060';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+      + '<span style="font-size:9px;color:rgba(200,220,255,0.75);min-width:90px;">' + esc(s.label) + '</span>'
+      + '<div style="flex:1;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;height:8px;">'
+      +   '<div style="width:' + avg + '%;height:100%;background:' + barColor + ';transition:width 0.3s;"></div>'
+      + '</div>'
+      + '<span style="font-size:9px;color:' + barColor + ';font-weight:700;min-width:28px;">' + avg + '</span>'
+      + '<span style="font-size:8px;color:rgba(255,255,255,0.3);">×' + s.count + '</span>'
+      + '</div>';
+  }).join('');
+
+  var logRows = _knowledgeCompareLog.slice(0, 10).map(function(e, i) {
+    var scoreColor = e.overallScore >= 85 ? '#5ddb8e' : e.overallScore >= 70 ? '#f0b840' : '#e06060';
+    var modeShort = e.mode === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE    ? '🟢通常'
+                  : e.mode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE ? '⚪なし'
+                  : '🔵Guide';
+    var timeStr = (e.recordedAt || '').slice(11, 16);
+    return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+      + '<span style="font-size:8px;color:rgba(255,255,255,0.25);min-width:14px;">' + (i + 1) + '</span>'
+      + '<span style="font-size:8px;color:rgba(180,200,255,0.5);min-width:30px;">' + timeStr + '</span>'
+      + '<span style="font-size:8px;color:rgba(200,220,255,0.6);min-width:62px;">' + modeShort + '</span>'
+      + '<span style="font-size:8px;color:rgba(200,200,255,0.5);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(e.sourceText || '—') + '</span>'
+      + '<span style="font-size:9px;font-weight:700;color:' + scoreColor + ';min-width:26px;text-align:right;">' + e.overallScore + '</span>'
+      + '</div>';
+  }).join('');
+
+  return '<div style="margin-top:10px;padding:10px 12px;background:rgba(40,55,100,0.12);border:1px solid rgba(80,120,200,0.2);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(160,200,255,0.85);margin-bottom:8px;">📊 Compare Log（' + _knowledgeCompareLog.length + '件）</div>'
+    + '<div style="margin-bottom:8px;">'
+    +   '<div style="font-size:9px;color:rgba(180,200,255,0.55);margin-bottom:4px;">モード別 平均Qualityスコア</div>'
+    +   summaryRows
+    + '</div>'
+    + '<div style="font-size:9px;color:rgba(180,200,255,0.55);margin-bottom:3px;">直近10件</div>'
+    + logRows
+    + '<div style="font-size:8px;color:rgba(255,255,255,0.2);margin-top:5px;">最大' + COMPARE_LOG_MAX + '件保持 / セッション内</div>'
+    + '</div>';
+}
+
 function switchKnowledgeCompareMode(mode) {
   if (!KNOWLEDGE_COMPARE_MODE[mode.toUpperCase().replace(/-/g,'_')] && Object.values(KNOWLEDGE_COMPARE_MODE).indexOf(mode) === -1) return;
   _knowledgeCompareMode = mode;
@@ -20029,6 +20106,9 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _companyKnowledgeCandidateBuffer = (_lastOutputDraft.knowledgeCandidates || []).concat(_companyKnowledgeCandidateBuffer).slice(0, 50);
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
+  // Phase46-4: Compare Logに記録
+  recordKnowledgeCompareEntry(_lastOutputDraft);
+
   // WLが開いていれば再描画してDraft Statusを更新
   var wlPanel = document.getElementById('workflow-live-panel');
   if (wlPanel && wlPanel.classList.contains('open')) {
@@ -20426,6 +20506,7 @@ function serializeOutputDraft(format) {
     if (_lastInjectedKnowledge && _lastInjectedKnowledge.length) jsonObj._injectedKnowledge = _lastInjectedKnowledge;
     if (_lastLeaderExecutionGuide) jsonObj._leaderExecutionGuide = _lastLeaderExecutionGuide;
     jsonObj._knowledgeCompareMode = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
+    if (_knowledgeCompareLog && _knowledgeCompareLog.length) jsonObj._knowledgeCompareLog = _knowledgeCompareLog.slice(0, 10);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -20627,6 +20708,22 @@ function serializeOutputDraft(format) {
     mdLines.push('Guide: ' + (_lastLeaderExecutionGuide ? 'yes' : 'no'));
     mdLines.push('');
   })();
+  // Phase46-4: Compare Log
+  if (_knowledgeCompareLog && _knowledgeCompareLog.length > 0) {
+    var summary46 = getCompareSummaryByMode();
+    mdLines.push('## Compare Log Summary');
+    Object.keys(summary46).forEach(function(mode) {
+      var s = summary46[mode];
+      var avg = s.count > 0 ? Math.round(s.totalScore / s.count) : 0;
+      mdLines.push('- ' + s.label + ': avg ' + avg + ' / ' + s.count + '件');
+    });
+    mdLines.push('');
+    mdLines.push('## Compare Log (直近10件)');
+    _knowledgeCompareLog.slice(0, 10).forEach(function(e, i) {
+      mdLines.push((i + 1) + '. [' + e.modeLabel + '] Score:' + e.overallScore + ' / ' + (e.sourceText || '—'));
+    });
+    mdLines.push('');
+  }
   return mdLines.join('\n');
 }
 
@@ -20912,6 +21009,7 @@ function renderOutputEnginePanel() {
     + buildKnowledgeCompareModeUiHtml()
     + buildLeaderContextPreviewHtml()
     + buildKiDebugHtml()
+    + buildCompareLogHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
