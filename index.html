@@ -806,6 +806,16 @@
   #wl-ot-roles.visible { display: block; }
   .wl-ot-role-chip { display: inline-block; margin-right: 8px; }
   .wl-ot-role-name { color: rgba(200,158,242,0.6); font-weight: 600; }
+  /* Phase44-5: Carousel Package */
+  .oe-pkg-section { border-radius: 10px; border: 1px solid rgba(255,100,150,0.25); background: linear-gradient(135deg, rgba(40,10,30,0.9), rgba(20,5,20,0.95)); padding: 12px 14px; }
+  .oe-pkg-title   { font-size: 10px; color: rgba(255,120,160,0.7); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-weight: 700; }
+  .oe-pkg-label   { font-size: 10px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.06em; margin: 8px 0 4px; }
+  .oe-slide-card  { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.5; }
+  .oe-slide-num   { font-size: 9px; color: rgba(255,120,160,0.6); font-weight: 700; margin-bottom: 3px; }
+  .oe-field-val   { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.5; word-break: break-word; }
+  .oe-empty-val   { font-size: 10px; color: rgba(255,255,255,0.2); font-style: italic; }
+  .oe-copy-area   { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: rgba(255,255,255,0.6); font-size: 10px; line-height: 1.6; padding: 8px 10px; resize: vertical; min-height: 120px; font-family: monospace; margin-top: 4px; }
+
   /* Phase44-4: Draft Status chip */
   #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
   #wl-ot-draft-status.visible { display: inline-block; }
@@ -18949,6 +18959,90 @@ function detectOutputType(text) {
   };
 }
 
+// ══════════════════════════════════════════════════
+// Phase44-5: Carousel Package 表示
+// ══════════════════════════════════════════════════
+
+function buildCarouselPackageHtml() {
+  if (!_lastOutputDraft) return '';
+  if (_lastOutputDraft.type !== OUTPUT_TYPES.INSTAGRAM_CAROUSEL) return '';
+  var f = _lastOutputDraft.fields || {};
+
+  // Slides
+  var slidesHtml;
+  var slides = f.slides;
+  if (Array.isArray(slides) && slides.length > 0) {
+    slidesHtml = slides.map(function(slide, i) {
+      return '<div class="oe-slide-card">'
+        + '<div class="oe-slide-num">Slide ' + (i + 1) + '</div>'
+        + '<div>' + escapeHtml(String(slide)) + '</div>'
+        + '</div>';
+    }).join('');
+  } else {
+    slidesHtml = '<div class="oe-empty-val">スライド未抽出（Leader Final実行後に更新されます）</div>';
+  }
+
+  // Caption
+  var captionHtml = (f.caption && f.caption !== '')
+    ? '<div class="oe-field-val">' + escapeHtml(String(f.caption).slice(0, 300)) + (f.caption.length > 300 ? '…' : '') + '</div>'
+    : '<div class="oe-empty-val">未生成</div>';
+
+  // CTA
+  var ctaHtml = (f.cta && f.cta !== '')
+    ? '<div class="oe-field-val">' + escapeHtml(String(f.cta)) + '</div>'
+    : '<div class="oe-empty-val">未生成</div>';
+
+  // Hashtags
+  var hashtagsHtml;
+  if (Array.isArray(f.hashtags) && f.hashtags.length > 0) {
+    hashtagsHtml = '<div class="oe-field-val">' + f.hashtags.map(function(h) { return escapeHtml(h.startsWith('#') ? h : '#' + h); }).join(' ') + '</div>';
+  } else if (typeof f.hashtags === 'string' && f.hashtags !== '') {
+    hashtagsHtml = '<div class="oe-field-val">' + escapeHtml(f.hashtags) + '</div>';
+  } else {
+    hashtagsHtml = '<div class="oe-empty-val">未生成</div>';
+  }
+
+  // Image Prompts
+  var imgHtml;
+  if (Array.isArray(f.imagePrompts) && f.imagePrompts.length > 0) {
+    imgHtml = f.imagePrompts.map(function(p, i) {
+      return '<div class="oe-slide-card"><div class="oe-slide-num">Prompt ' + (i + 1) + '</div>' + escapeHtml(String(p)) + '</div>';
+    }).join('');
+  } else {
+    imgHtml = '<div class="oe-empty-val">未生成（画像プロンプトをLeaderに依頼すると追加されます）</div>';
+  }
+
+  // コピー用まとめテキスト
+  var copyLines = ['【Instagram Carousel】', ''];
+  var sl = Array.isArray(slides) ? slides : [];
+  sl.forEach(function(s, i) { copyLines.push('Slide ' + (i + 1) + ':'); copyLines.push(String(s)); copyLines.push(''); });
+  copyLines.push('Caption:');
+  copyLines.push(f.caption || '（未生成）');
+  copyLines.push('');
+  copyLines.push('CTA:');
+  copyLines.push(f.cta || '（未生成）');
+  copyLines.push('');
+  copyLines.push('Hashtags:');
+  var htArr = Array.isArray(f.hashtags) ? f.hashtags : (f.hashtags ? [f.hashtags] : []);
+  copyLines.push(htArr.length > 0 ? htArr.map(function(h) { return h.startsWith('#') ? h : '#' + h; }).join(' ') : '（未生成）');
+
+  return '<div class="oe-pkg-section">'
+    + '<div class="oe-pkg-title">📱 Instagram Carousel Package</div>'
+    + '<div class="oe-pkg-label">Slides</div>'
+    + slidesHtml
+    + '<div class="oe-pkg-label">Caption</div>'
+    + captionHtml
+    + '<div class="oe-pkg-label">CTA</div>'
+    + ctaHtml
+    + '<div class="oe-pkg-label">Hashtags</div>'
+    + hashtagsHtml
+    + '<div class="oe-pkg-label">Image Prompts</div>'
+    + imgHtml
+    + '<div class="oe-pkg-label">コピー用まとめ</div>'
+    + '<textarea class="oe-copy-area" readonly>' + escapeHtml(copyLines.join('\n')) + '</textarea>'
+    + '</div>';
+}
+
 function renderOutputEnginePanel() {
   var body = document.getElementById('oe-body');
   if (!body) return;
@@ -19030,6 +19124,7 @@ function renderOutputEnginePanel() {
     + '<div class="oe-status-sub">登録済み成果物タイプ: ' + typeCount + ' 種</div>'
     + '</div>'
     + detectionHtml
+    + buildCarouselPackageHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
     + '<div class="oe-type-grid">' + typeCards + '</div>'
