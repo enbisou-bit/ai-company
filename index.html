@@ -791,6 +791,7 @@
     padding: 7px 18px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     display: none;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     background: rgba(124,77,255,0.06);
@@ -800,6 +801,11 @@
   .wl-ot-label { font-size: 11px; font-weight: 700; color: #c89ef2; }
   .wl-ot-conf  { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(124,77,255,0.2); color: #c89ef2; font-weight: 600; }
   .wl-ot-keys  { font-size: 9px; color: rgba(255,255,255,0.3); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Phase44-3: 担当割当行 */
+  #wl-ot-roles { width: 100%; font-size: 9px; color: rgba(255,255,255,0.28); line-height: 1.5; display: none; }
+  #wl-ot-roles.visible { display: block; }
+  .wl-ot-role-chip { display: inline-block; margin-right: 8px; }
+  .wl-ot-role-name { color: rgba(200,158,242,0.6); font-weight: 600; }
 
   /* ── Phase44-1: Output Engine Panel ── */
   #output-engine-panel {
@@ -5902,6 +5908,8 @@
       <span class="wl-ot-label" id="wl-ot-label">—</span>
       <span class="wl-ot-conf"  id="wl-ot-conf">0%</span>
       <span class="wl-ot-keys"  id="wl-ot-keys"></span>
+      <!-- Phase44-3: 担当割当行 -->
+      <div id="wl-ot-roles"></div>
     </div>
     <!-- Phase43-3: Workflow Progress Bar（実行中のみ表示） -->
     <div id="wl-progress">
@@ -18156,8 +18164,20 @@ function renderWorkflowLive() {
           ? 'Matched: ' + _lastOutputDetection.matchedKeywords.join(' / ')
           : '（キーワード未マッチ）';
         otEl.classList.add('visible');
+        // Phase44-3: 担当割当行
+        var otRoles = document.getElementById('wl-ot-roles');
+        if (otRoles && _lastOutputDraft && _lastOutputDraft.assignedRoles) {
+          var roleHtml = Object.keys(_lastOutputDraft.assignedRoles).map(function(role) {
+            var fields = _lastOutputDraft.assignedRoles[role];
+            return '<span class="wl-ot-role-chip"><span class="wl-ot-role-name">' + role + ':</span> ' + fields.join(' / ') + '</span>';
+          }).join('');
+          otRoles.innerHTML = roleHtml;
+          otRoles.classList.add('visible');
+        }
       } else {
         otEl.classList.remove('visible');
+        var otRoles2 = document.getElementById('wl-ot-roles');
+        if (otRoles2) otRoles2.classList.remove('visible');
       }
     })();
 
@@ -18617,12 +18637,14 @@ function getOutputTypeDefinition(type) {
 function createOutputDraft(type, sourceText) {
   var def = getOutputTypeDefinition(type);
   if (!def) return null;
+  var roleInfo = getOutputRoleAssignments(type);
   var draft = {
     id: 'out_' + Date.now(),
     type: type,
     status: OUTPUT_STATUS.DRAFT,
     sourceText: sourceText || '',
     fields: {},
+    assignedRoles: roleInfo.assignments,
     createdAt: new Date().toISOString(),
   };
   (def.outputFields || []).forEach(function(f) { draft.fields[f] = ''; });
@@ -18642,6 +18664,119 @@ function toggleOutputEnginePanel() {
     renderOutputEnginePanel();
     p.classList.add('open');
   }
+}
+
+// ══════════════════════════════════════════════════
+// Phase44-3: 担当別成果物フィールド割当
+// ══════════════════════════════════════════════════
+
+const OUTPUT_ROLE_ASSIGNMENTS = {
+  [OUTPUT_TYPES.INSTAGRAM_CAROUSEL]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['slides', 'caption'],
+    sns:      ['cta', 'hashtags'],
+    designer: ['imagePrompts', 'layoutNotes'],
+    reviewer: ['qualityCheck'],
+    strategy: ['positioning', 'conversionAngle'],
+  },
+  [OUTPUT_TYPES.INSTAGRAM_POST]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['caption'],
+    sns:      ['cta', 'hashtags'],
+    designer: ['imagePrompt'],
+    reviewer: ['qualityCheck'],
+    strategy: ['positioning'],
+  },
+  [OUTPUT_TYPES.TIKTOK_VIDEO]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['script', 'captions'],
+    video:    ['videoPrompt'],
+    sns:      ['hashtags'],
+    reviewer: ['qualityCheck'],
+    strategy: ['hook', 'conversionAngle'],
+  },
+  [OUTPUT_TYPES.YOUTUBE_SHORTS]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['script', 'title', 'description'],
+    video:    ['videoPrompt'],
+    reviewer: ['qualityCheck'],
+    strategy: ['hook'],
+  },
+  [OUTPUT_TYPES.LP]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['headline', 'sections', 'cta'],
+    designer: ['layoutNotes', 'visualDirection'],
+    lp:       ['htmlStructure'],
+    reviewer: ['qualityCheck'],
+    strategy: ['offer', 'conversionAngle'],
+  },
+  [OUTPUT_TYPES.FLYER]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['catchcopy', 'body', 'offer'],
+    designer: ['layoutNotes', 'visualDirection'],
+    reviewer: ['qualityCheck'],
+    strategy: ['target', 'conversionAngle'],
+  },
+  [OUTPUT_TYPES.PDF]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['sections', 'summary'],
+    designer: ['layoutNotes'],
+    reviewer: ['qualityCheck'],
+    strategy: ['structure'],
+  },
+  [OUTPUT_TYPES.HTML]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['copy', 'sections'],
+    designer: ['layoutNotes'],
+    lp:       ['htmlStructure'],
+    reviewer: ['qualityCheck'],
+    strategy: ['conversionAngle'],
+  },
+  [OUTPUT_TYPES.POWERPOINT]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['title', 'slides'],
+    designer: ['designNotes', 'layoutNotes'],
+    reviewer: ['qualityCheck'],
+    strategy: ['structure'],
+  },
+  [OUTPUT_TYPES.EXCEL]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['title', 'summary'],
+    analyst:  ['sheets', 'formulas'],
+    reviewer: ['qualityCheck'],
+    strategy: ['structure'],
+  },
+  [OUTPUT_TYPES.IMAGE_PROMPT]: {
+    leader:   ['brief'],
+    designer: ['prompt', 'negativePrompt', 'style'],
+    writer:   ['concept'],
+    reviewer: ['qualityCheck'],
+    strategy: ['visualDirection'],
+  },
+  [OUTPUT_TYPES.VIDEO_PROMPT]: {
+    leader:   ['brief'],
+    video:    ['prompt', 'style', 'duration'],
+    writer:   ['concept'],
+    reviewer: ['qualityCheck'],
+    strategy: ['visualDirection'],
+  },
+  [OUTPUT_TYPES.DOCUMENT]: {
+    leader:   ['brief', 'finalPackage'],
+    writer:   ['body', 'summary'],
+    reviewer: ['qualityCheck'],
+    strategy: ['structure'],
+  },
+};
+
+function getOutputRoleAssignments(type) {
+  var assignments = OUTPUT_ROLE_ASSIGNMENTS[type] || OUTPUT_ROLE_ASSIGNMENTS[OUTPUT_TYPES.DOCUMENT];
+  var totalFields = Object.values(assignments).reduce(function(acc, fields) { return acc + fields.length; }, 0);
+  return {
+    type:        type,
+    assignments: assignments,
+    totalRoles:  Object.keys(assignments).length,
+    totalFields: totalFields,
+  };
 }
 
 // ══════════════════════════════════════════════════
@@ -18738,6 +18873,15 @@ function renderOutputEnginePanel() {
           ? '<div class="oe-status-sub">Matched: ' + _lastOutputDetection.matchedKeywords.join(' / ') + '</div>'
           : '')
       + (srcPreview ? '<div class="oe-status-sub" style="margin-top:4px;font-style:italic;">元依頼: ' + srcPreview + '</div>' : '')
+      + (function() {
+          if (!_lastOutputDraft || !_lastOutputDraft.assignedRoles) return '';
+          var rows = Object.keys(_lastOutputDraft.assignedRoles).map(function(role) {
+            return '<div class="oe-status-sub" style="margin-top:1px;"><span style="color:rgba(200,158,242,0.7);font-weight:600;">' + role + ':</span> ' + _lastOutputDraft.assignedRoles[role].join(', ') + '</div>';
+          }).join('');
+          return '<div style="margin-top:6px;padding-top:5px;border-top:1px solid rgba(124,77,255,0.15);">'
+            + '<div class="oe-status-title" style="margin-bottom:3px;">Assigned Roles</div>'
+            + rows + '</div>';
+        })()
       + '</div>';
   }
 
