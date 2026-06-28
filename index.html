@@ -18526,6 +18526,67 @@ function renderWorkflowLive() {
 
 
 // ══════════════════════════════════════════════════
+// Phase45-0: Output Schema v1.0
+// ══════════════════════════════════════════════════
+
+const OUTPUT_SCHEMA_VERSION = '1.0.0';
+
+const OUTPUT_SCHEMA_V1 = {
+  version: OUTPUT_SCHEMA_VERSION,
+  required: [
+    'id', 'type', 'status', 'sourceText', 'fields',
+    'assignedRoles', 'createdAt', 'updatedAt', 'schemaVersion'
+  ],
+  optional: [
+    'detection', 'quality', 'exports', 'memoryRefs',
+    'providerRefs', 'reviewNotes', 'finalPackage'
+  ],
+  fieldRules: {
+    id:            'string',
+    type:          'output_type',
+    status:        'output_status',
+    sourceText:    'string',
+    fields:        'object',
+    assignedRoles: 'object',
+    createdAt:     'iso_datetime',
+    updatedAt:     'iso_datetime',
+    schemaVersion: 'semver'
+  }
+};
+
+function normalizeOutputDraft(draft) {
+  if (!draft) return null;
+  if (!draft.schemaVersion) draft.schemaVersion = OUTPUT_SCHEMA_VERSION;
+  if (!draft.updatedAt)     draft.updatedAt     = new Date().toISOString();
+  if (!draft.fields)        draft.fields        = {};
+  if (!draft.assignedRoles) draft.assignedRoles = {};
+  if (!draft.status)        draft.status        = OUTPUT_STATUS.DRAFT;
+  if (!draft.hasOwnProperty('quality'))      draft.quality      = null;
+  if (!draft.hasOwnProperty('exports'))      draft.exports      = {};
+  if (!draft.hasOwnProperty('memoryRefs'))   draft.memoryRefs   = [];
+  if (!draft.hasOwnProperty('providerRefs')) draft.providerRefs = [];
+  if (!draft.hasOwnProperty('reviewNotes'))  draft.reviewNotes  = [];
+  if (!draft.hasOwnProperty('finalPackage')) draft.finalPackage = null;
+  return draft;
+}
+
+function validateOutputDraft(draft) {
+  var result = { ok: false, missing: [], warnings: [], version: OUTPUT_SCHEMA_VERSION };
+  if (!draft) { result.missing = OUTPUT_SCHEMA_V1.required.slice(); return result; }
+  OUTPUT_SCHEMA_V1.required.forEach(function(key) {
+    if (draft[key] === undefined || draft[key] === null) result.missing.push(key);
+  });
+  if (draft.type && !Object.values(OUTPUT_TYPES).includes(draft.type)) {
+    result.warnings.push('type "' + draft.type + '" is not in OUTPUT_TYPES');
+  }
+  if (draft.status && !Object.values(OUTPUT_STATUS).includes(draft.status)) {
+    result.warnings.push('status "' + draft.status + '" is not in OUTPUT_STATUS');
+  }
+  result.ok = result.missing.length === 0;
+  return result;
+}
+
+// ══════════════════════════════════════════════════
 // Phase44-1: Output Engine 基盤
 // ══════════════════════════════════════════════════
 
@@ -18678,6 +18739,7 @@ function createOutputDraft(type, sourceText) {
   var def = getOutputTypeDefinition(type);
   if (!def) return null;
   var roleInfo = getOutputRoleAssignments(type);
+  var now = new Date().toISOString();
   var draft = {
     id: 'out_' + Date.now(),
     type: type,
@@ -18685,7 +18747,16 @@ function createOutputDraft(type, sourceText) {
     sourceText: sourceText || '',
     fields: {},
     assignedRoles: roleInfo.assignments,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
+    schemaVersion: OUTPUT_SCHEMA_VERSION,
+    detection: _lastOutputDetection || null,
+    quality: null,
+    exports: {},
+    memoryRefs: [],
+    providerRefs: [],
+    reviewNotes: [],
+    finalPackage: null,
   };
   (def.outputFields || []).forEach(function(f) { draft.fields[f] = ''; });
   return draft;
@@ -18793,8 +18864,10 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     }
   }
 
-  _lastOutputDraft.status  = OUTPUT_STATUS.READY;
-  _lastOutputDraft.builtAt = new Date().toISOString();
+  _lastOutputDraft.status    = OUTPUT_STATUS.READY;
+  _lastOutputDraft.builtAt   = new Date().toISOString();
+  _lastOutputDraft.updatedAt = new Date().toISOString();
+  _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
   // WLが開いていれば再描画してDraft Statusを更新
   var wlPanel = document.getElementById('workflow-live-panel');
@@ -19375,11 +19448,26 @@ function renderOutputEnginePanel() {
       + '</div>';
   }
 
+  // Phase45-0: Schema validation表示
+  var schemaHtml = (function() {
+    var v = validateOutputDraft(_lastOutputDraft);
+    var missingTxt = v.missing.length ? v.missing.join(', ') : 'なし';
+    var warnTxt    = v.warnings.length ? v.warnings.join(' / ') : '';
+    var okLabel    = v.ok ? '<span style="color:rgba(80,220,120,0.9);">OK</span>' : '<span style="color:rgba(255,100,80,0.9);">NG</span>';
+    return '<div style="font-size:10px;color:rgba(255,255,255,0.35);margin-top:4px;letter-spacing:0.03em;">'
+      + 'Schema: <span style="color:rgba(200,158,242,0.7);">v' + OUTPUT_SCHEMA_VERSION + '</span>'
+      + ' &nbsp;Validation: ' + okLabel
+      + ' &nbsp;Missing: <span style="color:rgba(255,255,255,0.5);">' + missingTxt + '</span>'
+      + (warnTxt ? ' &nbsp;<span style="color:rgba(255,200,80,0.8);">⚠ ' + warnTxt + '</span>' : '')
+      + '</div>';
+  })();
+
   body.innerHTML =
     '<div class="oe-status-card">'
     + '<div class="oe-status-title">OUTPUT ENGINE STATUS</div>'
     + '<div class="oe-status-value">✅ 準備完了</div>'
     + '<div class="oe-status-sub">登録済み成果物タイプ: ' + typeCount + ' 種</div>'
+    + schemaHtml
     + '</div>'
     + detectionHtml
     + buildOutputPackageHtml()
