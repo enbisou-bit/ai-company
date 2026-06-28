@@ -19091,22 +19091,111 @@ function createCompanyKnowledgeRecord(candidate, draft) {
   };
 }
 
+// Phase45-6C: Knowledge正式保存
+let _lastKnowledgeSaveResult = null;
+
+async function saveApprovedKnowledgeCandidates(draft) {
+  var approved = getApprovedKnowledgeCandidates(draft);
+  if (!draft || approved.length === 0) {
+    _lastKnowledgeSaveResult = { ok: false, reason: 'no_approved_candidates', saved: 0, failed: 0, errors: [] };
+    _refreshKnowledgeSaveUi();
+    return _lastKnowledgeSaveResult;
+  }
+  _lastKnowledgeSaveResult = { ok: null, reason: 'saving', saved: 0, failed: 0, errors: [] };
+  _refreshKnowledgeSaveUi();
+
+  var savedIds = [];
+  var errors   = [];
+  for (var i = 0; i < approved.length; i++) {
+    var candidate = approved[i];
+    var record = createCompanyKnowledgeRecord(candidate, draft);
+    var payload = {
+      genre:   candidate.category || 'preference',
+      title:   ('[' + (candidate.category || '') + '] ' + candidate.text).slice(0, 100),
+      content: JSON.stringify(Object.assign({}, record, { originalText: candidate.text }), null, 2).slice(0, 400),
+      source:  'output_engine',
+    };
+    try {
+      var res = await fetch('/api/knowledge-library', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+      var json = await res.json();
+      if (json.ok) { savedIds.push(record.id); }
+      else         { errors.push((candidate.text || '').slice(0, 30) + ': ' + (json.error || 'unknown')); }
+    } catch (e) {
+      errors.push((candidate.text || '').slice(0, 30) + ': ' + e.message);
+    }
+  }
+
+  _lastKnowledgeSaveResult = {
+    ok:       errors.length === 0,
+    reason:   errors.length === 0 ? 'saved' : 'partial',
+    saved:    savedIds.length,
+    failed:   errors.length,
+    savedIds: savedIds,
+    errors:   errors,
+    savedAt:  new Date().toISOString(),
+  };
+  _refreshKnowledgeSaveUi();
+  return _lastKnowledgeSaveResult;
+}
+
+function _refreshKnowledgeSaveUi() {
+  var el = document.getElementById('oe-knowledge-save-result');
+  if (el) el.innerHTML = _buildKnowledgeSaveResultHtml();
+  var btn = document.getElementById('oe-knowledge-save-btn');
+  if (btn) {
+    var r = _lastKnowledgeSaveResult;
+    btn.disabled = (r && r.reason === 'saving');
+    btn.textContent = (r && r.reason === 'saving') ? '保存中...' : '承認済みKnowledgeを保存';
+  }
+}
+
+function _buildKnowledgeSaveResultHtml() {
+  var r = _lastKnowledgeSaveResult;
+  if (!r) return '';
+  if (r.reason === 'saving') return '<div style="font-size:10px;color:rgba(255,200,80,0.8);">⏳ 保存中...</div>';
+  if (r.reason === 'no_approved_candidates') return '<div style="font-size:10px;color:rgba(255,200,80,0.7);">⚠ 承認済み候補が0件です</div>';
+  var color = r.ok ? 'rgba(80,220,120,0.9)' : 'rgba(255,140,80,0.9)';
+  var icon  = r.ok ? '✅' : '⚠';
+  var html  = '<div style="font-size:10px;font-weight:700;color:' + color + ';margin-bottom:3px;">'
+    + icon + ' 保存 ' + r.saved + '件 / 失敗 ' + r.failed + '件</div>';
+  if (r.errors && r.errors.length) {
+    html += r.errors.map(function(e) {
+      return '<div style="font-size:9px;color:rgba(255,100,80,0.8);">❌ ' + escapeHtml(e) + '</div>';
+    }).join('');
+  }
+  return html;
+}
+
 function buildKnowledgeSavePreviewHtml() {
   var approved = getApprovedKnowledgeCandidates(_lastOutputDraft);
-  if (approved.length === 0) return '';
-  var records = approved.map(function(c) { return createCompanyKnowledgeRecord(c, _lastOutputDraft); });
+  if (approved.length === 0 && !_lastKnowledgeSaveResult) return '';
   var esc = escapeHtml;
-  var rows = records.map(function(r) {
-    var catLabel = KNOWLEDGE_CATEGORY_LABELS[r.category] || r.category;
-    return '<div style="font-size:10px;color:rgba(255,255,255,0.5);padding:2px 0;">📄 ' + esc(catLabel) + ': ' + esc(r.text.slice(0, 50)) + (r.text.length > 50 ? '…' : '') + '</div>';
-  }).join('');
+  var rows = '';
+  if (approved.length > 0) {
+    var records = approved.map(function(c) { return createCompanyKnowledgeRecord(c, _lastOutputDraft); });
+    rows = records.map(function(r) {
+      var catLabel = KNOWLEDGE_CATEGORY_LABELS[r.category] || r.category;
+      return '<div style="font-size:10px;color:rgba(255,255,255,0.5);padding:2px 0;">📄 ' + esc(catLabel) + ': ' + esc(r.text.slice(0, 50)) + (r.text.length > 50 ? '…' : '') + '</div>';
+    }).join('');
+  }
+  var btnHtml = '<button id="oe-knowledge-save-btn"'
+    + ' onclick="saveApprovedKnowledgeCandidates(_lastOutputDraft)"'
+    + ' style="margin-top:8px;font-size:10px;font-weight:700;padding:5px 13px;border-radius:10px;'
+    + 'background:rgba(80,200,120,0.15);border:1px solid rgba(80,200,120,0.4);'
+    + 'color:rgba(80,220,120,0.9);cursor:pointer;">'
+    + '承認済みKnowledgeを保存</button>';
   return '<div style="margin-top:10px;padding:8px 10px;background:rgba(80,200,120,0.06);border:1px solid rgba(80,200,120,0.2);border-radius:7px;">'
     + '<div style="font-size:10px;font-weight:700;color:rgba(80,220,120,0.8);margin-bottom:5px;">💾 Knowledge Save Preparation</div>'
     + '<div style="font-size:10px;color:rgba(255,255,255,0.45);">Approved candidates: <strong style="color:rgba(80,220,120,0.8);">' + approved.length + '</strong></div>'
-    + '<div style="font-size:10px;color:rgba(255,255,255,0.45);">Ready records: <strong style="color:rgba(80,220,120,0.8);">' + records.length + '</strong></div>'
-    + '<div style="font-size:10px;color:rgba(255,255,255,0.35);">Target table: <span style="color:rgba(140,190,255,0.7);">company_knowledge</span></div>'
-    + '<div style="font-size:10px;color:rgba(255,200,80,0.6);">Status: 準備のみ / 未保存</div>'
+    + '<div style="font-size:10px;color:rgba(255,255,255,0.35);">Target table: <span style="color:rgba(140,190,255,0.7);">knowledge_library</span></div>'
+    + '<div style="font-size:10px;color:rgba(255,200,80,0.6);">Source: output_engine</div>'
     + rows
+    + btnHtml
+    + '<div id="oe-knowledge-save-result" style="margin-top:6px;">' + _buildKnowledgeSaveResultHtml() + '</div>'
     + '</div>';
 }
 
@@ -19928,8 +20017,20 @@ function serializeOutputDraft(format) {
     mdLines.push('## Knowledge Save Preparation');
     mdLines.push('**Approved:** ' + approvedKc.length);
     mdLines.push('**Ready Records:** ' + approvedKc.length);
-    mdLines.push('**Target:** company_knowledge');
-    mdLines.push('**Status:** 準備のみ / 未保存');
+    mdLines.push('**Target:** knowledge_library');
+    mdLines.push('**Source:** output_engine');
+    mdLines.push('');
+  }
+  if (_lastKnowledgeSaveResult && _lastKnowledgeSaveResult.reason !== 'saving') {
+    var r = _lastKnowledgeSaveResult;
+    mdLines.push('## Knowledge Save Result');
+    mdLines.push('**Saved:** ' + (r.saved || 0));
+    mdLines.push('**Failed:** ' + (r.failed || 0));
+    mdLines.push('**Source:** output_engine');
+    mdLines.push('**Status:** ' + (r.ok ? '保存成功' : r.reason === 'no_approved_candidates' ? '承認済み0件' : '一部失敗'));
+    if (r.errors && r.errors.length) {
+      r.errors.forEach(function(e) { mdLines.push('- ❌ ' + e); });
+    }
     mdLines.push('');
   }
   return mdLines.join('\n');
