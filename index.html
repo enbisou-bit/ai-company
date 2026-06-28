@@ -19094,20 +19094,51 @@ function createCompanyKnowledgeRecord(candidate, draft) {
 // Phase45-6C: Knowledge正式保存
 let _lastKnowledgeSaveResult = null;
 
+// Phase45-6D: 重複防止 + 保存履歴
+let _knowledgeSaveHistory = [];
+
+function normalizeKnowledgeText(text) {
+  if (!text) return '';
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getKnowledgeFingerprint(candidate) {
+  return (candidate.category || 'unknown') + '::' + normalizeKnowledgeText(candidate.text);
+}
+
+function isKnowledgeDuplicate(candidate) {
+  var fp = getKnowledgeFingerprint(candidate);
+  for (var i = 0; i < _knowledgeSaveHistory.length; i++) {
+    if (_knowledgeSaveHistory[i].fingerprint === fp) return true;
+  }
+  if (_lastKnowledgeSaveResult && _lastKnowledgeSaveResult.savedFingerprints) {
+    if (_lastKnowledgeSaveResult.savedFingerprints.indexOf(fp) !== -1) return true;
+  }
+  return false;
+}
+
 async function saveApprovedKnowledgeCandidates(draft) {
   var approved = getApprovedKnowledgeCandidates(draft);
   if (!draft || approved.length === 0) {
-    _lastKnowledgeSaveResult = { ok: false, reason: 'no_approved_candidates', saved: 0, failed: 0, errors: [] };
+    _lastKnowledgeSaveResult = { ok: false, reason: 'no_approved_candidates', saved: 0, failed: 0, skipped: 0, errors: [], skippedDuplicates: [], savedFingerprints: [] };
     _refreshKnowledgeSaveUi();
     return _lastKnowledgeSaveResult;
   }
-  _lastKnowledgeSaveResult = { ok: null, reason: 'saving', saved: 0, failed: 0, errors: [] };
+  _lastKnowledgeSaveResult = { ok: null, reason: 'saving', saved: 0, failed: 0, skipped: 0, errors: [], skippedDuplicates: [], savedFingerprints: [] };
   _refreshKnowledgeSaveUi();
 
   var savedIds = [];
-  var errors   = [];
+  var savedFingerprints = [];
+  var errors = [];
+  var skippedDuplicates = [];
+
   for (var i = 0; i < approved.length; i++) {
     var candidate = approved[i];
+    var fp = getKnowledgeFingerprint(candidate);
+    if (isKnowledgeDuplicate(candidate)) {
+      skippedDuplicates.push({ text: candidate.text, category: candidate.category, fingerprint: fp, reason: 'same fingerprint already saved' });
+      continue;
+    }
     var record = createCompanyKnowledgeRecord(candidate, draft);
     var payload = {
       genre:   candidate.category || 'preference',
@@ -19122,21 +19153,33 @@ async function saveApprovedKnowledgeCandidates(draft) {
         body:    JSON.stringify(payload),
       });
       var json = await res.json();
-      if (json.ok) { savedIds.push(record.id); }
-      else         { errors.push((candidate.text || '').slice(0, 30) + ': ' + (json.error || 'unknown')); }
+      if (json.ok) {
+        savedIds.push(record.id);
+        savedFingerprints.push(fp);
+        var now = new Date();
+        var hhmm = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+        _knowledgeSaveHistory.unshift({ fingerprint: fp, category: candidate.category, text: (candidate.text || '').slice(0, 40), savedAt: hhmm });
+        if (_knowledgeSaveHistory.length > 50) _knowledgeSaveHistory.length = 50;
+      } else {
+        errors.push((candidate.text || '').slice(0, 30) + ': ' + (json.error || 'unknown'));
+      }
     } catch (e) {
       errors.push((candidate.text || '').slice(0, 30) + ': ' + e.message);
     }
   }
 
   _lastKnowledgeSaveResult = {
-    ok:       errors.length === 0,
-    reason:   errors.length === 0 ? 'saved' : 'partial',
-    saved:    savedIds.length,
-    failed:   errors.length,
-    savedIds: savedIds,
-    errors:   errors,
-    savedAt:  new Date().toISOString(),
+    ok:                 errors.length === 0,
+    reason:             errors.length === 0 ? 'saved' : 'partial',
+    saved:              savedIds.length,
+    failed:             errors.length,
+    skipped:            skippedDuplicates.length,
+    savedIds:           savedIds,
+    savedFingerprints:  savedFingerprints,
+    errors:             errors,
+    skippedDuplicates:  skippedDuplicates,
+    source:             'output_engine',
+    savedAt:            new Date().toISOString(),
   };
   _refreshKnowledgeSaveUi();
   return _lastKnowledgeSaveResult;
@@ -19160,12 +19203,45 @@ function _buildKnowledgeSaveResultHtml() {
   if (r.reason === 'no_approved_candidates') return '<div style="font-size:10px;color:rgba(255,200,80,0.7);">⚠ 承認済み候補が0件です</div>';
   var color = r.ok ? 'rgba(80,220,120,0.9)' : 'rgba(255,140,80,0.9)';
   var icon  = r.ok ? '✅' : '⚠';
-  var html  = '<div style="font-size:10px;font-weight:700;color:' + color + ';margin-bottom:3px;">'
-    + icon + ' 保存 ' + r.saved + '件 / 失敗 ' + r.failed + '件</div>';
+  var total = (r.saved || 0) + (r.failed || 0) + (r.skipped || 0);
+  // Save Summary
+  var html = '<div style="margin-top:6px;padding:6px 8px;background:rgba(80,200,120,0.07);border:1px solid rgba(80,200,120,0.18);border-radius:6px;">';
+  html += '<div style="font-size:10px;font-weight:700;color:rgba(140,200,255,0.85);margin-bottom:4px;">📊 Knowledge Save Summary</div>';
+  html += '<div style="font-size:10px;color:rgba(255,255,255,0.5);">保存対象：<strong style="color:rgba(255,255,255,0.75);">' + total + '</strong></div>';
+  html += '<div style="font-size:10px;color:rgba(80,220,120,0.85);">保存成功：<strong>' + (r.saved || 0) + '</strong></div>';
+  html += '<div style="font-size:10px;color:rgba(180,180,100,0.8);">重複スキップ：<strong>' + (r.skipped || 0) + '</strong></div>';
+  html += '<div style="font-size:10px;color:rgba(255,100,80,0.8);">失敗：<strong>' + (r.failed || 0) + '</strong></div>';
+  html += '<div style="font-size:10px;color:rgba(255,200,80,0.6);">Source：output_engine</div>';
+  html += '</div>';
+  // Skipped duplicates
+  if (r.skippedDuplicates && r.skippedDuplicates.length > 0) {
+    html += '<div style="margin-top:5px;padding:5px 7px;background:rgba(180,160,40,0.07);border:1px solid rgba(180,160,40,0.2);border-radius:6px;">';
+    html += '<div style="font-size:10px;font-weight:700;color:rgba(220,200,80,0.8);margin-bottom:3px;">⏭ Skipped Duplicates</div>';
+    html += r.skippedDuplicates.map(function(s) {
+      var catLabel = KNOWLEDGE_CATEGORY_LABELS[s.category] || s.category || '';
+      return '<div style="font-size:9px;color:rgba(255,255,255,0.45);padding:1px 0;">'
+        + '[' + escapeHtml(catLabel) + '] ' + escapeHtml((s.text || '').slice(0, 40))
+        + ' <span style="color:rgba(180,160,40,0.6);">— ' + escapeHtml(s.reason || '') + '</span></div>';
+    }).join('');
+    html += '</div>';
+  }
+  // Errors
   if (r.errors && r.errors.length) {
     html += r.errors.map(function(e) {
       return '<div style="font-size:9px;color:rgba(255,100,80,0.8);">❌ ' + escapeHtml(e) + '</div>';
     }).join('');
+  }
+  // Save History
+  if (_knowledgeSaveHistory.length > 0) {
+    html += '<div style="margin-top:5px;padding:5px 7px;background:rgba(80,120,200,0.06);border:1px solid rgba(80,120,200,0.15);border-radius:6px;">';
+    html += '<div style="font-size:10px;font-weight:700;color:rgba(140,180,255,0.7);margin-bottom:3px;">📜 Save History：' + _knowledgeSaveHistory.length + ' items</div>';
+    var recent = _knowledgeSaveHistory.slice(0, 3);
+    html += recent.map(function(h) {
+      var catLabel = KNOWLEDGE_CATEGORY_LABELS[h.category] || h.category || '';
+      return '<div style="font-size:9px;color:rgba(255,255,255,0.4);padding:1px 0;">'
+        + escapeHtml(catLabel) + ' / 保存済み / ' + escapeHtml(h.savedAt) + '</div>';
+    }).join('');
+    html += '</div>';
   }
   return html;
 }
@@ -20023,15 +20099,24 @@ function serializeOutputDraft(format) {
   }
   if (_lastKnowledgeSaveResult && _lastKnowledgeSaveResult.reason !== 'saving') {
     var r = _lastKnowledgeSaveResult;
-    mdLines.push('## Knowledge Save Result');
-    mdLines.push('**Saved:** ' + (r.saved || 0));
-    mdLines.push('**Failed:** ' + (r.failed || 0));
-    mdLines.push('**Source:** output_engine');
-    mdLines.push('**Status:** ' + (r.ok ? '保存成功' : r.reason === 'no_approved_candidates' ? '承認済み0件' : '一部失敗'));
+    var total6d = (r.saved || 0) + (r.failed || 0) + (r.skipped || 0);
+    mdLines.push('## Knowledge Save Summary');
+    mdLines.push('Target: ' + total6d);
+    mdLines.push('Saved: ' + (r.saved || 0));
+    mdLines.push('Skipped duplicates: ' + (r.skipped || 0));
+    mdLines.push('Failed: ' + (r.failed || 0));
+    mdLines.push('History: ' + _knowledgeSaveHistory.length + ' items');
+    mdLines.push('');
+    if (r.skippedDuplicates && r.skippedDuplicates.length) {
+      r.skippedDuplicates.forEach(function(s) {
+        mdLines.push('- Skipped [' + (s.category || '') + '] ' + (s.text || '').slice(0, 40) + ' — ' + (s.reason || ''));
+      });
+      mdLines.push('');
+    }
     if (r.errors && r.errors.length) {
       r.errors.forEach(function(e) { mdLines.push('- ❌ ' + e); });
+      mdLines.push('');
     }
-    mdLines.push('');
   }
   return mdLines.join('\n');
 }
