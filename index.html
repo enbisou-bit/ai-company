@@ -806,6 +806,15 @@
   #wl-ot-roles.visible { display: block; }
   .wl-ot-role-chip { display: inline-block; margin-right: 8px; }
   .wl-ot-role-name { color: rgba(200,158,242,0.6); font-weight: 600; }
+  /* Phase44-4: Draft Status chip */
+  #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
+  #wl-ot-draft-status.visible { display: inline-block; }
+  #wl-ot-draft-status.ds-draft     { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.4); }
+  #wl-ot-draft-status.ds-building  { background: rgba(255,210,0,0.15);   color: #ffd166; }
+  #wl-ot-draft-status.ds-reviewing { background: rgba(80,180,255,0.15);  color: #80cfff; }
+  #wl-ot-draft-status.ds-ready     { background: rgba(80,220,120,0.15);  color: #64dc8c; }
+  #wl-ot-draft-status.ds-exported  { background: rgba(124,77,255,0.2);   color: #c89ef2; }
+  #wl-ot-draft-status.ds-error     { background: rgba(255,80,80,0.15);   color: #ff8888; }
 
   /* ── Phase44-1: Output Engine Panel ── */
   #output-engine-panel {
@@ -5907,6 +5916,7 @@
       <span class="wl-ot-icon" id="wl-ot-icon">📦</span>
       <span class="wl-ot-label" id="wl-ot-label">—</span>
       <span class="wl-ot-conf"  id="wl-ot-conf">0%</span>
+      <span id="wl-ot-draft-status"></span>
       <span class="wl-ot-keys"  id="wl-ot-keys"></span>
       <!-- Phase44-3: 担当割当行 -->
       <div id="wl-ot-roles"></div>
@@ -9550,6 +9560,9 @@ async function atTriggerLeaderFinal() {
     }
 
     btn.textContent = '✅ Leader最終提案 完了（再生成）';
+
+    // Phase44-4: Output Draft Builder — Leader Final結果をdraft.fieldsに格納
+    buildOutputDraftFromLeaderFinal(data.reply);
 
     // 次タスク自動作成（auto-create next tasks from leader proposal）
     await atAutoCreateNextTasks(data.reply);
@@ -18164,6 +18177,13 @@ function renderWorkflowLive() {
           ? 'Matched: ' + _lastOutputDetection.matchedKeywords.join(' / ')
           : '（キーワード未マッチ）';
         otEl.classList.add('visible');
+        // Phase44-4: Draft Status chip
+        var otDs = document.getElementById('wl-ot-draft-status');
+        if (otDs && _lastOutputDraft) {
+          var dsStatus = _lastOutputDraft.status || OUTPUT_STATUS.DRAFT;
+          otDs.textContent = 'Draft:' + getOutputStatusLabel(dsStatus);
+          otDs.className   = 'visible ds-' + dsStatus;
+        }
         // Phase44-3: 担当割当行
         var otRoles = document.getElementById('wl-ot-roles');
         if (otRoles && _lastOutputDraft && _lastOutputDraft.assignedRoles) {
@@ -18667,6 +18687,105 @@ function toggleOutputEnginePanel() {
 }
 
 // ══════════════════════════════════════════════════
+// Phase44-4: Output Draft Builder
+// ══════════════════════════════════════════════════
+
+function buildOutputDraftFromLeaderFinal(finalText) {
+  if (!_lastOutputDraft || !finalText) return { ok: false };
+  var type   = _lastOutputDraft.type;
+  var fields = _lastOutputDraft.fields;
+  var updatedFields = [];
+
+  function extractSlides(text) {
+    var lines = text.split('\n');
+    var slides = [];
+    var current = null;
+    lines.forEach(function(line) {
+      var t = line.trim();
+      if (/^(Slide|スライド|slide)\s*\d+/i.test(t) || /^[①②③④⑤⑥⑦⑧⑨⑩]/.test(t) || /^\d+[\.\)]\s/.test(t)) {
+        if (current !== null) slides.push(current);
+        current = t;
+      } else if (current !== null && t) {
+        current += ' ' + t;
+      }
+    });
+    if (current !== null) slides.push(current);
+    return slides.length > 0 ? slides : [text.slice(0, 200)];
+  }
+
+  if (type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL) {
+    fields.slides      = extractSlides(finalText);
+    fields.caption     = finalText;
+    fields.cta         = '';
+    fields.hashtags    = [];
+    fields.imagePrompts = [];
+    updatedFields = ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts'];
+
+  } else if (type === OUTPUT_TYPES.INSTAGRAM_POST) {
+    fields.caption  = finalText;
+    fields.cta      = '';
+    fields.hashtags = [];
+    updatedFields = ['caption', 'cta', 'hashtags'];
+
+  } else if (type === OUTPUT_TYPES.FLYER) {
+    fields.catchcopy   = '';
+    fields.body        = finalText;
+    fields.offer       = '';
+    fields.designNotes = '';
+    updatedFields = ['catchcopy', 'body', 'offer', 'designNotes'];
+
+  } else if (type === OUTPUT_TYPES.LP) {
+    fields.headline = '';
+    fields.sections = [finalText];
+    fields.cta      = '';
+    fields.html     = '';
+    updatedFields = ['headline', 'sections', 'cta', 'html'];
+
+  } else if (type === OUTPUT_TYPES.PDF || type === OUTPUT_TYPES.DOCUMENT) {
+    fields.sections = [finalText];
+    fields.summary  = finalText.slice(0, 200);
+    updatedFields = ['sections', 'summary'];
+
+  } else if (type === OUTPUT_TYPES.HTML) {
+    fields.copy         = finalText;
+    fields.sections     = [finalText];
+    fields.htmlStructure = '';
+    updatedFields = ['copy', 'sections', 'htmlStructure'];
+
+  } else if (type === OUTPUT_TYPES.TIKTOK_VIDEO || type === OUTPUT_TYPES.YOUTUBE_SHORTS) {
+    fields.script  = finalText;
+    fields.captions = [];
+    updatedFields = ['script', 'captions'];
+
+  } else if (type === OUTPUT_TYPES.POWERPOINT) {
+    fields.title  = finalText.split('\n')[0].slice(0, 60);
+    fields.slides = extractSlides(finalText);
+    updatedFields = ['title', 'slides'];
+
+  } else {
+    if ('body'     in fields) { fields.body     = finalText;              updatedFields.push('body'); }
+    if ('summary'  in fields) { fields.summary  = finalText.slice(0,200); updatedFields.push('summary'); }
+    if ('sections' in fields) { fields.sections = [finalText];            updatedFields.push('sections'); }
+    if ('script'   in fields) { fields.script   = finalText;              updatedFields.push('script'); }
+    if ('title'    in fields && !fields.title) {
+      fields.title = finalText.split('\n')[0].slice(0, 60);
+      updatedFields.push('title');
+    }
+  }
+
+  _lastOutputDraft.status  = OUTPUT_STATUS.READY;
+  _lastOutputDraft.builtAt = new Date().toISOString();
+
+  // WLが開いていれば再描画してDraft Statusを更新
+  var wlPanel = document.getElementById('workflow-live-panel');
+  if (wlPanel && wlPanel.classList.contains('open')) {
+    renderWorkflowLive();
+  }
+
+  return { ok: true, type: type, updatedFields: updatedFields, status: OUTPUT_STATUS.READY };
+}
+
+// ══════════════════════════════════════════════════
 // Phase44-3: 担当別成果物フィールド割当
 // ══════════════════════════════════════════════════
 
@@ -18880,6 +18999,25 @@ function renderOutputEnginePanel() {
           }).join('');
           return '<div style="margin-top:6px;padding-top:5px;border-top:1px solid rgba(124,77,255,0.15);">'
             + '<div class="oe-status-title" style="margin-bottom:3px;">Assigned Roles</div>'
+            + rows + '</div>';
+        })()
+      + (function() {
+          if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+          var hasAnyField = Object.values(_lastOutputDraft.fields).some(function(v) {
+            return Array.isArray(v) ? v.length > 0 : (v && v !== '');
+          });
+          if (!hasAnyField) return '';
+          var rows = Object.keys(_lastOutputDraft.fields).map(function(f) {
+            var val = _lastOutputDraft.fields[f];
+            var display;
+            if (Array.isArray(val))     display = val.length + ' items';
+            else if (val && val !== '') display = '本文あり（' + String(val).length + '文字）';
+            else                         display = '空';
+            var valColor = (display === '空') ? 'rgba(255,255,255,0.2)' : 'rgba(100,220,140,0.8)';
+            return '<div class="oe-status-sub" style="margin-top:1px;"><span style="color:rgba(255,255,255,0.45);">' + f + '：</span><span style="color:' + valColor + ';">' + display + '</span></div>';
+          }).join('');
+          return '<div style="margin-top:6px;padding-top:5px;border-top:1px solid rgba(80,220,120,0.15);">'
+            + '<div class="oe-status-title" style="margin-bottom:3px;color:rgba(80,220,120,0.6);">Draft Fields</div>'
             + rows + '</div>';
         })()
       + '</div>';
