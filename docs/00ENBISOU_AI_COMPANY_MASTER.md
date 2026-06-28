@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.0）
-> 更新日: 2026-06-29（Phase46-3完了）
+> 更新日: 2026-06-29（Phase46-4完了）
 
 ## 1. AI会社の最終目的（最重要）
 
@@ -89,10 +89,13 @@ User
 - Knowledge Compare Mode（Phase46-3）
   - with_knowledge / without_knowledge / guide_only
   - 品質比較のための3モード切替
+- Compare Log（Phase46-4）
+  - _knowledgeCompareLog[]（max30件）
+  - モード別平均スコア / 棒グラフ表示 / Export反映
 
-次工程（Phase46-4〜）：
-- 実案件テストログ / 品質比較記録
-- 成果物品質の継続改善
+次工程（Phase46-5〜）：
+- Compare Logを活用した実案件品質改善
+- 成果物品質の継続向上
 
 ## 7. v1.0完成像
 

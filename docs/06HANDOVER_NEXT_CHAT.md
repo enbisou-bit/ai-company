@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-06-29（Phase46-3完了）
+更新日: 2026-06-29（Phase46-4完了）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase46-3**
+**v1.00-phase46-4**
 
-最新Tag: `v1.00-phase46-3`
+最新Tag: `v1.00-phase46-4`
 
 ---
 
@@ -39,6 +39,7 @@
 | Phase46-1 | Knowledge Injection Preview強化 | v1.00-phase46-1 |
 | Phase46-2 | Leader Intelligence Upgrade（Execution Guide） | v1.00-phase46-2 |
 | Phase46-3 | Knowledge Compare Mode（3モード切替） | v1.00-phase46-3 |
+| Phase46-4 | 実案件テストログ / 品質比較記録 | v1.00-phase46-4 |
 
 ---
 
@@ -110,7 +111,7 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ---
 
-## Phase46-3までの重要機能（次チャットが把握すべき実装）
+## Phase46-4までの重要機能（次チャットが把握すべき実装）
 
 ### Workflow
 - `atRunWorkflow()` — Workflow開始 / Knowledge取得 / Guide生成 / Leaderへ注入
@@ -138,21 +139,30 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 - `switchKnowledgeCompareMode(mode)` — 切替関数
 - `getInjectedKnowledgeContext()` — モード別でLeaderへの注入を制御
 
+### Compare Log（Phase46-4）
+- `_knowledgeCompareLog[]` — 比較ログ（max30件 / セッション内）
+- `recordKnowledgeCompareEntry(draft)` — Leader Final完了時に自動記録
+- `getCompareSummaryByMode()` — モード別平均スコア集計
+- `buildCompareLogHtml()` — Output Engineパネルに比較ログ表示
+- Export（markdown/json）に比較ログ自動反映
+
 ---
 
 ## 次にやること
 
-### Phase46-4: 実案件テストログ / 品質比較記録
+### Phase46-5: 実案件品質改善（成果物品質の継続向上）
 
 目的：
-Knowledge Compare Mode（with_knowledge / without_knowledge / guide_only）を使って、
-実案件で成果物品質差を記録する仕組みを追加する。
+Phase46-4で記録された Compare Log / Quality Score を活用し、
+実案件をベースに成果物品質を継続改善する。
 
-やること：
-1. `_knowledgeCompareLog[]` グローバル追加（テスト結果記録）
-2. Quality Scoreを比較記録する関数追加
-3. Output Engineパネルに比較ログ表示
-4. Export に比較ログを反映
+候補：
+1. Quality Score の判定精度向上（evaluateOutputQuality の精度改善）
+2. Learning精度向上（extractLearningItems の抽出ロジック改善）
+3. Instagram / TikTok / LP など特定タイプの成果物品質強化
+4. Compare Log を使った「Knowledge注入効果」の定量検証
+
+※ 実案件で動かしてからユーザーと判断する
 
 ---
 

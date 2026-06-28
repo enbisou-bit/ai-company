@@ -162,10 +162,17 @@ Git: v0.96相当
 - Export: Knowledge Compare セクション追加
 - Git: 42b70aa / Tag: v1.00-phase46-3
 
-### Phase46-4: 実案件テストログ / 品質比較記録 ⬜
-- Knowledge Compare Modeを使った品質差記録
-- _knowledgeCompareLog / Quality Score比較
-- 同一依頼をモード別で比較できるサマリー
+### Phase46-4: 実案件テストログ / 品質比較記録 ✅
+- `_knowledgeCompareLog[]`（max30件）— Workflow完了ごとに自動記録
+- `recordKnowledgeCompareEntry(draft)` — mode / score / outputType / injectedCount を記録
+- `getCompareSummaryByMode()` — モード別平均スコア集計
+- `buildCompareLogHtml()` — Output Engineに棒グラフ＋直近10件一覧表示
+- Export（markdown / json）に比較ログ自動反映
+- Git: d7ed771 / Tag: v1.00-phase46-4
+
+### Phase46-5: 実案件品質改善 ⬜
+- Compare Logを活用した成果物品質の継続向上
+- Quality Score判定精度改善 / Learning精度向上 / 特定タイプ強化
 
 ---
 
@@ -179,7 +186,7 @@ Git: v0.96相当
 ☑ Knowledge Inject（Phase45-7）
 ☑ Leader Intelligence（Phase46-2）
 ☑ Knowledge Compare（Phase46-3）
-□ 実案件品質比較記録（Phase46-4）
+☑ 実案件品質比較記録（Phase46-4）
 □ Instagram完成品生成
 □ 動画完成品生成
 □ チラシ完成品生成
