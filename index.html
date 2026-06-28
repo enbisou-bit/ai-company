@@ -825,6 +825,22 @@
   .oe-copy-btn:hover { background: rgba(80,200,120,0.3); }
   .oe-copy-msg       { font-size: 10px; color: rgba(80,220,120,0.85); margin-left: 8px; opacity: 0; transition: opacity 0.3s; }
   .oe-copy-msg.show  { opacity: 1; }
+  /* Phase45-1 Quality Engine */
+  .oe-quality-section  { margin-top: 14px; background: rgba(10,30,20,0.7); border: 1px solid rgba(80,200,120,0.25); border-radius: 10px; padding: 12px 14px; }
+  .oe-quality-title    { font-size: 11px; font-weight: 700; color: rgba(80,220,120,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
+  .oe-quality-overall  { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .oe-quality-score    { font-size: 28px; font-weight: 800; color: rgba(80,220,120,1); line-height: 1; }
+  .oe-quality-badge    { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 10px; }
+  .oe-qb-excellent     { background: rgba(80,200,120,0.25); color: rgba(80,220,120,0.95); border: 1px solid rgba(80,200,120,0.4); }
+  .oe-qb-good          { background: rgba(100,180,255,0.2); color: rgba(120,200,255,0.9); border: 1px solid rgba(100,180,255,0.35); }
+  .oe-qb-fair          { background: rgba(255,200,80,0.2);  color: rgba(255,210,80,0.9);  border: 1px solid rgba(255,200,80,0.35); }
+  .oe-qb-needs_improvement { background: rgba(255,80,80,0.15); color: rgba(255,100,80,0.9); border: 1px solid rgba(255,80,80,0.3); }
+  .oe-quality-metrics  { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .oe-metric-chip      { font-size: 10px; background: rgba(80,200,120,0.1); border: 1px solid rgba(80,200,120,0.2); border-radius: 8px; padding: 2px 8px; color: rgba(200,255,220,0.7); }
+  .oe-quality-sub      { font-size: 10px; color: rgba(255,255,255,0.45); margin-bottom: 4px; }
+  .oe-quality-list     { list-style: none; padding: 0; margin: 2px 0 6px; }
+  .oe-quality-list li  { font-size: 10px; color: rgba(255,255,255,0.6); padding: 2px 0 2px 12px; position: relative; }
+  .oe-quality-list li::before { content: '・'; position: absolute; left: 0; color: rgba(80,220,120,0.6); }
 
   /* Phase44-4: Draft Status chip */
   #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
@@ -18587,6 +18603,113 @@ function validateOutputDraft(draft) {
 }
 
 // ══════════════════════════════════════════════════
+// Phase45-1: Reviewer Quality Engine
+// ══════════════════════════════════════════════════
+
+const OUTPUT_QUALITY_VERSION = '1.0.0';
+
+const QUALITY_METRIC_PRESETS = {
+  instagram_carousel: ['readability','hook','savePotential','ctaStrength','visualDirection','brandFit','completeness'],
+  flyer:              ['catchcopy','offerStrength','clarity','localAppeal','visualDirection','conversion','completeness'],
+  lp:                 ['headline','conversion','structure','ctaStrength','trust','brandFit','completeness'],
+  pdf:                ['structure','readability','completeness','summaryQuality','professionalTone'],
+  document:           ['structure','readability','completeness','clarity','professionalTone'],
+  html:               ['structure','copyQuality','ctaStrength','readability','completeness'],
+};
+
+function evaluateOutputQuality(draft) {
+  if (!draft) return null;
+  var fields  = draft.fields  || {};
+  var type    = draft.type    || 'document';
+  var status  = draft.status  || '';
+
+  // --- スコア計算 ---
+  var base = 70;
+  var bonus = 0;
+  var fieldKeys = Object.keys(fields);
+  var totalChars = 0;
+
+  fieldKeys.forEach(function(k) {
+    var v = fields[k];
+    if (Array.isArray(v)) {
+      if (v.length > 0) { bonus += 5; totalChars += v.join('').length; }
+    } else if (v && String(v).trim()) {
+      bonus += 5; totalChars += String(v).length;
+    }
+  });
+
+  // 主要フィールド加点
+  var majorFields = ['caption','body','sections','copy','headline','catchcopy','summary'];
+  majorFields.forEach(function(f) {
+    var v = fields[f];
+    var hasVal = Array.isArray(v) ? v.length > 0 : (v && String(v).trim());
+    if (hasVal) bonus += 8;
+    else        bonus -= 10;
+  });
+
+  if (fields.cta  && String(fields.cta).trim())      bonus += 5;
+  if (fields.hashtags && String(fields.hashtags).trim()) bonus += 3;
+  if (fields.imagePrompts && (Array.isArray(fields.imagePrompts) ? fields.imagePrompts.length : String(fields.imagePrompts).trim())) bonus += 3;
+  if (fields.summary && String(fields.summary).trim()) bonus += 3;
+  if (fieldKeys.length === 0)    bonus -= 20;
+  if (totalChars < 30)           bonus -= 10;
+  if (status !== 'ready')        bonus -= 5;
+
+  var overall = Math.max(0, Math.min(100, base + bonus));
+
+  // メトリクス（overall ± ランダム揺らぎなし、field存在で±調整）
+  var metrics = {};
+  var presets = QUALITY_METRIC_PRESETS[type] || QUALITY_METRIC_PRESETS['document'];
+  presets.forEach(function(m) {
+    var adj = 0;
+    if (m === 'completeness') {
+      var filled = fieldKeys.filter(function(k) {
+        var v = fields[k]; return Array.isArray(v) ? v.length > 0 : (v && String(v).trim());
+      }).length;
+      adj = fieldKeys.length > 0 ? Math.round((filled / fieldKeys.length) * 20) - 10 : -10;
+    } else if (m === 'ctaStrength')     adj = (fields.cta && String(fields.cta).trim()) ? 5 : -8;
+    else if (m === 'hook')              adj = (fields.caption || fields.headline) ? 4 : -5;
+    else if (m === 'structure')         adj = (fields.sections && (Array.isArray(fields.sections) ? fields.sections.length : String(fields.sections))) ? 6 : -5;
+    else if (m === 'summaryQuality')    adj = (fields.summary && String(fields.summary).trim()) ? 8 : -10;
+    else if (m === 'savePotential')     adj = (fields.imagePrompts) ? 4 : -3;
+    metrics[m] = Math.max(0, Math.min(100, overall + adj));
+  });
+
+  // ステータス
+  var qStatus = overall >= 90 ? 'excellent' : overall >= 80 ? 'good' : overall >= 70 ? 'fair' : 'needs_improvement';
+
+  // 強み・改善点・学習
+  var strengths    = [];
+  var improvements = [];
+  var learning     = [];
+
+  if (metrics.completeness >= 80) strengths.push('成果物フィールドがよく埋まっています');
+  if (metrics.structure    >= 80) strengths.push('構成が整理されています');
+  if (metrics.readability  >= 80) strengths.push('読みやすい文章構成です');
+  if (metrics.ctaStrength  >= 75) strengths.push('CTAが明確です');
+
+  if ((metrics.ctaStrength  || 0) < 70) { improvements.push('CTAをより明確にすると成果物品質が上がります'); learning.push('次回はCTAを早い段階で明記する'); }
+  if ((metrics.completeness || 0) < 70) { improvements.push('空のフィールドを埋めると品質が改善します');     learning.push('Leaderへの指示に必要フィールドを明示する'); }
+  if ((metrics.hook         || 0) < 70) { improvements.push('冒頭のフックをより強くしてください');           learning.push('最初の1文でターゲットの悩みを直撃する'); }
+  if ((metrics.structure    || 0) < 70) { improvements.push('セクション構成を明確にしてください');           learning.push('見出しとセクション分けを先に設計してから本文を書く'); }
+
+  if (strengths.length    === 0) strengths.push('基本構成はできています');
+  if (improvements.length === 0) improvements.push('現時点では大きな改善点はありません');
+  if (learning.length     === 0) learning.push('このまま継続して品質を維持してください');
+
+  return {
+    version:     OUTPUT_QUALITY_VERSION,
+    overall:     overall,
+    status:      qStatus,
+    metrics:     metrics,
+    strengths:   strengths,
+    improvements:improvements,
+    learning:    learning,
+    evaluatedAt: new Date().toISOString(),
+  };
+}
+
+// ══════════════════════════════════════════════════
 // Phase44-1: Output Engine 基盤
 // ══════════════════════════════════════════════════
 
@@ -18867,6 +18990,7 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _lastOutputDraft.status    = OUTPUT_STATUS.READY;
   _lastOutputDraft.builtAt   = new Date().toISOString();
   _lastOutputDraft.updatedAt = new Date().toISOString();
+  _lastOutputDraft.quality   = evaluateOutputQuality(_lastOutputDraft);
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
   // WLが開いていれば再描画してDraft Statusを更新
@@ -19272,7 +19396,17 @@ function serializeOutputDraft(format) {
         return '<section><h3>' + escapeHtml(k) + '</h3>' + (Array.isArray(v) ? '<ul>' + display + '</ul>' : '<p>' + display + '</p>') + '</section>';
       }).join('\n');
     }
-    return '<!DOCTYPE html>\n<html lang="ja">\n<head><meta charset="UTF-8"><title>' + escapeHtml(typeLabel) + '</title></head>\n<body>\n<h1>' + escapeHtml(typeLabel) + '</h1>\n' + rows + '\n</body>\n</html>';
+    var qHtml = '';
+    if (d.quality) {
+      var q = d.quality;
+      var mRows = Object.keys(q.metrics || {}).map(function(m) { return '<li>' + escapeHtml(m) + ': ' + q.metrics[m] + '</li>'; }).join('');
+      qHtml = '<section><h2>Quality Score</h2>'
+        + '<p>Overall: ' + q.overall + ' / ' + escapeHtml(q.status) + '</p>'
+        + '<ul>' + mRows + '</ul>'
+        + '<h3>Improvements</h3><ul>' + (q.improvements||[]).map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('') + '</ul>'
+        + '</section>';
+    }
+    return '<!DOCTYPE html>\n<html lang="ja">\n<head><meta charset="UTF-8"><title>' + escapeHtml(typeLabel) + '</title></head>\n<body>\n<h1>' + escapeHtml(typeLabel) + '</h1>\n' + rows + '\n' + qHtml + '\n</body>\n</html>';
   }
 
   if (fmt === 'text') {
@@ -19287,6 +19421,13 @@ function serializeOutputDraft(format) {
           lines.push(String(v || '（空）'));
         }
       });
+    }
+    if (d.quality) {
+      var q2 = d.quality;
+      lines.push('\n--- Quality Score ---');
+      lines.push('Overall: ' + q2.overall + ' / ' + q2.status);
+      lines.push('Improvements:');
+      (q2.improvements || []).forEach(function(s) { lines.push('  ・' + s); });
     }
     return lines.join('\n');
   }
@@ -19304,6 +19445,20 @@ function serializeOutputDraft(format) {
       }
       mdLines.push('');
     });
+  }
+  if (d.quality) {
+    var q3 = d.quality;
+    mdLines.push('## Quality Score');
+    mdLines.push('**Overall:** ' + q3.overall + ' / ' + q3.status);
+    mdLines.push('');
+    Object.keys(q3.metrics || {}).forEach(function(m) { mdLines.push('- ' + m + ': ' + q3.metrics[m]); });
+    mdLines.push('');
+    mdLines.push('**Improvements:**');
+    (q3.improvements || []).forEach(function(s) { mdLines.push('- ' + s); });
+    mdLines.push('');
+    mdLines.push('**Learning:**');
+    (q3.learning || []).forEach(function(s) { mdLines.push('- ' + s); });
+    mdLines.push('');
   }
   return mdLines.join('\n');
 }
@@ -19338,6 +19493,35 @@ function copyExportOutput() {
     ta.select();
     try { document.execCommand('copy'); showMsg(); } catch(e) {}
   }
+}
+
+// Phase45-1: Quality Score HTML生成
+function buildQualityScoreHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.quality) return '';
+  var q   = _lastOutputDraft.quality;
+  var esc = escapeHtml;
+  var badgeClass = 'oe-qb-' + (q.status || 'fair');
+  var badgeLabel = { excellent:'EXCELLENT', good:'GOOD', fair:'FAIR', needs_improvement:'NEEDS WORK' }[q.status] || q.status;
+
+  var metricsHtml = Object.keys(q.metrics || {}).map(function(m) {
+    return '<span class="oe-metric-chip">' + esc(m) + ': ' + q.metrics[m] + '</span>';
+  }).join('');
+
+  var strengthsHtml = (q.strengths || []).map(function(s) { return '<li>' + esc(s) + '</li>'; }).join('');
+  var improvHtml    = (q.improvements || []).map(function(s) { return '<li>' + esc(s) + '</li>'; }).join('');
+  var learnHtml     = (q.learning || []).map(function(s) { return '<li>' + esc(s) + '</li>'; }).join('');
+
+  return '<div class="oe-quality-section">'
+    + '<div class="oe-quality-title">⭐ Quality Score</div>'
+    + '<div class="oe-quality-overall">'
+    +   '<div class="oe-quality-score">' + q.overall + '</div>'
+    +   '<span class="oe-quality-badge ' + badgeClass + '">' + badgeLabel + '</span>'
+    + '</div>'
+    + '<div class="oe-quality-metrics">' + metricsHtml + '</div>'
+    + (strengthsHtml ? '<div class="oe-quality-sub">Strengths</div><ul class="oe-quality-list">' + strengthsHtml + '</ul>' : '')
+    + (improvHtml    ? '<div class="oe-quality-sub">Improvements</div><ul class="oe-quality-list">' + improvHtml + '</ul>' : '')
+    + (learnHtml     ? '<div class="oe-quality-sub">Learning</div><ul class="oe-quality-list">' + learnHtml + '</ul>' : '')
+    + '</div>';
 }
 
 // Phase44-7: Export UI HTML生成
@@ -19471,6 +19655,7 @@ function renderOutputEnginePanel() {
     + '</div>'
     + detectionHtml
     + buildOutputPackageHtml()
+    + buildQualityScoreHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
