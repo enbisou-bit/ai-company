@@ -888,6 +888,28 @@
   .oe-kc-decision        { background: rgba(180,100,255,0.2); color: rgba(200,130,255,0.9); border: 1px solid rgba(180,100,255,0.3); }
   .oe-know-text      { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.5; }
   .oe-know-footer    { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 6px; text-align: right; }
+  /* Phase45-5 Recommendation Engine */
+  .oe-know-card      { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+  .oe-know-card:last-child { margin-bottom: 0; }
+  .oe-know-card-top  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 5px; }
+  .oe-rec-badge      { font-size: 10px; font-weight: 700; padding: 2px 9px; border-radius: 10px; white-space: nowrap; }
+  .oe-rec-recommended { background: rgba(80,200,120,0.2); color: rgba(80,220,120,1); border: 1px solid rgba(80,200,120,0.4); }
+  .oe-rec-review      { background: rgba(255,200,80,0.2); color: rgba(255,210,80,1); border: 1px solid rgba(255,200,80,0.4); }
+  .oe-rec-normal      { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.1); }
+  .oe-rec-score      { font-size: 10px; font-weight: 700; color: rgba(200,200,200,0.6); }
+  .oe-rec-reasons    { font-size: 9px; color: rgba(255,255,255,0.35); margin-bottom: 5px; line-height: 1.6; }
+  .oe-know-status    { font-size: 9px; padding: 1px 7px; border-radius: 8px; font-weight: 600; }
+  .oe-ks-candidate   { background: rgba(100,160,255,0.15); color: rgba(140,190,255,0.8); border: 1px solid rgba(100,160,255,0.25); }
+  .oe-ks-approved    { background: rgba(80,200,120,0.2);  color: rgba(80,220,120,0.9);  border: 1px solid rgba(80,200,120,0.3); }
+  .oe-ks-held        { background: rgba(255,200,80,0.15); color: rgba(255,210,80,0.8);  border: 1px solid rgba(255,200,80,0.25); }
+  .oe-ks-rejected    { background: rgba(255,80,80,0.12);  color: rgba(255,100,80,0.7);  border: 1px solid rgba(255,80,80,0.2); }
+  .oe-know-actions   { display: flex; gap: 5px; margin-top: 6px; }
+  .oe-ka-approve     { font-size: 9px; padding: 3px 9px; border-radius: 8px; border: 1px solid rgba(80,200,120,0.4); background: rgba(80,200,120,0.1); color: rgba(80,220,120,0.9); cursor: pointer; font-weight: 600; }
+  .oe-ka-hold        { font-size: 9px; padding: 3px 9px; border-radius: 8px; border: 1px solid rgba(255,200,80,0.4); background: rgba(255,200,80,0.1); color: rgba(255,210,80,0.9); cursor: pointer; font-weight: 600; }
+  .oe-ka-reject      { font-size: 9px; padding: 3px 9px; border-radius: 8px; border: 1px solid rgba(255,80,80,0.3); background: rgba(255,80,80,0.08); color: rgba(255,100,80,0.8); cursor: pointer; font-weight: 600; }
+  .oe-ka-approve:hover { background: rgba(80,200,120,0.25); }
+  .oe-ka-hold:hover    { background: rgba(255,200,80,0.25); }
+  .oe-ka-reject:hover  { background: rgba(255,80,80,0.2); }
 
   /* Phase44-4: Draft Status chip */
   #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
@@ -18932,12 +18954,77 @@ const _MEMORY_TO_KNOWLEDGE_MAP = {
 
 let _companyKnowledgeCandidateBuffer = [];
 
+// Phase45-5: Recommendation Engine
+const KNOWLEDGE_RECOMMENDATION = {
+  RECOMMENDED: 'recommended',
+  REVIEW:      'review',
+  NORMAL:      'normal',
+};
+
+const _REC_SCORE_BONUS = {
+  qualityHigh:      30,
+  confidenceHigh:   25,
+  success_pattern:  20,
+  brand:            10,
+  cta:               5,
+  rule:              8,
+  decision:          8,
+  structure:         5,
+  writing_style:     3,
+};
+const _REC_SCORE_PENALTY = {
+  warning:  -20,
+  mistake:  -10,
+  forbidden: -15,
+};
+const _REC_THRESHOLD_RECOMMENDED = 70;
+const _REC_THRESHOLD_REVIEW      = 50;
+
+function calculateKnowledgeRecommendation(candidate) {
+  var score   = 50;
+  var reasons = [];
+  var qs = candidate.qualityScore;
+  var cf = candidate.confidence;
+  var cat = candidate.category;
+  if (qs && qs >= 90) { score += _REC_SCORE_BONUS.qualityHigh; reasons.push('品質スコア90点以上'); }
+  else if (qs && qs >= 80) { score += 15; reasons.push('品質スコア80点以上'); }
+  if (cf && cf >= 0.85) { score += _REC_SCORE_BONUS.confidenceHigh; reasons.push('Confidence 0.85以上'); }
+  else if (cf && cf >= 0.75) { score += 10; reasons.push('Confidence 0.75以上'); }
+  if (_REC_SCORE_BONUS[cat] !== undefined) {
+    score += _REC_SCORE_BONUS[cat];
+    var catLabel = KNOWLEDGE_CATEGORY_LABELS[cat] || cat;
+    reasons.push('カテゴリ: ' + catLabel);
+  }
+  if (_REC_SCORE_PENALTY[cat] !== undefined) {
+    score += _REC_SCORE_PENALTY[cat];
+    reasons.push('注意カテゴリ（減点）');
+  }
+  score = Math.max(0, Math.min(100, score));
+  var level = score >= _REC_THRESHOLD_RECOMMENDED ? KNOWLEDGE_RECOMMENDATION.RECOMMENDED
+            : score >= _REC_THRESHOLD_REVIEW       ? KNOWLEDGE_RECOMMENDATION.REVIEW
+            : KNOWLEDGE_RECOMMENDATION.NORMAL;
+  return { level: level, score: score, reasons: reasons };
+}
+
+function approveKnowledgeCandidate(id, action) {
+  if (!_lastOutputDraft || !_lastOutputDraft.knowledgeCandidates) return;
+  _lastOutputDraft.knowledgeCandidates.forEach(function(kc) {
+    if (kc.id === id) kc.status = action; // 'approved' | 'held' | 'rejected'
+  });
+  _companyKnowledgeCandidateBuffer.forEach(function(kc) {
+    if (kc.id === id) kc.status = action;
+  });
+  // Output Engine パネルが開いていれば再描画
+  var oePanel = document.getElementById('output-engine-panel');
+  if (oePanel && oePanel.classList.contains('open')) renderOutputEnginePanel();
+}
+
 function createKnowledgeCandidatesFromMemory(draft) {
   if (!draft || !draft.memoryCandidates || draft.memoryCandidates.length === 0) return [];
   var seq = 0;
   return draft.memoryCandidates.map(function(mem) {
     var kCat = _MEMORY_TO_KNOWLEDGE_MAP[mem.type] || KNOWLEDGE_CATEGORIES.PREFERENCE;
-    return {
+    var candidate = {
       id:           'know_' + Date.now() + '_' + (seq++),
       version:      COMPANY_KNOWLEDGE_CANDIDATE_VERSION,
       category:     kCat,
@@ -18949,6 +19036,8 @@ function createKnowledgeCandidatesFromMemory(draft) {
       status:       'candidate',
       createdAt:    new Date().toISOString(),
     };
+    candidate.recommendation = calculateKnowledgeRecommendation(candidate);
+    return candidate;
   });
 }
 
@@ -19693,7 +19782,10 @@ function serializeOutputDraft(format) {
     if (d.knowledgeCandidates && d.knowledgeCandidates.length) {
       lines.push('\n--- Knowledge Candidates ---');
       d.knowledgeCandidates.forEach(function(kc) {
+        var rec = kc.recommendation || {};
         lines.push('[' + (kc.category || '') + '] ' + kc.text);
+        lines.push('  推奨: ' + (rec.level || '-') + ' Score:' + (rec.score || '-') + ' Status:' + (kc.status || 'candidate'));
+        if (rec.reasons && rec.reasons.length) lines.push('  理由: ' + rec.reasons.join(' / '));
       });
       lines.push('Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items');
     }
@@ -19750,7 +19842,13 @@ function serializeOutputDraft(format) {
     mdLines.push('## Knowledge Candidates');
     d.knowledgeCandidates.forEach(function(kc) {
       var catLabel = KNOWLEDGE_CATEGORY_LABELS[kc.category] || kc.category;
+      var rec = kc.recommendation || {};
+      var recEmoji = rec.level === 'recommended' ? '🟢' : rec.level === 'review' ? '🟡' : '⚪';
       mdLines.push('- **' + catLabel + '** ' + kc.text);
+      mdLines.push('  ' + recEmoji + ' 推奨Score: ' + (rec.score || '-') + ' / Status: ' + (kc.status || 'candidate'));
+      if (rec.reasons && rec.reasons.length) {
+        rec.reasons.forEach(function(r) { mdLines.push('  - ' + r); });
+      }
     });
     mdLines.push('');
     mdLines.push('*Knowledge Buffer: ' + _companyKnowledgeCandidateBuffer.length + ' items*');
@@ -19845,11 +19943,31 @@ function buildKnowledgeCandidatesHtml() {
   var esc   = escapeHtml;
   var items = _lastOutputDraft.knowledgeCandidates;
   var rows  = items.map(function(kc) {
-    var catClass = 'oe-kc-' + (kc.category || 'preference');
-    var catLabel = KNOWLEDGE_CATEGORY_LABELS[kc.category] || kc.category;
-    return '<div class="oe-know-item">'
-      + '<span class="oe-know-cat ' + catClass + '">' + esc(catLabel) + '</span>'
-      + '<span class="oe-know-text">' + esc(kc.text) + '</span>'
+    var catClass  = 'oe-kc-' + (kc.category || 'preference');
+    var catLabel  = KNOWLEDGE_CATEGORY_LABELS[kc.category] || kc.category;
+    var rec       = kc.recommendation || calculateKnowledgeRecommendation(kc);
+    var recClass  = 'oe-rec-' + (rec.level || 'normal');
+    var recEmoji  = rec.level === KNOWLEDGE_RECOMMENDATION.RECOMMENDED ? '🟢 推奨'
+                  : rec.level === KNOWLEDGE_RECOMMENDATION.REVIEW       ? '🟡 要確認'
+                  : '⚪ 通常';
+    var reasonsTxt = (rec.reasons || []).map(function(r) { return '・' + r; }).join('  ');
+    var statusClass = 'oe-ks-' + (kc.status || 'candidate');
+    var statusLabel = { candidate:'候補', approved:'✅ 承認済', held:'⏸ 保留', rejected:'❌ 却下' }[kc.status] || kc.status;
+    var idStr = esc(kc.id);
+    return '<div class="oe-know-card">'
+      + '<div class="oe-know-card-top">'
+      +   '<span class="oe-know-cat ' + catClass + '">' + esc(catLabel) + '</span>'
+      +   '<span class="oe-rec-badge ' + recClass + '">' + recEmoji + '</span>'
+      +   '<span class="oe-rec-score">Score: ' + rec.score + '</span>'
+      +   '<span class="oe-know-status ' + statusClass + '">' + statusLabel + '</span>'
+      + '</div>'
+      + '<div class="oe-know-text" style="margin-bottom:4px;">' + esc(kc.text) + '</div>'
+      + (reasonsTxt ? '<div class="oe-rec-reasons">' + esc(reasonsTxt) + '</div>' : '')
+      + '<div class="oe-know-actions">'
+      +   '<button class="oe-ka-approve" onclick="approveKnowledgeCandidate(\'' + idStr + '\',\'approved\')">✅ 承認</button>'
+      +   '<button class="oe-ka-hold"    onclick="approveKnowledgeCandidate(\'' + idStr + '\',\'held\')">⏸ 保留</button>'
+      +   '<button class="oe-ka-reject"  onclick="approveKnowledgeCandidate(\'' + idStr + '\',\'rejected\')">❌ 却下</button>'
+      + '</div>'
       + '</div>';
   }).join('');
   return '<div class="oe-know-section">'
