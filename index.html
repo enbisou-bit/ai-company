@@ -20102,7 +20102,11 @@ function serializeOutputDraft(format) {
   var typeLabel = typeDef ? typeDef.label : d.type;
 
   if (fmt === 'json') {
-    return JSON.stringify(d, null, 2);
+    var jsonObj = Object.assign({}, d);
+    if (_lastKnowledgeSaveResult) jsonObj._knowledgeSaveResult = _lastKnowledgeSaveResult;
+    if (_knowledgeSaveHistory && _knowledgeSaveHistory.length) jsonObj._knowledgeSaveHistory = _knowledgeSaveHistory.slice(0, 10);
+    if (_lastInjectedKnowledge && _lastInjectedKnowledge.length) jsonObj._injectedKnowledge = _lastInjectedKnowledge;
+    return JSON.stringify(jsonObj, null, 2);
   }
 
   if (fmt === 'html') {
