@@ -855,6 +855,21 @@
   .oe-lc-style           { background: rgba(255,120,200,0.2); color: rgba(255,150,210,0.9); border: 1px solid rgba(255,120,200,0.3); }
   .oe-lc-warning         { background: rgba(255,80,80,0.15);  color: rgba(255,100,80,0.9);  border: 1px solid rgba(255,80,80,0.25); }
   .oe-learning-text    { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.5; }
+  /* Phase45-3 Company Memory */
+  .oe-memory-section   { margin-top: 14px; background: rgba(30,15,50,0.7); border: 1px solid rgba(160,100,255,0.25); border-radius: 10px; padding: 12px 14px; }
+  .oe-memory-title     { font-size: 11px; font-weight: 700; color: rgba(180,130,255,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
+  .oe-memory-item      { display: flex; align-items: flex-start; gap: 7px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .oe-memory-item:last-child { border-bottom: none; }
+  .oe-memory-type      { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+  .oe-mt-success     { background: rgba(80,200,120,0.2);  color: rgba(80,220,120,0.9);  border: 1px solid rgba(80,200,120,0.3); }
+  .oe-mt-improvement { background: rgba(100,160,255,0.2); color: rgba(140,190,255,0.9); border: 1px solid rgba(100,160,255,0.3); }
+  .oe-mt-warning     { background: rgba(255,80,80,0.15);  color: rgba(255,100,80,0.9);  border: 1px solid rgba(255,80,80,0.25); }
+  .oe-mt-style       { background: rgba(255,120,200,0.2); color: rgba(255,150,210,0.9); border: 1px solid rgba(255,120,200,0.3); }
+  .oe-mt-brand       { background: rgba(255,220,80,0.2);  color: rgba(255,230,80,0.9);  border: 1px solid rgba(255,220,80,0.3); }
+  .oe-mt-cta         { background: rgba(255,160,80,0.2);  color: rgba(255,180,80,0.9);  border: 1px solid rgba(255,160,80,0.3); }
+  .oe-mt-structure   { background: rgba(200,140,255,0.2); color: rgba(210,160,255,0.9); border: 1px solid rgba(200,140,255,0.3); }
+  .oe-memory-text    { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.5; }
+  .oe-memory-footer  { font-size: 9px; color: rgba(255,255,255,0.3); margin-top: 6px; text-align: right; }
 
   /* Phase44-4: Draft Status chip */
   #wl-ot-draft-status { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 600; display: none; }
@@ -18569,7 +18584,7 @@ const OUTPUT_SCHEMA_V1 = {
   ],
   optional: [
     'detection', 'quality', 'exports', 'memoryRefs',
-    'providerRefs', 'reviewNotes', 'finalPackage', 'learningItems'
+    'providerRefs', 'reviewNotes', 'finalPackage', 'learningItems', 'memoryCandidates'
   ],
   fieldRules: {
     id:            'string',
@@ -18791,6 +18806,68 @@ function extractLearningItems(draft) {
     addItem(cat, lbl.replace(/^..\s*/, ''), s, 'quality.learning');
   });
   return items;
+}
+
+// ══════════════════════════════════════════════════
+// Phase45-3: Company Memory 基盤
+// ══════════════════════════════════════════════════
+
+const COMPANY_MEMORY_VERSION = '1.0.0';
+
+const COMPANY_MEMORY_TYPES = {
+  SUCCESS:     'success',
+  IMPROVEMENT: 'improvement',
+  WARNING:     'warning',
+  STYLE:       'style',
+  BRAND:       'brand',
+  CTA:         'cta',
+  STRUCTURE:   'structure',
+};
+
+const COMPANY_MEMORY_TYPE_LABELS = {
+  success:     '✅ 成功',
+  improvement: '📈 改善',
+  warning:     '⚠ 注意',
+  style:       '🎨 スタイル',
+  brand:       '🏷 ブランド',
+  cta:         '🎯 CTA',
+  structure:   '🏗 構成',
+};
+
+const _LEARNING_TO_MEMORY_MAP = {
+  success_pattern: COMPANY_MEMORY_TYPES.SUCCESS,
+  improvement:     COMPANY_MEMORY_TYPES.IMPROVEMENT,
+  warning:         COMPANY_MEMORY_TYPES.WARNING,
+  style:           COMPANY_MEMORY_TYPES.STYLE,
+  brand:           COMPANY_MEMORY_TYPES.BRAND,
+  cta:             COMPANY_MEMORY_TYPES.CTA,
+  structure:       COMPANY_MEMORY_TYPES.STRUCTURE,
+};
+
+let _companyMemoryBuffer = [];
+
+function createCompanyMemoryCandidates(draft) {
+  if (!draft || !draft.learningItems || draft.learningItems.length === 0) return [];
+  var seq = 0;
+  return draft.learningItems.map(function(item) {
+    var mType = _LEARNING_TO_MEMORY_MAP[item.category] || COMPANY_MEMORY_TYPES.IMPROVEMENT;
+    var score = (draft.quality && draft.quality.overall) || null;
+    var conf  = mType === COMPANY_MEMORY_TYPES.SUCCESS ? 0.9
+              : mType === COMPANY_MEMORY_TYPES.CTA     ? 0.85
+              : 0.8;
+    return {
+      id:           'mem_' + Date.now() + '_' + (seq++),
+      version:      COMPANY_MEMORY_VERSION,
+      type:         mType,
+      text:         item.text,
+      source:       'learningItems',
+      outputType:   draft.type || 'document',
+      qualityScore: score,
+      confidence:   conf,
+      status:       'candidate',
+      createdAt:    new Date().toISOString(),
+    };
+  });
 }
 
 // ══════════════════════════════════════════════════
@@ -19075,7 +19152,9 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _lastOutputDraft.builtAt   = new Date().toISOString();
   _lastOutputDraft.updatedAt = new Date().toISOString();
   _lastOutputDraft.quality       = evaluateOutputQuality(_lastOutputDraft);
-  _lastOutputDraft.learningItems = extractLearningItems(_lastOutputDraft);
+  _lastOutputDraft.learningItems    = extractLearningItems(_lastOutputDraft);
+  _lastOutputDraft.memoryCandidates = createCompanyMemoryCandidates(_lastOutputDraft);
+  _companyMemoryBuffer = (_lastOutputDraft.memoryCandidates || []).concat(_companyMemoryBuffer).slice(0, 50);
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
   // WLが開いていれば再描画してDraft Statusを更新
@@ -19520,6 +19599,13 @@ function serializeOutputDraft(format) {
         lines.push('[' + (item.category || '') + '] ' + item.text);
       });
     }
+    if (d.memoryCandidates && d.memoryCandidates.length) {
+      lines.push('\n--- Memory Candidates ---');
+      d.memoryCandidates.forEach(function(mem) {
+        lines.push('[' + (mem.type || '') + '] ' + mem.text);
+      });
+      lines.push('Buffer: ' + _companyMemoryBuffer.length + ' items');
+    }
     return lines.join('\n');
   }
 
@@ -19557,6 +19643,16 @@ function serializeOutputDraft(format) {
       var catLabel = LEARNING_CATEGORY_LABELS[item.category] || item.category;
       mdLines.push('- **' + catLabel + '** ' + item.text);
     });
+    mdLines.push('');
+  }
+  if (d.memoryCandidates && d.memoryCandidates.length) {
+    mdLines.push('## Memory Candidates');
+    d.memoryCandidates.forEach(function(mem) {
+      var typeLabel = COMPANY_MEMORY_TYPE_LABELS[mem.type] || mem.type;
+      mdLines.push('- **' + typeLabel + '** ' + mem.text);
+    });
+    mdLines.push('');
+    mdLines.push('*Memory Buffer: ' + _companyMemoryBuffer.length + ' items*');
     mdLines.push('');
   }
   return mdLines.join('\n');
@@ -19639,6 +19735,26 @@ function buildLearningItemsHtml() {
   return '<div class="oe-learning-section">'
     + '<div class="oe-learning-title">🧠 Learning Items（' + items.length + '件）</div>'
     + rows
+    + '</div>';
+}
+
+// Phase45-3: Memory Candidates HTML生成
+function buildMemoryCandidatesHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.memoryCandidates || _lastOutputDraft.memoryCandidates.length === 0) return '';
+  var esc   = escapeHtml;
+  var items = _lastOutputDraft.memoryCandidates;
+  var rows  = items.map(function(mem) {
+    var typeClass = 'oe-mt-' + (mem.type || 'improvement');
+    var typeLabel = COMPANY_MEMORY_TYPE_LABELS[mem.type] || mem.type;
+    return '<div class="oe-memory-item">'
+      + '<span class="oe-memory-type ' + typeClass + '">' + esc(typeLabel) + '</span>'
+      + '<span class="oe-memory-text">' + esc(mem.text) + '</span>'
+      + '</div>';
+  }).join('');
+  return '<div class="oe-memory-section">'
+    + '<div class="oe-memory-title">🧩 Company Memory Candidates（' + items.length + '件）</div>'
+    + rows
+    + '<div class="oe-memory-footer">Memory Buffer: ' + _companyMemoryBuffer.length + ' items</div>'
     + '</div>';
 }
 
@@ -19775,6 +19891,7 @@ function renderOutputEnginePanel() {
     + buildOutputPackageHtml()
     + buildQualityScoreHtml()
     + buildLearningItemsHtml()
+    + buildMemoryCandidatesHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
