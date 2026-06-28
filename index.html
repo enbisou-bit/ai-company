@@ -785,6 +785,62 @@
     #wl-reopen-btn { bottom: 60px; right: 10px; font-size: 10px; padding: 6px 11px; }
   }
 
+  /* ── Phase44-1: Output Engine Panel ── */
+  #output-engine-panel {
+    display: none;
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(420px, 100vw);
+    background: rgba(9,10,22,0.97);
+    backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(255,255,255,0.08);
+    z-index: 498;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #output-engine-panel.open { display: flex; }
+  #oe-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    flex-shrink: 0;
+  }
+  #oe-header h3 { margin: 0; font-size: 13px; color: #e0e6f8; display: flex; align-items: center; gap: 8px; }
+  #oe-close { background: none; border: none; color: #666; font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+  #oe-close:hover { color: #aaa; background: rgba(255,255,255,0.07); }
+  #oe-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .oe-status-card {
+    background: linear-gradient(135deg, rgba(20,40,30,0.9), rgba(10,20,15,0.95));
+    border: 1px solid rgba(80,220,120,0.3);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .oe-status-title { font-size: 10px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .oe-status-value { font-size: 13px; font-weight: 700; color: #64dc8c; }
+  .oe-status-sub   { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+  .oe-section-title { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .oe-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .oe-type-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .oe-type-icon  { font-size: 18px; margin-bottom: 4px; }
+  .oe-type-label { font-size: 11px; font-weight: 600; color: #dde2f0; }
+  .oe-type-owner { font-size: 9px; color: rgba(255,255,255,0.35); margin-top: 2px; }
+  .oe-type-fields { font-size: 9px; color: rgba(255,255,255,0.25); margin-top: 3px; line-height: 1.4; }
+  .oe-status-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .oe-status-chip { font-size: 10px; padding: 3px 9px; border-radius: 12px; font-weight: 600; }
+  .oe-s-draft     { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.5); }
+  .oe-s-building  { background: rgba(255,210,0,0.15);   color: #ffd166; }
+  .oe-s-reviewing { background: rgba(80,180,255,0.15);  color: #80cfff; }
+  .oe-s-ready     { background: rgba(80,220,120,0.15);  color: #64dc8c; }
+  .oe-s-exported  { background: rgba(124,77,255,0.2);   color: #c89ef2; }
+  .oe-s-error     { background: rgba(255,80,80,0.15);   color: #ff8888; }
+  @media (max-width: 640px) {
+    #output-engine-panel { width: 100vw; border-left: none; }
+    .oe-type-grid { grid-template-columns: 1fr; }
+  }
+
   /* ── Phase36-3: Mega Menu Navigation ── */
   #mega-menu-nav {
     display: flex;
@@ -5808,6 +5864,15 @@
 
   <!-- Phase43-5: Workflow Live 再表示ボタン -->
   <button id="wl-reopen-btn" onclick="toggleWorkflowLive()" title="直近Workflowを再表示">📡 直近Workflow</button>
+
+  <!-- Phase44-1: Output Engine Panel -->
+  <div id="output-engine-panel">
+    <div id="oe-header">
+      <h3>📦 Output Engine <span style="font-weight:400;color:rgba(255,255,255,0.4);font-size:11px;">成果物エンジン</span></h3>
+      <button id="oe-close" onclick="toggleOutputEnginePanel()" title="閉じる">✕</button>
+    </div>
+    <div id="oe-body"><!-- JS: renderOutputEnginePanel() --></div>
+  </div>
 
   <!-- Phase38: Workflow Live Panel -->
   <div id="workflow-live-panel">
@@ -17749,6 +17814,7 @@ const NAV_MENU_GROUPS = [
       { label: '自律相談',   icon: '🤝', desc: 'Autonomous Consult',fn: 'toggleAutonomousConsult()' },
       { label: '連携ログ',      icon: '🔗', desc: 'AI間連携',              fn: 'openDelegationLog()' },
       { label: 'Workflow Live', icon: '📡', desc: 'AI実行状況リアルタイム', fn: 'toggleWorkflowLive()' },
+      { label: 'Output Engine', icon: '📦', desc: '成果物エンジン基盤',    fn: 'toggleOutputEnginePanel()' },
     ]
   },
   {
@@ -18347,6 +18413,226 @@ function renderWorkflowLive() {
   } catch (err) {
     console.error('[WL] renderWorkflowLive error:', err);
   }
+}
+
+
+// ══════════════════════════════════════════════════
+// Phase44-1: Output Engine 基盤
+// ══════════════════════════════════════════════════
+
+const OUTPUT_TYPES = {
+  INSTAGRAM_CAROUSEL: 'instagram_carousel',
+  INSTAGRAM_POST:     'instagram_post',
+  TIKTOK_VIDEO:       'tiktok_video',
+  YOUTUBE_SHORTS:     'youtube_shorts',
+  LP:                 'lp',
+  FLYER:              'flyer',
+  PDF:                'pdf',
+  HTML:               'html',
+  POWERPOINT:         'powerpoint',
+  EXCEL:              'excel',
+  IMAGE_PROMPT:       'image_prompt',
+  VIDEO_PROMPT:       'video_prompt',
+  DOCUMENT:           'document',
+};
+
+const OUTPUT_TYPE_DEFINITIONS = [
+  {
+    id: 'instagram_carousel',
+    label: 'Instagram Carousel',
+    icon: '📱',
+    description: 'カルーセル投稿（スライド10枚まで）',
+    defaultOwner: 'sns',
+    outputFields: ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts'],
+  },
+  {
+    id: 'instagram_post',
+    label: 'Instagram Post',
+    icon: '🖼',
+    description: '通常投稿（1枚・キャプション付き）',
+    defaultOwner: 'sns',
+    outputFields: ['caption', 'cta', 'hashtags', 'imagePrompt'],
+  },
+  {
+    id: 'tiktok_video',
+    label: 'TikTok Video',
+    icon: '🎵',
+    description: 'TikTok動画コンテンツ',
+    defaultOwner: 'video',
+    outputFields: ['script', 'captions', 'videoPrompt', 'hashtags'],
+  },
+  {
+    id: 'youtube_shorts',
+    label: 'YouTube Shorts',
+    icon: '▶️',
+    description: 'Shorts用台本・プロンプト',
+    defaultOwner: 'video',
+    outputFields: ['script', 'title', 'description', 'videoPrompt'],
+  },
+  {
+    id: 'lp',
+    label: 'Landing Page',
+    icon: '🌐',
+    description: 'LP（ランディングページ）',
+    defaultOwner: 'lp',
+    outputFields: ['headline', 'sections', 'cta', 'html'],
+  },
+  {
+    id: 'flyer',
+    label: 'チラシ',
+    icon: '📄',
+    description: 'チラシ（コピー・デザイン指示）',
+    defaultOwner: 'designer',
+    outputFields: ['catchcopy', 'body', 'offer', 'designNotes'],
+  },
+  {
+    id: 'pdf',
+    label: 'PDF文書',
+    icon: '📕',
+    description: 'PDF形式の文書',
+    defaultOwner: 'writer',
+    outputFields: ['title', 'sections', 'summary'],
+  },
+  {
+    id: 'html',
+    label: 'HTMLページ',
+    icon: '💻',
+    description: 'HTML単体ページ',
+    defaultOwner: 'lp',
+    outputFields: ['title', 'html', 'css'],
+  },
+  {
+    id: 'powerpoint',
+    label: 'PowerPoint',
+    icon: '📊',
+    description: 'プレゼンテーション（スライド）',
+    defaultOwner: 'writer',
+    outputFields: ['title', 'slides', 'designNotes'],
+  },
+  {
+    id: 'excel',
+    label: 'Excel',
+    icon: '📈',
+    description: '表計算・レポート',
+    defaultOwner: 'analyst',
+    outputFields: ['title', 'sheets', 'summary'],
+  },
+  {
+    id: 'image_prompt',
+    label: '画像プロンプト',
+    icon: '🎨',
+    description: '画像生成用プロンプトセット',
+    defaultOwner: 'designer',
+    outputFields: ['prompt', 'negativePrompt', 'style', 'size'],
+  },
+  {
+    id: 'video_prompt',
+    label: '動画プロンプト',
+    icon: '🎬',
+    description: '動画生成用プロンプト',
+    defaultOwner: 'video',
+    outputFields: ['prompt', 'style', 'duration', 'aspect'],
+  },
+  {
+    id: 'document',
+    label: '汎用文書',
+    icon: '📝',
+    description: '汎用テキスト文書',
+    defaultOwner: 'writer',
+    outputFields: ['title', 'body', 'summary'],
+  },
+];
+
+const OUTPUT_STATUS = {
+  DRAFT:     'draft',
+  BUILDING:  'building',
+  REVIEWING: 'reviewing',
+  READY:     'ready',
+  EXPORTED:  'exported',
+  ERROR:     'error',
+};
+
+const OUTPUT_STATUS_LABELS = {
+  draft:     '下書き',
+  building:  '生成中',
+  reviewing: 'レビュー中',
+  ready:     '納品準備OK',
+  exported:  '出力済み',
+  error:     'エラー',
+};
+
+function getOutputTypeDefinition(type) {
+  return OUTPUT_TYPE_DEFINITIONS.find(function(d) { return d.id === type; }) || null;
+}
+
+function createOutputDraft(type, sourceText) {
+  var def = getOutputTypeDefinition(type);
+  if (!def) return null;
+  var draft = {
+    id: 'out_' + Date.now(),
+    type: type,
+    status: OUTPUT_STATUS.DRAFT,
+    sourceText: sourceText || '',
+    fields: {},
+    createdAt: new Date().toISOString(),
+  };
+  (def.outputFields || []).forEach(function(f) { draft.fields[f] = ''; });
+  return draft;
+}
+
+function getOutputStatusLabel(status) {
+  return OUTPUT_STATUS_LABELS[status] || status;
+}
+
+function toggleOutputEnginePanel() {
+  var p = document.getElementById('output-engine-panel');
+  if (!p) return;
+  if (p.classList.contains('open')) {
+    p.classList.remove('open');
+  } else {
+    renderOutputEnginePanel();
+    p.classList.add('open');
+  }
+}
+
+function renderOutputEnginePanel() {
+  var body = document.getElementById('oe-body');
+  if (!body) return;
+
+  var typeCount = OUTPUT_TYPE_DEFINITIONS.length;
+
+  var statusChips = Object.values(OUTPUT_STATUS).map(function(s) {
+    return '<span class="oe-status-chip oe-s-' + s + '">'
+      + getOutputStatusLabel(s) + '</span>';
+  }).join('');
+
+  var SHOWCASE = ['instagram_carousel', 'flyer', 'lp', 'pdf', 'html'];
+  var typeCards = OUTPUT_TYPE_DEFINITIONS
+    .filter(function(d) { return SHOWCASE.indexOf(d.id) !== -1; })
+    .sort(function(a, b) { return SHOWCASE.indexOf(a.id) - SHOWCASE.indexOf(b.id); })
+    .map(function(d) {
+      return '<div class="oe-type-card">'
+        + '<div class="oe-type-icon">' + d.icon + '</div>'
+        + '<div class="oe-type-label">' + d.label + '</div>'
+        + '<div class="oe-type-owner">担当: ' + d.defaultOwner + '</div>'
+        + '<div class="oe-type-fields">' + d.outputFields.join(' / ') + '</div>'
+        + '</div>';
+    }).join('');
+
+  body.innerHTML =
+    '<div class="oe-status-card">'
+    + '<div class="oe-status-title">OUTPUT ENGINE STATUS</div>'
+    + '<div class="oe-status-value">✅ 準備完了</div>'
+    + '<div class="oe-status-sub">登録済み成果物タイプ: ' + typeCount + ' 種</div>'
+    + '</div>'
+    + '<div>'
+    + '<div class="oe-section-title">代表成果物タイプ</div>'
+    + '<div class="oe-type-grid">' + typeCards + '</div>'
+    + '</div>'
+    + '<div>'
+    + '<div class="oe-section-title">成果物ステータス一覧</div>'
+    + '<div class="oe-status-grid">' + statusChips + '</div>'
+    + '</div>';
 }
 
 </script>
