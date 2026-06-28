@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-06-28（Phase43完了・Phase44開始前）
+更新日: 2026-06-29（Phase46-3完了）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -19,39 +19,16 @@ AI会社はチャットAIではない。
 回答ではなく、完成成果物を納品する会社を作る。
 
 成果物例
-- Instagramスライド
-- 投稿文
-- 画像生成
-- 動画生成
-- チラシ
-- LP
-- HTML
-- PDF
+- Instagramスライド / 投稿文 / 画像生成
+- 動画生成 / チラシ / LP / HTML / PDF
 
 ---
 
 # Decision 002
 ## Workflow固定
 
-User
-↓
-Leader
-↓
-Company Brain
-↓
-Knowledge
-↓
-Workflow
-↓
-AI社員
-↓
-Reviewer
-↓
-Strategy
-↓
-Leader Final
-↓
-完成成果物
+User → Leader → Company Brain → Knowledge → Workflow
+→ AI社員 → Reviewer → Strategy → Leader Final → 完成成果物
 
 この順序は原則変更しない。
 
@@ -61,14 +38,10 @@ Leader Final
 ## モデル役割
 
 Leader : OpenAI
-
 Writer : Claude
-
 Reviewer : Claude
-
 Strategy : Claude
 
-必要に応じて将来変更可能だが、
 担当ごとの役割分担を維持する。
 
 ---
@@ -87,20 +60,22 @@ Strategy : Claude
 ## 絶対ルール
 
 ・既存機能は壊さない
-・削除禁止
-・追加のみ
+・削除禁止 / 追加のみ
 ・課金はユーザー許可制
 ・学習データ削除禁止
 ・Supabaseを維持
+・git push禁止
+・npm install禁止
+・DBスキーマ変更禁止
 
 ---
 
 # Decision 006
 ## Phase完了条件
 
-1. dev-check
+1. dev-check 200/200/200
 2. ブラウザ実機確認
-3. Git Commit
+3. Git Commit（ASCII短文）
 4. Git Tag
 5. 完了レポート
 
@@ -112,18 +87,17 @@ Strategy : Claude
 ## ドキュメント運用
 
 毎チャット開始時
-
-1. ENBISOU_AI_COMPANY_MASTER.md
-2. PHASE_PROGRESS.md
-3. CLAUDE_RULES.md
-4. PROJECT_STATUS.md
-5. DOC_UPDATE_PROTOCOL.md
-6. DECISIONS.md
+1. 06HANDOVER_NEXT_CHAT.md
+2. ENBISOU_AI_COMPANY_MASTER.md
+3. PHASE_PROGRESS.md
+4. CLAUDE_RULES.md
+5. PROJECT_STATUS.md
+6. DOC_UPDATE_PROTOCOL.md
+7. DECISIONS.md
 
 を読んでから開発を開始する。
 
-チャット終了時は
-これらのファイルを最新版へ更新する。
+チャット終了時はこれらのファイルを最新版へ更新する。
 
 ---
 
@@ -131,7 +105,6 @@ Strategy : Claude
 ## 今後追加する判断
 
 このファイルには今後も、
-
 - なぜその仕様にしたのか
 - 却下した案
 - 採用した理由
@@ -150,26 +123,68 @@ Phase43でWorkflow Live（リアルタイム実行状況の見える化）が完
 
 Phase44以降は、UIの見える化よりも「成果物を完成させる能力」を優先する。
 
-### 理由
-
-ENBISOU AI COMPANYの目的は「チャット回答を返すこと」ではなく、
-「完成成果物を納品すること」である（Decision 001）。
-
-Workflow LiveによってAI社員の実行状況がリアルタイムで確認できるようになった。
-次のステップは、そのWorkflowが実際に使える成果物を出力することである。
-
-### 優先順位の変更
-
-Phase43まで: UIの見える化・Workflow Live整備を優先
-Phase44以降: 成果物エンジン（Instagram/チラシ/LP/動画/PDF/HTML）を優先
-
-### 対象成果物
-
+対象成果物
 - Instagramカルーセル（スライド10枚・キャプション・CTA・ハッシュタグ）
 - チラシ（コピー・デザイン指示・画像生成プロンプト）
 - LP（構成・コピー・HTML）
 - 動画（企画・台本・画像プロンプト・動画プロンプト）
-- PDF生成
-- HTML生成
+- PDF生成 / HTML生成
 
 追記日: 2026-06-28（Phase43完了直後）
+
+---
+
+# Decision 010
+## Knowledge注入はLeader contextへ安全に追記する
+
+Phase45-7において、Injected KnowledgeをLeaderへ渡す方式を決定。
+
+採用方式：
+- `getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext()` の連結
+- 既存Routing Knowledge（Phase25実装）を置換しない
+- Injected Knowledgeを後ろに追記するだけ
+
+理由：
+- 既存Routing Engine（routeKnowledgeForMember）との競合を避ける
+- Injected Knowledgeはあくまで補足情報
+- 既存Knowledge Engineの優先順位を変えない
+
+追記日: 2026-06-28（Phase45-7完了）
+
+---
+
+# Decision 011
+## SNS自動投稿は後回しにする
+
+Phase46以降の方針として決定。
+
+理由：
+- 自動投稿は課金・外部API連携が必要で承認制にする必要がある
+- まず投稿直前までの成果物品質を高めることが優先
+- 品質の高い画像プロンプト・動画プロンプト・投稿文・CTA・構成が先決
+
+採用方針：
+- 画像生成プロンプト作成：自動OK
+- 実際の画像生成：ユーザー承認後
+- 動画生成：ユーザー承認後
+- SNS投稿：ユーザー承認後（現時点では実装しない）
+
+追記日: 2026-06-29（Phase46-3完了）
+
+---
+
+# Decision 012
+## Knowledge Compare Modeで品質効果を測定する
+
+Phase46-3において、Knowledge注入の効果を比較できる3モードを実装。
+
+with_knowledge: Injected Knowledge + Leader Execution Guide → Leaderへ渡す（通常）
+without_knowledge: Knowledge取得・表示はするがLeaderへ渡さない（比較用）
+guide_only: Leader Execution Guideのみ渡す（中間案）
+
+理由：
+- Knowledge注入が実際に成果物品質に寄与しているか検証が必要
+- 同一依頼でモード切替して比較することで効果を定量評価できる
+- 将来的にベストモードを自動選択する基盤になる
+
+追記日: 2026-06-29（Phase46-3完了）
