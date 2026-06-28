@@ -9258,12 +9258,20 @@ async function atRunWorkflow() {
   _lastOutputDetection = detectOutputType(userMessage);
   _lastOutputDraft     = createOutputDraft(_lastOutputDetection.type, userMessage);
   // Phase45-7: Knowledge取得・選定（失敗してもWorkflowを止めない）
+  // Phase46-1: fetch状態・件数を追跡
   _lastInjectedKnowledge = [];
+  _kiLastFetchCount    = 0;
+  _kiLastSelectedCount = 0;
+  _kiLastFetchStatus   = 'empty';
   try {
     var _ki_raw = await fetchKnowledgeForOutputType(_lastOutputDetection.type);
+    _kiLastFetchCount = _ki_raw.length;
     _lastInjectedKnowledge = selectRelevantKnowledge(_ki_raw, _lastOutputDetection.type, userMessage);
+    _kiLastSelectedCount = _lastInjectedKnowledge.length;
+    _kiLastFetchStatus = _kiLastFetchCount === 0 ? 'empty' : 'ok';
   } catch (_ki_err) {
     _lastInjectedKnowledge = [];
+    _kiLastFetchStatus = 'failed';
   }
   (function() {
     var wlPanel = document.getElementById('workflow-live-panel');
@@ -18309,15 +18317,26 @@ function renderWorkflowLive() {
           otRoles.innerHTML = roleHtml;
           otRoles.classList.add('visible');
         }
-        // Phase45-7: Injected Knowledge表示
+        // Phase45-7/46-1: Injected Knowledge表示（強化版）
         var wlIk = document.getElementById('wl-injected-knowledge');
         if (wlIk) {
-          if (_lastInjectedKnowledge && _lastInjectedKnowledge.length > 0) {
-            wlIk.innerHTML = '🧠 Injected Knowledge：' + _lastInjectedKnowledge.length + '件 — '
-              + _lastInjectedKnowledge.map(function(k) { return (k.title || '').slice(0, 25); }).join(' / ');
+          var kiStatus = _kiLastFetchStatus || 'empty';
+          var kiN      = (_lastInjectedKnowledge && _lastInjectedKnowledge.length) || 0;
+          var kiRaw    = _kiLastFetchCount || 0;
+          if (kiStatus === 'failed') {
+            wlIk.innerHTML = '<span style="color:rgba(255,120,80,0.7);">⚠ Knowledge取得失敗 — fallback使用</span>';
+            wlIk.style.display = 'block';
+          } else if (kiN === 0) {
+            wlIk.innerHTML = '<span style="color:rgba(255,255,255,0.25);">🧠 Knowledgeなし</span>';
             wlIk.style.display = 'block';
           } else {
-            wlIk.style.display = 'none';
+            var kiLines = _lastInjectedKnowledge.map(function(k) {
+              return '・' + (k.genre ? '[' + k.genre + '] ' : '') + (k.title || '').slice(0, 28);
+            }).join('　');
+            wlIk.innerHTML = '<span style="color:rgba(140,180,255,0.7);font-weight:700;">🧠 Injected ' + kiN + '件</span>'
+              + ' <span style="color:rgba(140,180,255,0.4);">（取得元 ' + kiRaw + '件）</span><br>'
+              + '<span style="color:rgba(200,220,255,0.5);">' + kiLines + '</span>';
+            wlIk.style.display = 'block';
           }
         }
       } else {
@@ -19303,6 +19322,10 @@ function buildKnowledgeSavePreviewHtml() {
 // ══════════════════════════════════════════════════
 
 let _lastInjectedKnowledge = [];
+// Phase46-1: 取得状態追跡
+var _kiLastFetchCount    = 0;
+var _kiLastSelectedCount = 0;
+var _kiLastFetchStatus   = 'empty'; // 'ok' | 'failed' | 'empty'
 
 // outputTypeに関連するジャンルを決定
 var _KI_GENRE_MAP = {
@@ -19403,22 +19426,84 @@ function getInjectedKnowledgeContext() {
 function buildInjectedKnowledgeHtml() {
   if (!_lastInjectedKnowledge) return '';
   var esc = escapeHtml;
-  if (_lastInjectedKnowledge.length === 0) {
-    return '<div style="margin-top:8px;padding:6px 10px;background:rgba(80,120,200,0.05);border:1px solid rgba(80,120,200,0.15);border-radius:6px;">'
-      + '<div style="font-size:10px;font-weight:700;color:rgba(140,180,255,0.7);margin-bottom:3px;">🧠 Injected Knowledge</div>'
-      + '<div style="font-size:10px;color:rgba(255,255,255,0.3);">注入Knowledgeなし（保存済み0件）</div>'
-      + '</div>';
+  var fetchedN  = _kiLastFetchCount    || 0;
+  var selectedN = _kiLastSelectedCount || 0;
+  var status    = _kiLastFetchStatus   || 'empty';
+
+  // ヘッダー部
+  var countLabel = 'Injected ' + selectedN + ' / Selected ' + selectedN
+    + (fetchedN ? ' （取得元 ' + fetchedN + '件）' : '');
+  var headerColor = selectedN > 0 ? 'rgba(140,180,255,0.85)' : 'rgba(255,255,255,0.35)';
+
+  var inner = '';
+
+  if (status === 'failed') {
+    inner = '<div style="font-size:10px;color:rgba(255,120,80,0.8);">⚠ Knowledge取得失敗 — fallback使用（Workflowは継続）</div>';
+  } else if (selectedN === 0) {
+    inner = '<div style="font-size:10px;color:rgba(255,255,255,0.3);">注入Knowledgeなし（保存済み0件）</div>';
+  } else {
+    inner = _lastInjectedKnowledge.map(function(k) {
+      var srcLabel  = (k.source || '').replace('output_engine','OE').replace('knowledge_engine','KE');
+      var scoreLabel= k.relevance != null ? 'score ' + k.relevance : '';
+      return '<div style="margin:3px 0;padding:4px 6px;background:rgba(80,120,200,0.07);border-left:2px solid rgba(140,180,255,0.3);border-radius:3px;">'
+        + '<div style="font-size:10px;color:rgba(255,255,255,0.75);">' + esc((k.title || '').slice(0, 60)) + (k.title && k.title.length > 60 ? '…' : '') + '</div>'
+        + '<div style="font-size:9px;color:rgba(140,180,255,0.55);margin-top:1px;">'
+        + 'genre: ' + esc(k.genre || '—')
+        + (srcLabel   ? ' &nbsp;source: ' + esc(srcLabel)   : '')
+        + (scoreLabel ? ' &nbsp;' + esc(scoreLabel)         : '')
+        + (k.reason   ? ' &nbsp;[' + esc(k.reason) + ']'   : '')
+        + '</div>'
+        + '</div>';
+    }).join('');
   }
-  var items = _lastInjectedKnowledge.map(function(k) {
-    var genreLabel = KNOWLEDGE_CATEGORY_LABELS && KNOWLEDGE_CATEGORY_LABELS[k.genre] ? KNOWLEDGE_CATEGORY_LABELS[k.genre] : k.genre || '';
-    return '<div style="font-size:10px;color:rgba(255,255,255,0.55);padding:2px 0;">'
-      + '<span style="color:rgba(140,180,255,0.65);font-weight:600;">[' + esc(k.genre || '') + ']</span> '
-      + esc((k.title || '').slice(0, 60)) + (k.title && k.title.length > 60 ? '…' : '')
-      + '</div>';
-  }).join('');
-  return '<div style="margin-top:8px;padding:6px 10px;background:rgba(80,120,200,0.05);border:1px solid rgba(80,120,200,0.2);border-radius:6px;">'
-    + '<div style="font-size:10px;font-weight:700;color:rgba(140,180,255,0.8);margin-bottom:4px;">🧠 Injected Knowledge <span style="font-weight:400;color:rgba(140,180,255,0.5);">(' + _lastInjectedKnowledge.length + '件)</span></div>'
-    + items
+
+  return '<div style="margin-top:8px;padding:7px 10px;background:rgba(80,120,200,0.05);border:1px solid rgba(80,120,200,0.2);border-radius:7px;">'
+    + '<div style="font-size:10px;font-weight:700;color:' + headerColor + ';margin-bottom:5px;">🧠 Injected Knowledge</div>'
+    + '<div style="font-size:9px;color:rgba(140,180,255,0.5);margin-bottom:4px;">' + esc(countLabel) + '</div>'
+    + inner
+    + '</div>';
+}
+
+function buildLeaderContextPreviewHtml() {
+  var ctx = getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext();
+  if (!ctx || !ctx.trim()) return '';
+  var esc     = escapeHtml;
+  var preview = ctx.slice(0, 1000) + (ctx.length > 1000 ? '\n…（省略）' : '');
+  var uid     = 'ki-lcp-' + Date.now();
+  return '<div style="margin-top:8px;padding:7px 10px;background:rgba(100,60,180,0.06);border:1px solid rgba(124,77,255,0.2);border-radius:7px;">'
+    + '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="(function(){var el=document.getElementById(\'' + uid + '\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()">'
+    +   '<span style="font-size:10px;font-weight:700;color:rgba(200,158,242,0.85);">📋 Leader Context Preview</span>'
+    +   '<span style="font-size:9px;color:rgba(200,158,242,0.45);">' + esc(ctx.length) + '文字 ▼ クリックで展開</span>'
+    + '</div>'
+    + '<div id="' + uid + '" style="display:none;margin-top:6px;">'
+    +   '<pre style="font-size:9px;color:rgba(255,255,255,0.55);white-space:pre-wrap;word-break:break-all;margin:0;padding:6px;background:rgba(0,0,0,0.3);border-radius:4px;max-height:260px;overflow-y:auto;">'
+    +   esc(preview)
+    +   '</pre>'
+    + '</div>'
+    + '</div>';
+}
+
+function buildKiDebugHtml() {
+  var uid = 'ki-dbg-' + Date.now();
+  var outputType  = (_lastOutputDetection && _lastOutputDetection.type) || '—';
+  var workflowId  = _atCurrentWorkflowId || '—';
+  var fetchN      = _kiLastFetchCount    || 0;
+  var selectedN   = _kiLastSelectedCount || 0;
+  var leaderN     = selectedN; // Leaderへ渡した件数 = 選定件数
+  var statusStr   = _kiLastFetchStatus   || 'empty';
+  return '<div style="margin-top:6px;padding:5px 8px;background:rgba(40,40,40,0.5);border:1px solid rgba(255,255,255,0.08);border-radius:6px;">'
+    + '<div style="display:flex;align-items:center;gap:5px;cursor:pointer;" onclick="(function(){var el=document.getElementById(\'' + uid + '\');el.style.display=el.style.display===\'none\'?\'block\':\'none\';})()">'
+    +   '<span style="font-size:9px;color:rgba(255,255,255,0.3);">🔧 Debug</span>'
+    +   '<span style="font-size:8px;color:rgba(255,255,255,0.2);">▼</span>'
+    + '</div>'
+    + '<div id="' + uid + '" style="display:none;margin-top:4px;font-size:9px;color:rgba(255,255,255,0.4);line-height:1.7;">'
+    +   '<div>取得件数: ' + fetchN + '</div>'
+    +   '<div>選定件数: ' + selectedN + '</div>'
+    +   '<div>Leaderへ渡した件数: ' + leaderN + '</div>'
+    +   '<div>OutputType: ' + escapeHtml(outputType) + '</div>'
+    +   '<div>WorkflowID: ' + escapeHtml(workflowId) + '</div>'
+    +   '<div>Fetch Status: ' + escapeHtml(statusStr) + '</div>'
+    + '</div>'
     + '</div>';
 }
 
@@ -20556,6 +20641,8 @@ function renderOutputEnginePanel() {
     + buildMemoryCandidatesHtml()
     + buildKnowledgeCandidatesHtml()
     + buildInjectedKnowledgeHtml()
+    + buildLeaderContextPreviewHtml()
+    + buildKiDebugHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
