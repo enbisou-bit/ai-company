@@ -9355,6 +9355,8 @@ async function atRunWorkflow() {
       }
       atSetWorkflowStatus('✅ Leader最終成果物まで完了 — チャット返信済', 'done');
       _phase42Success = true;
+      // Phase46-8: Output Draft + Compare Log を Path A でも記録する
+      try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text); } catch(_e) {}
     }
 
     _atMarkComplete(); // ✅ 自動タスク完了 — ボタン状態を更新
