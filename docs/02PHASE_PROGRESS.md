@@ -180,8 +180,16 @@ Git: v0.96相当
 - `appendCompareIntelligenceToExportMarkdown/Json()` — Export反映
 - Git: 75c0bf4 / Tag: v1.00-phase46-5
 
-### Phase46-6: 実案件品質改善 ⬜
-- Compare Intelligence の recommendations を活用した成果物品質継続向上
+### Phase46-6: Compare Recommendation Engine v1 ✅
+- `COMPARE_RECOMMENDATION_VERSION = '1.0.0'`
+- `buildCompareRecommendations()` — priorityItems / outputTypeRecommendations / knowledgeRecommendations / reviewerHints / learningHints / cautionItems 生成
+- `getCompareRecommendationPriority()` — high/medium/low 判定
+- `buildCompareRecommendationHtml()` — Output Engine に改善提案パネル表示
+- `appendCompareRecommendationToExportMarkdown/Json()` — Export反映
+- Git: 7a43619 / Tag: v1.00-phase46-6
+
+### Phase46-7: 実案件品質改善 ⬜
+- Compare Recommendation HIGH 優先項目の実案件活用
 - Quality Score判定精度改善 / Learning精度向上 / 特定タイプ強化
 
 ---
@@ -198,6 +206,7 @@ Git: v0.96相当
 ☑ Knowledge Compare（Phase46-3）
 ☑ 実案件品質比較記録（Phase46-4）
 ☑ Compare Intelligence v1（Phase46-5）
+☑ Compare Recommendation Engine v1（Phase46-6）
 □ Instagram完成品生成
 □ 動画完成品生成
 □ チラシ完成品生成

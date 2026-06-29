@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-06-29（Phase46-5完了）
+更新日: 2026-06-29（Phase46-6完了）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase46-5**
+**v1.00-phase46-6**
 
-最新Tag: `v1.00-phase46-5`
+最新Tag: `v1.00-phase46-6`
 
 ---
 
@@ -41,6 +41,7 @@
 | Phase46-3 | Knowledge Compare Mode（3モード切替） | v1.00-phase46-3 |
 | Phase46-4 | 実案件テストログ / 品質比較記録 | v1.00-phase46-4 |
 | Phase46-5 | Compare Intelligence v1 | v1.00-phase46-5 |
+| Phase46-6 | Compare Recommendation Engine v1 | v1.00-phase46-6 |
 
 ---
 
@@ -158,20 +159,29 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 - `appendCompareIntelligenceToExportMarkdown(lines)` — Markdown Export に追記
 - `appendCompareIntelligenceToExportJson(payload)` — JSON Export に追記
 
+### Compare Recommendation（Phase46-6）
+- `COMPARE_RECOMMENDATION_VERSION = '1.0.0'`
+- `_lastCompareRecommendations` — 最新改善提案を保持
+- `buildCompareRecommendations(summary)` — Intelligence から priorityItems / knowledgeRecommendations / outputTypeRecommendations / reviewerHints / learningHints / cautionItems を生成
+- `getCompareRecommendationPriority(item)` — high / medium / low を判定
+- `buildCompareRecommendationHtml()` — Output Engine に改善提案パネルを表示
+- `appendCompareRecommendationToExportMarkdown(lines)` — Markdown Export に追記
+- `appendCompareRecommendationToExportJson(payload)` — JSON Export に `compareRecommendations` として追加
+
 ---
 
 ## 次にやること
 
-### Phase46-6: 実案件品質改善（成果物品質の継続向上）
+### Phase46-7: 実案件品質改善（成果物品質の継続向上）
 
 目的：
-Compare Intelligence の分析結果を活用し、実案件をベースに成果物品質を継続改善する。
+Compare Recommendation の priorityItems / learningHints を活用し、実案件ベースで成果物品質を継続改善する。
 
 候補：
 1. Quality Score 判定精度向上（evaluateOutputQuality の精度改善）
 2. Learning精度向上（extractLearningItems の抽出ロジック改善）
 3. Instagram / TikTok / LP など特定タイプの成果物品質強化
-4. Compare Intelligence の recommendations を Workflow に反映
+4. Compare Recommendation HIGH 優先項目の実装対応
 
 ※ 実案件で動かしてからユーザーと判断する
 
