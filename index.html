@@ -20054,6 +20054,194 @@ function appendCompareRecommendationToExportJson(payload) {
   payload.compareRecommendations = rec;
 }
 
+// ══════════════════════════════════════════════════
+// Phase46-7: Compare Quality Integration Check v1
+// ══════════════════════════════════════════════════
+
+const COMPARE_INTEGRATION_CHECK_VERSION = '1.0.0';
+
+let _lastCompareIntegrationCheck = null;
+
+function getCompareIntegrationStatus(check) {
+  if (!check) return 'insufficient';
+  if (!check.logReady || check.totalCompareLogs === 0) return 'insufficient';
+  if (!check.intelligenceReady || !check.recommendationReady) return 'insufficient';
+  if (check.totalCompareLogs >= 3 && check.hasModeCoverage && check.hasRecommendations) return 'ready';
+  return 'partial';
+}
+
+function buildCompareIntegrationCheck() {
+  var log   = _knowledgeCompareLog || [];
+  var intel = _lastCompareIntelligence;
+  var rec   = _lastCompareRecommendations;
+
+  // 最新化（まだ生成されていない場合のみ）
+  if (!intel) intel = analyzeCompareIntelligence();
+  if (!rec && intel && intel.totalCount > 0) rec = buildCompareRecommendations(intel);
+
+  var logReady            = log.length > 0;
+  var intelligenceReady   = !!(intel && intel.totalCount > 0);
+  var recommendationReady = !!(rec && rec.totalCount > 0);
+
+  // mode カバレッジ確認
+  var modesSeen = {};
+  log.forEach(function(e) { if (e.mode) modesSeen[e.mode] = true; });
+  var hasModeCoverage = Object.keys(modesSeen).length >= 2;
+
+  // outputType カバレッジ確認
+  var typesSeen = {};
+  log.forEach(function(e) { if (e.outputType) typesSeen[e.outputType] = true; });
+  var hasOutputTypeCoverage = Object.keys(typesSeen).length >= 2;
+
+  // injectionImpact 確認
+  var withInj    = log.filter(function(e) { return (e.injectedCount || 0) > 0; }).length;
+  var withoutInj = log.filter(function(e) { return (e.injectedCount || 0) === 0; }).length;
+  var hasInjectionImpact = withInj > 0 && withoutInj > 0;
+
+  var hasRecommendations = !!(rec && rec.priorityItems && rec.priorityItems.length > 0);
+  var hasHighPriority    = !!(rec && rec.priorityItems && rec.priorityItems.some(function(i){ return i.priority === 'high'; }));
+  var hasCautionItems    = !!(rec && rec.cautionItems && rec.cautionItems.length > 0);
+
+  // checklist
+  var checklist = [
+    { label: 'Compare Log',           ok: logReady,            detail: log.length + '件' },
+    { label: 'Compare Intelligence',  ok: intelligenceReady,   detail: intelligenceReady ? '生成済み' : '未生成' },
+    { label: 'Compare Recommendation',ok: recommendationReady, detail: recommendationReady ? '生成済み' : '未生成' },
+    { label: 'Mode Coverage (2種以上)',ok: hasModeCoverage,    detail: Object.keys(modesSeen).join(' / ') || '—' },
+    { label: 'OutputType Coverage',   ok: hasOutputTypeCoverage, detail: Object.keys(typesSeen).join(' / ') || '—' },
+    { label: 'Injection Impact',      ok: hasInjectionImpact,  detail: 'あり:' + withInj + '件 / なし:' + withoutInj + '件' },
+    { label: 'Recommendations',       ok: hasRecommendations,  detail: hasHighPriority ? 'HIGH項目あり' : '生成済み' },
+  ];
+
+  // nextTestActions
+  var nextTestActions = [];
+  if (!modesSeen[KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE])    nextTestActions.push('with_knowledge で実案件を1件実行');
+  if (!modesSeen[KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE]) nextTestActions.push('without_knowledge で同じ案件を1件実行');
+  if (!modesSeen[KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY])        nextTestActions.push('guide_only で同じ案件を1件実行');
+  if (!hasOutputTypeCoverage) nextTestActions.push('Instagram / LP など複数 outputType でテストを追加');
+  if (!hasInjectionImpact)    nextTestActions.push('Injection Impact 判定のため、注入あり/なし両方のログを追加');
+  if (hasHighPriority)        nextTestActions.push('HIGH priority の改善項目を次案件で確認');
+  if (intel && intel.byOutputType) {
+    Object.keys(intel.byOutputType).forEach(function(t) {
+      var s = intel.byOutputType[t];
+      if (!s.caution && s.averageScore < 70) nextTestActions.push(t + ' のスコアが低い — 追加テストで原因を特定');
+    });
+  }
+  if (nextTestActions.length === 0) nextTestActions.push('実案件テストを継続してください');
+
+  // cautionItems
+  var cautionItems = [];
+  if (log.length < 3)           cautionItems.push('比較ログが少ない（' + log.length + '件）。精度向上のため追加テストが必要');
+  if (!hasModeCoverage)         cautionItems.push('テスト済みモードが1種類のみ。複数モードで比較してください');
+  if (!hasOutputTypeCoverage)   cautionItems.push('outputType が1種類のみ。複数の成果物タイプでテストを追加してください');
+  if (!hasInjectionImpact)      cautionItems.push('Injection Impact 判定に必要なログ（注入あり/なし両方）が不足しています');
+  if (hasRecommendations && log.length < 5) cautionItems.push('Recommendations は生成済みですが、検証データが少ないため精度が低い可能性があります');
+
+  var check = {
+    version:              COMPARE_INTEGRATION_CHECK_VERSION,
+    logReady:             logReady,
+    intelligenceReady:    intelligenceReady,
+    recommendationReady:  recommendationReady,
+    totalCompareLogs:     log.length,
+    hasModeCoverage:      hasModeCoverage,
+    hasOutputTypeCoverage:hasOutputTypeCoverage,
+    hasInjectionImpact:   hasInjectionImpact,
+    hasRecommendations:   hasRecommendations,
+    hasHighPriority:      hasHighPriority,
+    hasCautionItems:      hasCautionItems,
+    status:               '',
+    checklist:            checklist,
+    nextTestActions:      nextTestActions,
+    cautionItems:         cautionItems,
+    generatedAt:          new Date().toISOString(),
+  };
+  check.status = getCompareIntegrationStatus(check);
+  _lastCompareIntegrationCheck = check;
+  return check;
+}
+
+function buildCompareIntegrationCheckHtml() {
+  var check = buildCompareIntegrationCheck();
+  var esc   = escapeHtml;
+
+  var statusColor = check.status === 'ready'        ? '#5ddb8e'
+                  : check.status === 'partial'       ? '#f0b840'
+                  : '#e06060';
+  var statusLabel = check.status === 'ready'        ? 'READY'
+                  : check.status === 'partial'       ? 'PARTIAL'
+                  : 'INSUFFICIENT';
+
+  if (!check.logReady) {
+    return '<div style="margin-top:10px;padding:10px 12px;background:rgba(40,40,80,0.10);border:1px solid rgba(100,100,200,0.18);border-radius:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:rgba(180,180,255,0.85);margin-bottom:5px;">🔗 Compare Integration Check v1</div>'
+      + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">実案件比較ログがまだ不足しています。Workflowを実行してください。</div>'
+      + '</div>';
+  }
+
+  // checklist rows
+  var clRows = check.checklist.map(function(item) {
+    var icon  = item.ok ? '✅' : '⬜';
+    var color = item.ok ? 'rgba(100,220,140,0.7)' : 'rgba(255,255,255,0.3)';
+    return '<div style="display:flex;align-items:center;gap:5px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+      + '<span style="font-size:10px;">' + icon + '</span>'
+      + '<span style="font-size:9px;flex:1;color:' + color + ';">' + esc(item.label) + '</span>'
+      + '<span style="font-size:8px;color:rgba(255,255,255,0.25);">' + esc(item.detail) + '</span>'
+      + '</div>';
+  }).join('');
+
+  // next actions
+  var actRows = check.nextTestActions.slice(0, 6).map(function(a) {
+    return '<div style="font-size:8px;color:rgba(200,220,255,0.55);padding:1px 0;">▶ ' + esc(a) + '</div>';
+  }).join('');
+
+  // caution
+  var cautionHtml = check.cautionItems.length > 0
+    ? '<div style="margin-top:7px;padding:5px 8px;background:rgba(200,150,30,0.08);border:1px solid rgba(200,150,30,0.2);border-radius:5px;">'
+      + '<div style="font-size:9px;font-weight:700;color:rgba(240,180,60,0.8);margin-bottom:3px;">⚠ Caution</div>'
+      + check.cautionItems.map(function(c){ return '<div style="font-size:8px;color:rgba(240,200,100,0.6);">・' + esc(c) + '</div>'; }).join('')
+      + '</div>'
+    : '';
+
+  return '<div style="margin-top:10px;padding:10px 12px;background:rgba(40,40,80,0.12);border:1px solid rgba(100,100,220,0.22);border-radius:8px;">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+    +   '<div style="font-size:10px;font-weight:700;color:rgba(180,180,255,0.9);">🔗 Compare Integration Check v1</div>'
+    +   '<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,0.2);color:' + statusColor + ';border:1px solid ' + statusColor + '33;">' + statusLabel + '</span>'
+    + '</div>'
+    + '<div style="font-size:9px;color:rgba(180,200,255,0.5);margin-bottom:4px;">Checklist</div>'
+    + clRows
+    + (actRows ? '<div style="margin-top:7px;font-size:9px;color:rgba(180,200,255,0.6);font-weight:700;margin-bottom:3px;">Next Test Actions</div>' + actRows : '')
+    + cautionHtml
+    + '<div style="font-size:8px;color:rgba(255,255,255,0.15);margin-top:5px;">v' + COMPARE_INTEGRATION_CHECK_VERSION + ' / ' + (check.generatedAt || '').slice(0,10) + '</div>'
+    + '</div>';
+}
+
+function appendCompareIntegrationCheckToExportMarkdown(lines) {
+  var check = buildCompareIntegrationCheck();
+  lines.push('## Compare Integration Check v' + COMPARE_INTEGRATION_CHECK_VERSION);
+  lines.push('Status: ' + check.status.toUpperCase());
+  lines.push('Total Compare Logs: ' + check.totalCompareLogs);
+  if (check.checklist.length) {
+    lines.push('### Checklist');
+    check.checklist.forEach(function(item) {
+      lines.push((item.ok ? '[x]' : '[ ]') + ' ' + item.label + ' — ' + item.detail);
+    });
+  }
+  if (check.nextTestActions.length) {
+    lines.push('### Next Test Actions');
+    check.nextTestActions.forEach(function(a) { lines.push('- ' + a); });
+  }
+  if (check.cautionItems.length) {
+    lines.push('### Caution');
+    check.cautionItems.forEach(function(c) { lines.push('- ' + c); });
+  }
+  lines.push('');
+}
+
+function appendCompareIntegrationCheckToExportJson(payload) {
+  var check = buildCompareIntegrationCheck();
+  payload.compareIntegrationCheck = check || null;
+}
+
 function switchKnowledgeCompareMode(mode) {
   if (!KNOWLEDGE_COMPARE_MODE[mode.toUpperCase().replace(/-/g,'_')] && Object.values(KNOWLEDGE_COMPARE_MODE).indexOf(mode) === -1) return;
   _knowledgeCompareMode = mode;
@@ -21059,6 +21247,7 @@ function serializeOutputDraft(format) {
     if (_knowledgeCompareLog && _knowledgeCompareLog.length) jsonObj._knowledgeCompareLog = _knowledgeCompareLog.slice(0, 10);
     appendCompareIntelligenceToExportJson(jsonObj);
     appendCompareRecommendationToExportJson(jsonObj);
+    appendCompareIntegrationCheckToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -21280,6 +21469,8 @@ function serializeOutputDraft(format) {
   appendCompareIntelligenceToExportMarkdown(mdLines);
   // Phase46-6: Compare Recommendation
   appendCompareRecommendationToExportMarkdown(mdLines);
+  // Phase46-7: Compare Integration Check
+  appendCompareIntegrationCheckToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -21568,6 +21759,7 @@ function renderOutputEnginePanel() {
     + buildCompareLogHtml()
     + buildCompareIntelligenceHtml()
     + buildCompareRecommendationHtml()
+    + buildCompareIntegrationCheckHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
