@@ -19773,6 +19773,287 @@ function appendCompareIntelligenceToExportJson(payload) {
   payload.compareIntelligence = summary || null;
 }
 
+// ══════════════════════════════════════════════════
+// Phase46-6: Compare Recommendation Engine v1
+// ══════════════════════════════════════════════════
+
+const COMPARE_RECOMMENDATION_VERSION = '1.0.0';
+
+let _lastCompareRecommendations = null;
+
+function getCompareRecommendationPriority(item) {
+  if (!item) return 'low';
+  var t = item.type || '';
+  // high
+  if (t === 'winner_without' || t === 'injection_negative' || t === 'outputtype_low') return 'high';
+  // medium
+  if (t === 'winner_guide' || t === 'outputtype_variance' || t === 'injection_neutral') return 'medium';
+  // low
+  return 'low';
+}
+
+function buildCompareRecommendations(summary) {
+  var src = summary || _lastCompareIntelligence || analyzeCompareIntelligence();
+
+  var empty = {
+    version:                  COMPARE_RECOMMENDATION_VERSION,
+    sourceVersion:            COMPARE_INTELLIGENCE_VERSION,
+    totalCount:               0,
+    priorityItems:            [],
+    outputTypeRecommendations:[],
+    knowledgeRecommendations: [],
+    reviewerHints:            [],
+    learningHints:            [],
+    cautionItems:             [],
+    generatedAt:              new Date().toISOString(),
+  };
+
+  if (!src || src.totalCount === 0) {
+    _lastCompareRecommendations = empty;
+    return empty;
+  }
+
+  var priorityItems            = [];
+  var outputTypeRecommendations= [];
+  var knowledgeRecommendations = [];
+  var reviewerHints            = [];
+  var learningHints            = [];
+  var cautionItems             = [];
+
+  // --- priorityItems ---
+  var winner = src.winnerMode;
+  if (winner === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE) {
+    priorityItems.push({ type: 'winner_without', priority: 'high',
+      label: 'Knowledge選定精度を最優先改善',
+      detail: 'Knowledgeなしモードが最高スコア。selectRelevantKnowledge の精度または Knowledge品質を見直す' });
+  } else if (winner === KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY) {
+    priorityItems.push({ type: 'winner_guide', priority: 'medium',
+      label: 'Leader Execution Guide の強化を優先',
+      detail: 'Guideのみモードが最高スコア。buildLeaderExecutionGuide の出力品質を改善する' });
+  } else if (winner === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE) {
+    priorityItems.push({ type: 'winner_with', priority: 'low',
+      label: 'Knowledge注入を継続活用',
+      detail: '通常モードが最高スコア。現状維持しながらKnowledge蓄積を続ける' });
+  }
+
+  var imp = src.injectionImpact || {};
+  if (imp.status === 'negative') {
+    priorityItems.push({ type: 'injection_negative', priority: 'high',
+      label: 'Knowledge注入がノイズになっている可能性',
+      detail: '注入なしのほうが平均 ' + Math.abs(imp.difference || 0) + 'pt高い。selectRelevantKnowledge の精度改善が急務' });
+  } else if (imp.status === 'neutral') {
+    priorityItems.push({ type: 'injection_neutral', priority: 'medium',
+      label: 'Knowledge注入の差分はほぼゼロ',
+      detail: '注入あり/なしの差が小さい。Knowledge品質または選定ロジックを改善して差を広げる' });
+  }
+
+  // --- outputTypeRecommendations ---
+  var byType = src.byOutputType || {};
+  Object.keys(byType).forEach(function(t) {
+    var s = byType[t];
+    if (!s) return;
+    if (s.caution) {
+      outputTypeRecommendations.push({ outputType: t, priority: 'low',
+        label: t + ': 追加テスト推奨',
+        detail: 'データが ' + s.count + '件のみ。実案件テストを継続してください' });
+    } else if (s.averageScore < 70) {
+      priorityItems.push({ type: 'outputtype_low', priority: 'high',
+        label: t + ' の品質が低い（avg ' + s.averageScore + '）',
+        detail: 'Quality Score / Learning 抽出 / Leaderへの指示を強化してください' });
+      outputTypeRecommendations.push({ outputType: t, priority: 'high',
+        label: t + ' 品質改善急務（avg ' + s.averageScore + '）',
+        detail: 'Leaderへの指示強化 / 必要フィールドの明示 / CTA明記を優先' });
+    } else if (s.averageScore < 80) {
+      outputTypeRecommendations.push({ outputType: t, priority: 'medium',
+        label: t + ' 品質改善余地あり（avg ' + s.averageScore + '）',
+        detail: '構成の明確化とフック強化を検討' });
+    } else {
+      outputTypeRecommendations.push({ outputType: t, priority: 'low',
+        label: t + ' は安定（avg ' + s.averageScore + '）',
+        detail: '現状維持。Knowledge蓄積を継続' });
+    }
+  });
+
+  // --- knowledgeRecommendations ---
+  if (imp.status === 'positive') {
+    knowledgeRecommendations.push({ priority: 'low',
+      label: 'Knowledge Inject継続',
+      detail: '注入ありのほうが平均 ' + (imp.difference || 0) + 'pt高い。高品質なKnowledgeの蓄積を続ける' });
+  } else if (imp.status === 'negative') {
+    knowledgeRecommendations.push({ priority: 'high',
+      label: 'selectRelevantKnowledge 精度改善',
+      detail: '不適切なKnowledgeが注入されている可能性。スコアリングロジックを見直す' });
+  } else if (imp.status === 'unknown') {
+    knowledgeRecommendations.push({ priority: 'low',
+      label: '比較ログ追加が必要',
+      detail: '注入あり/なしのログが不足。複数モードで実案件を実行してください' });
+  } else {
+    knowledgeRecommendations.push({ priority: 'medium',
+      label: 'Knowledge選定の差別化を強化',
+      detail: '注入の効果がまだ見えていない。Knowledge品質向上と件数拡充を優先' });
+  }
+
+  // --- reviewerHints ---
+  Object.keys(byType).forEach(function(t) {
+    var s = byType[t];
+    if (!s || s.caution) return;
+    if (s.averageScore < 75) {
+      reviewerHints.push({ outputType: t, priority: 'high',
+        label: t + ' の評価観点を強化',
+        detail: 'completeness / ctaStrength / hook / structure を重点評価。スコアが低い理由を特定する' });
+    }
+  });
+  if (reviewerHints.length === 0) {
+    reviewerHints.push({ priority: 'low',
+      label: '現状の評価観点を維持',
+      detail: '特定の低品質 outputType なし。Quality Score の精度は安定' });
+  }
+
+  // --- learningHints ---
+  if (winner === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE && src.totalCount >= 5) {
+    learningHints.push({ priority: 'high',
+      label: 'Knowledgeなしでの成功パターンを Learning へ反映',
+      detail: 'without_knowledge モードで高スコアの案件から SUCCESS_PATTERN を抽出することを優先' });
+  }
+  if (imp.status === 'negative') {
+    learningHints.push({ priority: 'high',
+      label: 'Knowledge注入によるスコア低下事例を Learning へ記録',
+      detail: 'どのKnowledgeが悪影響を与えているか特定し、WARNING カテゴリのLearningを強化' });
+  }
+  Object.keys(byType).forEach(function(t) {
+    var s = byType[t];
+    if (!s || s.caution || s.averageScore >= 75) return;
+    learningHints.push({ outputType: t, priority: 'high',
+      label: t + ' の改善観点を Learning に追加',
+      detail: t + ' の低スコア案件から IMPROVEMENT / STRUCTURE Learning を重点抽出する' });
+  });
+  if (learningHints.length === 0) {
+    learningHints.push({ priority: 'low',
+      label: '現状のLearning抽出を継続',
+      detail: '品質は安定。実案件ログを蓄積しながら SUCCESS_PATTERN を増やす' });
+  }
+
+  // --- cautionItems ---
+  if (src.totalCount < 5) {
+    cautionItems.push('比較ログが少ない（' + src.totalCount + '件）。精度向上のために実案件テストを継続');
+  }
+  var modeKeys = Object.keys(src.byMode || {});
+  if (modeKeys.length < 2) {
+    cautionItems.push('テスト済みモードが1種類のみ。複数モードで切替テストを実施してください');
+  }
+  if (imp.status === 'unknown') {
+    cautionItems.push('Knowledge注入あり/なしのログが不足。意図的にモードを切替えて比較ログを増やす');
+  }
+  if (Object.keys(byType).length < 2) {
+    cautionItems.push('outputType の種類が少ない。複数の成果物タイプで実案件を実行してください');
+  }
+
+  var result = {
+    version:                   COMPARE_RECOMMENDATION_VERSION,
+    sourceVersion:             COMPARE_INTELLIGENCE_VERSION,
+    totalCount:                priorityItems.length + outputTypeRecommendations.length + knowledgeRecommendations.length,
+    priorityItems:             priorityItems,
+    outputTypeRecommendations: outputTypeRecommendations,
+    knowledgeRecommendations:  knowledgeRecommendations,
+    reviewerHints:             reviewerHints,
+    learningHints:             learningHints,
+    cautionItems:              cautionItems,
+    generatedAt:               new Date().toISOString(),
+  };
+  _lastCompareRecommendations = result;
+  return result;
+}
+
+function buildCompareRecommendationHtml() {
+  var intel = _lastCompareIntelligence || analyzeCompareIntelligence();
+  if (!intel || intel.totalCount === 0) {
+    return '<div style="margin-top:10px;padding:10px 12px;background:rgba(40,60,40,0.10);border:1px solid rgba(80,180,100,0.18);border-radius:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:rgba(160,220,160,0.85);margin-bottom:5px;">🎯 Compare Recommendation v1</div>'
+      + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">Compare Intelligence の分析結果がまだありません。Workflowを実行してください。</div>'
+      + '</div>';
+  }
+
+  var rec = buildCompareRecommendations(intel);
+  var esc = escapeHtml;
+
+  function priorityChip(p) {
+    var bg = p === 'high' ? 'rgba(220,80,80,0.2)' : p === 'medium' ? 'rgba(220,160,40,0.2)' : 'rgba(80,180,100,0.15)';
+    var col= p === 'high' ? '#e06060'              : p === 'medium' ? '#f0b840'               : '#5ddb8e';
+    var lbl= p === 'high' ? 'HIGH'                 : p === 'medium' ? 'MED'                   : 'LOW';
+    return '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:4px;background:' + bg + ';color:' + col + ';">' + lbl + '</span>';
+  }
+
+  function itemRow(item) {
+    return '<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
+      + '<div style="display:flex;align-items:center;gap:5px;margin-bottom:1px;">'
+      +   priorityChip(item.priority || 'low')
+      +   '<span style="font-size:9px;font-weight:700;color:rgba(220,230,255,0.8);">' + esc(item.label || '') + '</span>'
+      + '</div>'
+      + '<div style="font-size:8px;color:rgba(200,200,220,0.45);padding-left:2px;">' + esc(item.detail || '') + '</div>'
+      + '</div>';
+  }
+
+  function section(title, items, emptyMsg) {
+    if (!items || items.length === 0) return '';
+    return '<div style="margin-top:7px;">'
+      + '<div style="font-size:9px;font-weight:700;color:rgba(160,200,255,0.65);margin-bottom:3px;">' + title + '</div>'
+      + items.map(itemRow).join('')
+      + '</div>';
+  }
+
+  var cautionHtml = rec.cautionItems.length > 0
+    ? '<div style="margin-top:7px;padding:5px 8px;background:rgba(200,150,30,0.08);border:1px solid rgba(200,150,30,0.2);border-radius:5px;">'
+      + '<div style="font-size:9px;font-weight:700;color:rgba(240,180,60,0.8);margin-bottom:3px;">⚠ Caution</div>'
+      + rec.cautionItems.map(function(c){ return '<div style="font-size:8px;color:rgba(240,200,100,0.6);">・' + esc(c) + '</div>'; }).join('')
+      + '</div>'
+    : '';
+
+  return '<div style="margin-top:10px;padding:10px 12px;background:rgba(30,60,40,0.12);border:1px solid rgba(80,180,100,0.20);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(160,220,160,0.9);margin-bottom:8px;">🎯 Compare Recommendation v1</div>'
+    + section('Priority Items', rec.priorityItems, '')
+    + section('Knowledge Recommendations', rec.knowledgeRecommendations, '')
+    + section('OutputType Recommendations', rec.outputTypeRecommendations, '')
+    + section('Reviewer Hints', rec.reviewerHints, '')
+    + section('Learning Hints', rec.learningHints, '')
+    + cautionHtml
+    + '<div style="font-size:8px;color:rgba(255,255,255,0.15);margin-top:5px;">v' + COMPARE_RECOMMENDATION_VERSION + ' / ' + (rec.generatedAt || '').slice(0,10) + '</div>'
+    + '</div>';
+}
+
+function appendCompareRecommendationToExportMarkdown(lines) {
+  var intel = _lastCompareIntelligence || analyzeCompareIntelligence();
+  if (!intel || intel.totalCount === 0) return;
+  var rec = buildCompareRecommendations(intel);
+  lines.push('## Compare Recommendation v' + COMPARE_RECOMMENDATION_VERSION);
+  if (rec.priorityItems.length) {
+    lines.push('### Priority Items');
+    rec.priorityItems.forEach(function(i) { lines.push('- [' + (i.priority || '').toUpperCase() + '] ' + i.label); });
+  }
+  if (rec.knowledgeRecommendations.length) {
+    lines.push('### Knowledge Recommendations');
+    rec.knowledgeRecommendations.forEach(function(i) { lines.push('- [' + (i.priority || '').toUpperCase() + '] ' + i.label); });
+  }
+  if (rec.reviewerHints.length) {
+    lines.push('### Reviewer Hints');
+    rec.reviewerHints.forEach(function(i) { lines.push('- ' + i.label); });
+  }
+  if (rec.learningHints.length) {
+    lines.push('### Learning Hints');
+    rec.learningHints.forEach(function(i) { lines.push('- ' + i.label); });
+  }
+  if (rec.cautionItems.length) {
+    lines.push('### Caution');
+    rec.cautionItems.forEach(function(c) { lines.push('- ' + c); });
+  }
+  lines.push('');
+}
+
+function appendCompareRecommendationToExportJson(payload) {
+  var intel = _lastCompareIntelligence || analyzeCompareIntelligence();
+  var rec = intel && intel.totalCount > 0 ? buildCompareRecommendations(intel) : null;
+  payload.compareRecommendations = rec;
+}
+
 function switchKnowledgeCompareMode(mode) {
   if (!KNOWLEDGE_COMPARE_MODE[mode.toUpperCase().replace(/-/g,'_')] && Object.values(KNOWLEDGE_COMPARE_MODE).indexOf(mode) === -1) return;
   _knowledgeCompareMode = mode;
@@ -20777,6 +21058,7 @@ function serializeOutputDraft(format) {
     jsonObj._knowledgeCompareMode = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
     if (_knowledgeCompareLog && _knowledgeCompareLog.length) jsonObj._knowledgeCompareLog = _knowledgeCompareLog.slice(0, 10);
     appendCompareIntelligenceToExportJson(jsonObj);
+    appendCompareRecommendationToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -20996,6 +21278,8 @@ function serializeOutputDraft(format) {
   }
   // Phase46-5: Compare Intelligence
   appendCompareIntelligenceToExportMarkdown(mdLines);
+  // Phase46-6: Compare Recommendation
+  appendCompareRecommendationToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -21283,6 +21567,7 @@ function renderOutputEnginePanel() {
     + buildKiDebugHtml()
     + buildCompareLogHtml()
     + buildCompareIntelligenceHtml()
+    + buildCompareRecommendationHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
