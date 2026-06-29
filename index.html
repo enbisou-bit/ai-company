@@ -20741,7 +20741,10 @@ function toggleOutputEnginePanel() {
   if (p.classList.contains('open')) {
     p.classList.remove('open');
   } else {
-    renderOutputEnginePanel();
+    try { renderOutputEnginePanel(); } catch(e) {
+      var _b = document.getElementById('oe-body');
+      if (_b) _b.innerHTML = '<div style="padding:14px;color:#e06060;font-size:11px;line-height:1.6;">⚠ Output Engine 描画エラー<br><code style="font-size:10px;color:#f09090;">' + (e && e.message ? e.message : String(e)) + '</code><br><br>ブラウザの開発者ツール（F12）でコンソールを確認してください。</div>';
+    }
     p.classList.add('open');
   }
 }
@@ -21737,6 +21740,12 @@ function renderOutputEnginePanel() {
       + '</div>';
   })();
 
+  function _oeSafe(fn, label) {
+    try { return fn(); } catch(e) {
+      return '<div style="padding:5px 8px;margin:4px 0;background:rgba(200,60,60,0.1);border:1px solid rgba(200,60,60,0.3);border-radius:6px;font-size:9px;color:#e06060;">⚠ ' + label + ' エラー: ' + (e && e.message ? e.message : String(e)) + '</div>';
+    }
+  }
+
   body.innerHTML =
     '<div class="oe-status-card">'
     + '<div class="oe-status-title">OUTPUT ENGINE STATUS</div>'
@@ -21745,22 +21754,22 @@ function renderOutputEnginePanel() {
     + schemaHtml
     + '</div>'
     + detectionHtml
-    + buildOutputPackageHtml()
-    + buildQualityScoreHtml()
-    + buildLearningItemsHtml()
-    + buildMemoryCandidatesHtml()
-    + buildKnowledgeCandidatesHtml()
-    + buildInjectedKnowledgeHtml()
-    + buildLeaderExecutionGuideHtml()
-    + buildKnowledgeCompareSummaryHtml()
-    + buildKnowledgeCompareModeUiHtml()
-    + buildLeaderContextPreviewHtml()
-    + buildKiDebugHtml()
-    + buildCompareLogHtml()
-    + buildCompareIntelligenceHtml()
-    + buildCompareRecommendationHtml()
-    + buildCompareIntegrationCheckHtml()
-    + buildExportUiHtml()
+    + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
+    + _oeSafe(buildQualityScoreHtml,             'QualityScore')
+    + _oeSafe(buildLearningItemsHtml,            'LearningItems')
+    + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
+    + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
+    + _oeSafe(buildInjectedKnowledgeHtml,        'InjectedKnowledge')
+    + _oeSafe(buildLeaderExecutionGuideHtml,     'LeaderExecutionGuide')
+    + _oeSafe(buildKnowledgeCompareSummaryHtml,  'KnowledgeCompareSummary')
+    + _oeSafe(buildKnowledgeCompareModeUiHtml,   'KnowledgeCompareModeUi')
+    + _oeSafe(buildLeaderContextPreviewHtml,     'LeaderContextPreview')
+    + _oeSafe(buildKiDebugHtml,                  'KiDebug')
+    + _oeSafe(buildCompareLogHtml,               'CompareLog')
+    + _oeSafe(buildCompareIntelligenceHtml,      'CompareIntelligence')
+    + _oeSafe(buildCompareRecommendationHtml,    'CompareRecommendation')
+    + _oeSafe(buildCompareIntegrationCheckHtml,  'CompareIntegrationCheck')
+    + _oeSafe(buildExportUiHtml,                 'ExportUi')
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
     + '<div class="oe-type-grid">' + typeCards + '</div>'
