@@ -19504,6 +19504,275 @@ function buildCompareLogHtml() {
     + '</div>';
 }
 
+// ══════════════════════════════════════════════════
+// Phase46-5: Compare Intelligence v1
+// ══════════════════════════════════════════════════
+
+const COMPARE_INTELLIGENCE_VERSION = '1.0.0';
+
+let _lastCompareIntelligence = null;
+
+function analyzeCompareIntelligence() {
+  var log = _knowledgeCompareLog || [];
+
+  var empty = {
+    version: COMPARE_INTELLIGENCE_VERSION,
+    totalCount: 0,
+    byMode: {},
+    winnerMode: null,
+    byOutputType: {},
+    injectionImpact: { status: 'unknown', withInjectionAverage: null, withoutInjectionAverage: null, difference: null, message: '比較ログがありません' },
+    recommendations: ['比較ログが少ないため、実案件テストを継続してください'],
+    generatedAt: new Date().toISOString(),
+  };
+
+  if (log.length === 0) {
+    _lastCompareIntelligence = empty;
+    return empty;
+  }
+
+  // mode別集計
+  var byMode = {};
+  log.forEach(function(e) {
+    if (typeof e.overallScore !== 'number') return;
+    var m = e.mode || 'unknown';
+    if (!byMode[m]) byMode[m] = { count: 0, totalScore: 0, bestScore: -Infinity, worstScore: Infinity, label: e.modeLabel || m };
+    byMode[m].count++;
+    byMode[m].totalScore += e.overallScore;
+    if (e.overallScore > byMode[m].bestScore)  byMode[m].bestScore  = e.overallScore;
+    if (e.overallScore < byMode[m].worstScore) byMode[m].worstScore = e.overallScore;
+  });
+  Object.keys(byMode).forEach(function(m) {
+    var s = byMode[m];
+    s.averageScore = s.count > 0 ? Math.round(s.totalScore / s.count) : 0;
+    if (s.bestScore  === -Infinity) s.bestScore  = null;
+    if (s.worstScore ===  Infinity) s.worstScore = null;
+  });
+
+  // winnerMode
+  var winnerMode = getCompareModeWinner({ byMode: byMode });
+
+  // outputType別集計
+  var byType = {};
+  log.forEach(function(e) {
+    if (typeof e.overallScore !== 'number') return;
+    var t = e.outputType || 'unknown';
+    var m = e.mode || 'unknown';
+    if (!byType[t]) byType[t] = { count: 0, totalScore: 0, bestMode: null, bestModeScore: -Infinity };
+    byType[t].count++;
+    byType[t].totalScore += e.overallScore;
+    if (e.overallScore > byType[t].bestModeScore) {
+      byType[t].bestModeScore = e.overallScore;
+      byType[t].bestMode = m;
+    }
+  });
+  Object.keys(byType).forEach(function(t) {
+    var s = byType[t];
+    s.averageScore = s.count > 0 ? Math.round(s.totalScore / s.count) : 0;
+    s.caution = s.count < 3;
+  });
+
+  var summary = {
+    version:      COMPARE_INTELLIGENCE_VERSION,
+    totalCount:   log.length,
+    byMode:       byMode,
+    winnerMode:   winnerMode,
+    byOutputType: byType,
+    injectionImpact: null,
+    recommendations: [],
+    generatedAt:  new Date().toISOString(),
+  };
+
+  summary.injectionImpact = getKnowledgeInjectionImpact(summary);
+
+  // recommendations
+  var recs = [];
+  if (log.length < 5) {
+    recs.push('比較ログが少ないため、実案件テストを継続してください');
+  } else {
+    if (winnerMode === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE) {
+      recs.push('Knowledge注入は品質向上に寄与している可能性が高い');
+    } else if (winnerMode === KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY) {
+      recs.push('Execution Guide が特に有効。Knowledge本文より要約ガイド強化を優先');
+    } else if (winnerMode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE) {
+      recs.push('Knowledge注入がノイズになっている可能性。selectRelevantKnowledge の精度改善が必要');
+    }
+    if (summary.injectionImpact && summary.injectionImpact.status === 'positive') {
+      recs.push('Knowledge注入ありのほうが平均スコアが高い。注入を積極的に活用してください');
+    } else if (summary.injectionImpact && summary.injectionImpact.status === 'negative') {
+      recs.push('Knowledge注入なしのほうがスコアが高い。注入の質（selectRelevantKnowledge）を見直してください');
+    }
+    // outputType別推奨
+    Object.keys(byType).forEach(function(t) {
+      if (byType[t].count >= 3 && byType[t].averageScore < 70) {
+        recs.push(t + ' は平均スコアが低め（' + byType[t].averageScore + '）。Leaderへの指示を強化してください');
+      }
+    });
+  }
+  if (recs.length === 0) recs.push('品質は安定しています。実案件を継続してください');
+  summary.recommendations = recs.slice(0, 5);
+
+  _lastCompareIntelligence = summary;
+  return summary;
+}
+
+function getCompareModeWinner(summary) {
+  var byMode = (summary && summary.byMode) || {};
+  var best = null;
+  var bestScore = -Infinity;
+  var priority = [
+    KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE,
+    KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY,
+    KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE,
+  ];
+  Object.keys(byMode).forEach(function(m) {
+    var s = byMode[m];
+    if (!s || s.count === 0) return;
+    if (s.averageScore > bestScore || (s.averageScore === bestScore && priority.indexOf(m) < priority.indexOf(best))) {
+      bestScore = s.averageScore;
+      best = m;
+    }
+  });
+  return best;
+}
+
+function getOutputTypeCompareInsights(summary) {
+  var byType = (summary && summary.byOutputType) || {};
+  var insights = {};
+  Object.keys(byType).forEach(function(t) {
+    var s = byType[t];
+    var comment = '';
+    if (s.caution) {
+      comment = 'データ不足（' + s.count + '件）。継続テストが必要';
+    } else if (s.averageScore >= 85) {
+      comment = '高品質（avg ' + s.averageScore + '）';
+    } else if (s.averageScore >= 70) {
+      comment = '標準品質（avg ' + s.averageScore + '）';
+    } else {
+      comment = '改善余地あり（avg ' + s.averageScore + '）';
+    }
+    insights[t] = {
+      count:        s.count,
+      averageScore: s.averageScore,
+      bestMode:     s.bestMode,
+      caution:      s.caution,
+      comment:      comment,
+    };
+  });
+  return insights;
+}
+
+function getKnowledgeInjectionImpact(summary) {
+  var log = _knowledgeCompareLog || [];
+  var withInj = log.filter(function(e) { return typeof e.overallScore === 'number' && (e.injectedCount || 0) > 0; });
+  var withoutInj = log.filter(function(e) { return typeof e.overallScore === 'number' && (e.injectedCount || 0) === 0; });
+
+  if (withInj.length === 0 || withoutInj.length === 0) {
+    return { status: 'unknown', withInjectionAverage: null, withoutInjectionAverage: null, difference: null, message: '比較に十分なデータがありません' };
+  }
+
+  var avg = function(arr) { return Math.round(arr.reduce(function(s, e) { return s + e.overallScore; }, 0) / arr.length); };
+  var wi  = avg(withInj);
+  var woi = avg(withoutInj);
+  var diff = wi - woi;
+  var status = Math.abs(diff) <= 2 ? 'neutral' : diff > 0 ? 'positive' : 'negative';
+  var msg = status === 'positive' ? 'Knowledge注入ありのほうが平均 ' + diff + ' ポイント高い'
+          : status === 'negative' ? 'Knowledge注入なしのほうが平均 ' + Math.abs(diff) + ' ポイント高い'
+          : 'Knowledge注入の有無による差はほぼない（差分: ' + diff + '）';
+
+  return { status: status, withInjectionAverage: wi, withoutInjectionAverage: woi, difference: diff, message: msg };
+}
+
+function buildCompareIntelligenceHtml() {
+  var summary = analyzeCompareIntelligence();
+  var esc = escapeHtml;
+
+  if (!summary || summary.totalCount === 0) {
+    return '<div style="margin-top:10px;padding:10px 12px;background:rgba(60,40,100,0.10);border:1px solid rgba(120,80,220,0.18);border-radius:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:rgba(180,160,255,0.85);margin-bottom:5px;">🧠 Compare Intelligence v1</div>'
+      + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">まだ比較ログがありません。Workflowを実行すると分析が始まります。</div>'
+      + '</div>';
+  }
+
+  var winnerLabel = summary.winnerMode ? (_KCM_LABELS[summary.winnerMode] || summary.winnerMode) : '—';
+  var winnerColor = summary.winnerMode === KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE    ? '#5ddb8e'
+                  : summary.winnerMode === KNOWLEDGE_COMPARE_MODE.GUIDE_ONLY        ? '#f0b840'
+                  : summary.winnerMode === KNOWLEDGE_COMPARE_MODE.WITHOUT_KNOWLEDGE ? '#e06060'
+                  : '#aaa';
+
+  // mode別スコア行
+  var modeRows = Object.keys(summary.byMode).map(function(m) {
+    var s = summary.byMode[m];
+    var lbl = _KCM_LABELS[m] || m;
+    var barColor = s.averageScore >= 85 ? '#5ddb8e' : s.averageScore >= 70 ? '#f0b840' : '#e06060';
+    return '<div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">'
+      + '<span style="font-size:9px;color:rgba(200,220,255,0.7);min-width:80px;">' + esc(lbl) + '</span>'
+      + '<div style="flex:1;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;height:7px;">'
+      +   '<div style="width:' + s.averageScore + '%;height:100%;background:' + barColor + ';"></div>'
+      + '</div>'
+      + '<span style="font-size:9px;font-weight:700;color:' + barColor + ';min-width:28px;">' + s.averageScore + '</span>'
+      + '<span style="font-size:8px;color:rgba(255,255,255,0.25);">×' + s.count + '</span>'
+      + '</div>';
+  }).join('');
+
+  // injection impact
+  var imp = summary.injectionImpact || {};
+  var impColor = imp.status === 'positive' ? '#5ddb8e' : imp.status === 'negative' ? '#e06060' : '#aaa';
+  var impHtml = '<div style="margin-top:6px;padding:5px 8px;background:rgba(255,255,255,0.03);border-radius:5px;">'
+    + '<div style="font-size:9px;color:rgba(180,200,255,0.55);margin-bottom:2px;">Knowledge Injection Impact</div>'
+    + '<div style="font-size:9px;color:' + impColor + ';">' + esc(imp.message || '—') + '</div>'
+    + (imp.withInjectionAverage !== null ? '<div style="font-size:8px;color:rgba(255,255,255,0.25);margin-top:2px;">注入あり: ' + imp.withInjectionAverage + ' / 注入なし: ' + imp.withoutInjectionAverage + '</div>' : '')
+    + '</div>';
+
+  // outputType別
+  var typeInsights = getOutputTypeCompareInsights(summary);
+  var typeRows = Object.keys(typeInsights).map(function(t) {
+    var ti = typeInsights[t];
+    return '<div style="font-size:8px;color:rgba(200,200,255,0.5);padding:1px 0;">'
+      + '<span style="color:rgba(200,200,255,0.7);">' + esc(t) + '</span>: ' + esc(ti.comment)
+      + '</div>';
+  }).join('');
+
+  // recommendations
+  var recRows = summary.recommendations.map(function(r) {
+    return '<div style="font-size:9px;color:rgba(220,200,255,0.7);padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04);">・' + esc(r) + '</div>';
+  }).join('');
+
+  return '<div style="margin-top:10px;padding:10px 12px;background:rgba(60,40,100,0.12);border:1px solid rgba(120,80,220,0.22);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(180,160,255,0.9);margin-bottom:8px;">🧠 Compare Intelligence v1</div>'
+    + '<div style="font-size:9px;color:rgba(180,200,255,0.5);margin-bottom:2px;">総件数: <strong style="color:rgba(200,220,255,0.8);">' + summary.totalCount + '</strong> 件</div>'
+    + '<div style="font-size:9px;margin-bottom:6px;">Winner Mode: <strong style="color:' + winnerColor + ';">' + esc(winnerLabel) + '</strong></div>'
+    + '<div style="font-size:9px;color:rgba(180,200,255,0.55);margin-bottom:4px;">モード別 平均スコア</div>'
+    + modeRows
+    + impHtml
+    + (typeRows ? '<div style="margin-top:6px;font-size:9px;color:rgba(180,200,255,0.55);margin-bottom:2px;">OutputType別</div>' + typeRows : '')
+    + '<div style="margin-top:8px;font-size:9px;color:rgba(180,160,255,0.65);font-weight:700;margin-bottom:3px;">推奨アクション</div>'
+    + recRows
+    + '<div style="font-size:8px;color:rgba(255,255,255,0.15);margin-top:5px;">v' + COMPARE_INTELLIGENCE_VERSION + ' / ' + (summary.generatedAt || '').slice(0,10) + '</div>'
+    + '</div>';
+}
+
+function appendCompareIntelligenceToExportMarkdown(lines) {
+  var summary = analyzeCompareIntelligence();
+  if (!summary || summary.totalCount === 0) return;
+  lines.push('## Compare Intelligence v' + COMPARE_INTELLIGENCE_VERSION);
+  lines.push('Total: ' + summary.totalCount + '件');
+  lines.push('Winner Mode: ' + (summary.winnerMode ? (_KCM_LABELS[summary.winnerMode] || summary.winnerMode) : '—'));
+  if (summary.injectionImpact) {
+    lines.push('Injection Impact: ' + (summary.injectionImpact.status || '—') + ' / ' + (summary.injectionImpact.message || ''));
+  }
+  if (summary.recommendations && summary.recommendations.length) {
+    lines.push('Recommendations:');
+    summary.recommendations.forEach(function(r) { lines.push('- ' + r); });
+  }
+  lines.push('');
+}
+
+function appendCompareIntelligenceToExportJson(payload) {
+  var summary = analyzeCompareIntelligence();
+  payload.compareIntelligence = summary || null;
+}
+
 function switchKnowledgeCompareMode(mode) {
   if (!KNOWLEDGE_COMPARE_MODE[mode.toUpperCase().replace(/-/g,'_')] && Object.values(KNOWLEDGE_COMPARE_MODE).indexOf(mode) === -1) return;
   _knowledgeCompareMode = mode;
@@ -20507,6 +20776,7 @@ function serializeOutputDraft(format) {
     if (_lastLeaderExecutionGuide) jsonObj._leaderExecutionGuide = _lastLeaderExecutionGuide;
     jsonObj._knowledgeCompareMode = _knowledgeCompareMode || KNOWLEDGE_COMPARE_MODE.WITH_KNOWLEDGE;
     if (_knowledgeCompareLog && _knowledgeCompareLog.length) jsonObj._knowledgeCompareLog = _knowledgeCompareLog.slice(0, 10);
+    appendCompareIntelligenceToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -20724,6 +20994,8 @@ function serializeOutputDraft(format) {
     });
     mdLines.push('');
   }
+  // Phase46-5: Compare Intelligence
+  appendCompareIntelligenceToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -21010,6 +21282,7 @@ function renderOutputEnginePanel() {
     + buildLeaderContextPreviewHtml()
     + buildKiDebugHtml()
     + buildCompareLogHtml()
+    + buildCompareIntelligenceHtml()
     + buildExportUiHtml()
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
