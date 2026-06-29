@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.0）
-> 更新日: 2026-06-29（Phase46-4完了）
+> 更新日: 2026-06-29（Phase46-5完了）
 
 ## 1. AI会社の最終目的（最重要）
 
@@ -92,9 +92,13 @@ User
 - Compare Log（Phase46-4）
   - _knowledgeCompareLog[]（max30件）
   - モード別平均スコア / 棒グラフ表示 / Export反映
+- Compare Intelligence v1（Phase46-5）
+  - analyzeCompareIntelligence() — mode別集計 / InjectionImpact / recommendations
+  - buildCompareIntelligenceHtml() — Output Engine に分析パネル表示
+  - Export（markdown / json）に自動反映
 
-次工程（Phase46-5〜）：
-- Compare Logを活用した実案件品質改善
+次工程（Phase46-6〜）：
+- Compare Intelligence recommendations の実案件活用
 - 成果物品質の継続向上
 
 ## 7. v1.0完成像

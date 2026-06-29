@@ -170,8 +170,18 @@ Git: v0.96相当
 - Export（markdown / json）に比較ログ自動反映
 - Git: d7ed771 / Tag: v1.00-phase46-4
 
-### Phase46-5: 実案件品質改善 ⬜
-- Compare Logを活用した成果物品質の継続向上
+### Phase46-5: Compare Intelligence v1 ✅
+- `COMPARE_INTELLIGENCE_VERSION = '1.0.0'`
+- `analyzeCompareIntelligence()` — mode別/outputType別/InjectionImpact集計 + recommendations生成
+- `getCompareModeWinner()` — 平均スコア最高モードを判定
+- `getOutputTypeCompareInsights()` — outputType別傾向コメント
+- `getKnowledgeInjectionImpact()` — 注入あり/なし差分（positive/negative/neutral/unknown）
+- `buildCompareIntelligenceHtml()` — Output Engineに分析パネル表示
+- `appendCompareIntelligenceToExportMarkdown/Json()` — Export反映
+- Git: 75c0bf4 / Tag: v1.00-phase46-5
+
+### Phase46-6: 実案件品質改善 ⬜
+- Compare Intelligence の recommendations を活用した成果物品質継続向上
 - Quality Score判定精度改善 / Learning精度向上 / 特定タイプ強化
 
 ---
@@ -187,6 +197,7 @@ Git: v0.96相当
 ☑ Leader Intelligence（Phase46-2）
 ☑ Knowledge Compare（Phase46-3）
 ☑ 実案件品質比較記録（Phase46-4）
+☑ Compare Intelligence v1（Phase46-5）
 □ Instagram完成品生成
 □ 動画完成品生成
 □ チラシ完成品生成
