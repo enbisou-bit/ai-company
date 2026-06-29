@@ -20859,6 +20859,12 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     renderWorkflowLive();
   }
 
+  // Phase46-8: Output Engineパネルが開いていれば Compare Log 反映のため再描画
+  var oePanel = document.getElementById('output-engine-panel');
+  if (oePanel && oePanel.classList.contains('open')) {
+    try { renderOutputEnginePanel(); } catch(_re) {}
+  }
+
   return { ok: true, type: type, updatedFields: updatedFields, status: OUTPUT_STATUS.READY };
 }
 
