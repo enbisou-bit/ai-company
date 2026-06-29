@@ -188,9 +188,16 @@ Git: v0.96相当
 - `appendCompareRecommendationToExportMarkdown/Json()` — Export反映
 - Git: 7a43619 / Tag: v1.00-phase46-6
 
-### Phase46-7: 実案件品質改善 ⬜
-- Compare Recommendation HIGH 優先項目の実案件活用
-- Quality Score判定精度改善 / Learning精度向上 / 特定タイプ強化
+### Phase46-7: Compare Quality Integration Check v1 ✅
+- `COMPARE_INTEGRATION_CHECK_VERSION = '1.0.0'`
+- `buildCompareIntegrationCheck()` — ログ/Intelligence/Recommendation の統合整合性チェック
+- `getCompareIntegrationStatus()` — ready/partial/insufficient 判定
+- `buildCompareIntegrationCheckHtml()` — Output Engine に Integration Check パネル表示
+- `appendCompareIntegrationCheckToExportMarkdown/Json()` — Export反映
+- Git: 9b64683 / Tag: v1.00-phase46-7
+
+### Phase46-8: 実案件品質改善 ⬜
+- Compare Integration Check の結果を活用した実案件品質向上
 
 ---
 
@@ -207,6 +214,7 @@ Git: v0.96相当
 ☑ 実案件品質比較記録（Phase46-4）
 ☑ Compare Intelligence v1（Phase46-5）
 ☑ Compare Recommendation Engine v1（Phase46-6）
+☑ Compare Quality Integration Check v1（Phase46-7）
 □ Instagram完成品生成
 □ 動画完成品生成
 □ チラシ完成品生成

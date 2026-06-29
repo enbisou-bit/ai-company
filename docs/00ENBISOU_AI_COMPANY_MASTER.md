@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.0）
-> 更新日: 2026-06-29（Phase46-6完了）
+> 更新日: 2026-06-29（Phase46-7完了）
 
 ## 1. AI会社の最終目的（最重要）
 
@@ -102,8 +102,14 @@ User
   - buildCompareRecommendationHtml() — Output Engine に改善提案パネル
   - Export（markdown / json）に自動反映
 
-次工程（Phase46-7〜）：
-- Compare Recommendation HIGH 優先項目の実案件活用
+- Compare Quality Integration Check v1（Phase46-7）
+  - buildCompareIntegrationCheck() — Log/Intelligence/Recommendation 統合チェック
+  - getCompareIntegrationStatus() — ready/partial/insufficient 判定
+  - buildCompareIntegrationCheckHtml() — Output Engine に Integration Check パネル
+  - Export（markdown / json）に自動反映
+
+次工程（Phase46-8〜）：
+- Compare Integration Check の結果を活用した実案件品質向上
 - 成果物品質の継続向上
 
 ## 7. v1.0完成像

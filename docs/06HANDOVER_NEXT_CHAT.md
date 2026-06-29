@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-06-29（Phase46-6完了）
+更新日: 2026-06-29（Phase46-7完了）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase46-6**
+**v1.00-phase46-7**
 
-最新Tag: `v1.00-phase46-6`
+最新Tag: `v1.00-phase46-7`
 
 ---
 
@@ -42,6 +42,7 @@
 | Phase46-4 | 実案件テストログ / 品質比較記録 | v1.00-phase46-4 |
 | Phase46-5 | Compare Intelligence v1 | v1.00-phase46-5 |
 | Phase46-6 | Compare Recommendation Engine v1 | v1.00-phase46-6 |
+| Phase46-7 | Compare Quality Integration Check v1 | v1.00-phase46-7 |
 
 ---
 
@@ -168,14 +169,23 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 - `appendCompareRecommendationToExportMarkdown(lines)` — Markdown Export に追記
 - `appendCompareRecommendationToExportJson(payload)` — JSON Export に `compareRecommendations` として追加
 
+### Compare Quality Integration Check（Phase46-7）
+- `COMPARE_INTEGRATION_CHECK_VERSION = '1.0.0'`
+- `_lastCompareIntegrationCheck` — 最新チェック結果を保持
+- `buildCompareIntegrationCheck()` — Log/Intelligence/Recommendation の統合整合性チェック / checklist(7項目) / nextTestActions / cautionItems を生成
+- `getCompareIntegrationStatus(check)` — ready / partial / insufficient を判定（ログ3件以上 + 2モード + Recommendations ありで ready）
+- `buildCompareIntegrationCheckHtml()` — Output Engine に Integration Check パネルを表示（READY/PARTIAL/INSUFFICIENT バッジ付き）
+- `appendCompareIntegrationCheckToExportMarkdown(lines)` — Markdown Export に追記
+- `appendCompareIntegrationCheckToExportJson(payload)` — JSON Export に `compareIntegrationCheck` として追加
+
 ---
 
 ## 次にやること
 
-### Phase46-7: 実案件品質改善（成果物品質の継続向上）
+### Phase46-8: 実案件品質改善（成果物品質の継続向上）
 
 目的：
-Compare Recommendation の priorityItems / learningHints を活用し、実案件ベースで成果物品質を継続改善する。
+Compare Integration Check の nextTestActions を実施し、実案件ベースで Compare 精度・成果物品質を継続改善する。
 
 候補：
 1. Quality Score 判定精度向上（evaluateOutputQuality の精度改善）

@@ -253,3 +253,24 @@ Phase46-6において、Compare Intelligence（Phase46-5）の分析結果を「
 
 追記日: 2026-06-29（Phase46-6完了）
 
+---
+
+# Decision 016
+## Compare 3機能の統合整合性を Integration Check で自動チェックする
+
+Phase46-7において、Compare Log / Compare Intelligence / Compare Recommendation の3機能が揃って機能しているかを自動チェックする Integration Check を追加した。
+
+採用方針：
+- `buildCompareIntegrationCheck()` でログ件数 / モードカバレッジ / outputTypeカバレッジ / InjectionImpact / Recommendations の7項目をチェック
+- `getCompareIntegrationStatus()` で ready / partial / insufficient を判定（ログ3件以上かつ2モード以上 + Recommendations ありで ready）
+- nextTestActions でユーザーが次に何をすべきか具体的に提示
+- cautionItems で不足・注意事項を警告
+- Knowledge / Learning / Memory は自動変更しない（表示とExportのみ）
+
+理由：
+- 3つの Compare 機能が揃っていないと分析精度が低く、改善提案が意味を持たない
+- Integration Check で「今の状態で推奨モードが信頼できるか」を自動判定できる
+- nextTestActions により、次の実案件で何をテストすべきか明確にする
+
+追記日: 2026-06-29（Phase46-7完了）
+
