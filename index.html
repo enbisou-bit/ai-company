@@ -9160,6 +9160,7 @@ async function atConsult(taskId, fromAgentId, toAgentId, btnEl) {
 
 // ワークフローを実行する（run workflow）
 async function atRunWorkflow() {
+  console.log('[CL-START] atRunWorkflow ENTERED at', new Date().toISOString());
   const userMessage = (document.getElementById('auto-task-message').value || '').trim();
   if (!userMessage) {
     alert('元の依頼内容を入力してください。');
@@ -9331,6 +9332,7 @@ async function atRunWorkflow() {
 
     // Phase42: Leader Final Response — サーバー生成済みの場合はchatHistoryへ保存
     // 二重生成防止: _atLeaderFinalDone に workflowId を登録して atAutoLeaderFinal() をスキップ
+    console.log('[CL-PATHA] data.leaderFinalResult=', data.leaderFinalResult ? 'EXISTS text.len=' + (data.leaderFinalResult.text || '').length : 'NULL/UNDEFINED');
     let _phase42Success = false;
     if (data.leaderFinalResult && data.leaderFinalResult.text) {
       _atLeaderFinalDone.add(_atCurrentWorkflowId);
@@ -19435,6 +19437,7 @@ let _knowledgeCompareLog = [];
 const COMPARE_LOG_MAX = 30;
 
 function recordKnowledgeCompareEntry(draft) {
+  console.log('[CL②] recordKnowledgeCompareEntry called. draft=', draft ? 'OK' : 'NULL', 'draft.quality=', draft && draft.quality ? JSON.stringify(draft.quality).slice(0,80) : 'MISSING');
   if (!draft || !draft.quality) return;
   var entry = {
     id:          'kcl-' + Date.now(),
@@ -19449,6 +19452,7 @@ function recordKnowledgeCompareEntry(draft) {
     sourceText:  (draft.sourceText || '').slice(0, 60),
   };
   _knowledgeCompareLog = [entry].concat(_knowledgeCompareLog).slice(0, COMPARE_LOG_MAX);
+  console.log('[CL③] _knowledgeCompareLog.length after push=', _knowledgeCompareLog.length, 'latest entry=', JSON.stringify(entry).slice(0, 120));
 }
 
 function getCompareSummaryByMode() {
@@ -19516,6 +19520,7 @@ const COMPARE_INTELLIGENCE_VERSION = '1.0.0';
 let _lastCompareIntelligence = null;
 
 function analyzeCompareIntelligence() {
+  console.log('[CL⑤] analyzeCompareIntelligence called. _knowledgeCompareLog.length=', _knowledgeCompareLog.length, 'same ref=', log === _knowledgeCompareLog);
   var log = _knowledgeCompareLog || [];
 
   var empty = {
@@ -20245,6 +20250,386 @@ function appendCompareIntegrationCheckToExportJson(payload) {
   payload.compareIntegrationCheck = check || null;
 }
 
+// ══════════════════════════════════════════════════
+// Phase46-NEW: Compare Intelligence v2
+// Failure Analysis / Improvement Scores / Compare Learning / Leader Improvement Summary
+// ══════════════════════════════════════════════════
+
+const COMPARE_IMPROVEMENT_VERSION = '2.0.0';
+
+let _lastCompareFailureAnalysis   = null;
+let _lastCompareLearning          = null;
+let _lastImprovementScores        = null;
+let _lastLeaderImprovementSummary = null;
+
+// ── Failure Analysis ───────────────────────────────
+function buildCompareFailureAnalysis() {
+  var log = _knowledgeCompareLog || [];
+  if (log.length === 0) {
+    _lastCompareFailureAnalysis = null;
+    return null;
+  }
+
+  var categories = ['hook', 'cta', 'knowledge', 'structure', 'images', 'outputType', 'length'];
+
+  // カテゴリ別に失敗要因を推定
+  var failCount = {};
+  categories.forEach(function(c) { failCount[c] = 0; });
+
+  var lowScoreEntries = log.filter(function(e) { return e.overallScore < 75; });
+
+  lowScoreEntries.forEach(function(e) {
+    // Knowledge注入なし/弱い → knowledge失敗
+    if (!e.injectedCount || e.injectedCount === 0) failCount.knowledge++;
+    // Guideなし → structure失敗
+    if (!e.hasGuide) failCount.structure++;
+    // スコアが極めて低い → hook/cta両方失敗
+    if (e.overallScore < 65) { failCount.hook++; failCount.cta++; }
+    // outputTypeが多様でない → outputType固定化
+    failCount.outputType += (e.outputType === 'unknown' || !e.outputType) ? 1 : 0;
+    // 文字数が短い（sourceText60文字以内で判定）
+    if (e.sourceText && e.sourceText.length < 20) failCount.length++;
+    // 画像系が指定されていない
+    if (e.outputType && e.outputType.indexOf('instagram') === -1 && e.outputType !== 'flyer') {
+      failCount.images++;
+    }
+  });
+
+  var total = lowScoreEntries.length || 1;
+  var factors = categories.map(function(c) {
+    var rate = Math.round((failCount[c] / total) * 100);
+    var severity = rate >= 60 ? 'high' : rate >= 30 ? 'medium' : 'low';
+    var label = { hook: 'Hook', cta: 'CTA', knowledge: 'Knowledge注入', structure: '構成', images: '画像指示', outputType: '成果物タイプ', length: '指示長さ' }[c] || c;
+    return { category: c, label: label, failRate: rate, severity: severity, failCount: failCount[c], total: total };
+  }).sort(function(a, b) { return b.failRate - a.failRate; });
+
+  var result = {
+    version:        COMPARE_IMPROVEMENT_VERSION,
+    totalAnalyzed:  log.length,
+    lowScoreCount:  lowScoreEntries.length,
+    lowScoreRate:   Math.round((lowScoreEntries.length / log.length) * 100),
+    factors:        factors,
+    topFactor:      factors[0] || null,
+    generatedAt:    new Date().toISOString(),
+  };
+
+  _lastCompareFailureAnalysis = result;
+  return result;
+}
+
+// ── Improvement Scores ─────────────────────────────
+function buildImprovementScores() {
+  var log = _knowledgeCompareLog || [];
+  if (log.length === 0) {
+    _lastImprovementScores = null;
+    return null;
+  }
+
+  var avgScore   = log.reduce(function(s, e) { return s + e.overallScore; }, 0) / log.length;
+  var withLog    = log.filter(function(e) { return e.injectedCount > 0; });
+  var withoutLog = log.filter(function(e) { return !e.injectedCount || e.injectedCount === 0; });
+  var withAvg    = withLog.length    ? withLog.reduce(function(s, e) { return s + e.overallScore; }, 0) / withLog.length : avgScore;
+  var withoutAvg = withoutLog.length ? withoutLog.reduce(function(s, e) { return s + e.overallScore; }, 0) / withoutLog.length : avgScore;
+
+  // Knowledge注入効果 → Knowledge / Hook / CTA スコアへ反映
+  var kBonus = Math.round((withAvg - withoutAvg) * 0.5);
+
+  // Guideあり割合
+  var guideRate = log.filter(function(e) { return e.hasGuide; }).length / log.length;
+
+  // スコア推定（overall を基準に調整）
+  var hookScore       = Math.max(0, Math.min(100, Math.round(avgScore + (guideRate > 0.5 ? 5 : -5))));
+  var ctaScore        = Math.max(0, Math.min(100, Math.round(avgScore + kBonus * 0.6)));
+  var knowledgeScore  = Math.max(0, Math.min(100, Math.round(avgScore + kBonus)));
+  var structureScore  = Math.max(0, Math.min(100, Math.round(avgScore + (guideRate > 0.5 ? 8 : -8))));
+  var imagesScore     = Math.max(0, Math.min(100, Math.round(avgScore - 10 + (log.filter(function(e){ return e.outputType && e.outputType.indexOf('instagram') !== -1; }).length > 0 ? 10 : 0))));
+
+  var scores = {
+    version: COMPARE_IMPROVEMENT_VERSION,
+    overall: Math.round(avgScore),
+    hook:        { score: hookScore,      label: 'Hook',             comment: hookScore >= 80 ? '良好' : hookScore >= 65 ? '要改善' : '要強化' },
+    cta:         { score: ctaScore,       label: 'CTA',              comment: ctaScore >= 80 ? '良好' : ctaScore >= 65 ? '要改善' : '要強化' },
+    knowledge:   { score: knowledgeScore, label: 'Knowledge注入',    comment: knowledgeScore >= 80 ? '良好' : knowledgeScore >= 65 ? '要改善' : '要強化' },
+    structure:   { score: structureScore, label: '構成',             comment: structureScore >= 80 ? '良好' : structureScore >= 65 ? '要改善' : '要強化' },
+    images:      { score: imagesScore,    label: '画像指示',         comment: imagesScore >= 80 ? '良好' : imagesScore >= 65 ? '要改善' : '要強化' },
+    sampleSize:  log.length,
+    generatedAt: new Date().toISOString(),
+  };
+
+  _lastImprovementScores = scores;
+  return scores;
+}
+
+// ── Compare Learning ───────────────────────────────
+function buildCompareLearning() {
+  var log = _knowledgeCompareLog || [];
+  if (log.length === 0) {
+    _lastCompareLearning = null;
+    return null;
+  }
+
+  var SUCCESS_PATTERN     = [];
+  var FAIL_PATTERN        = [];
+  var QUALITY_PATTERN     = [];
+  var IMPROVEMENT_PATTERN = [];
+
+  log.forEach(function(e) {
+    var s = e.overallScore;
+    var hasK = e.injectedCount > 0;
+    var hasG = e.hasGuide;
+    var mode = e.mode || '';
+
+    if (s >= 85) {
+      SUCCESS_PATTERN.push({
+        score: s, mode: e.modeLabel || mode, outputType: e.outputType,
+        reason: hasK && hasG ? 'Knowledge注入+Guideで高品質' : hasK ? 'Knowledge注入で品質向上' : 'Guide効果で品質維持',
+      });
+    } else if (s < 70) {
+      FAIL_PATTERN.push({
+        score: s, mode: e.modeLabel || mode, outputType: e.outputType,
+        reason: !hasK && !hasG ? 'Knowledge・Guide両方なし' : !hasK ? 'Knowledge注入なし' : !hasG ? 'Guideなし' : 'スコア全般低下',
+      });
+    }
+
+    if (s >= 75 && s < 85) {
+      QUALITY_PATTERN.push({
+        score: s, mode: e.modeLabel || mode, outputType: e.outputType,
+        reason: 'スコア安定（75〜84）継続モニタリング推奨',
+      });
+    }
+
+    if (s < 80) {
+      var tips = [];
+      if (!hasK) tips.push('Knowledge注入を有効化（with_knowledge モード）');
+      if (!hasG) tips.push('Execution Guide の生成を確認');
+      if (s < 70) tips.push('Leader contextを見直し、より詳細な指示を追加');
+      if (tips.length > 0) {
+        IMPROVEMENT_PATTERN.push({ score: s, mode: e.modeLabel || mode, outputType: e.outputType, tips: tips });
+      }
+    }
+  });
+
+  var result = {
+    version:             COMPARE_IMPROVEMENT_VERSION,
+    sampleSize:          log.length,
+    SUCCESS_PATTERN:     SUCCESS_PATTERN.slice(0, 5),
+    FAIL_PATTERN:        FAIL_PATTERN.slice(0, 5),
+    QUALITY_PATTERN:     QUALITY_PATTERN.slice(0, 5),
+    IMPROVEMENT_PATTERN: IMPROVEMENT_PATTERN.slice(0, 5),
+    generatedAt:         new Date().toISOString(),
+  };
+
+  _lastCompareLearning = result;
+  return result;
+}
+
+// ── Leader Improvement Summary ─────────────────────
+function buildLeaderImprovementSummary() {
+  var analysis = buildCompareFailureAnalysis();
+  var scores   = buildImprovementScores();
+  var log      = _knowledgeCompareLog || [];
+
+  if (!analysis || log.length === 0) {
+    _lastLeaderImprovementSummary = null;
+    return null;
+  }
+
+  var lines = [];
+  lines.push('【今回改善すべきポイント】');
+
+  // 失敗要因上位2件
+  var topFactors = (analysis.factors || []).filter(function(f) { return f.severity === 'high' || f.severity === 'medium'; }).slice(0, 2);
+  topFactors.forEach(function(f) {
+    lines.push('・' + f.label + '（失敗率 ' + f.failRate + '%）— 優先改善');
+  });
+
+  // Improvement Scores で要強化のカテゴリ
+  if (scores) {
+    ['hook', 'cta', 'knowledge', 'structure', 'images'].forEach(function(k) {
+      if (scores[k] && scores[k].score < 65) {
+        lines.push('・' + scores[k].label + ' スコア ' + scores[k].score + ' — 要強化');
+      }
+    });
+  }
+
+  if (lines.length === 1) lines.push('・現在のスコアは安定しています。引き続き実案件を継続してください。');
+
+  var summary = {
+    version:    COMPARE_IMPROVEMENT_VERSION,
+    text:       lines.join('\n'),
+    lines:      lines,
+    generatedAt: new Date().toISOString(),
+  };
+
+  _lastLeaderImprovementSummary = summary;
+  return summary;
+}
+
+// ── HTML builders ──────────────────────────────────
+function buildImprovementScoreHtml() {
+  var scores = buildImprovementScores();
+  var esc = escapeHtml;
+  var wrap = '<div style="margin-top:10px;padding:10px 12px;background:rgba(40,60,100,0.12);border:1px solid rgba(100,160,255,0.18);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(160,200,255,0.9);margin-bottom:8px;">📊 Improvement Score v2</div>';
+
+  if (!scores) {
+    return wrap
+      + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">Workflowを実行するとスコアが表示されます。</div></div>';
+  }
+
+  var cats = ['hook', 'cta', 'knowledge', 'structure', 'images'];
+  var rows = cats.map(function(k) {
+    var s = scores[k];
+    var barColor = s.score >= 80 ? '#5ddb8e' : s.score >= 65 ? '#f0b840' : '#e06060';
+    return '<div style="margin-bottom:5px;">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">'
+      +   '<span style="font-size:9px;color:rgba(200,220,255,0.75);">' + esc(s.label) + '</span>'
+      +   '<span style="font-size:9px;font-weight:700;color:' + barColor + ';">' + s.score + ' <span style="font-size:8px;color:rgba(255,255,255,0.35);">' + esc(s.comment) + '</span></span>'
+      + '</div>'
+      + '<div style="background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;height:5px;">'
+      +   '<div style="width:' + s.score + '%;height:100%;background:' + barColor + ';"></div>'
+      + '</div></div>';
+  }).join('');
+
+  return wrap + rows
+    + '<div style="margin-top:6px;font-size:8px;color:rgba(255,255,255,0.25);">n=' + scores.sampleSize + ' / Overall avg: ' + scores.overall + '</div>'
+    + '</div>';
+}
+
+function buildCompareFailureAnalysisHtml() {
+  var analysis = buildCompareFailureAnalysis();
+  var esc = escapeHtml;
+  var wrap = '<div style="margin-top:10px;padding:10px 12px;background:rgba(100,40,40,0.10);border:1px solid rgba(220,100,80,0.18);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(255,160,140,0.9);margin-bottom:8px;">🔍 Failure Analysis v2</div>';
+
+  if (!analysis || analysis.totalAnalyzed === 0) {
+    return wrap + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">Workflowを実行すると失敗分析が表示されます。</div></div>';
+  }
+
+  var topRows = (analysis.factors || []).slice(0, 5).map(function(f) {
+    var color = f.severity === 'high' ? '#e06060' : f.severity === 'medium' ? '#f0b840' : '#5ddb8e';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+      + '<span style="font-size:9px;color:rgba(220,200,200,0.75);min-width:80px;">' + esc(f.label) + '</span>'
+      + '<div style="flex:1;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;height:5px;">'
+      +   '<div style="width:' + f.failRate + '%;height:100%;background:' + color + ';"></div>'
+      + '</div>'
+      + '<span style="font-size:9px;font-weight:700;color:' + color + ';min-width:32px;">' + f.failRate + '%</span>'
+      + '</div>';
+  }).join('');
+
+  return wrap + topRows
+    + '<div style="margin-top:5px;font-size:8px;color:rgba(255,255,255,0.25);">低スコア件数: ' + analysis.lowScoreCount + ' / ' + analysis.totalAnalyzed + '件 (' + analysis.lowScoreRate + '%)</div>'
+    + '</div>';
+}
+
+function buildCompareLearningHtml() {
+  var learning = buildCompareLearning();
+  var esc = escapeHtml;
+  var wrap = '<div style="margin-top:10px;padding:10px 12px;background:rgba(40,80,60,0.10);border:1px solid rgba(80,200,120,0.18);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(140,220,170,0.9);margin-bottom:8px;">🎓 Compare Learning v2</div>';
+
+  if (!learning || learning.sampleSize === 0) {
+    return wrap + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">Workflowを実行するとパターン分類が表示されます。</div></div>';
+  }
+
+  function patternRows(arr, color) {
+    return arr.slice(0, 2).map(function(p) {
+      return '<div style="font-size:8px;color:' + color + ';margin-bottom:2px;padding-left:8px;">Score:' + p.score + ' [' + esc(p.mode) + '] — ' + esc(p.reason || (p.tips || []).join(' / ')) + '</div>';
+    }).join('');
+  }
+
+  var html = '';
+  var defs = [
+    { key: 'SUCCESS_PATTERN',     label: '✅ SUCCESS',     color: '#5ddb8e' },
+    { key: 'FAIL_PATTERN',        label: '❌ FAIL',         color: '#e06060' },
+    { key: 'QUALITY_PATTERN',     label: '📈 QUALITY',      color: '#f0b840' },
+    { key: 'IMPROVEMENT_PATTERN', label: '🔧 IMPROVEMENT',  color: '#80c8ff' },
+  ];
+  defs.forEach(function(d) {
+    var arr = learning[d.key] || [];
+    html += '<div style="margin-bottom:5px;">'
+      + '<div style="font-size:9px;font-weight:700;color:' + d.color + ';margin-bottom:2px;">' + esc(d.label) + ' (' + arr.length + '件)</div>'
+      + patternRows(arr, 'rgba(200,220,200,0.6)')
+      + '</div>';
+  });
+
+  return wrap + html
+    + '<div style="margin-top:4px;font-size:8px;color:rgba(255,255,255,0.25);">n=' + learning.sampleSize + '</div>'
+    + '</div>';
+}
+
+function buildLeaderImprovementSummaryHtml() {
+  var summary = buildLeaderImprovementSummary();
+  var esc = escapeHtml;
+  var wrap = '<div style="margin-top:10px;padding:10px 12px;background:rgba(80,60,100,0.12);border:1px solid rgba(160,120,255,0.20);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(200,170,255,0.9);margin-bottom:8px;">💡 Leader Improvement Summary v2</div>';
+
+  if (!summary) {
+    return wrap + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">Workflowを実行すると改善サマリーが表示されます。</div></div>';
+  }
+
+  var lines = (summary.lines || []).map(function(l, i) {
+    if (i === 0) return '<div style="font-size:9px;font-weight:700;color:rgba(220,200,255,0.85);margin-bottom:4px;">' + esc(l) + '</div>';
+    return '<div style="font-size:9px;color:rgba(200,210,255,0.7);margin-bottom:2px;">' + esc(l) + '</div>';
+  }).join('');
+
+  return wrap + lines + '</div>';
+}
+
+// ── Export ─────────────────────────────────────────
+function appendImprovementToExportMarkdown(lines) {
+  var scores   = buildImprovementScores();
+  var analysis = buildCompareFailureAnalysis();
+  var learning = buildCompareLearning();
+  var summary  = buildLeaderImprovementSummary();
+
+  lines.push('');
+  lines.push('## Compare Improvement v2');
+
+  if (summary) {
+    lines.push('');
+    lines.push('### Leader Improvement Summary');
+    (summary.lines || []).forEach(function(l) { lines.push(l); });
+  }
+
+  if (scores) {
+    lines.push('');
+    lines.push('### Improvement Score');
+    ['hook', 'cta', 'knowledge', 'structure', 'images'].forEach(function(k) {
+      var s = scores[k];
+      lines.push('- ' + s.label + ': ' + s.score + ' / 100 (' + s.comment + ')');
+    });
+    lines.push('- Overall avg: ' + scores.overall + ' / n=' + scores.sampleSize);
+  }
+
+  if (analysis) {
+    lines.push('');
+    lines.push('### Failure Analysis');
+    (analysis.factors || []).slice(0, 5).forEach(function(f) {
+      lines.push('- ' + f.label + ': 失敗率 ' + f.failRate + '% [' + f.severity + ']');
+    });
+  }
+
+  if (learning) {
+    lines.push('');
+    lines.push('### Compare Learning');
+    ['SUCCESS_PATTERN', 'FAIL_PATTERN', 'QUALITY_PATTERN', 'IMPROVEMENT_PATTERN'].forEach(function(k) {
+      lines.push('- ' + k + ': ' + (learning[k] || []).length + '件');
+    });
+  }
+}
+
+function appendImprovementToExportJson(payload) {
+  payload.compareImprovementV2 = {
+    improvementScores:    buildImprovementScores(),
+    failureAnalysis:      buildCompareFailureAnalysis(),
+    compareLearning:      buildCompareLearning(),
+    leaderImprovementSummary: buildLeaderImprovementSummary(),
+  };
+}
+
+// ══════════════════════════════════════════════════
+
 function switchKnowledgeCompareMode(mode) {
   if (!KNOWLEDGE_COMPARE_MODE[mode.toUpperCase().replace(/-/g,'_')] && Object.values(KNOWLEDGE_COMPARE_MODE).indexOf(mode) === -1) return;
   _knowledgeCompareMode = mode;
@@ -20757,6 +21142,7 @@ function toggleOutputEnginePanel() {
 // ══════════════════════════════════════════════════
 
 function buildOutputDraftFromLeaderFinal(finalText) {
+  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0);
   if (!_lastOutputDraft || !finalText) return { ok: false };
   var type   = _lastOutputDraft.type;
   var fields = _lastOutputDraft.fields;
@@ -20859,11 +21245,8 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     renderWorkflowLive();
   }
 
-  // Phase46-8: Output Engineパネルが開いていれば Compare Log 反映のため再描画
-  var oePanel = document.getElementById('output-engine-panel');
-  if (oePanel && oePanel.classList.contains('open')) {
-    try { renderOutputEnginePanel(); } catch(_re) {}
-  }
+  // Phase46-8: Output Engine の oe-body を常に更新（パネル開閉状態に関わらず）
+  try { renderOutputEnginePanel(); } catch(_re) {}
 
   return { ok: true, type: type, updatedFields: updatedFields, status: OUTPUT_STATUS.READY };
 }
@@ -21260,6 +21643,7 @@ function serializeOutputDraft(format) {
     appendCompareIntelligenceToExportJson(jsonObj);
     appendCompareRecommendationToExportJson(jsonObj);
     appendCompareIntegrationCheckToExportJson(jsonObj);
+    appendImprovementToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -21483,6 +21867,7 @@ function serializeOutputDraft(format) {
   appendCompareRecommendationToExportMarkdown(mdLines);
   // Phase46-7: Compare Integration Check
   appendCompareIntegrationCheckToExportMarkdown(mdLines);
+  appendImprovementToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -21662,6 +22047,7 @@ function buildOutputPackageHtml() {
 }
 
 function renderOutputEnginePanel() {
+  console.log('[CL④] renderOutputEnginePanel called. _knowledgeCompareLog.length=', _knowledgeCompareLog.length);
   var body = document.getElementById('oe-body');
   if (!body) return;
 
@@ -21778,6 +22164,10 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildCompareIntelligenceHtml,      'CompareIntelligence')
     + _oeSafe(buildCompareRecommendationHtml,    'CompareRecommendation')
     + _oeSafe(buildCompareIntegrationCheckHtml,  'CompareIntegrationCheck')
+    + _oeSafe(buildImprovementScoreHtml,         'ImprovementScore')
+    + _oeSafe(buildCompareFailureAnalysisHtml,   'FailureAnalysis')
+    + _oeSafe(buildCompareLearningHtml,          'CompareLearning')
+    + _oeSafe(buildLeaderImprovementSummaryHtml, 'LeaderImprovementSummary')
     + _oeSafe(buildExportUiHtml,                 'ExportUi')
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
