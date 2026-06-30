@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-06-29（Phase46-3完了）
+> 更新日: 2026-07-01（Phase46-8完了）
 
 ## 現在地
-- 現在フェーズ: **Phase46-3 完了**
-- 現在バージョン: **v1.00-phase46-3**
+- 現在フェーズ: **Phase46-8 完了**
+- 現在バージョン: **v1.00-phase46-8**
 
 ---
 
@@ -196,8 +196,17 @@ Git: v0.96相当
 - `appendCompareIntegrationCheckToExportMarkdown/Json()` — Export反映
 - Git: 9b64683 / Tag: v1.00-phase46-7
 
-### Phase46-8: 実案件品質改善 ⬜
-- Compare Integration Check の結果を活用した実案件品質向上
+### Phase46-8: Compare Intelligence v2 ✅
+- `COMPARE_IMPROVEMENT_VERSION = '2.0.0'`
+- `buildCompareFailureAnalysis()` — Hook/CTA/Knowledge/Structure/Images/OutputType/Length 失敗率分析
+- `buildImprovementScores()` — 5カテゴリ 0〜100点スコア（Knowledge注入効果・Guide有無反映）
+- `buildCompareLearning()` — SUCCESS/FAIL/QUALITY/IMPROVEMENT 4パターン自動分類
+- `buildLeaderImprovementSummary()` — 「今回改善すべきポイント」自動生成
+- Output Engine: 📊 Improvement Score / 🔍 Failure Analysis / 🎓 Compare Learning / 💡 Leader Improvement Summary パネル追加
+- Export（markdown / json）に Compare Improvement v2 セクション追加
+- Git: 48e2e3c / Tag: v1.00-phase46-8
+
+### Phase46-9: 次フェーズ ⬜
 
 ---
 
@@ -215,6 +224,7 @@ Git: v0.96相当
 ☑ Compare Intelligence v1（Phase46-5）
 ☑ Compare Recommendation Engine v1（Phase46-6）
 ☑ Compare Quality Integration Check v1（Phase46-7）
+☑ Compare Intelligence v2 — Improvement Score / Failure Analysis / Learning / Summary（Phase46-8）
 □ Instagram完成品生成
 □ 動画完成品生成
 □ チラシ完成品生成

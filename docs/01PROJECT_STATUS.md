@@ -2,15 +2,15 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-06-29（Phase46-7完了）
+更新日: 2026-07-01（Phase46-8完了）
 
 ---
 
 ## 現在地
 
-- 現在フェーズ: **Phase46-7 完了**
-- 開発状況: Phase46-7（Compare Quality Integration Check v1）完了・dev-check 200/200/200
-- バージョン: **v1.00-phase46-7**
+- 現在フェーズ: **Phase46-8 完了**
+- 開発状況: Phase46-8（Compare Intelligence v2）完了・dev-check 200/200/200
+- バージョン: **v1.00-phase46-8**
 
 ---
 
@@ -107,6 +107,15 @@
 - `getCompareIntegrationStatus(check)` — ready/partial/insufficient 判定
 - `buildCompareIntegrationCheckHtml()` — Output Engine に Integration Check パネル表示
 - `appendCompareIntegrationCheckToExportMarkdown/Json()` — Export自動反映
+
+### Compare Intelligence v2（Phase46-8）
+- `COMPARE_IMPROVEMENT_VERSION = '2.0.0'`
+- `buildCompareFailureAnalysis()` — Hook/CTA/Knowledge/Structure/Images/OutputType/Length 失敗率分析
+- `buildImprovementScores()` — 5カテゴリ 0〜100点スコア（Knowledge注入効果・Guide有無反映）
+- `buildCompareLearning()` — SUCCESS/FAIL/QUALITY/IMPROVEMENT 4パターン自動分類
+- `buildLeaderImprovementSummary()` — 「今回改善すべきポイント」自動生成
+- `buildImprovementScoreHtml()` / `buildCompareFailureAnalysisHtml()` / `buildCompareLearningHtml()` / `buildLeaderImprovementSummaryHtml()` — Output Engine パネル表示
+- `appendImprovementToExportMarkdown/Json()` — Export自動反映
 
 ---
 

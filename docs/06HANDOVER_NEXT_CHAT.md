@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-06-29（Phase46-7完了）
+更新日: 2026-07-01（Phase46-8完了）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase46-7**
+**v1.00-phase46-8**
 
-最新Tag: `v1.00-phase46-7`
+最新Tag: `v1.00-phase46-8`
 
 ---
 
@@ -43,6 +43,7 @@
 | Phase46-5 | Compare Intelligence v1 | v1.00-phase46-5 |
 | Phase46-6 | Compare Recommendation Engine v1 | v1.00-phase46-6 |
 | Phase46-7 | Compare Quality Integration Check v1 | v1.00-phase46-7 |
+| Phase46-8 | Compare Intelligence v2（Improvement Score / Failure Analysis / Learning / Summary） | v1.00-phase46-8 |
 
 ---
 
@@ -178,20 +179,29 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 - `appendCompareIntegrationCheckToExportMarkdown(lines)` — Markdown Export に追記
 - `appendCompareIntegrationCheckToExportJson(payload)` — JSON Export に `compareIntegrationCheck` として追加
 
+### Compare Intelligence v2（Phase46-8）
+- `COMPARE_IMPROVEMENT_VERSION = '2.0.0'`
+- `buildCompareFailureAnalysis()` — Hook/CTA/Knowledge/Structure/Images/OutputType/Length 失敗率分析 → `_lastCompareFailureAnalysis`
+- `buildImprovementScores()` — 5カテゴリ 0〜100点スコア → `_lastImprovementScores`
+- `buildCompareLearning()` — SUCCESS/FAIL/QUALITY/IMPROVEMENT 4パターン分類 → `_lastCompareLearning`
+- `buildLeaderImprovementSummary()` — 「今回改善すべきポイント」テキスト生成 → `_lastLeaderImprovementSummary`
+- HTML: `buildImprovementScoreHtml()` / `buildCompareFailureAnalysisHtml()` / `buildCompareLearningHtml()` / `buildLeaderImprovementSummaryHtml()`
+- `appendImprovementToExportMarkdown(lines)` / `appendImprovementToExportJson(payload)` — Export自動反映
+
 ---
 
 ## 次にやること
 
-### Phase46-8: 実案件品質改善（成果物品質の継続向上）
+### Phase46-9: 実案件品質改善（成果物品質の継続向上）
 
 目的：
-Compare Integration Check の nextTestActions を実施し、実案件ベースで Compare 精度・成果物品質を継続改善する。
+Compare Intelligence v2 の Improvement Score・Failure Analysis・Learning を活用して、実案件ベースで成果物品質を継続改善する。
 
 候補：
 1. Quality Score 判定精度向上（evaluateOutputQuality の精度改善）
 2. Learning精度向上（extractLearningItems の抽出ロジック改善）
 3. Instagram / TikTok / LP など特定タイプの成果物品質強化
-4. Compare Recommendation HIGH 優先項目の実装対応
+4. Failure Analysis HIGH 優先項目の実装対応
 
 ※ 実案件で動かしてからユーザーと判断する
 
