@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.1）
-> 更新日: 2026-07-02（Phase48-4完了 / v1.00 Phase48-4 Complete）
+> 更新日: 2026-07-02（Phase48-5完了 / v1.00 Phase48-5 Complete）
 
 ## 1. AI会社の最終目的（最重要）
 
@@ -79,23 +79,20 @@ User
 - 動画生成もユーザー承認後
 - 外部API・有料サービス・SNS投稿連携は必ずユーザー承認制
 
-## 5.1 現在の最優先（Phase48-4完了時点 / Output Preview Engineは完了済み）
+## 5.1 現在の最優先（Phase48-5完了時点 / Publishing Engineは完了済み）
 
-### Priority 0: Publishing Engine
-- SNS投稿データ生成（タイトル/説明文/ハッシュタグ/投稿時間/CTA）（Phase48-5）
-
-### Priority 1: AI Creative Engine
+### Priority 0: AI Creative Engine
 - 画像生成 / 動画生成 / 広告生成 / ロゴ / バナー（Phase49、ユーザー承認後のみ実行）
 
-### Priority 2: Marketing Intelligence
+### Priority 1: Marketing Intelligence
 - 市場分析 / 競合分析 / SEO分析 / SNS分析 / トレンド分析（Phase50）
 
-### Priority 3: Automation Engine
+### Priority 2: Automation Engine
 - Instagram/TikTok/YouTube投稿・予約投稿の自動化（Phase52、ユーザー承認後のみ）
 
 詳細ロードマップは [docs/04ROADMAP.md](04ROADMAP.md) を参照。
 
-## 6. 現状（Phase48-4完了 / v1.00 Phase48-4 Complete）
+## 6. 現状（Phase48-5完了 / v1.00 Phase48-5 Complete）
 
 完成：
 - Company Brain
@@ -151,9 +148,10 @@ User
 - Output Auto Fill Engine（Phase48-3） — Leader Final・Writer/Strategy/Designer回答からフィールド自動反映
 - Output Quality Score（100点対応） — Instagram/TikTok/Flyer/LP/PDF/HTML/Image Prompt/Video Promptの8タイプで100点到達可能なことを実証済み
 - Output Preview Engine（Phase48-4） — Instagram/LP/チラシ/PDF/HTML/TikTok/YouTube Shortsを完成イメージ（モックアップ・HTMLはiframe実描画）で画面表示。Package Qualityスコアをバッジ連動表示
+- Publishing Engine（Phase48-5） — 10タイプ（Instagram/TikTok/YouTube Shorts/チラシ/LP/HTML/PDF/画像プロンプト/動画プロンプト/汎用文書）でタイトル・説明文・ハッシュタグ・投稿時間・画像/動画一覧・CTA・公開前チェックリストを自動生成。Copy 5ボタン・Markdown/JSON Export反映済み
 
 次工程（Priority 0）：
-- Publishing Engine（Phase48-5） — SNS投稿データ生成（タイトル/説明文/ハッシュタグ/投稿時間/CTA）
+- AI Creative Engine（Phase49） — 画像生成・動画生成・広告生成（ロゴ・バナー）、ユーザー承認後のみ実行
 
 ## 7. v1.0完成像
 

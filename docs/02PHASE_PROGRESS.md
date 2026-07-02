@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase48-4完了）
+> 更新日: 2026-07-02（Phase48-5完了）
 
 ## 現在地
-- 現在フェーズ: **Phase48-4 完了（v1.00 Phase48-4 Complete）**
-- 現在バージョン: **v1.00-phase48-4**
+- 現在フェーズ: **Phase48-5 完了（v1.00 Phase48-5 Complete）**
+- 現在バージョン: **v1.00-phase48-5**
 
 ---
 
@@ -421,6 +421,32 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - 次工程: Phase48-5 Publishing Engine
 - Git: Phase48-4 output preview engine / Tag: v1.00-phase48-4
 
+### Phase48-5: Publishing Engine ✅
+- `index.html`
+  - CSS: `.oe-pub-*`（section/title/hashtags/list-item/check-item/warning/copyrow/copybtn/copymsg）を新規追加（既存`.oe-pkg-*`/`.oe-preview-*`は無変更）
+  - `PUBLISHING_ENGINE_VERSION = '1.0.0'` / `PUBLISHING_SUPPORTED_TYPES`（instagram_carousel/tiktok_video/youtube_shorts/flyer/lp/html/pdf/image_prompt/video_prompt/documentの10タイプ）
+  - `createPublishingDraft(outputDraft)` — Publishing Draft生成の中核ディスパッチャー。type別に`_fillPublishingXxx(base, f)`（1責務1関数）を呼び分け、共通スキーマ（version/outputType/title/description/hashtags/publishTimeSuggestion/imageList/videoList/cta/copyText/checklist/warnings/sourcePreviewVersion/qualityScore）を返す
+  - `_fillPublishingInstagram()` 他9関数 — 各Output Typeごとのタイトル/説明文/ハッシュタグ/画像・動画一覧/CTA/チェックリストを既存`_lastOutputDraft.fields`から抽出・整形（不足データは安全なfallback、実在しない事実は捏造しない）
+  - `_pubPadHashtags()` — Instagram（15〜30件）/TikTok（5〜15件）/YouTube Shorts（3〜10件、`#Shorts`含む）のハッシュタグ数を既存ハッシュタグ+キーワード抽出+汎用フィラータグ（`#PR`/`#おすすめ`等の一般的SNSタグのみ、具体的な事実は含まない）で調整
+  - `_pubTruncate()` / `_pubToHashtagArray()` / `_pubBuildCopyText()` — 汎用ヘルパー
+  - Quality連携: `outputDraft.packageQuality`（Phase48-1）の`score`を`qualityScore`へ格納し、80点未満の場合のみ`warnings`へ「公開前にHook・CTA・構成を再確認してください」を追加
+  - Preview連携: `type`が`OUTPUT_PREVIEW_TYPES`（Phase48-4）に含まれる場合のみ`sourcePreviewVersion`へ`OUTPUT_PREVIEW_VERSION`を格納。image_prompt/video_promptなどPreview非対応タイプでもPublishing Engineは独立して動作することを確認済み
+  - `buildPublishingEngineHtml()` — `renderOutputEnginePanel()`の`_oeSafe()`チェーンへ`buildOutputPreviewHtml`の直後に追加。Publish Title/Description/Hashtags/Best Time/Media List（画像・動画）/CTA/Checklist/Warnings/Copyボタン群を表示
+  - `copyPublishingField(fieldKey)` — Copy Title/Description/Hashtags/CTA/All Publishing Dataの5ボタンに対応。`navigator.clipboard.writeText()`＋フォールバック（オフスクリーンtextarea+execCommand）。既存`copyExportOutput()`/`oe-export-textarea`は無変更
+  - `appendPublishingToExportMarkdown(lines)` / `appendPublishingToExportJson(payload)` — `serializeOutputDraft()`のMarkdown（`## Publishing Engine (Phase48-5)`）/JSON（`publishing`キー）両方に反映。既存Export構造・他セクションは無変更
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入し`renderOutputEnginePanel()`を直接呼び出す方式 = Phase48-4と同じAPI課金なしの確認手法）
+  - 10タイプ全て（instagram_carousel/tiktok_video/youtube_shorts/flyer/lp/html/pdf/image_prompt/video_prompt/document）でPublishing Engineパネル表示・各フィールド値を確認
+  - Instagram: ハッシュタグ15件（15〜30件の範囲内）、TikTok: 5件（5〜15件）、YouTube Shorts: 3件（3〜10件、`#Shorts`含む）を確認
+  - Quality連携: instagram_carousel（100点・warnings無し）/ tiktok_video（80点・境界値で警告無し=「未満」判定が正しいことを確認）/ その他80点未満の全タイプで警告文が正しく追加されることを確認
+  - Preview連携: image_prompt/video_promptで`sourcePreviewVersion`が`null`（Preview非対応）でもPublishing Engineが正常動作することを確認
+  - Export: Markdown/JSON双方に`Publishing Engine`セクション・`publishing`キーが正しく反映されることを確認
+  - Copy機能: 5ボタンとも例外なく実行されることを確認（`navigator.clipboard.writeText()`呼び出し成功）
+  - console.errorなし。既存Package表示・Preview Engine・Quality Score・Knowledge/Compare各パネルへの影響なし
+- 生成ロジック（`buildOutputDraftFromLeaderFinal()`）・Preview Engine・Package表示・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・画像/動画生成・SNS投稿・課金は一切なし（既存`_lastOutputDraft.fields`からクライアント側で投稿用データを整形するのみ）
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49 AI Creative Engine（画像・動画生成、ユーザー承認後のみ）
+- Git: Phase48-5 publishing engine / Tag: v1.00-phase48-5
+
 ---
 
 # v1.0まで
@@ -458,7 +484,8 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 ☑ 成果物テンプレート強化（Phase48-2）
 ☑ Output Auto Fill Engine（Phase48-3）
 ☑ Output Preview Engine（Phase48-4）
-□ v1.0正式版（Publishing・Company Memory永続化が未完了のため引き続き未達成）
+☑ Publishing Engine（Phase48-5）
+□ v1.0正式版（AI Creative Engine以降・Company Memory永続化が未完了のため引き続き未達成）
 
 ---
 

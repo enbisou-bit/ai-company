@@ -869,6 +869,18 @@
   .oe-vid-tag    { align-self: flex-start; font-size: 8px; color: rgba(255,255,255,0.6); background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 8px; }
   .oe-vid-script { font-size: 10px; color: rgba(255,255,255,0.9); line-height: 1.5; white-space: pre-wrap; }
   .oe-vid-meta   { font-size: 8px; color: rgba(255,255,255,0.5); line-height: 1.6; }
+  /* Phase48-5: Publishing Engine */
+  .oe-pub-section   { border-radius: 10px; border: 1px solid rgba(80,220,180,0.28); background: linear-gradient(135deg, rgba(8,35,30,0.92), rgba(6,18,16,0.96)); padding: 12px 14px; }
+  .oe-pub-title     { font-size: 11px; color: rgba(100,230,190,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-pub-hashtags  { font-size: 10px; color: rgba(100,200,255,0.85); line-height: 1.7; word-break: break-word; }
+  .oe-pub-list-item { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.6; padding: 2px 0; }
+  .oe-pub-check-item{ font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .oe-pub-warning   { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-pub-copyrow   { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-pub-copybtn   { background: rgba(80,200,120,0.15); border: 1px solid rgba(80,200,120,0.4); border-radius: 14px; color: rgba(80,220,120,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-pub-copybtn:hover { background: rgba(80,200,120,0.3); }
+  .oe-pub-copymsg   { font-size: 10px; color: rgba(80,220,120,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-pub-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22887,6 +22899,7 @@ function serializeOutputDraft(format) {
     appendCompareLearningToExportJson(jsonObj);
     appendClaudeQualityHistoryToExportJson(jsonObj);
     appendOutputPackageQualityToExportJson(jsonObj);
+    appendPublishingToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23114,6 +23127,7 @@ function serializeOutputDraft(format) {
   appendCompareLearningToExportMarkdown(mdLines);
   appendClaudeQualityHistoryToExportMarkdown(mdLines);
   appendOutputPackageQualityToExportMarkdown(mdLines);
+  appendPublishingToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -23497,6 +23511,379 @@ function buildOutputPreviewHtml() {
     + '</div>';
 }
 
+// ══════════════════════════════════════════════════
+// Phase48-5: Publishing Engine
+// Output Previewで完成した成果物から、投稿直前・公開直前に使えるデータを自動生成する
+// （追加のみ・Output Engine/Preview Engine/Workflow/Knowledge Chainは変更しない）
+// ══════════════════════════════════════════════════
+
+const PUBLISHING_ENGINE_VERSION = '1.0.0';
+const PUBLISHING_SUPPORTED_TYPES = [
+  OUTPUT_TYPES.INSTAGRAM_CAROUSEL,
+  OUTPUT_TYPES.TIKTOK_VIDEO,
+  OUTPUT_TYPES.YOUTUBE_SHORTS,
+  OUTPUT_TYPES.FLYER,
+  OUTPUT_TYPES.LP,
+  OUTPUT_TYPES.HTML,
+  OUTPUT_TYPES.PDF,
+  OUTPUT_TYPES.IMAGE_PROMPT,
+  OUTPUT_TYPES.VIDEO_PROMPT,
+  OUTPUT_TYPES.DOCUMENT,
+];
+
+function _pubTruncate(s, n) {
+  s = String(s || '');
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+function _pubToHashtagArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean).map(String);
+  if (typeof v === 'string' && v) return [v];
+  return [];
+}
+
+// 既存ハッシュタグ + テキストから抽出したキーワード + 汎用フィラータグでmin〜max件に整える（事実の捏造はしない）
+function _pubPadHashtags(existing, keywordSources, min, max) {
+  var set = [];
+  var seen = {};
+  function add(tag) {
+    if (!tag) return;
+    tag = String(tag).trim().replace(/\s+/g, '');
+    if (!tag) return;
+    tag = tag.indexOf('#') === 0 ? tag : '#' + tag;
+    if (tag.length <= 1 || tag.length > 40) return;
+    if (seen[tag]) return;
+    seen[tag] = true;
+    set.push(tag);
+  }
+  (existing || []).forEach(add);
+  (keywordSources || []).forEach(function(src) {
+    if (!src) return;
+    String(src).split(/[\s、,\/・「」『』()（）.。!！?？]+/).forEach(function(w) {
+      if (w && w.length >= 2 && w.length <= 12) add(w);
+    });
+  });
+  var GENERIC_POOL = ['#PR', '#おすすめ', '#保存推奨', '#シェア推奨', '#いいね', '#フォロー', '#フォロー歓迎', '#知って得する', '#今すぐチェック', '#役立つ情報', '#日常に役立つ', '#暮らしの知恵', '#お役立ち情報', '#初心者向け', '#解説', '#まとめ', '#情報発信', '#SNS運用', '#企業アカウント', '#公式アカウント'];
+  var gi = 0;
+  while (set.length < min && gi < GENERIC_POOL.length) { add(GENERIC_POOL[gi]); gi++; }
+  return set.slice(0, max);
+}
+
+function _pubBuildCopyText(base) {
+  var lines = ['【' + (base.title || 'タイトル未生成') + '】', ''];
+  if (base.description) { lines.push(base.description); lines.push(''); }
+  if (base.hashtags && base.hashtags.length) { lines.push(base.hashtags.join(' ')); lines.push(''); }
+  if (base.cta) lines.push(base.cta);
+  return lines.join('\n').trim();
+}
+
+function _fillPublishingInstagram(base, f) {
+  var slides = Array.isArray(f.slides) ? f.slides : [];
+  base.title = slides.length ? _pubTruncate(slides[0], 40) : (f.caption ? _pubTruncate(f.caption, 40) : '');
+  base.description = f.caption || '';
+  base.hashtags = _pubPadHashtags(_pubToHashtagArray(f.hashtags), [f.targetAudience, f.benefit], 15, 30);
+  base.imageList = Array.isArray(f.imagePrompts) && f.imagePrompts.length
+    ? f.imagePrompts.map(function(p) { return String(p); })
+    : slides.map(function(s, i) { return 'スライド' + (i + 1) + '用画像（未生成）: ' + _pubTruncate(s, 40); });
+  base.cta = f.cta || '';
+  base.publishTimeSuggestion = '平日 12:00-13:00 / 20:00-21:00（ランチタイム・帰宅後の閲覧が多い時間帯の一般的な目安）';
+  base.checklist = [
+    '画像とテキストのズレがないか確認',
+    'ハッシュタグの誤字がないか確認',
+    'CTAが明確か確認',
+    '保存・シェアを促す文言（' + (f.saveSharePrompt || '未設定') + '）が入っているか確認',
+    'プロフィールリンクが最新か確認',
+  ];
+}
+
+function _fillPublishingTikTok(base, f) {
+  var scriptLines = (f.script || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var hook = scriptLines.length ? scriptLines[0] : '';
+  base.title = hook ? _pubTruncate(hook, 40) : 'TikTok動画';
+  base.hook = hook;
+  base.description = f.script || (Array.isArray(f.captions) ? f.captions.join('\n') : '');
+  base.hashtags = _pubPadHashtags(_pubToHashtagArray(f.hashtags), [f.musicMood], 5, 15);
+  base.videoList = Array.isArray(f.visualPrompts) && f.visualPrompts.length
+    ? f.visualPrompts.map(function(p) { return String(p); })
+    : (Array.isArray(f.motionPrompts) && f.motionPrompts.length ? f.motionPrompts.map(function(p) { return String(p); }) : []);
+  base.cta = f.cta || '';
+  base.publishTimeSuggestion = '18:00-24:00（視聴が伸びやすいとされる一般的な時間帯の目安）';
+  base.checklist = [
+    '冒頭2〜3秒でHookが伝わるか確認（' + (hook ? _pubTruncate(hook, 30) : '未設定') + '）',
+    '音楽（' + (f.musicMood || '未設定') + '）とテンポが合っているか確認',
+    '字幕の誤字がないか確認',
+    'エンディング（' + (f.ending || '未設定') + '）にCTAが入っているか確認',
+  ];
+}
+
+function _fillPublishingYouTubeShorts(base, f) {
+  var scriptLines = (f.script || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var hook = scriptLines.length ? scriptLines[0] : '';
+  base.title = f.title || (hook ? _pubTruncate(hook, 40) : '');
+  base.hook = hook;
+  base.description = f.description || f.script || '';
+  var derivedTags = _extractHashtagsFromText(f.description || f.script || '');
+  base.hashtags = _pubPadHashtags(derivedTags.concat(['#Shorts']), [f.title], 3, 10);
+  base.imageList = base.title ? ['サムネ候補: 「' + _pubTruncate(base.title, 20) + '」を大きく配置し、表情・ビフォーアフター等の視認性が高い構図にする'] : [];
+  base.videoList = Array.isArray(f.visualPrompts) && f.visualPrompts.length
+    ? f.visualPrompts.map(function(p) { return String(p); })
+    : (Array.isArray(f.motionPrompts) && f.motionPrompts.length ? f.motionPrompts.map(function(p) { return String(p); }) : []);
+  base.cta = f.cta || '';
+  base.checklist = [
+    'タイトルにキーワードが含まれているか確認',
+    'サムネイルが目を引くか確認',
+    '#Shortsタグが説明文に入っているか確認',
+    '説明文にCTAがあるか確認',
+  ];
+}
+
+function _fillPublishingFlyer(base, f) {
+  base.title = f.catchcopy || f.subheadline || '';
+  base.description = f.body || f.offer || '';
+  base.imageList = f.imageInstruction ? [String(f.imageInstruction)] : [];
+  base.cta = f.cta || f.offer || '';
+  base.checklist = [
+    '印刷解像度・色味を確認',
+    '誤字脱字がないか確認',
+    '連絡先（' + (f.contact || '未設定') + '）・エリア（' + (f.area || '未設定') + '）情報が最新か確認',
+    '配布エリア・配布タイミングを確認',
+  ];
+}
+
+function _fillPublishingLp(base, f) {
+  base.title = f.headline || f.firstView || '';
+  base.description = _pubTruncate(f.solution || f.benefits || f.problem || f.headline || '', 120);
+  base.cta = f.cta || '';
+  base.checklist = [
+    'title / meta descriptionが設定されているか確認',
+    '見出し（H1）が1つだけか確認',
+    'CTAボタンのリンク先が正しいか確認',
+    'モバイル表示崩れがないか確認',
+    '画像alt テキストが設定されているか確認（SEO簡易チェック）',
+  ];
+}
+
+function _fillPublishingHtml(base, f) {
+  base.title = f.title || '';
+  base.description = f.visualInstruction || _pubTruncate(f.copy || '', 120);
+  base.imageList = f.visualInstruction ? [String(f.visualInstruction)] : [];
+  base.cta = f.cta || '';
+  base.checklist = [
+    'HTMLの構文エラーがないか確認',
+    'レスポンシブ表示を確認' + (f.responsiveNote ? '（' + _pubTruncate(f.responsiveNote, 40) + '）' : ''),
+    'リンク切れがないか確認',
+    '画像のalt属性を確認',
+    '公開URLが正しいか確認',
+  ];
+}
+
+function _fillPublishingPdf(base, f) {
+  base.title = f.title || '';
+  base.description = f.summary || '';
+  base.imageList = f.visualInstruction ? [String(f.visualInstruction)] : [];
+  base.cta = f.cta || f.nextAction || '';
+  base.checklist = [
+    'ページ番号・レイアウト崩れがないか確認',
+    '印刷時の余白・解像度を確認',
+    '誤字脱字・数値の再確認',
+    '連絡先・次のアクション（' + (f.nextAction || '未設定') + '）が明記されているか確認',
+  ];
+}
+
+function _fillPublishingImagePrompt(base, f) {
+  base.title = '画像生成: ' + (f.subject || f.usage || 'タイトル未設定');
+  var summary = _pubTruncate(f.prompt || '', 150);
+  base.description = summary + (f.usage ? '\n利用目的: ' + f.usage : '');
+  base.imageList = f.prompt ? [String(f.prompt)] : [];
+  base.checklist = [
+    'プロンプトに個人情報・実在人物名が含まれていないか確認',
+    '商標・著作権に抵触する要素がないか確認',
+    'ネガティブプロンプト（' + (f.negativePrompt || '未設定') + '）が設定されているか確認',
+    '用途（' + (f.usage || '未設定') + '）に適した解像度・比率（' + (f.size || '未設定') + '）か確認',
+  ];
+}
+
+function _fillPublishingVideoPrompt(base, f) {
+  base.title = '動画生成: ' + (f.scene || 'タイトル未設定');
+  var summary = _pubTruncate(f.prompt || '', 150);
+  base.description = summary + (f.cameraMotion ? '\nカメラワーク: ' + f.cameraMotion : '') + (f.subjectMotion ? '\n被写体の動き: ' + f.subjectMotion : '');
+  base.videoList = f.prompt ? [String(f.prompt)] : [];
+  base.checklist = [
+    'プロンプトに実在人物・商標が含まれていないか確認',
+    'ネガティブプロンプト（' + (f.negativePrompt || '未設定') + '）が設定されているか確認',
+    '尺（' + (f.duration || '未設定') + '）・アスペクト比（' + (f.aspect || '未設定') + '）が用途に合っているか確認',
+  ];
+}
+
+function _fillPublishingDocument(base, f) {
+  base.title = f.title || '';
+  base.description = f.summary || String(f.body || '');
+  base.imageList = f.visualInstruction ? [String(f.visualInstruction)] : [];
+  base.cta = f.cta || f.nextAction || '';
+  base.checklist = [
+    '誤字脱字の最終確認',
+    '機密情報が含まれていないか確認',
+    '宛先・配布範囲が正しいか確認',
+  ];
+}
+
+// Phase48-5: Publishing Draft生成（1責務1関数・不足データは安全なfallback・外部API/課金なし）
+function createPublishingDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+  if (PUBLISHING_SUPPORTED_TYPES.indexOf(type) === -1) return null;
+  var f = outputDraft.fields;
+
+  var base = {
+    version: PUBLISHING_ENGINE_VERSION,
+    outputType: type,
+    title: '',
+    description: '',
+    hashtags: [],
+    publishTimeSuggestion: '',
+    imageList: [],
+    videoList: [],
+    cta: '',
+    copyText: '',
+    checklist: [],
+    warnings: [],
+    sourcePreviewVersion: (typeof OUTPUT_PREVIEW_TYPES !== 'undefined' && OUTPUT_PREVIEW_TYPES.indexOf(type) !== -1) ? OUTPUT_PREVIEW_VERSION : null,
+    qualityScore: null,
+  };
+
+  switch (type) {
+    case OUTPUT_TYPES.INSTAGRAM_CAROUSEL: _fillPublishingInstagram(base, f); break;
+    case OUTPUT_TYPES.TIKTOK_VIDEO:       _fillPublishingTikTok(base, f); break;
+    case OUTPUT_TYPES.YOUTUBE_SHORTS:     _fillPublishingYouTubeShorts(base, f); break;
+    case OUTPUT_TYPES.FLYER:              _fillPublishingFlyer(base, f); break;
+    case OUTPUT_TYPES.LP:                 _fillPublishingLp(base, f); break;
+    case OUTPUT_TYPES.HTML:               _fillPublishingHtml(base, f); break;
+    case OUTPUT_TYPES.PDF:                _fillPublishingPdf(base, f); break;
+    case OUTPUT_TYPES.IMAGE_PROMPT:       _fillPublishingImagePrompt(base, f); break;
+    case OUTPUT_TYPES.VIDEO_PROMPT:       _fillPublishingVideoPrompt(base, f); break;
+    case OUTPUT_TYPES.DOCUMENT:           _fillPublishingDocument(base, f); break;
+  }
+
+  var q = outputDraft.packageQuality || (typeof evaluateOutputPackageCompleteness === 'function' ? evaluateOutputPackageCompleteness(outputDraft) : null);
+  base.qualityScore = (q && typeof q.score === 'number') ? q.score : null;
+  if (base.qualityScore !== null && base.qualityScore < 80) {
+    base.warnings.push('公開前にHook・CTA・構成を再確認してください');
+  }
+
+  base.copyText = _pubBuildCopyText(base);
+  return base;
+}
+
+// Phase48-5: クリップボードコピー（既存Copy Export機能とは独立・oe-export-textareaは変更しない）
+function copyPublishingField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var pub = _lastOutputDraft.publishing || createPublishingDraft(_lastOutputDraft);
+  if (!pub) return;
+  var text = '';
+  if (fieldKey === 'title') text = pub.title || '';
+  else if (fieldKey === 'description') text = pub.description || '';
+  else if (fieldKey === 'hashtags') text = (pub.hashtags || []).join(' ');
+  else if (fieldKey === 'cta') text = pub.cta || '';
+  else if (fieldKey === 'all') text = pub.copyText || '';
+  if (!text) return;
+
+  var msg = document.getElementById('oe-pub-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase48-5: Publishing Engine HTML生成（Output Previewの直後に表示。Preview非対応タイプ・データ不足でも安全に空文字を返す）
+function buildPublishingEngineHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var pub = _lastOutputDraft.publishing || createPublishingDraft(_lastOutputDraft);
+  if (!pub) return '';
+  _lastOutputDraft.publishing = pub;
+  var esc = escapeHtml;
+
+  var hashtagsHtml = pub.hashtags.length
+    ? '<div class="oe-pub-hashtags">' + pub.hashtags.map(esc).join(' ') + '</div>'
+    : '<div class="oe-empty-val">ハッシュタグ対象外 / 未生成</div>';
+
+  var imageListHtml = pub.imageList.length
+    ? pub.imageList.map(function(it, i) { return '<div class="oe-pub-list-item">' + (i + 1) + '. ' + esc(_pubTruncate(it, 150)) + '</div>'; }).join('')
+    : '';
+  var videoListHtml = pub.videoList.length
+    ? pub.videoList.map(function(it, i) { return '<div class="oe-pub-list-item">' + (i + 1) + '. ' + esc(_pubTruncate(it, 150)) + '</div>'; }).join('')
+    : '';
+
+  var checklistHtml = pub.checklist.length
+    ? pub.checklist.map(function(c) { return '<div class="oe-pub-check-item">☐ ' + esc(c) + '</div>'; }).join('')
+    : '<div class="oe-empty-val">チェック項目なし</div>';
+
+  var warningsHtml = pub.warnings.length
+    ? pub.warnings.map(function(w) { return '<div class="oe-pub-warning">⚠ ' + esc(w) + '</div>'; }).join('')
+    : '';
+
+  return '<div class="oe-pub-section">'
+    + '<div class="oe-pub-title">🚀 Publishing Engine <span style="font-weight:400;opacity:.5;">v' + PUBLISHING_ENGINE_VERSION + '</span></div>'
+    + '<div class="oe-pkg-label">Publish Title</div><div class="oe-field-val">' + (pub.title ? esc(pub.title) : '<span class="oe-empty-val">未生成</span>') + '</div>'
+    + '<div class="oe-pkg-label">Description</div><div class="oe-field-val">' + (pub.description ? esc(pub.description) : '<span class="oe-empty-val">未生成</span>') + '</div>'
+    + '<div class="oe-pkg-label">Hashtags' + (pub.hashtags.length ? ' (' + pub.hashtags.length + ')' : '') + '</div>' + hashtagsHtml
+    + (pub.publishTimeSuggestion ? '<div class="oe-pkg-label">Best Time</div><div class="oe-field-val">' + esc(pub.publishTimeSuggestion) + '</div>' : '')
+    + (imageListHtml ? '<div class="oe-pkg-label">Media List（画像）</div>' + imageListHtml : '')
+    + (videoListHtml ? '<div class="oe-pkg-label">Media List（動画）</div>' + videoListHtml : '')
+    + '<div class="oe-pkg-label">CTA</div><div class="oe-field-val">' + (pub.cta ? esc(pub.cta) : '<span class="oe-empty-val">未生成</span>') + '</div>'
+    + '<div class="oe-pkg-label">Checklist</div>' + checklistHtml
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-pub-copyrow">'
+    +   '<button class="oe-pub-copybtn" onclick="copyPublishingField(\'title\')">Copy Title</button>'
+    +   '<button class="oe-pub-copybtn" onclick="copyPublishingField(\'description\')">Copy Description</button>'
+    +   '<button class="oe-pub-copybtn" onclick="copyPublishingField(\'hashtags\')">Copy Hashtags</button>'
+    +   '<button class="oe-pub-copybtn" onclick="copyPublishingField(\'cta\')">Copy CTA</button>'
+    +   '<button class="oe-pub-copybtn" onclick="copyPublishingField(\'all\')">Copy All</button>'
+    +   '<span id="oe-pub-copy-msg" class="oe-pub-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase48-5: Publishing Engine Export反映
+function appendPublishingToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var pub = _lastOutputDraft.publishing || createPublishingDraft(_lastOutputDraft);
+  if (!pub) return;
+  lines.push('');
+  lines.push('## Publishing Engine (Phase48-5)');
+  lines.push('- Title: ' + (pub.title || '（未生成）'));
+  lines.push('- Description: ' + (pub.description || '（未生成）'));
+  lines.push('- Hashtags: ' + (pub.hashtags.length ? pub.hashtags.join(' ') : '（対象外/未生成）'));
+  lines.push('- Publish Time: ' + (pub.publishTimeSuggestion || '（該当なし）'));
+  lines.push('- CTA: ' + (pub.cta || '（未生成）'));
+  if (pub.checklist.length) {
+    lines.push('- Checklist:');
+    pub.checklist.forEach(function(c) { lines.push('  - [ ] ' + c); });
+  }
+  if (pub.warnings.length) {
+    lines.push('- Warnings:');
+    pub.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+}
+
+function appendPublishingToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var pub = _lastOutputDraft.publishing || createPublishingDraft(_lastOutputDraft);
+  if (!pub) return;
+  payload.publishing = pub;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -23618,6 +24005,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
+    + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
