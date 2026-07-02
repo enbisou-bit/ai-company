@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-01（Phase46-8完了）
+> 更新日: 2026-07-02（Phase47-2A完了）
 
 ## 現在地
-- 現在フェーズ: **Phase46-8 完了**
-- 現在バージョン: **v1.00-phase46-8**
+- 現在フェーズ: **Phase47-2A 完了**
+- 現在バージョン: **v1.00-phase47-2A**
 
 ---
 
@@ -210,6 +210,34 @@ Git: v0.96相当
 
 ---
 
+# Phase47（API料金メーター / コスト最適化）
+
+### Phase47-1: API料金メーター ✅
+- `costTracker.js` — 日次/月次/累計 + 日付リセット(todayKey/monthKey) + 旧データ移行
+- `claudeCostTracker.js`（新規）— Claude API料金永続化 / claude-cost-logs.json / モデル別集計
+- `claudeClient.js` — trackUsage()末尾でaddClaudeUsage()呼び出し（モジュールレベルrequire）
+- `server.js` — /api/claude-cost エンドポイント追加
+- `index.html` — #cost-panel-body 完全再構成（上部=合計 / Provider別=OpenAI+Claude / 右上ヘッダー=合計）
+- `updateCostProviderPanel()` — 3エンドポイント並行取得・合計計算・上部+ヘッダー反映
+- Git: Phase47-1 API cost meter / Tag: v1.00-phase47-1
+
+### Phase47-2A: Claude Cost Analysis（分析のみ）✅
+- `claudeCostTracker.js` — `CLAUDE_COST_ANALYSIS_VERSION = '1.0.0'` / `getClaudeCostAnalysis()`追加
+  - totalRequests / totalInputTokens / totalOutputTokens / totalTokens / totalCost / todayCost / monthCost
+  - byModel（モデル別料金・トークン・リクエスト数）
+  - byRole（strategy=claude-opus-4-8専用のため実測、writer/reviewerはclaude-sonnet-4-6共有のため`writer_reviewer_combined`として合算・担当別判定なし）
+  - topCostModel / topTokenModel / analysisWarnings
+- `server.js` — 既存 `/api/claude-cost` に `analysis` フィールドとして追加（新規API追加なし）
+- `index.html` — 料金メーターへ「🔍 Claude Cost Analysis」パネル追加（`renderClaudeCostAnalysis()`）
+  - 総リクエスト数 / 総トークン数 / 総料金 / モデル別内訳 / 最高額モデル / 最多利用モデル / 担当別利用状況 / 分析上の注意（analysisWarnings）
+  - Phase47-2Aは分析のみ・Provider構成変更なし・Claudeモデル変更なし・Phase47-2Bでモデル最適化予定 の注意書き表示
+- モデル変更・Provider変更・Compare Intelligenceへの反映は一切なし
+- Git: 5a7d2d3 / Tag: v1.00-phase47-2A
+
+### Phase47-2B: モデル最適化 ⬜
+
+---
+
 # v1.0まで
 
 ☑ Workflow Live完成（Phase43）
@@ -232,7 +260,9 @@ Git: v0.96相当
 □ PDF生成
 □ HTML生成
 □ Company Memory 永続化
-□ Cost Meter
+☑ API料金メーター（Phase47-1）
+☑ Claude Cost Analysis（Phase47-2A・分析のみ）
+□ Claude API コスト最適化（Phase47-2B）
 □ v1.0正式版
 
 ---
