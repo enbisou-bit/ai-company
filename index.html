@@ -22170,6 +22170,55 @@ function toggleOutputEnginePanel() {
 // Phase44-4: Output Draft Builder
 // ══════════════════════════════════════════════════
 
+// Phase48-3: ラベル付きセクションのゆるい抽出（見出しキーワードに一致する行の直後内容を取得）
+// 一致しない場合は fallbackText（未指定時は空文字）を返す。新しいAI呼び出しは行わずテキスト解析のみで完結する
+function _extractLabeledSection(text, labelPatterns, fallbackText) {
+  if (!text) return fallbackText !== undefined ? fallbackText : '';
+  var lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    for (var j = 0; j < labelPatterns.length; j++) {
+      var m = line.match(labelPatterns[j]);
+      if (m) {
+        var rest = line.slice(m[0].length).trim();
+        if (rest) return rest;
+        for (var k = i + 1; k < lines.length; k++) {
+          var next = lines[k].trim();
+          if (next) return next;
+        }
+      }
+    }
+  }
+  return fallbackText !== undefined ? fallbackText : '';
+}
+
+function _extractHashtagsFromText(text) {
+  if (!text) return [];
+  var matches = text.match(/#[^\s#、。]+/g);
+  return matches ? matches.slice(0, 10) : [];
+}
+
+function _extractCtaFromText(text, fallback) {
+  if (!text) return fallback !== undefined ? fallback : '';
+  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var ctaKeywords = /(こちら|クリック|申込|お問い合わせ|フォロー|チェック|今すぐ|ＤＭ|DM|ください|しよう|見てね|チェックしてね|クリック)/;
+  for (var i = lines.length - 1; i >= 0; i--) {
+    if (ctaKeywords.test(lines[i])) return lines[i];
+  }
+  return fallback !== undefined ? fallback : (lines.length ? lines[lines.length - 1] : '');
+}
+
+// Phase48-3: Writer / Strategy / Designer 個別回答の取得（_atTaskHistoryから直近のagentId一致を検索）
+// 取得できない場合は空文字を返し、finalTextのみでの抽出にフォールバックする（既存動作を壊さない）
+function _getRoleReplyText(agentId) {
+  if (typeof _atTaskHistory === 'undefined' || !Array.isArray(_atTaskHistory)) return '';
+  for (var i = _atTaskHistory.length - 1; i >= 0; i--) {
+    var t = _atTaskHistory[i];
+    if (t && t.agentId === agentId && t.result) return t.result;
+  }
+  return '';
+}
+
 function buildOutputDraftFromLeaderFinal(finalText) {
   console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0);
   if (!_lastOutputDraft || !finalText) return { ok: false };
@@ -22194,49 +22243,124 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     return slides.length > 0 ? slides : [text.slice(0, 200)];
   }
 
+  // Phase48-3: Writer / Strategy / Designer 補助（各社員個別回答を補助的にラベル抽出へ利用）
+  var _writerText    = _getRoleReplyText('writer');
+  var _strategyText  = _getRoleReplyText('strategy');
+  var _designerText  = _getRoleReplyText('designer');
+  var searchText         = [finalText, _writerText, _strategyText].filter(Boolean).join('\n');
+  var designerSearchText = _designerText || searchText;
+
   if (type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL) {
     fields.slides      = extractSlides(finalText);
     fields.caption     = finalText;
-    fields.cta         = '';
-    fields.hashtags    = [];
-    fields.imagePrompts = [];
-    updatedFields = ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts'];
+    fields.cta         = _extractCtaFromText(searchText);
+    fields.hashtags    = _extractHashtagsFromText(searchText);
+    fields.imagePrompts = fields.slides.map(function(s) { return 'Instagramスライド用画像プロンプト: ' + s.slice(0, 60); });
+    // Phase48-3: Output Draft Builder強化（Phase48-2追加フィールドの自動反映）
+    fields.targetAudience  = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ターゲット層?|想定読者|Target\s*Audience)\s*[:：]/i], searchText.slice(0, 100));
+    fields.benefit          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ベネフィット|メリット|得られる価値|Benefit)\s*[:：]/i], searchText.slice(0, 100));
+    fields.saveSharePrompt   = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(保存|シェア|Save|Share)\s*[:：]/i], '保存してあとで見返してください');
+    updatedFields = ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts', 'targetAudience', 'benefit', 'saveSharePrompt'];
 
   } else if (type === OUTPUT_TYPES.INSTAGRAM_POST) {
     fields.caption  = finalText;
-    fields.cta      = '';
-    fields.hashtags = [];
+    fields.cta      = _extractCtaFromText(searchText);
+    fields.hashtags = _extractHashtagsFromText(searchText);
     updatedFields = ['caption', 'cta', 'hashtags'];
 
   } else if (type === OUTPUT_TYPES.FLYER) {
-    fields.catchcopy   = '';
+    fields.catchcopy   = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ヘッドライン|キャッチコピー|Headline)\s*[:：]/i], finalText.split('\n').map(function(l){return l.trim();}).filter(Boolean)[0] || '');
     fields.body        = finalText;
-    fields.offer       = '';
-    fields.designNotes = '';
-    updatedFields = ['catchcopy', 'body', 'offer', 'designNotes'];
+    fields.offer       = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(オファー|特典|Offer)\s*[:：]/i], '');
+    fields.designNotes = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(デザイン|レイアウト|Design)\s*[:：]/i], '');
+    // Phase48-3
+    fields.subheadline       = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(サブヘッドライン|Subheadline)\s*[:：]/i], '');
+    fields.proof              = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(実績|信頼|Proof)\s*[:：]/i], '');
+    fields.area                = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(対応エリア|エリア|Area)\s*[:：]/i], '');
+    fields.cta                  = _extractCtaFromText(searchText);
+    fields.layoutInstruction     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(レイアウト|Layout)\s*[:：]/i], fields.designNotes || 'A4縦・写真中心の構成を想定');
+    fields.imageInstruction       = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(画像|写真|イラスト|Image)\s*[:：]/i], fields.designNotes || '訴求に合った写真・イラストを配置');
+    fields.contact                 = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(連絡先|お問い合わせ|Contact|TEL)\s*[:：]/i], '');
+    updatedFields = ['catchcopy', 'body', 'offer', 'designNotes', 'subheadline', 'proof', 'area', 'cta', 'layoutInstruction', 'imageInstruction', 'contact'];
 
   } else if (type === OUTPUT_TYPES.LP) {
-    fields.headline = '';
+    fields.headline = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ヘッドライン|キャッチコピー|Headline)\s*[:：]/i], finalText.split('\n').map(function(l){return l.trim();}).filter(Boolean)[0] || '');
     fields.sections = [finalText];
-    fields.cta      = '';
+    fields.cta      = _extractCtaFromText(searchText);
     fields.html     = '';
-    updatedFields = ['headline', 'sections', 'cta', 'html'];
+    // Phase48-3
+    fields.firstView    = fields.headline;
+    fields.problem        = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(課題|悩み|Problem)\s*[:：]/i], finalText.slice(0, 120));
+    fields.solution         = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(解決策|ソリューション|Solution)\s*[:：]/i], finalText.slice(0, 120));
+    fields.benefits           = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ベネフィット|メリット|Benefits?)\s*[:：]/i], finalText.slice(0, 120));
+    fields.proof                = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(実績|信頼|Proof)\s*[:：]/i], '');
+    fields.flow                   = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(流れ|ご利用の流れ|Flow)\s*[:：]/i], '');
+    fields.faq                      = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(よくある質問|FAQ)\s*[:：]/i], '');
+    fields.htmlStructure              = 'セクション構成: ヘッドライン→課題→解決策→ベネフィット→実績→ご利用の流れ→FAQ→CTA（' + (fields.sections || []).length + 'セクション）';
+    updatedFields = ['headline', 'sections', 'cta', 'html', 'firstView', 'problem', 'solution', 'benefits', 'proof', 'flow', 'faq', 'htmlStructure'];
 
   } else if (type === OUTPUT_TYPES.PDF || type === OUTPUT_TYPES.DOCUMENT) {
     fields.sections = [finalText];
     fields.summary  = finalText.slice(0, 200);
-    updatedFields = ['sections', 'summary'];
+    fields.title    = finalText.split('\n')[0].slice(0, 60);
+    if (type === OUTPUT_TYPES.DOCUMENT) fields.body = finalText;
+    // Phase48-3
+    fields.proof              = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(実績|根拠|Proof)\s*[:：]/i], '');
+    fields.visualInstruction   = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ビジュアル|図版|Visual)\s*[:：]/i], '');
+    fields.cta                  = _extractCtaFromText(searchText);
+    fields.nextAction             = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(次のアクション|Next\s*Action)\s*[:：]/i], '');
+    updatedFields = ['sections', 'summary', 'title', 'proof', 'visualInstruction', 'cta', 'nextAction'];
+    if (type === OUTPUT_TYPES.DOCUMENT) updatedFields.push('body');
 
   } else if (type === OUTPUT_TYPES.HTML) {
     fields.copy         = finalText;
     fields.sections     = [finalText];
-    fields.htmlStructure = '';
-    updatedFields = ['copy', 'sections', 'htmlStructure'];
+    fields.htmlStructure = 'セクション構成: ヘッダー→メインコンテンツ→CTA→フッター';
+    // Phase48-3
+    fields.title              = finalText.split('\n')[0].slice(0, 60);
+    fields.cta                 = _extractCtaFromText(searchText);
+    fields.responsiveNote       = 'モバイル375px〜デスクトップ1440px対応のレスポンシブレイアウトを想定';
+    fields.visualInstruction     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ビジュアル|画像|Visual)\s*[:：]/i], '');
+    updatedFields = ['copy', 'sections', 'htmlStructure', 'title', 'cta', 'responsiveNote', 'visualInstruction'];
 
   } else if (type === OUTPUT_TYPES.TIKTOK_VIDEO || type === OUTPUT_TYPES.YOUTUBE_SHORTS) {
     fields.script  = finalText;
-    fields.captions = [];
-    updatedFields = ['script', 'captions'];
+    fields.captions = finalText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).slice(0, 5);
+    // Phase48-3
+    fields.cta            = _extractCtaFromText(searchText);
+    fields.duration         = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(尺|再生時間|Duration)\s*[:：]/i], '15〜30秒');
+    fields.musicMood          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(音楽|BGM|雰囲気|Music|Mood)\s*[:：]/i], 'アップテンポ');
+    fields.visualPrompts        = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(映像|ビジュアル|Visual)\s*[:：]/i], finalText.slice(0, 120));
+    fields.motionPrompts          = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(モーション|カメラワーク|Motion)\s*[:：]/i], 'カット割りでテンポよく展開');
+    fields.ending                    = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(エンディング|締め|Ending)\s*[:：]/i], finalText.split('\n').map(function(l){return l.trim();}).filter(Boolean).slice(-1)[0] || '');
+    if ('hashtags' in fields) fields.hashtags = _extractHashtagsFromText(searchText);
+    updatedFields = ['script', 'captions', 'cta', 'duration', 'musicMood', 'visualPrompts', 'motionPrompts', 'ending'];
+
+  } else if (type === OUTPUT_TYPES.IMAGE_PROMPT) {
+    fields.prompt          = designerSearchText || finalText;
+    fields.negativePrompt  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ネガティブ|Negative)\s*[:：]/i], 'low quality, blurry, watermark');
+    fields.style              = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(スタイル|Style)\s*[:：]/i], 'photorealistic');
+    fields.size                = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(サイズ|Size)\s*[:：]/i], '1024x1024');
+    // Phase48-3
+    fields.subject               = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体|Subject)\s*[:：]/i], finalText.slice(0, 80));
+    fields.composition             = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(構図|Composition)\s*[:：]/i], 'センター構図');
+    fields.lighting                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ライティング|照明|Lighting)\s*[:：]/i], '自然光');
+    fields.background                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(背景|Background)\s*[:：]/i], 'シンプルな背景');
+    fields.usage                         = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(用途|Usage)\s*[:：]/i], 'SNS投稿用');
+    updatedFields = ['prompt', 'negativePrompt', 'style', 'size', 'subject', 'composition', 'lighting', 'background', 'usage'];
+
+  } else if (type === OUTPUT_TYPES.VIDEO_PROMPT) {
+    fields.prompt   = designerSearchText || finalText;
+    fields.style      = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(スタイル|Style)\s*[:：]/i], 'cinematic');
+    fields.duration     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(尺|Duration)\s*[:：]/i], '5秒');
+    fields.aspect         = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(アスペクト比?|Aspect)\s*[:：]/i], '9:16');
+    // Phase48-3
+    fields.scene            = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(シーン|Scene)\s*[:：]/i], finalText.slice(0, 80));
+    fields.cameraMotion       = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(カメラワーク|カメラ|Camera)\s*[:：]/i], 'ゆっくりズームイン');
+    fields.subjectMotion        = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体の動き|Motion)\s*[:：]/i], '自然な動き');
+    fields.ending                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(エンディング|Ending)\s*[:：]/i], 'フェードアウト');
+    fields.negativePrompt            = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ネガティブ|Negative)\s*[:：]/i], 'low quality, blurry, watermark');
+    updatedFields = ['prompt', 'style', 'duration', 'aspect', 'scene', 'cameraMotion', 'subjectMotion', 'ending', 'negativePrompt'];
 
   } else if (type === OUTPUT_TYPES.POWERPOINT) {
     fields.title  = finalText.split('\n')[0].slice(0, 60);
@@ -22264,6 +22388,9 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _lastOutputDraft.knowledgeCandidates = createKnowledgeCandidatesFromMemory(_lastOutputDraft);
   _companyKnowledgeCandidateBuffer = (_lastOutputDraft.knowledgeCandidates || []).concat(_companyKnowledgeCandidateBuffer).slice(0, 50);
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
+
+  // Phase48-3: 生成直後にOutput Package Qualityを評価し、改善ループ用に保持
+  try { _lastOutputDraft.packageQuality = evaluateOutputPackageCompleteness(_lastOutputDraft); } catch (_pqe) {}
 
   // Phase46-4: Compare Logに記録
   recordKnowledgeCompareEntry(_lastOutputDraft);
@@ -23026,6 +23153,13 @@ function buildOutputPackageQualityHtml() {
   var typeDef = getOutputTypeDefinition(q.outputType);
   var typeLabel = typeDef ? typeDef.label : q.outputType;
 
+  // Phase48-3: 改善ループ — 90点未満の場合は改善が必要である旨を明示表示
+  var improvementBanner = (q.score < 90)
+    ? '<div style="margin-top:6px;padding:6px 8px;background:rgba(240,184,64,0.1);border:1px solid rgba(240,184,64,0.3);border-radius:6px;font-size:9px;color:#f0b840;">'
+      + '⚠ 90点未満のため改善が必要です。下記のRecommendationsを確認してください。'
+      + '</div>'
+    : '';
+
   return '<div class="oe-quality-section">'
     + '<div class="oe-quality-title">✅ Output Package Quality <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Phase48-1</span></div>'
     + '<div class="oe-status-sub">Output Type: <strong style="color:#c89ef2;">' + esc(typeLabel) + '</strong></div>'
@@ -23033,6 +23167,7 @@ function buildOutputPackageQualityHtml() {
     +   '<div class="oe-quality-score">' + q.score + '</div>'
     +   '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">' + meta.label + '</span>'
     + '</div>'
+    + improvementBanner
     + (completedHtml ? '<div class="oe-quality-sub">Completed Items</div><div class="oe-quality-metrics">' + completedHtml + '</div>' : '')
     + (missingHtml   ? '<div class="oe-quality-sub">Missing Items</div><div class="oe-quality-metrics">' + missingHtml + '</div>' : '')
     + (recommendHtml ? '<div class="oe-quality-sub">Recommendations</div><ul class="oe-quality-list">' + recommendHtml + '</ul>' : '')
