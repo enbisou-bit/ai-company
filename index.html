@@ -5481,7 +5481,21 @@
       <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
         ※ Phase47-2Dで正式採用したのはClaudeモデルポリシーのみ<br>
         ※ Provider構成は変更していない<br>
-        ※ Writer / Reviewer は Haiku 採用・Strategy は Opus 維持<br>
+        ※ Writer / Reviewer は Haiku 採用・Strategy は Opus 維持
+      </div>
+      <!-- Phase47-3: Claude Quality Monitor（Compare Intelligence連携） -->
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">📊 Claude Quality Monitor <span style="font-size:8px;background:rgba(78,205,196,0.15);color:#4ecdc4;padding:1px 5px;border-radius:3px;">Phase47-3</span></div>
+      <div class="cost-row"><span>Current Quality</span><span id="qm-status">--</span></div>
+      <div class="cost-row"><span>Monitoring Status</span><span id="qm-monitoring">--</span></div>
+      <div class="cost-row"><span>Overall Score</span><span id="qm-score">--</span></div>
+      <div class="cost-row"><span>Recommendation</span><span id="qm-recommendation">--</span></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Detected Issues</div>
+      <div id="qm-issues"></div>
+      <div id="qm-summary" style="font-size:9px;color:var(--text-dim);margin-top:4px;"></div>
+      <div id="qm-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
+        ※ Compare Intelligence（Improvement Score）の既存スコアを利用（新しい比較ロジックは追加なし）<br>
+        ※ モデルの自動切替は行いません（判断は必ず手動）<br>
         ※ 品質監視は今後も継続
       </div>
     </div>
@@ -8675,6 +8689,45 @@ function renderClaudeModelAdoptionStatus(fa) {
   }
 }
 
+// Phase47-3: Claude Quality Monitor表示（Compare Intelligence連携 / モデル自動切替なし）
+function renderClaudeQualityMonitor(qm) {
+  var _set = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  var issuesEl  = document.getElementById('qm-issues');
+  var summaryEl = document.getElementById('qm-summary');
+  var warnEl    = document.getElementById('qm-warnings');
+  var statusLabel = { excellent: '✅ excellent', good: '🙂 good', watch: '⚠️ watch', critical: '🔴 critical' };
+  var monitorLabel = { true: '監視中', false: '安定' };
+
+  if (!qm) {
+    _set('qm-status', '--');
+    _set('qm-monitoring', '--');
+    _set('qm-score', '--');
+    _set('qm-recommendation', '--');
+    if (issuesEl) issuesEl.innerHTML = '';
+    if (summaryEl) summaryEl.textContent = '';
+    if (warnEl) warnEl.textContent = '';
+    return;
+  }
+  _set('qm-status', statusLabel[qm.qualityStatus] || qm.qualityStatus || '--');
+  _set('qm-monitoring', qm.monitoringRequired ? '監視中' : '安定');
+  _set('qm-score', (qm.qualityScore === null || qm.qualityScore === undefined) ? '未取得（データ不足）' : qm.qualityScore + '点');
+  _set('qm-recommendation', qm.recommendation || '--');
+
+  if (issuesEl) {
+    if (!qm.issues || qm.issues.length === 0) {
+      issuesEl.innerHTML = '<div style="font-size:9px;color:var(--text-dim);">検出された低スコア項目なし</div>';
+    } else {
+      issuesEl.innerHTML = qm.issues.map(function (issue) {
+        return '<div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">' + issue.label + '</span><span style="color:#ff8888;">' + issue.score + '点</span></div>';
+      }).join('');
+    }
+  }
+  if (summaryEl) summaryEl.textContent = qm.summary || '';
+  if (warnEl) {
+    warnEl.textContent = (qm.warnings && qm.warnings.length > 0) ? '⚠ ' + qm.warnings.join(' / ') : '';
+  }
+}
+
 // Phase47-1.5/1.6: Provider別料金パネル更新（Claude永続データ対応）
 async function updateCostProviderPanel() {
   var section = document.getElementById('cp-provider-section');
@@ -8682,9 +8735,28 @@ async function updateCostProviderPanel() {
   var _set = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
   var USD_TO_JPY = 160;
   try {
+    // Phase47-3: Compare Intelligence（buildImprovementScores）の既存スコアをqueryで/api/claude-costへ連携
+    var claudeCostUrl = '/api/claude-cost';
+    try {
+      if (typeof buildImprovementScores === 'function') {
+        var _imp = buildImprovementScores();
+        if (_imp && typeof _imp.overall === 'number' && (_imp.sampleSize || 0) >= 3) {
+          var _qs = new URLSearchParams();
+          _qs.set('overall', _imp.overall);
+          _qs.set('sampleSize', _imp.sampleSize);
+          if (_imp.hook && typeof _imp.hook.score === 'number')           _qs.set('hookScore', _imp.hook.score);
+          if (_imp.cta && typeof _imp.cta.score === 'number')             _qs.set('ctaScore', _imp.cta.score);
+          if (_imp.knowledge && typeof _imp.knowledge.score === 'number') _qs.set('knowledgeScore', _imp.knowledge.score);
+          if (_imp.structure && typeof _imp.structure.score === 'number')_qs.set('structureScore', _imp.structure.score);
+          if (_imp.images && typeof _imp.images.score === 'number')      _qs.set('imagesScore', _imp.images.score);
+          claudeCostUrl = '/api/claude-cost?' + _qs.toString();
+        }
+      }
+    } catch (_e) { claudeCostUrl = '/api/claude-cost'; }
+
     var results = await Promise.all([
       fetch('/api/cost').then(function(r){ return r.json(); }).catch(function(){ return null; }),
-      fetch('/api/claude-cost').then(function(r){ return r.json(); }).catch(function(){ return null; }),
+      fetch(claudeCostUrl).then(function(r){ return r.json(); }).catch(function(){ return null; }),
       fetch('/api/claude-status').then(function(r){ return r.json(); }).catch(function(){ return null; }),
     ]);
     var oa = results[0];
@@ -8748,6 +8820,7 @@ async function updateCostProviderPanel() {
     renderClaudeModelPolicy(cc && cc.ok ? cc.modelPolicy : null);
     renderClaudeModelQualityCompare(cc && cc.ok ? cc.qualityCompare : null);
     renderClaudeModelAdoptionStatus(cc && cc.ok ? cc.adoptionStatus : null);
+    renderClaudeQualityMonitor(cc && cc.ok ? cc.qualityMonitor : null);
 
     // 上部サマリー: OpenAI + Claude 合計で上書き
     var totalTodayJpy = parseFloat((oaTodayJpy + clTodayJpy).toFixed(2));

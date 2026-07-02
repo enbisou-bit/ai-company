@@ -400,6 +400,94 @@ function buildClaudeModelAdoptionStatus(currentModels, qualityCompare) {
   };
 }
 
+// Phase47-3: Claude Quality Monitor（Compare Intelligence連携 / モデル変更・自動切替なし）
+const CLAUDE_QUALITY_MONITOR_VERSION = '1.0.0';
+
+// Compare Intelligenceのカテゴリ別スコアと監視対象「判定項目」の対応
+// （Compare Intelligence v2 buildImprovementScores() が持つ実フィールドのみ使用・推測追加なし）
+// structure→Structure / cta→CTA / knowledge→Knowledge Usage / hook→Writing寄り / images→Output Quality寄り
+const CLAUDE_QUALITY_CATEGORY_LABELS = {
+  hook:      'Writing（Hook）',
+  cta:       'CTA',
+  knowledge: 'Knowledge Usage',
+  structure: 'Structure',
+  images:    'Output Quality（Images）',
+};
+
+// compareData: Compare Intelligence v2 buildImprovementScores() の戻り値
+// { overall, hook:{score,label,comment}, cta:{...}, knowledge:{...}, structure:{...}, images:{...}, sampleSize }
+// サーバー側は compareData を保持しないため、呼び出し側（ブラウザ）から渡された値のみ利用する。推測でスコアを生成しない。
+function buildClaudeQualityMonitor(compareData) {
+  const warnings = [];
+  const hasData = !!(compareData && typeof compareData.overall === 'number' && (compareData.sampleSize || 0) >= 3);
+
+  const qualityScore = hasData ? compareData.overall : null;
+
+  let qualityStatus;
+  let recommendation;
+  if (!hasData) {
+    qualityStatus = 'watch';
+    recommendation = 'Need Manual Review';
+    warnings.push('Compare Intelligence の比較データが不足しているため自動判定を保留しています（サンプル数不足・データ未受信）');
+  } else if (qualityScore >= 85) {
+    qualityStatus = 'excellent';
+    recommendation = 'Keep Current Policy';
+  } else if (qualityScore >= 70) {
+    qualityStatus = 'good';
+    recommendation = 'Monitor Quality';
+  } else if (qualityScore >= 50) {
+    qualityStatus = 'watch';
+    recommendation = 'Monitor Quality';
+  } else {
+    qualityStatus = 'critical';
+    recommendation = 'Consider Sonnet';
+  }
+
+  const issues = [];
+  if (hasData) {
+    Object.keys(CLAUDE_QUALITY_CATEGORY_LABELS).forEach((key) => {
+      const cat = compareData[key];
+      if (cat && typeof cat.score === 'number' && cat.score < 60) {
+        issues.push({
+          category: key,
+          label: CLAUDE_QUALITY_CATEGORY_LABELS[key],
+          score: cat.score,
+          comment: cat.comment || null,
+        });
+      }
+    });
+  }
+
+  const monitoringRequired = qualityStatus !== 'excellent';
+
+  const summary = !hasData
+    ? 'Compare Intelligence の比較データが未受信のため、品質判定は保留中です。監視を継続してください。'
+    : `Overall Score ${qualityScore}点（${qualityStatus}）。Writer/ReviewerはHaiku運用中のため、継続的な品質監視が必要です。`;
+
+  warnings.push('Writer / Reviewer は Haiku 運用中のため品質低下がないか継続監視が必要');
+  warnings.push('本監視エンジンはモデルの自動切替を行いません（判断は必ず手動）');
+  warnings.push('Writer / Reviewer / Leader Final の担当別スコアはCompare Intelligenceの現データ構造では取得不可（カテゴリ別スコアのみ利用可能）');
+
+  return {
+    version: CLAUDE_QUALITY_MONITOR_VERSION,
+    qualityStatus,
+    monitoringRequired,
+    qualityScore,
+    recommendation,
+    issues,
+    categoryScores: hasData ? {
+      hook: compareData.hook || null,
+      cta: compareData.cta || null,
+      knowledge: compareData.knowledge || null,
+      structure: compareData.structure || null,
+      images: compareData.images || null,
+    } : null,
+    sampleSize: hasData ? compareData.sampleSize : 0,
+    summary,
+    warnings,
+  };
+}
+
 module.exports = {
   addClaudeUsage,
   getSummary,
@@ -411,4 +499,7 @@ module.exports = {
   // Phase47-2D
   buildClaudeModelAdoptionStatus,
   CLAUDE_MODEL_ADOPTION_VERSION,
+  // Phase47-3
+  buildClaudeQualityMonitor,
+  CLAUDE_QUALITY_MONITOR_VERSION,
 };

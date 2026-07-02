@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-2D完了）
+> 更新日: 2026-07-02（Phase47-3完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-2D 完了**
-- 現在バージョン: **v1.00-phase47-2D**
+- 現在フェーズ: **Phase47-3 完了**
+- 現在バージョン: **v1.00-phase47-3**
 
 ---
 
@@ -273,6 +273,18 @@ Git: v0.96相当
 - Provider構成変更なし
 - Git: Phase47-2D claude model adoption / Tag: v1.00-phase47-2D
 
+### Phase47-3: Claude Quality Monitor（Compare Intelligence連携） ✅
+- `claudeCostTracker.js` — `CLAUDE_QUALITY_MONITOR_VERSION = '1.0.0'` / `buildClaudeQualityMonitor(compareData)` 追加
+  - `compareData`はCompare Intelligence v2 `buildImprovementScores()`（index.html・ブラウザ内メモリのみ、サーバー側に永続化なし）の戻り値と同一形状 `{ overall, hook, cta, knowledge, structure, images, sampleSize }` を呼び出し側から受け取る設計。スコアは推測せず既存値のみ使用
+  - qualityStatus（excellent/good/watch/critical・overallスコアの閾値判定） / monitoringRequired / qualityScore / recommendation（Keep Current Policy/Monitor Quality/Consider Sonnet/Need Manual Review） / issues（カテゴリ別60点未満を検出） / categoryScores / summary / warnings
+  - サンプル数3未満・データ未受信時は`watch`+`Need Manual Review`で保留表示（モデル自動切替は一切行わない）
+- `server.js` — `/api/claude-cost` に `qualityMonitor` を追加。Compare Intelligenceのスコアはブラウザ内メモリにしか存在しないため、任意のqueryパラメータ（overall/sampleSize/hookScore等）経由で受け取る方式で連携（未指定時はデータ不足として扱う）
+- `index.html` — `updateCostProviderPanel()`が既存の `buildImprovementScores()` を呼び出し、結果を `/api/claude-cost` のqueryへ付与。Claude Model Formal Adoptionパネル下に「📊 Claude Quality Monitor」パネル追加（`renderClaudeQualityMonitor()`）
+  - Current Quality / Monitoring Status / Overall Score / Recommendation / Detected Issues / Warnings を表示
+- Compare Intelligenceの新しい比較ロジックは追加せず、既存の`buildImprovementScores()`のスコアのみ利用
+- モデル変更・自動切替は一切なし（実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）。Provider構成変更なし
+- Git: Phase47-3 quality monitor / Tag: v1.00-phase47-3
+
 ---
 
 # v1.0まで
@@ -302,6 +314,7 @@ Git: v0.96相当
 ☑ Claude API コスト最適化（Phase47-2B）
 ☑ Claude Model Quality Compare（Phase47-2C・比較のみ）
 ☑ Claudeモデル正式採用判断（Phase47-2D）
+☑ Claude Quality Monitor / Compare Intelligence連携（Phase47-3）
 □ v1.0正式版
 
 ---

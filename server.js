@@ -7,7 +7,7 @@ const { costTracker, resetCostTracker } = require('./costTracker');
 const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent, getClaudeModelForRole, CLAUDE_MODEL_POLICY, CLAUDE_MODEL_POLICY_VERSION } = require('./claudeClient'); // Phase47-2B
-const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D
+const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus, buildClaudeQualityMonitor } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D / Phase47-3
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -1328,7 +1328,8 @@ app.get('/api/claude-status', (req, res) => {
 });
 // ─────────────────────────────────────────────────
 
-// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis / Phase47-2B: modelPolicy / Phase47-2C: qualityCompare / Phase47-2D: adoptionStatus追加）
+// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis / Phase47-2B: modelPolicy / Phase47-2C: qualityCompare / Phase47-2D: adoptionStatus / Phase47-3: qualityMonitor追加）
+// Phase47-3: Compare Intelligenceのスコアはブラウザ側にのみ存在するため、任意のqueryパラメータ経由で受け取る（未指定時はデータ不足として扱う）
 app.get('/api/claude-cost', (req, res) => {
   try {
     let analysis = null;
@@ -1350,7 +1351,24 @@ app.get('/api/claude-cost', (req, res) => {
     try { qualityCompare = buildClaudeModelQualityCompare(currentModels); } catch (_e) { qualityCompare = null; }
     let adoptionStatus = null;
     try { adoptionStatus = buildClaudeModelAdoptionStatus(currentModels, qualityCompare); } catch (_e) { adoptionStatus = null; }
-    res.json({ ok: true, ...getClaudeCostSummary(), analysis, modelPolicy, qualityCompare, adoptionStatus });
+    let qualityMonitor = null;
+    try {
+      const q = req.query || {};
+      const toNum = (v) => (v !== undefined && v !== '' && !isNaN(Number(v))) ? Number(v) : undefined;
+      const toCat = (key) => { const s = toNum(q[key]); return s !== undefined ? { score: s } : null; };
+      const overall = toNum(q.overall);
+      const compareData = overall !== undefined ? {
+        overall,
+        sampleSize: toNum(q.sampleSize) || 0,
+        hook:      toCat('hookScore'),
+        cta:       toCat('ctaScore'),
+        knowledge: toCat('knowledgeScore'),
+        structure: toCat('structureScore'),
+        images:    toCat('imagesScore'),
+      } : null;
+      qualityMonitor = buildClaudeQualityMonitor(compareData);
+    } catch (_e) { qualityMonitor = null; }
+    res.json({ ok: true, ...getClaudeCostSummary(), analysis, modelPolicy, qualityCompare, adoptionStatus, qualityMonitor });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
