@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-02（Phase48-3.2完了）
+更新日: 2026-07-02（Phase48-4完了）
 
 ---
 
@@ -15,17 +15,17 @@
 
 ## 現在バージョン
 
-**v1.00 Phase48-3 Complete**
+**v1.00 Phase48-4 Complete**
 
-最新Tag: `v1.00-phase48-3.2`
+最新Tag: `v1.00-phase48-4`
 
 ---
 
 ## 現在地
 
-Phase48-3（Output Auto Fill Engine）完了。
+Phase48-4（Output Preview Engine）完了。
 
-次工程: **Phase48-4 — Output Preview Engine**
+次工程: **Phase48-5 — Publishing Engine**
 
 ---
 
@@ -66,6 +66,7 @@ Phase48-3（Output Auto Fill Engine）完了。
 | Phase48-3 | Output Auto Fill Engine（Leader Final/Writer/Strategy/Designerから自動反映） | v1.00-phase48-3 |
 | Phase48-3.1 | docs正式反映 / Roadmap新設 | v1.00-phase48-3.1 |
 | Phase48-3.2 | docs全体整合性確認・強化 | v1.00-phase48-3.2 |
+| Phase48-4 | Output Preview Engine（Instagram/LP/チラシ/PDF/HTML/TikTok/YouTube Shortsの完成イメージ表示） | v1.00-phase48-4 |
 
 ---
 
@@ -214,21 +215,25 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Priority 0: Phase48-4 — Output Preview Engine
+### Priority 0: Phase48-5 — Publishing Engine
 
 目的：
-Instagram / LP / PDF / HTML / チラシ / YouTube / TikTok の成果物を完成イメージで画面表示する。
-
-Output Package Quality（Phase48-1〜48-3で完成）と組み合わせ、
-Previewを見ながら改善→品質向上→完成を繰り返す設計とする（Decision 022）。
+SNS投稿データ生成（タイトル / 説明文 / ハッシュタグ / 投稿時間 / CTA / 画像一覧 / 動画一覧）を行う。
+Phase48-4で完成したOutput Preview Engineと組み合わせ、投稿直前まで完成度を高める。
 
 詳細は docs/04ROADMAP.md を参照。
 
-### 次工程チェーン（Phase48-3.2時点のRoadmap）
+### Phase48-4で完成した実装（次チャットが把握すべき実装）
+
+- `index.html` の `buildOutputPreviewHtml()` — Instagram/LP/チラシ/PDF/HTML/TikTok・YouTube Shortsの完成イメージモックアップを`renderOutputEnginePanel()`内、`buildOutputPackageQualityHtml`の直後に表示
+- HTMLタイプは`f.html`があれば`<iframe sandbox="" srcdoc="...">`で実描画（script実行はブロック済み、XSS対策確認済み）
+- Preview右上に`_lastOutputDraft.packageQuality`（Phase48-1のスコア）をバッジ表示
+- 既存`buildXxxPackageHtml()`（コピー用途）・Export・Workflow・Knowledge Chainは無変更
+- 詳細は Decision 024（docs/04DECISIONS.md）を参照
+
+### 次工程チェーン（Phase48-4時点のRoadmap）
 
 ```
-Phase48-4 Output Preview Engine
-  ↓
 Phase48-5 Publishing Engine
   ↓
 Phase49 AI Creative Engine
@@ -328,4 +333,4 @@ git tag v1.00-phase46-4
 9. docs/08CLAUDE_PROMPT_TEMPLATE.md を読む
 10. docs/04DECISIONS.md を読む（設計判断の背景確認）
 11. 現在地を要約する
-12. Phase48-4（Output Preview Engine）から開発再開
+12. Phase48-5（Publishing Engine）から開発再開

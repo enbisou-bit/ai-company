@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase48-3.1完了 / docs正式反映）
+> 更新日: 2026-07-02（Phase48-4完了）
 
 ## 現在地
-- 現在フェーズ: **Phase48-3 完了（v1.00 Phase48-3 Complete）**
-- 現在バージョン: **v1.00-phase48-3**
+- 現在フェーズ: **Phase48-4 完了（v1.00 Phase48-4 Complete）**
+- 現在バージョン: **v1.00-phase48-4**
 
 ---
 
@@ -378,6 +378,30 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - docs/04ROADMAP.md を新規作成（v1.0〜v2.0開発ロードマップ）
 - コード変更なし（docsのみ）
 
+### Phase48-4: Output Preview Engine ✅
+- `index.html`
+  - CSS: `.oe-preview-*` / `.oe-ig-*`（Instagram） / `.oe-lp-*`（LP・HTML共有） / `.oe-flyer-*` / `.oe-pdf-*` / `.oe-html-frame*` / `.oe-vid-*`（TikTok・YouTube Shorts）を新規追加（既存`.oe-pkg-*`は無変更）
+  - `OUTPUT_PREVIEW_VERSION = '1.0.0'` / `OUTPUT_PREVIEW_TYPES`（instagram_carousel/lp/flyer/pdf/document/html/tiktok_video/youtube_shorts の8タイプ、ROADMAP記載の7カテゴリ相当）
+  - `buildInstagramCarouselPreviewHtml()` — スマホ枠+スライド1枚+ドット+キャプション+ハッシュタグのInstagram風モックアップ
+  - `buildLpPreviewHtml()` — ブラウザ風枠+ヒーロー見出し+セクション（problem/solution/benefits/proof/flow/faq、無ければ`sections`配列にフォールバック）+CTAボタン
+  - `buildFlyerPreviewHtml()` — A4比率カード+キャッチコピー+画像プレースホルダー+オファー枠+連絡先
+  - `buildPdfPreviewHtml()` — ページ風カード+タイトル+要約+セクション一覧（pdf/document両方で共用）
+  - `buildHtmlPreviewHtml()` — `f.html`があれば`<iframe sandbox="" srcdoc="...">`で実際に生成されたHTMLをそのまま描画（scriptは`sandbox=""`で完全ブロック、XSS対策済み）。無ければLP風の構造化フォールバック表示
+  - `buildVideoPreviewHtml()` — 縦型動画枠+台本+尺/BGM/エンディング/CTAメタ表示（tiktok_video・youtube_shorts共用）
+  - `buildOutputPreviewHtml()` — Preview汎用ディスパッチャー。`_lastOutputDraft.packageQuality`（Phase48-1のスコア）を右上バッジ表示（Decision 022のPreview+Qualityスコア連動ループを実装）。対象外タイプ・データなし・型未対応時は空文字を返し例外を出さない
+  - `_escSrcdoc()` — srcdoc属性への埋め込み用エスケープ（`&`と`"`のみ。iframe内容としての`<``>`はそのまま保持）
+  - `renderOutputEnginePanel()` の `_oeSafe()` チェーンへ `buildOutputPreviewHtml` を `buildOutputPackageQualityHtml` の直後に追加（Package表示・Export・既存パネルは無変更で維持）
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入し`renderOutputEnginePanel()`を直接呼び出す方式 = Phase48-1〜48-3と同じNode vm検証に相当するAPI課金なしの確認手法）
+  - instagram_carousel（100点）/ lp（89点）/ flyer（67点）/ pdf（71点）/ html（33点、iframeで実際にHTML描画確認）/ tiktok_video（70点）の6サンプルで正常表示・バッジ色（complete/almost_ready/needs_work/insufficient）を確認
+  - HTMLプレビューの`<script>`タグ注入テストでJS実行がブロックされること（`window.top.__xssFired`が発火しない）を確認
+  - 空フィールド・未対応タイプ（image_prompt）・ドラフト未生成（null）で例外が発生せず空文字を返すことを確認
+  - console.errorなし
+- 生成ロジック（`buildOutputDraftFromLeaderFinal()`）・Package表示・Export・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・課金は一切なし（既存`_lastOutputDraft.fields`をクライアント側で描画するのみ）
+- モデル変更・Provider構成変更は一切なし
+- `.claude/launch.json` を実サーバー（`node server.js`）起動に修正（従来`npx serve`の静的配信設定は本アプリのExpressサーバーと不整合だったため）
+- 次工程: Phase48-5 Publishing Engine
+- Git: Phase48-4 output preview engine / Tag: v1.00-phase48-4
+
 ---
 
 # v1.0まで
@@ -414,8 +438,8 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 ☑ Output Package Quality Checklist（Phase48-1）
 ☑ 成果物テンプレート強化（Phase48-2）
 ☑ Output Auto Fill Engine（Phase48-3）
-□ Output Preview Engine（Phase48-4）
-□ v1.0正式版（Preview Engine・Publishing・Company Memory永続化が未完了のため引き続き未達成）
+☑ Output Preview Engine（Phase48-4）
+□ v1.0正式版（Publishing・Company Memory永続化が未完了のため引き続き未達成）
 
 ---
 

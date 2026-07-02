@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-02（Phase48-3.2完了）
+更新日: 2026-07-02（Phase48-4完了）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -410,4 +410,24 @@ AI会社の最終目標は、ユーザーが依頼すると
 - 詳細は docs/04ROADMAP.md の「将来的な完成イメージ」「Ultimate Goal」を正式仕様とする
 
 追記日: 2026-07-02（Phase48-3.2）
+
+---
+
+# Decision 024
+## Output Preview EngineはPackage表示を置換せず追加する
+
+Phase48-4において、成果物の完成イメージ表示（Preview Engine）の実装方式を決定。
+
+採用方針：
+- 既存の`buildXxxPackageHtml()`（ラベル+テキスト一覧型、コピー用途）は一切変更しない
+- 新規`buildXxxPreviewHtml()`を追加し、Package表示の直後（Output Package Qualityスコアの下）に表示
+- Previewは実物に近い見た目のモックアップ（Instagramスマホ枠・LPのwebページ風・チラシのA4カード・PDFのページ風カード・TikTok/YouTube Shortsの縦型動画枠）とし、HTMLタイプのみ`iframe sandbox=""`で実際に生成されたHTMLをそのまま描画する
+- Preview右上にOutput Package Quality（Phase48-1）のスコアバッジを表示し、Decision 022の「Preview + Qualityスコアで改善ループ」を具体化する
+- 新規API・外部通信・課金は一切追加しない（既存`_lastOutputDraft.fields`をクライアント側で描画するのみ）
+
+理由：
+- 「削除禁止・追加のみ」の絶対ルールに従い、Copy/Export用途のPackage表示とVisual確認用途のPreview表示を役割分担させる
+- HTMLタイプは実際のHTML文字列を保持しているため、モックアップより実描画（iframe）の方が正確な完成イメージになる。ただしAI生成HTMLをそのまま描画するため`sandbox=""`で全権限を無効化しXSSを防止する
+
+追記日: 2026-07-02（Phase48-4完了）
 

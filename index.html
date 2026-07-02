@@ -815,6 +815,60 @@
   .oe-field-val   { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.5; word-break: break-word; }
   .oe-empty-val   { font-size: 10px; color: rgba(255,255,255,0.2); font-style: italic; }
   .oe-copy-area   { width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: rgba(255,255,255,0.6); font-size: 10px; line-height: 1.6; padding: 8px 10px; resize: vertical; min-height: 120px; font-family: monospace; margin-top: 4px; }
+  /* Phase48-4: Output Preview Engine */
+  .oe-preview-section  { position: relative; border-radius: 10px; border: 1px solid rgba(80,170,255,0.28); background: linear-gradient(135deg, rgba(10,25,45,0.92), rgba(8,14,28,0.96)); padding: 14px 16px; }
+  .oe-preview-title    { font-size: 10px; color: rgba(110,180,255,0.75); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; font-weight: 700; }
+  .oe-preview-badge     { position: absolute; top: 12px; right: 14px; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 12px; }
+  .oe-preview-badge.complete    { background: rgba(80,220,120,0.18); color: rgba(100,230,140,0.95); border: 1px solid rgba(80,220,120,0.4); }
+  .oe-preview-badge.almost_ready{ background: rgba(160,210,90,0.18); color: rgba(180,220,110,0.95); border: 1px solid rgba(160,210,90,0.4); }
+  .oe-preview-badge.needs_work  { background: rgba(255,180,80,0.18); color: rgba(255,195,100,0.95); border: 1px solid rgba(255,180,80,0.4); }
+  .oe-preview-badge.insufficient{ background: rgba(255,100,90,0.18); color: rgba(255,130,120,0.95); border: 1px solid rgba(255,100,90,0.4); }
+  .oe-preview-empty-note { font-size: 9px; color: rgba(255,255,255,0.28); font-style: italic; margin-top: 8px; }
+  /* Instagram mockup */
+  .oe-ig-phone   { max-width: 300px; margin: 0 auto; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); background: #0d0d12; overflow: hidden; }
+  .oe-ig-head    { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .oe-ig-avatar  { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg,#f58529,#dd2a7b,#8134af,#515bd4); flex-shrink: 0; }
+  .oe-ig-uname   { font-size: 10px; color: rgba(255,255,255,0.85); font-weight: 600; }
+  .oe-ig-slide   { width: 100%; aspect-ratio: 1/1; background: linear-gradient(135deg, rgba(80,50,140,0.5), rgba(40,20,70,0.9)); display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; text-align: center; }
+  .oe-ig-slide-text { font-size: 12px; color: rgba(255,255,255,0.92); line-height: 1.5; font-weight: 600; white-space: pre-wrap; }
+  .oe-ig-slide-num  { position: absolute; top: 8px; right: 10px; font-size: 9px; color: rgba(255,255,255,0.5); }
+  .oe-ig-dots    { display: flex; justify-content: center; gap: 4px; padding: 6px 0; }
+  .oe-ig-dot     { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+  .oe-ig-dot.active { background: rgba(200,158,242,0.9); }
+  .oe-ig-actions { display: flex; gap: 10px; padding: 8px 10px; font-size: 14px; color: rgba(255,255,255,0.7); }
+  .oe-ig-caption { padding: 4px 10px 10px; font-size: 10px; color: rgba(255,255,255,0.75); line-height: 1.5; }
+  .oe-ig-caption b { color: rgba(255,255,255,0.9); }
+  .oe-ig-hashtags { padding: 0 10px 10px; font-size: 9px; color: rgba(110,180,255,0.8); line-height: 1.6; word-break: break-word; }
+  /* LP mockup */
+  .oe-lp-mock    { border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: #101018; }
+  .oe-lp-browser { display: flex; gap: 5px; padding: 7px 10px; background: rgba(255,255,255,0.04); }
+  .oe-lp-dot     { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.15); }
+  .oe-lp-hero    { padding: 22px 16px; text-align: center; background: linear-gradient(135deg, rgba(80,50,140,0.35), rgba(20,15,40,0.9)); }
+  .oe-lp-headline{ font-size: 15px; font-weight: 700; color: rgba(255,255,255,0.95); line-height: 1.4; }
+  .oe-lp-section { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.6; }
+  .oe-lp-section-label { font-size: 9px; color: rgba(110,180,255,0.7); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; font-weight: 700; }
+  .oe-lp-cta-btn { display: inline-block; margin: 14px auto 0; padding: 9px 22px; border-radius: 20px; background: linear-gradient(135deg,#7c4dff,#c89ef2); color: #1a0a2e; font-size: 11px; font-weight: 700; }
+  .oe-lp-cta-wrap{ text-align: center; padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.06); }
+  /* Flyer mockup (A4風) */
+  .oe-flyer-mock { max-width: 280px; margin: 0 auto; aspect-ratio: 210/297; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: linear-gradient(160deg, rgba(255,255,255,0.04), rgba(0,0,0,0.3)); padding: 16px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  .oe-flyer-catch{ font-size: 15px; font-weight: 800; color: rgba(255,255,255,0.95); line-height: 1.35; text-align: center; }
+  .oe-flyer-sub  { font-size: 10px; color: rgba(200,158,242,0.85); text-align: center; }
+  .oe-flyer-img-ph{ flex: 1; min-height: 70px; border-radius: 6px; background: repeating-linear-gradient(45deg, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 8px, rgba(255,255,255,0.01) 8px, rgba(255,255,255,0.01) 16px); display: flex; align-items: center; justify-content: center; font-size: 9px; color: rgba(255,255,255,0.25); }
+  .oe-flyer-offer{ font-size: 10px; color: rgba(255,255,255,0.7); background: rgba(255,180,80,0.12); border: 1px solid rgba(255,180,80,0.3); border-radius: 6px; padding: 6px 8px; }
+  .oe-flyer-contact{ font-size: 9px; color: rgba(255,255,255,0.4); text-align: center; }
+  /* PDF mockup */
+  .oe-pdf-mock   { max-width: 280px; margin: 0 auto; aspect-ratio: 210/297; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12); background: #101018; padding: 18px 16px; box-sizing: border-box; overflow-y: auto; }
+  .oe-pdf-title  { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.92); margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid rgba(110,180,255,0.5); }
+  .oe-pdf-sec-title{ font-size: 9px; color: rgba(110,180,255,0.7); font-weight: 700; margin: 8px 0 3px; }
+  .oe-pdf-sec-body { font-size: 9px; color: rgba(255,255,255,0.6); line-height: 1.6; }
+  /* HTML iframe preview */
+  .oe-html-frame-wrap { border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: #fff; }
+  .oe-html-frame { width: 100%; height: 320px; border: 0; display: block; background: #fff; }
+  /* Vertical video mockup (TikTok / Shorts) */
+  .oe-vid-phone  { max-width: 180px; margin: 0 auto; aspect-ratio: 9/16; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: linear-gradient(160deg, rgba(80,50,140,0.4), rgba(15,10,25,0.95)); padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
+  .oe-vid-tag    { align-self: flex-start; font-size: 8px; color: rgba(255,255,255,0.6); background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 8px; }
+  .oe-vid-script { font-size: 10px; color: rgba(255,255,255,0.9); line-height: 1.5; white-space: pre-wrap; }
+  .oe-vid-meta   { font-size: 8px; color: rgba(255,255,255,0.5); line-height: 1.6; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23275,6 +23329,174 @@ function buildExportUiHtml() {
     + '</div>';
 }
 
+// ══════════════════════════════════════════════════
+// Phase48-4: Output Preview Engine
+// 成果物を完成イメージ（モックアップ）で画面表示する（追加のみ・既存Package/Exportは変更しない）
+// ══════════════════════════════════════════════════
+
+const OUTPUT_PREVIEW_VERSION = '1.0.0';
+const OUTPUT_PREVIEW_TYPES = [
+  OUTPUT_TYPES.INSTAGRAM_CAROUSEL,
+  OUTPUT_TYPES.LP,
+  OUTPUT_TYPES.FLYER,
+  OUTPUT_TYPES.PDF,
+  OUTPUT_TYPES.DOCUMENT,
+  OUTPUT_TYPES.HTML,
+  OUTPUT_TYPES.TIKTOK_VIDEO,
+  OUTPUT_TYPES.YOUTUBE_SHORTS,
+];
+
+// srcdoc属性内へ安全に埋め込むための最小エスケープ（&と"のみ。<>はHTML内容として保持）
+function _escSrcdoc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function buildInstagramCarouselPreviewHtml() {
+  var f = _lastOutputDraft.fields || {};
+  var esc = escapeHtml;
+  var slides = Array.isArray(f.slides) ? f.slides : [];
+  var slideText = slides.length > 0 ? String(slides[0]) : 'スライド未生成';
+  var dots = (slides.length > 0 ? slides : [null]).map(function(_, i) {
+    return '<span class="oe-ig-dot' + (i === 0 ? ' active' : '') + '"></span>';
+  }).join('');
+  var caption = f.caption ? esc(String(f.caption).slice(0, 120)) + (String(f.caption).length > 120 ? '…' : '') : '';
+  var cta = f.cta ? esc(String(f.cta)) : '';
+  var htArr = Array.isArray(f.hashtags) ? f.hashtags : (typeof f.hashtags === 'string' && f.hashtags ? [f.hashtags] : []);
+  var hashtagsHtml = htArr.length > 0
+    ? htArr.slice(0, 8).map(function(h) { return esc(h.indexOf('#') === 0 ? h : '#' + h); }).join(' ')
+    : '';
+  return '<div class="oe-ig-phone">'
+    + '<div class="oe-ig-head"><div class="oe-ig-avatar"></div><div class="oe-ig-uname">enbisou_ai</div></div>'
+    + '<div style="position:relative;">'
+    +   '<div class="oe-ig-slide"><div class="oe-ig-slide-text">' + esc(slideText) + '</div></div>'
+    +   '<div class="oe-ig-slide-num">1/' + Math.max(slides.length, 1) + '</div>'
+    + '</div>'
+    + '<div class="oe-ig-dots">' + dots + '</div>'
+    + '<div class="oe-ig-actions">❤️ 💬 📤 🔖</div>'
+    + (caption ? '<div class="oe-ig-caption"><b>enbisou_ai</b> ' + caption + (cta ? '<br>' + cta : '') + '</div>' : '<div class="oe-preview-empty-note">キャプション未生成</div>')
+    + (hashtagsHtml ? '<div class="oe-ig-hashtags">' + hashtagsHtml + '</div>' : '')
+    + '</div>';
+}
+
+function buildLpPreviewHtml() {
+  var f = _lastOutputDraft.fields || {};
+  var esc = escapeHtml;
+  var headline = f.firstView || f.headline;
+  var sectionDefs = [
+    ['problem', '悩み・課題'], ['solution', '解決策'], ['benefits', 'ベネフィット'],
+    ['proof', '実績・信頼'], ['flow', 'ご利用の流れ'], ['faq', 'よくある質問'],
+  ];
+  var sectionsHtml = sectionDefs.map(function(pair) {
+    var val = f[pair[0]];
+    if (!val) return '';
+    var text = Array.isArray(val) ? val.join(' / ') : String(val);
+    return '<div class="oe-lp-section"><div class="oe-lp-section-label">' + pair[1] + '</div>' + esc(text.slice(0, 200)) + (text.length > 200 ? '…' : '') + '</div>';
+  }).join('');
+  if (!sectionsHtml && Array.isArray(f.sections) && f.sections.length > 0) {
+    sectionsHtml = f.sections.slice(0, 5).map(function(s, i) {
+      return '<div class="oe-lp-section"><div class="oe-lp-section-label">セクション ' + (i + 1) + '</div>' + esc(String(s).slice(0, 200)) + '</div>';
+    }).join('');
+  }
+  return '<div class="oe-lp-mock">'
+    + '<div class="oe-lp-browser"><span class="oe-lp-dot"></span><span class="oe-lp-dot"></span><span class="oe-lp-dot"></span></div>'
+    + '<div class="oe-lp-hero"><div class="oe-lp-headline">' + (headline ? esc(headline) : '<span class="oe-empty-val">ヘッドライン未生成</span>') + '</div></div>'
+    + (sectionsHtml || '<div class="oe-preview-empty-note">セクション未生成</div>')
+    + '<div class="oe-lp-cta-wrap">' + (f.cta ? '<span class="oe-lp-cta-btn">' + esc(f.cta) + '</span>' : '<span class="oe-empty-val">CTA未生成</span>') + '</div>'
+    + '</div>';
+}
+
+function buildFlyerPreviewHtml() {
+  var f = _lastOutputDraft.fields || {};
+  var esc = escapeHtml;
+  var catchcopy = f.catchcopy || f.subheadline;
+  return '<div class="oe-flyer-mock">'
+    + '<div class="oe-flyer-catch">' + (catchcopy ? esc(catchcopy) : '<span class="oe-empty-val">キャッチコピー未生成</span>') + '</div>'
+    + (f.subheadline && f.catchcopy ? '<div class="oe-flyer-sub">' + esc(f.subheadline) + '</div>' : '')
+    + '<div class="oe-flyer-img-ph">' + (f.imageInstruction ? esc(String(f.imageInstruction).slice(0, 60)) : '画像イメージ') + '</div>'
+    + (f.offer ? '<div class="oe-flyer-offer">🎁 ' + esc(f.offer) + '</div>' : (f.proof ? '<div class="oe-flyer-offer">' + esc(f.proof) + '</div>' : ''))
+    + ((f.area || f.contact) ? '<div class="oe-flyer-contact">' + esc([f.area, f.contact].filter(Boolean).join(' ／ ')) + '</div>' : '')
+    + '</div>';
+}
+
+function buildPdfPreviewHtml() {
+  var f = _lastOutputDraft.fields || {};
+  var esc = escapeHtml;
+  var sections = Array.isArray(f.sections) ? f.sections : [];
+  var body = f.summary || f.body;
+  var secHtml = sections.slice(0, 4).map(function(s, i) {
+    return '<div class="oe-pdf-sec-title">' + (i + 1) + '. セクション</div><div class="oe-pdf-sec-body">' + esc(String(s).slice(0, 160)) + (String(s).length > 160 ? '…' : '') + '</div>';
+  }).join('');
+  return '<div class="oe-pdf-mock">'
+    + '<div class="oe-pdf-title">' + (f.title ? esc(f.title) : '<span class="oe-empty-val">タイトル未生成</span>') + '</div>'
+    + (body ? '<div class="oe-pdf-sec-body">' + esc(String(body).slice(0, 200)) + (String(body).length > 200 ? '…' : '') + '</div>' : '')
+    + (secHtml || '<div class="oe-preview-empty-note">セクション未生成</div>')
+    + '</div>';
+}
+
+function buildHtmlPreviewHtml() {
+  var f = _lastOutputDraft.fields || {};
+  var esc = escapeHtml;
+  if (f.html && String(f.html).trim()) {
+    return '<div class="oe-html-frame-wrap"><iframe class="oe-html-frame" sandbox="" srcdoc="' + _escSrcdoc(f.html) + '"></iframe></div>';
+  }
+  var sections = Array.isArray(f.sections) ? f.sections : [];
+  var secHtml = sections.slice(0, 5).map(function(s, i) {
+    return '<div class="oe-lp-section"><div class="oe-lp-section-label">セクション ' + (i + 1) + '</div>' + esc(String(s).slice(0, 200)) + '</div>';
+  }).join('');
+  return '<div class="oe-lp-mock">'
+    + '<div class="oe-lp-browser"><span class="oe-lp-dot"></span><span class="oe-lp-dot"></span><span class="oe-lp-dot"></span></div>'
+    + (f.copy ? '<div class="oe-lp-section">' + esc(String(f.copy).slice(0, 200)) + '</div>' : '')
+    + (secHtml || '<div class="oe-preview-empty-note">HTML未生成（Leader Finalに構造・コピーを含めて再依頼すると更新されます）</div>')
+    + '</div>';
+}
+
+function buildVideoPreviewHtml() {
+  var f = _lastOutputDraft.fields || {};
+  var esc = escapeHtml;
+  var script = f.script || '';
+  var metaParts = [];
+  if (f.duration)   metaParts.push('⏱ ' + f.duration);
+  if (f.musicMood)  metaParts.push('🎵 ' + f.musicMood);
+  if (f.ending)     metaParts.push('🎬 ' + f.ending);
+  return '<div class="oe-vid-phone">'
+    + '<div class="oe-vid-tag">' + (f.duration ? esc(f.duration) : '尺未設定') + '</div>'
+    + '<div class="oe-vid-script">' + (script ? esc(String(script).slice(0, 220)) + (String(script).length > 220 ? '…' : '') : '<span class="oe-empty-val">台本未生成</span>') + '</div>'
+    + '<div class="oe-vid-meta">' + (metaParts.length ? esc(metaParts.join(' / ')) : '') + (f.cta ? (metaParts.length ? '<br>' : '') + 'CTA: ' + esc(f.cta) : '') + '</div>'
+    + '</div>';
+}
+
+// Phase48-4: Preview汎用ディスパッチャー（Decision 022: Preview + Package Qualityスコアを併せて表示）
+function buildOutputPreviewHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var type = _lastOutputDraft.type;
+  if (OUTPUT_PREVIEW_TYPES.indexOf(type) === -1) return '';
+
+  var inner;
+  switch (type) {
+    case OUTPUT_TYPES.INSTAGRAM_CAROUSEL: inner = buildInstagramCarouselPreviewHtml(); break;
+    case OUTPUT_TYPES.LP:                 inner = buildLpPreviewHtml(); break;
+    case OUTPUT_TYPES.FLYER:              inner = buildFlyerPreviewHtml(); break;
+    case OUTPUT_TYPES.PDF:
+    case OUTPUT_TYPES.DOCUMENT:           inner = buildPdfPreviewHtml(); break;
+    case OUTPUT_TYPES.HTML:               inner = buildHtmlPreviewHtml(); break;
+    case OUTPUT_TYPES.TIKTOK_VIDEO:
+    case OUTPUT_TYPES.YOUTUBE_SHORTS:     inner = buildVideoPreviewHtml(); break;
+    default: return '';
+  }
+
+  var def = getOutputTypeDefinition(type);
+  var icon = def ? def.icon : '🖼';
+  var label = def ? def.label : type;
+  var q = _lastOutputDraft.packageQuality || evaluateOutputPackageCompleteness(_lastOutputDraft);
+  var badgeHtml = (q && q.status) ? '<span class="oe-preview-badge ' + q.status + '">' + q.score + '点</span>' : '';
+
+  return '<div class="oe-preview-section">'
+    + badgeHtml
+    + '<div class="oe-preview-title">🖼 Preview — ' + icon + ' ' + label + '</div>'
+    + inner
+    + '</div>';
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -23395,6 +23617,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
+    + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
