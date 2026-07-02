@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-5完了）
+> 更新日: 2026-07-02（Phase48-1完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-5 完了**
-- 現在バージョン: **v1.00-phase47-5**
+- 現在フェーズ: **Phase48-1 完了**
+- 現在バージョン: **v1.00-phase48-1**
 
 ---
 
@@ -329,6 +329,25 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 
 ---
 
+# Phase48（成果物品質強化）
+
+### Phase48-1: Output Package Quality Checklist ✅
+- `index.html`
+  - `OUTPUT_PACKAGE_QUALITY_VERSION = '1.0.0'`
+  - `OUTPUT_PACKAGE_QUALITY_TYPE_MAP` — 実際のOUTPUT_TYPE_DEFINITIONS（13種）→ チェックリストカテゴリ（instagram/video/flyer/lp/pdf/html/generic）の対応。存在しない型名（video_script/proposal/estimate等）は追加せず、実在する型のみ対応
+  - `OUTPUT_PACKAGE_QUALITY_CHECKS` — カテゴリ別チェック項目定義。各項目は`d.fields`内の候補キー（fieldKeys）で存在確認。fieldKeysが空の項目は現行テンプレートに対応フィールドが存在しないため常に「未検出」として扱う（Phase48-2のテンプレート拡張候補として活用）
+  - `evaluateOutputPackageCompleteness(draft)` 追加 — version/outputType/category/score/status/missingItems/completedItems/recommendations/nextActionsを返却
+  - score: 0〜100（完成項目数/全項目数）、status: 90以上=complete / 75以上=almost_ready / 50以上=needs_work / 49以下=insufficient
+  - `buildOutputPackageQualityHtml()` — Output Engineパネル内「✅ Output Package Quality」表示、`renderOutputEnginePanel()`のbuild chainへ追加
+  - Export: `appendOutputPackageQualityToExportMarkdown/Json()` をserializeOutputDraft()のMarkdown/JSON両方に接続
+- ロジック検証（Node vm実行）: instagram_carousel部分入力→30点(insufficient)、全schema埋まった状態→70点(needs_work、targetAudience/benefit/saveSharePromptがテンプレート未対応のため上限)、pdf→57点、未知の型→genericへフォールバック、ドラフト未生成→0点で正常動作を確認
+- 成果物生成ロジックの変更なし（品質チェックのみ追加）。画像/動画生成API・SNS投稿機能・PDF生成ライブラリ・HTML自動保存機能は追加していない
+- モデル変更・Provider構成変更は一切なし
+- 既知の発見: 複数の成果物タイプでチェック項目の一部（CTA等）が現行テンプレートに対応フィールドを持たないことが判明（例: flyer/pdf/html/videoにCTA用フィールドなし）。Phase48-2の成果物テンプレート強化で対応検討
+- Git: Phase48-1 output package quality / Tag: v1.00-phase48-1
+
+---
+
 # v1.0まで
 
 ☑ Workflow Live完成（Phase43）
@@ -360,6 +379,7 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 ☑ Claude Quality History / 時系列品質監視（Phase47-4）
 ☑ Claude APIコスト最適化トラック v1.00 Stable確定（Phase47-S）
 ☑ Claude Quality History永続化（Phase47-5）
+☑ Output Package Quality Checklist（Phase48-1）
 □ v1.0正式版（Instagram/動画/チラシ/LP/PDF/HTML完成品生成・Company Memory永続化が未完了のため引き続き未達成）
 
 ---

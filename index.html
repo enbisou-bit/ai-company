@@ -21856,6 +21856,226 @@ function getOutputTypeDefinition(type) {
   return OUTPUT_TYPE_DEFINITIONS.find(function(d) { return d.id === type; }) || null;
 }
 
+// ══════════════════════════════════════════════════
+// Phase48-1: Output Package Quality Checklist
+// 成果物ごとの不足要素を見える化する（生成ロジックは変更しない・追加のみ）
+// ══════════════════════════════════════════════════
+
+const OUTPUT_PACKAGE_QUALITY_VERSION = '1.0.0';
+
+// 実際のOUTPUT_TYPE_DEFINITIONS（13種）→ チェックリストカテゴリの対応
+// instagram_carousel/flyer/lp/pdf/html は実際の型名と一致。動画系(tiktok_video/youtube_shorts/video_prompt)は「video」、
+// それ以外（powerpoint/excel/image_prompt/document）は最も近いカテゴリへ対応させる（新しい型は追加しない）
+const OUTPUT_PACKAGE_QUALITY_TYPE_MAP = {
+  instagram_carousel: 'instagram',
+  instagram_post:     'instagram',
+  tiktok_video:        'video',
+  youtube_shorts:      'video',
+  video_prompt:        'video',
+  flyer:               'flyer',
+  lp:                  'lp',
+  pdf:                 'pdf',
+  html:                'html',
+  powerpoint:          'pdf',
+  excel:               'generic',
+  image_prompt:        'generic',
+  document:            'generic',
+};
+
+// チェック項目定義。fieldKeys は d.fields 内で存在チェックする候補キー（いずれか1つでも埋まっていれば充足）。
+// fieldKeys が空配列の項目は、現在の成果物テンプレート（OUTPUT_TYPE_DEFINITIONS.outputFields）に対応フィールドが
+// 存在しないため常に「未検出」として扱う（Phase48-2の成果物テンプレート強化の検討材料として活用する）
+const OUTPUT_PACKAGE_QUALITY_CHECKS = {
+  instagram: [
+    { key: 'hook',            label: 'フック（Hook）',     fieldKeys: ['slides'] },
+    { key: 'slideTitles',     label: 'スライドタイトル',   fieldKeys: ['slides'] },
+    { key: 'slideBody',       label: 'スライド本文',       fieldKeys: ['slides'] },
+    { key: 'cta',             label: 'CTA',                fieldKeys: ['cta'] },
+    { key: 'caption',         label: 'キャプション',       fieldKeys: ['caption'] },
+    { key: 'hashtags',        label: 'ハッシュタグ',       fieldKeys: ['hashtags'] },
+    { key: 'imagePrompts',    label: '画像生成プロンプト', fieldKeys: ['imagePrompts', 'imagePrompt'] },
+    { key: 'targetAudience',  label: 'ターゲット層',       fieldKeys: [] },
+    { key: 'benefit',         label: 'ベネフィット',       fieldKeys: [] },
+    { key: 'saveSharePrompt', label: '保存・シェア誘導',   fieldKeys: [] },
+  ],
+  video: [
+    { key: 'hook',          label: 'フック（Hook）',     fieldKeys: ['script'] },
+    { key: 'sceneList',     label: 'シーン構成',         fieldKeys: ['script'] },
+    { key: 'narration',     label: 'ナレーション',       fieldKeys: ['script'] },
+    { key: 'visualPrompts', label: '映像生成プロンプト', fieldKeys: ['videoPrompt', 'prompt'] },
+    { key: 'motionPrompts', label: 'モーション指示',     fieldKeys: ['videoPrompt', 'prompt'] },
+    { key: 'caption',       label: 'キャプション',       fieldKeys: ['captions', 'description'] },
+    { key: 'cta',           label: 'CTA',                fieldKeys: [] },
+    { key: 'duration',      label: '尺（Duration）',     fieldKeys: ['duration'] },
+    { key: 'musicMood',     label: '音楽・雰囲気指示',   fieldKeys: [] },
+    { key: 'ending',        label: 'エンディング',       fieldKeys: [] },
+  ],
+  flyer: [
+    { key: 'headline',          label: 'ヘッドライン',     fieldKeys: ['catchcopy'] },
+    { key: 'subheadline',       label: 'サブヘッドライン', fieldKeys: [] },
+    { key: 'offer',             label: 'オファー',         fieldKeys: ['offer'] },
+    { key: 'proof',             label: '実績・信頼要素',   fieldKeys: ['body'] },
+    { key: 'area',              label: '対応エリア',       fieldKeys: [] },
+    { key: 'cta',               label: 'CTA',              fieldKeys: [] },
+    { key: 'layoutInstruction', label: 'レイアウト指示',   fieldKeys: ['designNotes'] },
+    { key: 'imageInstruction',  label: '画像指示',         fieldKeys: ['designNotes'] },
+    { key: 'contact',           label: '連絡先',           fieldKeys: [] },
+  ],
+  lp: [
+    { key: 'firstView',     label: 'ファーストビュー', fieldKeys: ['headline'] },
+    { key: 'problem',       label: '課題提起',         fieldKeys: ['sections'] },
+    { key: 'solution',      label: '解決策',           fieldKeys: ['sections'] },
+    { key: 'benefits',      label: 'ベネフィット',     fieldKeys: ['sections'] },
+    { key: 'proof',         label: '実績・信頼要素',   fieldKeys: ['sections'] },
+    { key: 'flow',          label: 'ご利用の流れ',     fieldKeys: ['sections'] },
+    { key: 'faq',           label: 'FAQ',              fieldKeys: ['sections'] },
+    { key: 'cta',           label: 'CTA',              fieldKeys: ['cta'] },
+    { key: 'htmlStructure', label: 'HTML構造',         fieldKeys: ['html'] },
+  ],
+  pdf: [
+    { key: 'title',             label: 'タイトル',       fieldKeys: ['title'] },
+    { key: 'summary',           label: 'サマリー',       fieldKeys: ['summary'] },
+    { key: 'sections',          label: '構成セクション', fieldKeys: ['sections'] },
+    { key: 'visualInstruction', label: 'ビジュアル指示', fieldKeys: [] },
+    { key: 'proof',             label: '実績・根拠',     fieldKeys: ['sections'] },
+    { key: 'cta',               label: 'CTA',            fieldKeys: [] },
+    { key: 'nextAction',        label: '次のアクション', fieldKeys: [] },
+  ],
+  html: [
+    { key: 'structure',         label: '構造',                 fieldKeys: ['htmlStructure', 'html'] },
+    { key: 'sections',          label: 'セクション',           fieldKeys: ['sections'] },
+    { key: 'cta',               label: 'CTA',                  fieldKeys: [] },
+    { key: 'responsiveNote',    label: 'レスポンシブ対応メモ', fieldKeys: [] },
+    { key: 'copyBlocks',        label: 'コピーブロック',       fieldKeys: ['copy'] },
+    { key: 'visualInstruction', label: 'ビジュアル指示',       fieldKeys: [] },
+  ],
+  generic: [
+    { key: 'title',      label: 'タイトル',       fieldKeys: ['title'] },
+    { key: 'summary',    label: 'サマリー',       fieldKeys: ['summary', 'body'] },
+    { key: 'cta',        label: 'CTA',            fieldKeys: ['cta'] },
+    { key: 'nextAction', label: '次のアクション', fieldKeys: [] },
+  ],
+};
+
+// missingItem.key → 改善提案文
+const OUTPUT_PACKAGE_QUALITY_RECOMMENDATIONS = {
+  hook: 'フック（冒頭の惹きつけ要素）が不足している可能性があります',
+  slideTitles: 'スライドタイトルの明確化を検討してください',
+  slideBody: 'スライド本文の充実を検討してください',
+  cta: 'CTAが不足しています',
+  caption: 'キャプションが不足しています',
+  hashtags: 'ハッシュタグが不足しています',
+  imagePrompts: '画像生成プロンプトが不足しています',
+  targetAudience: 'ターゲット層の明記を検討してください',
+  benefit: 'ベネフィットの明記を検討してください',
+  saveSharePrompt: '保存・シェアを促す一文の追加を検討してください',
+  sceneList: 'シーン構成が弱い可能性があります',
+  narration: 'ナレーションの充実を検討してください',
+  visualPrompts: '映像生成プロンプトが不足しています',
+  motionPrompts: 'モーション指示の追加を検討してください',
+  duration: '尺（Duration）の明記を検討してください',
+  musicMood: '音楽・雰囲気の指示を検討してください',
+  ending: 'エンディングの明記を検討してください',
+  headline: 'ヘッドラインの強化を検討してください',
+  subheadline: 'サブヘッドラインの追加を検討してください',
+  offer: 'オファー内容の明記を検討してください',
+  proof: '実績・信頼要素の追加を検討してください',
+  area: '対応エリアの明記を検討してください',
+  layoutInstruction: 'レイアウト指示の追加を検討してください',
+  imageInstruction: '画像指示の追加を検討してください',
+  contact: '連絡先の明記を検討してください',
+  firstView: 'ファーストビューの強化を検討してください',
+  problem: '課題提起の明記を検討してください',
+  solution: '解決策の明記を検討してください',
+  benefits: 'ベネフィットの明記を検討してください',
+  flow: 'ご利用の流れの明記を検討してください',
+  faq: 'FAQの追加を検討してください',
+  htmlStructure: 'HTML構造が不足しています',
+  structure: 'HTML構造が不足しています',
+  responsiveNote: 'レスポンシブ対応メモの追加を検討してください',
+  copyBlocks: 'コピーブロックの追加を検討してください',
+  visualInstruction: 'ビジュアル指示が不足しています',
+  title: 'タイトルの明記を検討してください',
+  summary: 'サマリーの追加を検討してください',
+  sections: '構成が弱い可能性があります',
+  nextAction: '次のアクション（Next Action）の明記を検討してください',
+};
+
+function _outputPackageHasField(fields, key) {
+  if (!fields) return false;
+  var v = fields[key];
+  if (v === undefined || v === null) return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === 'string') return v.trim().length > 0;
+  return !!v;
+}
+
+// Output Package（成果物ドラフト）の完成度チェックリスト評価
+// draft省略時は _lastOutputDraft を使用。生成ロジック自体は変更せず、既存 d.fields の有無を確認するのみ
+function evaluateOutputPackageCompleteness(draft) {
+  var d = draft || _lastOutputDraft;
+  if (!d || !d.type) {
+    return {
+      version: OUTPUT_PACKAGE_QUALITY_VERSION,
+      outputType: null,
+      category: null,
+      score: 0,
+      status: 'insufficient',
+      missingItems: [],
+      completedItems: [],
+      recommendations: ['成果物ドラフトが未生成のためチェックできません'],
+      nextActions: ['Workflowを実行して成果物を生成してください'],
+    };
+  }
+  var category = OUTPUT_PACKAGE_QUALITY_TYPE_MAP[d.type] || 'generic';
+  var checks    = OUTPUT_PACKAGE_QUALITY_CHECKS[category] || OUTPUT_PACKAGE_QUALITY_CHECKS.generic;
+  var fields    = d.fields || {};
+
+  var completedItems = [];
+  var missingItems    = [];
+  checks.forEach(function(c) {
+    var present = c.fieldKeys.some(function(fk) { return _outputPackageHasField(fields, fk); });
+    if (present) {
+      completedItems.push({ key: c.key, label: c.label });
+    } else {
+      missingItems.push({ key: c.key, label: c.label, hasSchemaField: c.fieldKeys.length > 0 });
+    }
+  });
+
+  var score = checks.length > 0 ? Math.round((completedItems.length / checks.length) * 100) : 0;
+  var status;
+  if (score >= 90) status = 'complete';
+  else if (score >= 75) status = 'almost_ready';
+  else if (score >= 50) status = 'needs_work';
+  else status = 'insufficient';
+
+  var recommendations = missingItems.map(function(m) {
+    return OUTPUT_PACKAGE_QUALITY_RECOMMENDATIONS[m.key] || (m.label + 'が不足しています');
+  });
+
+  var nextActions = [];
+  if (status === 'complete') {
+    nextActions.push('このまま最終成果物として利用できます');
+  } else {
+    nextActions.push('不足項目を確認し、Writer / Reviewer / Strategyへ追記を依頼してください');
+    if (missingItems.some(function(m) { return !m.hasSchemaField; })) {
+      nextActions.push('一部項目は現在の成果物テンプレートに対応フィールドがありません（Phase48-2でテンプレート拡張を検討）');
+    }
+  }
+
+  return {
+    version: OUTPUT_PACKAGE_QUALITY_VERSION,
+    outputType: d.type,
+    category: category,
+    score: score,
+    status: status,
+    missingItems: missingItems,
+    completedItems: completedItems,
+    recommendations: recommendations,
+    nextActions: nextActions,
+  };
+}
+
 function createOutputDraft(type, sourceText) {
   var def = getOutputTypeDefinition(type);
   if (!def) return null;
@@ -22391,6 +22611,33 @@ function buildGenericPackageHtml() {
     + '</div>';
 }
 
+// Phase48-1: Output Package Quality Export
+function appendOutputPackageQualityToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var q = evaluateOutputPackageCompleteness(_lastOutputDraft);
+  if (!q || !q.outputType) return;
+  lines.push('');
+  lines.push('## Output Package Quality (Phase48-1)');
+  lines.push('- Output Type: ' + q.outputType + ' / Score: ' + q.score + ' / Status: ' + q.status);
+  lines.push('- Completed: ' + (q.completedItems || []).map(function(c) { return c.label; }).join(', '));
+  lines.push('- Missing: ' + (q.missingItems || []).map(function(m) { return m.label; }).join(', '));
+  if (q.recommendations && q.recommendations.length) {
+    lines.push('- Recommendations:');
+    q.recommendations.forEach(function(r) { lines.push('  - ' + r); });
+  }
+  if (q.nextActions && q.nextActions.length) {
+    lines.push('- Next Actions:');
+    q.nextActions.forEach(function(n) { lines.push('  - ' + n); });
+  }
+}
+
+function appendOutputPackageQualityToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var q = evaluateOutputPackageCompleteness(_lastOutputDraft);
+  if (!q || !q.outputType) return;
+  payload.outputPackageQualityPhase48_1 = q;
+}
+
 // Phase44-7: 成果物シリアライズ
 function serializeOutputDraft(format) {
   if (!_lastOutputDraft) return '';
@@ -22413,6 +22660,7 @@ function serializeOutputDraft(format) {
     appendImprovementToExportJson(jsonObj);
     appendCompareLearningToExportJson(jsonObj);
     appendClaudeQualityHistoryToExportJson(jsonObj);
+    appendOutputPackageQualityToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -22639,6 +22887,7 @@ function serializeOutputDraft(format) {
   appendImprovementToExportMarkdown(mdLines);
   appendCompareLearningToExportMarkdown(mdLines);
   appendClaudeQualityHistoryToExportMarkdown(mdLines);
+  appendOutputPackageQualityToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -22700,6 +22949,49 @@ function buildQualityScoreHtml() {
     + (strengthsHtml ? '<div class="oe-quality-sub">Strengths</div><ul class="oe-quality-list">' + strengthsHtml + '</ul>' : '')
     + (improvHtml    ? '<div class="oe-quality-sub">Improvements</div><ul class="oe-quality-list">' + improvHtml + '</ul>' : '')
     + (learnHtml     ? '<div class="oe-quality-sub">Learning</div><ul class="oe-quality-list">' + learnHtml + '</ul>' : '')
+    + '</div>';
+}
+
+// Phase48-1: Output Package Quality Checklist HTML生成
+function buildOutputPackageQualityHtml() {
+  if (!_lastOutputDraft) return '';
+  var esc = escapeHtml;
+  var q   = evaluateOutputPackageCompleteness(_lastOutputDraft);
+  if (!q || !q.outputType) return '';
+
+  var statusMeta = {
+    complete:      { label: 'COMPLETE',      color: '#5ddb8e' },
+    almost_ready:  { label: 'ALMOST READY',  color: '#8fd0ff' },
+    needs_work:    { label: 'NEEDS WORK',    color: '#f0b840' },
+    insufficient:  { label: 'INSUFFICIENT',  color: '#e06060' },
+  };
+  var meta = statusMeta[q.status] || statusMeta.needs_work;
+
+  var completedHtml = (q.completedItems || []).map(function(c) {
+    return '<span class="oe-metric-chip" style="color:#5ddb8e;">✓ ' + esc(c.label) + '</span>';
+  }).join('');
+
+  var missingHtml = (q.missingItems || []).map(function(m) {
+    return '<span class="oe-metric-chip" style="color:#e06060;">✗ ' + esc(m.label) + (m.hasSchemaField ? '' : ' (未対応)') + '</span>';
+  }).join('');
+
+  var recommendHtml = (q.recommendations || []).map(function(r) { return '<li>' + esc(r) + '</li>'; }).join('');
+  var nextHtml       = (q.nextActions || []).map(function(n) { return '<li>' + esc(n) + '</li>'; }).join('');
+
+  var typeDef = getOutputTypeDefinition(q.outputType);
+  var typeLabel = typeDef ? typeDef.label : q.outputType;
+
+  return '<div class="oe-quality-section">'
+    + '<div class="oe-quality-title">✅ Output Package Quality <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Phase48-1</span></div>'
+    + '<div class="oe-status-sub">Output Type: <strong style="color:#c89ef2;">' + esc(typeLabel) + '</strong></div>'
+    + '<div class="oe-quality-overall">'
+    +   '<div class="oe-quality-score">' + q.score + '</div>'
+    +   '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">' + meta.label + '</span>'
+    + '</div>'
+    + (completedHtml ? '<div class="oe-quality-sub">Completed Items</div><div class="oe-quality-metrics">' + completedHtml + '</div>' : '')
+    + (missingHtml   ? '<div class="oe-quality-sub">Missing Items</div><div class="oe-quality-metrics">' + missingHtml + '</div>' : '')
+    + (recommendHtml ? '<div class="oe-quality-sub">Recommendations</div><ul class="oe-quality-list">' + recommendHtml + '</ul>' : '')
+    + (nextHtml      ? '<div class="oe-quality-sub">Next Actions</div><ul class="oe-quality-list">' + nextHtml + '</ul>' : '')
     + '</div>';
 }
 
@@ -22922,6 +23214,7 @@ function renderOutputEnginePanel() {
     + detectionHtml
     + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
+    + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
