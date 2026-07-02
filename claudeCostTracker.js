@@ -5,6 +5,8 @@ const path = require('path');
 
 const STORAGE_PATH = path.join(__dirname, 'claude-cost-logs.json');
 const USD_TO_JPY   = 160;
+// Phase47-5: Claude Quality History永続化（既存JSON方式 / claude-cost-logs.jsonと同様のパターン）
+const CLAUDE_QUALITY_HISTORY_STORAGE_PATH = path.join(__dirname, 'claude-quality-history.json');
 
 const CLAUDE_PRICE_PER_1K = {
   'claude-sonnet-4-6': { input: 0.003,  output: 0.015  },
@@ -489,13 +491,42 @@ function buildClaudeQualityMonitor(compareData) {
 }
 
 // Phase47-4: Claude Quality History（時系列品質監視 / 表示のみ・モデル自動変更なし・追加のみ）
+// Phase47-5: 既存JSON方式で永続化（claude-quality-history.json / 新規DB作成なし）
 const CLAUDE_QUALITY_HISTORY_VERSION = '1.0.0';
 const CLAUDE_QUALITY_HISTORY_MAX = 20;
 let _claudeQualityHistory = [];
+let _claudeQualityHistoryLoaded = false;
+
+// Phase47-5: 起動時 or 初回アクセス時に一度だけディスクから復元（遅延ロード）
+function _ensureClaudeQualityHistoryLoaded() {
+  if (_claudeQualityHistoryLoaded) return;
+  _claudeQualityHistoryLoaded = true;
+  try {
+    if (fs.existsSync(CLAUDE_QUALITY_HISTORY_STORAGE_PATH)) {
+      const raw = fs.readFileSync(CLAUDE_QUALITY_HISTORY_STORAGE_PATH, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        _claudeQualityHistory = parsed.slice(-CLAUDE_QUALITY_HISTORY_MAX);
+      }
+    }
+  } catch (_e) {
+    // 読み込み失敗時は空配列のまま継続（既存機能を止めない）
+  }
+}
+
+// Phase47-5: recordClaudeQualityHistory() 実行時に自動保存
+function _saveClaudeQualityHistory() {
+  try {
+    fs.writeFileSync(CLAUDE_QUALITY_HISTORY_STORAGE_PATH, JSON.stringify(_claudeQualityHistory, null, 2), 'utf8');
+  } catch (_e) {
+    // 保存失敗時もアプリを止めない
+  }
+}
 
 // entry: { workflowId, outputType, model, overallScore, status, recommendation, cost, tokens }
 // provider は常に 'claude' 固定（Strategy/Writer/ReviewerはすべてClaude担当のため）
 function recordClaudeQualityHistory(entry) {
+  _ensureClaudeQualityHistoryLoaded();
   if (!entry || typeof entry.overallScore !== 'number') return null;
   const last = _claudeQualityHistory[_claudeQualityHistory.length - 1];
   // 短時間内の同一スコア再記録を防止（パネル再描画・連続fetch対策の重複防止のみ。新しい比較ロジックではない）
@@ -518,10 +549,12 @@ function recordClaudeQualityHistory(entry) {
   if (_claudeQualityHistory.length > CLAUDE_QUALITY_HISTORY_MAX) {
     _claudeQualityHistory.splice(0, _claudeQualityHistory.length - CLAUDE_QUALITY_HISTORY_MAX);
   }
+  _saveClaudeQualityHistory();
   return record;
 }
 
 function getClaudeQualityHistory() {
+  _ensureClaudeQualityHistoryLoaded();
   return _claudeQualityHistory.map((e) => ({ ...e }));
 }
 
@@ -529,6 +562,7 @@ function getClaudeQualityHistory() {
 const CLAUDE_QUALITY_TREND_VERSION = '1.0.0';
 
 function buildClaudeQualityTrend() {
+  _ensureClaudeQualityHistoryLoaded();
   const history = _claudeQualityHistory;
   const counts = { excellent: 0, good: 0, watch: 0, critical: 0 };
   let sum = 0, sampleCount = 0, maxScore = null, minScore = null;
@@ -555,6 +589,7 @@ function buildClaudeQualityTrend() {
 const CLAUDE_QUALITY_WARNING_VERSION = '1.0.0';
 
 function buildClaudeQualityWarning() {
+  _ensureClaudeQualityHistoryLoaded();
   const scored = _claudeQualityHistory.filter((h) => typeof h.overallScore === 'number');
   if (scored.length < 10) {
     return {

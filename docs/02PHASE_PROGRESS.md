@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-S v1.00 Stable確定）
+> 更新日: 2026-07-02（Phase47-5完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-S 完了（v1.00 Stable）**
-- 現在バージョン: **v1.00-stable**
+- 現在フェーズ: **Phase47-5 完了**
+- 現在バージョン: **v1.00-phase47-5**
 
 ---
 
@@ -299,7 +299,7 @@ Git: v0.96相当
   - `_lastClaudeCostResponse`をキャッシュし、Export時に最新の qualityHistory/qualityTrend/qualityWarning を利用
 - 動作確認: 高スコア5件→低スコア5件を連続投入し、Excellent:5/Watch:5・degradationDetected:true（33.3%低下）を確認。15件追加投入で20件キャップ・FIFO動作を確認
 - モデル変更・自動切替は一切なし（実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）。Provider構成変更なし
-- 既知の制限: 履歴はメモリ内のみでサーバー再起動によりリセットされる（永続化なし）
+- 既知の制限: 履歴はメモリ内のみでサーバー再起動によりリセットされる（永続化なし）→ Phase47-5でJSON永続化により解消
 - Git: Phase47-4 quality history / Tag: v1.00-phase47-4
 
 ### Phase47-S: v1.00 Stable確定 ✅
@@ -316,6 +316,16 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - dev-check 200/200/200
 - 修正ファイル: なし（不具合が見つからなかったため、コード変更は今回発生せず）
 - Git: Phase47-S v1.00 stable / Tag: v1.00-stable
+
+### Phase47-5: Claude Quality History永続化 ✅
+- `claudeCostTracker.js`
+  - `CLAUDE_QUALITY_HISTORY_STORAGE_PATH`（`claude-quality-history.json`・既存`claude-cost-logs.json`と同様のJSON永続化パターン、新規DB作成なし）
+  - `_ensureClaudeQualityHistoryLoaded()` — 遅延ロード。`recordClaudeQualityHistory()` / `buildClaudeQualityTrend()` / `buildClaudeQualityWarning()` / `getClaudeQualityHistory()` の各関数冒頭で呼び出し、初回アクセス時にディスクから復元
+  - `_saveClaudeQualityHistory()` — `recordClaudeQualityHistory()`実行時に自動でJSONファイルへ保存（最大20件・古いものから削除は既存仕様のまま維持）
+- `server.js` / `index.html` / Export: 変更なし（既存`/api/claude-cost`のqualityHistory/qualityTrend/qualityWarningが復元後データを返す。新規APIなし）
+- 動作確認: 3件記録→ファイル保存確認→dev-check再起動→GETのみ（recordを呼ばず）で3件復元・qualityTrend正常再計算を確認。さらに20件投入で永続化状態でも20件キャップ・FIFOが正常動作することを確認
+- モデル変更・自動切替は一切なし（実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）。Provider構成変更なし
+- Git: Phase47-5 quality history persistence / Tag: v1.00-phase47-5
 
 ---
 
@@ -349,6 +359,7 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 ☑ Claude Quality Monitor / Compare Intelligence連携（Phase47-3）
 ☑ Claude Quality History / 時系列品質監視（Phase47-4）
 ☑ Claude APIコスト最適化トラック v1.00 Stable確定（Phase47-S）
+☑ Claude Quality History永続化（Phase47-5）
 □ v1.0正式版（Instagram/動画/チラシ/LP/PDF/HTML完成品生成・Company Memory永続化が未完了のため引き続き未達成）
 
 ---
