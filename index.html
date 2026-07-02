@@ -5376,15 +5376,71 @@
     <button onclick="toggleCostPanel()">✕</button>
   </div>
   <div id="cost-panel-body">
-    <div class="cost-row"><span>本日</span><span id="cp-today">--</span>円</div>
-    <div class="cost-row"><span>今月</span><span id="cp-month">--</span>円</div>
+    <!-- 上部サマリー：OpenAI + Claude 合計 -->
+    <div class="cost-row"><span>本日合計</span><span id="cp-today">--</span>円</div>
+    <div class="cost-row"><span>今月合計</span><span id="cp-month">--</span>円</div>
     <div class="cost-row"><span>月額上限</span><span id="cp-limit">--</span>円</div>
     <div class="cost-row cost-row-remain"><span>残り</span><span id="cp-remain">--</span>円</div>
     <div class="cost-bar-wrap"><div id="cost-bar"></div></div>
-    <div class="cost-section-label">モデル別</div>
-    <div class="cost-row"><span>gpt-4.1-nano</span><span id="cp-nano">--</span>円</div>
-    <div class="cost-row"><span>gpt-4.1-mini</span><span id="cp-mini">--</span>円</div>
     <div id="cost-status"></div>
+    <!-- 非表示ID（後方互換 / fetchCost()が更新するが表示には使わない） -->
+    <span id="cp-nano" style="display:none;"></span>
+    <span id="cp-mini" style="display:none;"></span>
+    <!-- Phase47-1.5/1.6: Provider別内訳 -->
+    <div id="cp-provider-section">
+      <!-- OpenAI -->
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">🟢 OpenAI API <span style="font-size:8px;background:rgba(78,205,196,0.12);color:#4ecdc4;padding:1px 5px;border-radius:3px;">実測</span></div>
+      <div class="cost-row"><span>本日</span><span id="cp-oa-today">--</span>円</div>
+      <div class="cost-row"><span>今月</span><span id="cp-oa-month">--</span>円</div>
+      <div class="cost-row"><span style="color:rgba(255,255,255,0.45);">累計</span><span id="cp-oa-total" style="color:rgba(255,255,255,0.45);">--</span>円</div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">モデル別</div>
+      <div class="cost-row"><span style="font-size:10px;">gpt-4.1</span><span id="cp-oa-41">--</span>円</div>
+      <div class="cost-row"><span style="font-size:10px;">gpt-4.1-mini</span><span id="cp-oa-mini">--</span>円</div>
+      <div class="cost-row"><span style="font-size:10px;">gpt-4.1-nano</span><span id="cp-oa-nano">--</span>円</div>
+      <!-- Claude -->
+      <div class="cost-section-label" style="margin-top:10px;">🟣 Claude API <span style="font-size:8px;background:rgba(255,209,102,0.15);color:#ffd166;padding:1px 5px;border-radius:3px;">推定</span></div>
+      <div class="cost-row"><span>本日（推定）</span><span id="cp-cl-today">--</span>円</div>
+      <div class="cost-row"><span>今月（推定）</span><span id="cp-cl-month">--</span>円</div>
+      <div class="cost-row"><span style="color:rgba(255,255,255,0.45);">累計（推定）</span><span id="cp-cl-total" style="color:rgba(255,255,255,0.45);">--</span>円</div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">モデル割当</div>
+      <div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">Writer / Reviewer</span><span id="cp-cl-sonnet" style="font-size:9px;color:#c89ef2;">claude-sonnet-4-6</span></div>
+      <div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">Strategy</span><span id="cp-cl-opus" style="font-size:9px;color:#c89ef2;">claude-opus-4-8</span></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">トークン（本日）</div>
+      <div class="cost-row"><span style="font-size:10px;">入力</span><span id="cp-cl-in">--</span><span style="font-size:9px;color:var(--text-dim);"> tok</span></div>
+      <div class="cost-row"><span style="font-size:10px;">出力</span><span id="cp-cl-out">--</span><span style="font-size:9px;color:var(--text-dim);"> tok</span></div>
+      <div class="cost-row"><span style="font-size:10px;">今月入力</span><span id="cp-cl-in-month">--</span><span style="font-size:9px;color:var(--text-dim);"> tok</span></div>
+      <div class="cost-row"><span style="font-size:10px;">今月出力</span><span id="cp-cl-out-month">--</span><span style="font-size:9px;color:var(--text-dim);"> tok</span></div>
+      <div class="cost-row"><span style="font-size:10px;">リクエスト（今日）</span><span id="cp-cl-req">--</span><span style="font-size:9px;color:var(--text-dim);"> 回</span></div>
+      <!-- 非表示互換ID -->
+      <span id="cp-total-today" style="display:none;"></span>
+      <span id="cp-total-month" style="display:none;"></span>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
+        ※ OpenAI: cost-logs.json 永続保存（実測値）<br>
+        ※ Claude: claude-cost-logs.json 永続保存（推定値）<br>
+        ※ 上部合計 = OpenAI実測 + Claude推定<br>
+        ※ Claude Code 利用料金は Anthropic ダッシュボードで確認
+      </div>
+    </div>
+    <!-- Phase47-2A: Claude Cost Analysis（分析専用パネル） -->
+    <div id="cp-analysis-section">
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">🔍 Claude Cost Analysis <span style="font-size:8px;background:rgba(200,158,242,0.15);color:#c89ef2;padding:1px 5px;border-radius:3px;">Phase47-2A</span></div>
+      <div class="cost-row"><span>総リクエスト数</span><span id="ca-total-requests">--</span>回</div>
+      <div class="cost-row"><span>総トークン数</span><span id="ca-total-tokens">--</span>tok</div>
+      <div class="cost-row"><span>総料金（累計）</span><span id="ca-total-cost">--</span>円</div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">モデル別料金 / トークン</div>
+      <div id="ca-by-model"></div>
+      <div class="cost-row"><span>最も料金が高いモデル</span><span id="ca-top-cost-model">--</span></div>
+      <div class="cost-row"><span>最も利用されているモデル</span><span id="ca-top-token-model">--</span></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">担当別利用状況</div>
+      <div id="ca-by-role"></div>
+      <div id="ca-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
+        ※ Phase47-2Aは分析のみ（モデル変更なし）<br>
+        ※ Provider構成変更なし<br>
+        ※ Claudeモデル変更なし<br>
+        ※ Phase47-2Bでモデル最適化予定
+      </div>
+    </div>
   </div>
 </div>
 
@@ -8354,6 +8410,149 @@ async function fetchCost() {
     const status = document.getElementById('cost-status');
     if (status) status.textContent = d.stopped ? '⚠️ API停止中' : '✅ 正常稼働中';
   } catch {}
+  // Phase47-1.5: Provider別パネル更新
+  updateCostProviderPanel().catch(function(){});
+}
+
+// Phase47-2A: Claude Cost Analysis表示（分析のみ / モデル変更なし）
+function renderClaudeCostAnalysis(analysis, usdToJpy) {
+  var byModelEl = document.getElementById('ca-by-model');
+  var byRoleEl  = document.getElementById('ca-by-role');
+  var warnEl    = document.getElementById('ca-warnings');
+  var _set = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  if (!analysis) {
+    _set('ca-total-requests', '--');
+    _set('ca-total-tokens', '--');
+    _set('ca-total-cost', '--');
+    _set('ca-top-cost-model', '--');
+    _set('ca-top-token-model', '--');
+    if (byModelEl) byModelEl.innerHTML = '';
+    if (byRoleEl) byRoleEl.innerHTML = '担当別判定なし';
+    if (warnEl) warnEl.textContent = '';
+    return;
+  }
+  _set('ca-total-requests', (analysis.totalRequests || 0).toLocaleString());
+  _set('ca-total-tokens', (analysis.totalTokens || 0).toLocaleString());
+  _set('ca-total-cost', Math.round((analysis.totalCost || 0) * usdToJpy).toLocaleString());
+  _set('ca-top-cost-model', analysis.topCostModel || '--');
+  _set('ca-top-token-model', analysis.topTokenModel || '--');
+
+  if (byModelEl) {
+    var rows = Object.keys(analysis.byModel || {}).map(function (model) {
+      var m = analysis.byModel[model];
+      var jpy = Math.round((m.costUsd || 0) * usdToJpy);
+      return '<div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">' + model + '</span><span>' + jpy + '円 / ' + (m.totalTokens || 0).toLocaleString() + 'tok / ' + (m.requests || 0) + '回</span></div>';
+    });
+    byModelEl.innerHTML = rows.join('');
+  }
+
+  if (byRoleEl) {
+    var roleKeys = Object.keys(analysis.byRole || {});
+    if (roleKeys.length === 0) {
+      byRoleEl.innerHTML = '担当別判定なし';
+    } else {
+      var roleRows = roleKeys.map(function (role) {
+        var r = analysis.byRole[role];
+        var jpy = Math.round((r.costUsd || 0) * usdToJpy);
+        return '<div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">' + role + '</span><span>' + jpy + '円 / ' + (r.totalTokens || 0).toLocaleString() + 'tok</span></div>'
+          + (r.note ? '<div style="font-size:8px;color:var(--text-dim);padding-left:2px;">' + r.note + '</div>' : '');
+      });
+      byRoleEl.innerHTML = roleRows.join('');
+    }
+  }
+
+  if (warnEl) {
+    warnEl.textContent = (analysis.analysisWarnings && analysis.analysisWarnings.length > 0)
+      ? '⚠ ' + analysis.analysisWarnings.join(' / ')
+      : '';
+  }
+}
+
+// Phase47-1.5/1.6: Provider別料金パネル更新（Claude永続データ対応）
+async function updateCostProviderPanel() {
+  var section = document.getElementById('cp-provider-section');
+  if (!section) return;
+  var _set = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  var USD_TO_JPY = 160;
+  try {
+    var results = await Promise.all([
+      fetch('/api/cost').then(function(r){ return r.json(); }).catch(function(){ return null; }),
+      fetch('/api/claude-cost').then(function(r){ return r.json(); }).catch(function(){ return null; }),
+      fetch('/api/claude-status').then(function(r){ return r.json(); }).catch(function(){ return null; }),
+    ]);
+    var oa = results[0];
+    var cc = results[1]; // 永続データ（Phase47-1.6）
+    var cs = results[2]; // インメモリ（フォールバック用）
+
+    var oaTodayJpy = 0, oaMonthJpy = 0;
+    if (oa && oa.ok) {
+      oaTodayJpy = parseFloat((oa.todayAmount || 0).toFixed(2));
+      oaMonthJpy = parseFloat((oa.monthlyAmount || 0).toFixed(2));
+      _set('cp-oa-today', oaTodayJpy.toFixed(2));
+      _set('cp-oa-month', oaMonthJpy.toFixed(2));
+      _set('cp-oa-total', ((oa.totalAmount || 0)).toFixed(2)); // Phase47-1.6 累計
+      _set('cp-oa-41',   ((oa.modelCosts && oa.modelCosts['gpt-4.1'])      || 0).toFixed(4));
+      _set('cp-oa-mini', ((oa.modelCosts && oa.modelCosts['gpt-4.1-mini']) || 0).toFixed(4));
+      _set('cp-oa-nano', ((oa.modelCosts && oa.modelCosts['gpt-4.1-nano']) || 0).toFixed(4));
+    }
+
+    // Claude: 永続データ優先、なければインメモリ
+    var clTodayJpy = 0, clMonthJpy = 0, clTotalJpy = 0;
+    var clSrc = (cc && cc.ok && cc.today && cc.today.requests > 0) ? cc : null;
+    if (clSrc) {
+      clTodayJpy = Math.round((clSrc.today && clSrc.today.costUsd || 0) * USD_TO_JPY);
+      clMonthJpy = Math.round((clSrc.month && clSrc.month.costUsd || 0) * USD_TO_JPY);
+      clTotalJpy = Math.round((clSrc.total && clSrc.total.costUsd || 0) * USD_TO_JPY);
+      _set('cp-cl-today',     clTodayJpy);
+      _set('cp-cl-month',     clMonthJpy);
+      _set('cp-cl-total',     clTotalJpy);
+      _set('cp-cl-in',        ((clSrc.today && clSrc.today.inputTokens  || 0)).toLocaleString());
+      _set('cp-cl-out',       ((clSrc.today && clSrc.today.outputTokens || 0)).toLocaleString());
+      _set('cp-cl-in-month',  ((clSrc.month && clSrc.month.inputTokens  || 0)).toLocaleString());
+      _set('cp-cl-out-month', ((clSrc.month && clSrc.month.outputTokens || 0)).toLocaleString());
+      _set('cp-cl-req',       (clSrc.today && clSrc.today.requests || 0));
+      // モデル別（永続）
+      var mToday = clSrc.modelToday || {};
+      var mMonth = clSrc.modelMonth || {};
+      var sonnetTodayJpy = Math.round(((mToday['claude-sonnet-4-6'] && mToday['claude-sonnet-4-6'].costUsd) || 0) * USD_TO_JPY);
+      var opusTodayJpy   = Math.round(((mToday['claude-opus-4-8']   && mToday['claude-opus-4-8'].costUsd)   || 0) * USD_TO_JPY);
+      var sonnetMonthJpy = Math.round(((mMonth['claude-sonnet-4-6'] && mMonth['claude-sonnet-4-6'].costUsd) || 0) * USD_TO_JPY);
+      var opusMonthJpy   = Math.round(((mMonth['claude-opus-4-8']   && mMonth['claude-opus-4-8'].costUsd)   || 0) * USD_TO_JPY);
+      var sonnetEl = document.getElementById('cp-cl-sonnet');
+      var opusEl   = document.getElementById('cp-cl-opus');
+      if (sonnetEl) sonnetEl.textContent = sonnetTodayJpy + '円 (今日) / ' + sonnetMonthJpy + '円 (今月)';
+      if (opusEl)   opusEl.textContent   = opusTodayJpy   + '円 (今日) / ' + opusMonthJpy   + '円 (今月)';
+    } else if (cs && cs.ok) {
+      // フォールバック: インメモリデータ
+      clTodayJpy = Math.round((cs.today && cs.today.costUsd || 0) * USD_TO_JPY);
+      clMonthJpy = Math.round((cs.month && cs.month.costUsd || 0) * USD_TO_JPY);
+      _set('cp-cl-today',     clTodayJpy + '（推定・非永続）');
+      _set('cp-cl-month',     clMonthJpy + '（推定・非永続）');
+      _set('cp-cl-total',     '—');
+      _set('cp-cl-in',        ((cs.today && cs.today.inputTokens  || 0)).toLocaleString());
+      _set('cp-cl-out',       ((cs.today && cs.today.outputTokens || 0)).toLocaleString());
+      _set('cp-cl-in-month',  ((cs.month && cs.month.inputTokens  || 0)).toLocaleString());
+      _set('cp-cl-out-month', ((cs.month && cs.month.outputTokens || 0)).toLocaleString());
+      _set('cp-cl-req',       (cs.today && cs.today.requests || 0));
+    }
+
+    // Phase47-2A: Claude Cost Analysis 表示
+    renderClaudeCostAnalysis(cc && cc.ok ? cc.analysis : null, USD_TO_JPY);
+
+    // 上部サマリー: OpenAI + Claude 合計で上書き
+    var totalTodayJpy = parseFloat((oaTodayJpy + clTodayJpy).toFixed(2));
+    var totalMonthJpy = parseFloat((oaMonthJpy + clMonthJpy).toFixed(2));
+    var limit = oa ? (oa.monthlyLimit || 1000) : 1000;
+    var remain = Math.max(limit - totalMonthJpy, 0).toFixed(2);
+    var pct = Math.min((totalMonthJpy / limit) * 100, 100).toFixed(1);
+    _set('cp-today',  totalTodayJpy.toFixed(2));
+    _set('cp-month',  totalMonthJpy.toFixed(2));
+    _set('cp-remain', remain);
+    var bar = document.getElementById('cost-bar');
+    if (bar) { bar.style.width = pct + '%'; bar.style.background = pct > 80 ? '#ff6b6b' : 'var(--accent)'; }
+    // ヘッダーボタン: 合計本日で統一
+    _set('cost-today', totalTodayJpy.toFixed(2));
+  } catch (_e) {}
 }
 
 function toggleCostPanel() {
@@ -20573,7 +20772,11 @@ function buildLeaderImprovementSummaryHtml() {
     return '<div style="font-size:9px;color:rgba(200,210,255,0.7);margin-bottom:2px;">' + esc(l) + '</div>';
   }).join('');
 
-  return wrap + lines + '</div>';
+  // Phase47-1: Learning通知（直近エントリがあれば表示）
+  var latestLearning = _compareLearningQueue && _compareLearningQueue[0] ? _compareLearningQueue[0] : null;
+  var notifyHtml = latestLearning ? buildLearningNotificationHtml(latestLearning) : '';
+
+  return wrap + lines + notifyHtml + '</div>';
 }
 
 // ── Export ─────────────────────────────────────────
@@ -20625,6 +20828,179 @@ function appendImprovementToExportJson(payload) {
     failureAnalysis:      buildCompareFailureAnalysis(),
     compareLearning:      buildCompareLearning(),
     leaderImprovementSummary: buildLeaderImprovementSummary(),
+  };
+}
+
+// ══════════════════════════════════════════════════
+// Phase47-1: Compare Learning Engine
+// Compare → Learning Queue 生成のみ（Knowledge昇格はPhase47-2）
+// ══════════════════════════════════════════════════
+
+const COMPARE_LEARNING_VERSION   = '1.0.0';
+const COMPARE_LEARNING_QUEUE_MAX = 100;
+
+const COMPARE_LEARNING_TYPE = {
+  SUCCESS:     'SUCCESS',
+  FAIL:        'FAIL',
+  QUALITY:     'QUALITY',
+  IMPROVEMENT: 'IMPROVEMENT',
+};
+
+let _compareLearningQueue = [];
+
+// ── Learning Type 自動判定 ──────────────────────────
+function classifyLearningType(overallScore, recommendations, failureFactors) {
+  var recs   = recommendations || [];
+  var fails  = failureFactors  || [];
+  var highFails = fails.filter(function(f) { return f.severity === 'high'; });
+
+  if (overallScore >= 90) return COMPARE_LEARNING_TYPE.SUCCESS;
+  if (overallScore <= 50) return COMPARE_LEARNING_TYPE.FAIL;
+  if (highFails.length >= 2 || recs.length >= 3) return COMPARE_LEARNING_TYPE.IMPROVEMENT;
+  return COMPARE_LEARNING_TYPE.QUALITY;
+}
+
+// ── createCompareLearning() ────────────────────────
+function createCompareLearning() {
+  console.log('[CLQ-create] createCompareLearning called. log.length=', (_knowledgeCompareLog||[]).length);
+  var log      = _knowledgeCompareLog || [];
+  var scores   = buildImprovementScores();
+  var analysis = buildCompareFailureAnalysis();
+  var intel    = analyzeCompareIntelligence();
+  var recs     = buildCompareRecommendations(intel);
+  var summary  = buildLeaderImprovementSummary();
+
+  if (log.length === 0) return null;
+
+  var latest = log[0];
+  var learningType = classifyLearningType(
+    latest.overallScore,
+    recs ? (recs.priorityItems || []) : [],
+    analysis ? (analysis.factors || []) : []
+  );
+
+  var entry = {
+    id:                 'cl47-' + Date.now(),
+    createdAt:          new Date().toISOString(),
+    version:            COMPARE_LEARNING_VERSION,
+    mode:               latest.mode               || '',
+    outputType:         latest.outputType          || 'unknown',
+    overallScore:       latest.overallScore        || 0,
+    winnerMode:         intel ? (intel.winnerMode  || null) : null,
+    hookScore:          scores ? (scores.hook      && scores.hook.score)      : null,
+    ctaScore:           scores ? (scores.cta       && scores.cta.score)       : null,
+    knowledgeScore:     scores ? (scores.knowledge && scores.knowledge.score) : null,
+    structureScore:     scores ? (scores.structure && scores.structure.score) : null,
+    imageScore:         scores ? (scores.images    && scores.images.score)    : null,
+    failureCategories:  analysis ? (analysis.factors || []).filter(function(f) { return f.severity !== 'low'; }).map(function(f) { return f.category; }) : [],
+    recommendations:    recs ? (recs.priorityItems || []).slice(0, 3) : [],
+    leaderSummary:      summary ? (summary.text || '') : '',
+    learningType:       learningType,
+    logCount:           log.length,
+  };
+
+  // FIFO: 先頭追加・末尾カット
+  _compareLearningQueue = [entry].concat(_compareLearningQueue).slice(0, COMPARE_LEARNING_QUEUE_MAX);
+
+  return entry;
+}
+
+// ── buildCompareLearningSummary() HTML ─────────────
+function buildCompareLearningSummaryHtml() {
+  var _clqLen = _compareLearningQueue ? _compareLearningQueue.length : -1;
+  console.log('[CLQ] buildCompareLearningSummaryHtml called. queue.length=', _clqLen);
+  var esc   = escapeHtml;
+  var queue = _compareLearningQueue || [];
+
+  var wrap = '<div id="oe-clq-section" style="margin-top:10px;padding:10px 12px;background:rgba(50,60,80,0.12);border:1px solid rgba(120,160,220,0.20);border-radius:8px;">'
+    + '<div style="font-size:10px;font-weight:700;color:rgba(160,200,255,0.9);margin-bottom:8px;">🧠 Compare Learning Queue v1</div>';
+
+  if (queue.length === 0) {
+    return wrap + '<div style="font-size:9px;color:rgba(255,255,255,0.3);">Workflowを実行するとLearningが生成されます。</div></div>';
+  }
+
+  // 件数カウント
+  var counts = { SUCCESS: 0, FAIL: 0, QUALITY: 0, IMPROVEMENT: 0 };
+  queue.forEach(function(e) { if (counts[e.learningType] !== undefined) counts[e.learningType]++; });
+
+  var typeColors = { SUCCESS: '#5ddb8e', FAIL: '#e06060', QUALITY: '#f0b840', IMPROVEMENT: '#80c8ff' };
+  var typeEmoji  = { SUCCESS: '✅', FAIL: '❌', QUALITY: '📈', IMPROVEMENT: '🔧' };
+
+  var countHtml = Object.keys(counts).map(function(t) {
+    var c = counts[t];
+    return '<span style="font-size:9px;margin-right:8px;color:' + typeColors[t] + ';">'
+      + typeEmoji[t] + ' ' + t + ': ' + c + '</span>';
+  }).join('');
+
+  // 最新5件
+  var recentHtml = queue.slice(0, 5).map(function(e, i) {
+    var tc = typeColors[e.learningType] || '#aaa';
+    var te = typeEmoji[e.learningType]  || '•';
+    return '<div style="font-size:8px;padding:3px 6px;margin-bottom:2px;background:rgba(255,255,255,0.04);border-radius:4px;border-left:2px solid ' + tc + ';">'
+      + '<span style="color:' + tc + ';font-weight:700;">' + te + ' ' + esc(e.learningType) + '</span>'
+      + ' <span style="color:rgba(200,210,255,0.6);">Score:' + e.overallScore + ' [' + esc(e.outputType) + '] ' + esc(e.mode) + '</span>'
+      + (e.failureCategories && e.failureCategories.length ? ' <span style="color:rgba(255,160,100,0.7);">⚠ ' + esc(e.failureCategories.join('/')) + '</span>' : '')
+      + '</div>';
+  }).join('');
+
+  var _clqResult = wrap
+    + '<div style="margin-bottom:7px;">' + countHtml + '</div>'
+    + '<div style="font-size:9px;color:rgba(255,255,255,0.35);margin-bottom:5px;">最新' + Math.min(queue.length, 5) + '件 / 合計' + queue.length + '件</div>'
+    + recentHtml
+    + '</div>';
+  console.log('[CLQ-RETURN] HTML length=', _clqResult.length, 'first80=', _clqResult.slice(0, 80));
+  return _clqResult;
+}
+
+// ── Leader 通知 HTML ───────────────────────────────
+function buildLearningNotificationHtml(entry) {
+  if (!entry) return '';
+  var tc = { SUCCESS: '#5ddb8e', FAIL: '#e06060', QUALITY: '#f0b840', IMPROVEMENT: '#80c8ff' };
+  var te = { SUCCESS: '✅', FAIL: '❌', QUALITY: '📈', IMPROVEMENT: '🔧' };
+  var c  = tc[entry.learningType] || '#aaa';
+  var e  = te[entry.learningType] || '•';
+  return '<div style="margin-top:6px;padding:5px 8px;background:rgba(40,60,40,0.15);border:1px solid ' + c + '44;border-radius:6px;font-size:8px;">'
+    + '<span style="color:' + c + ';font-weight:700;">📚 Learning Generated — ' + e + ' ' + escapeHtml(entry.learningType) + '</span>'
+    + ' <span style="color:rgba(200,220,200,0.6);">Score:' + entry.overallScore + ' / ' + escapeHtml(entry.outputType) + '</span>'
+    + '</div>';
+}
+
+// ── Export ─────────────────────────────────────────
+function appendCompareLearningToExportMarkdown(lines) {
+  var queue = _compareLearningQueue;
+  lines.push('');
+  lines.push('## Compare Learning Queue v1');
+  lines.push('version: ' + COMPARE_LEARNING_VERSION);
+
+  var counts = { SUCCESS: 0, FAIL: 0, QUALITY: 0, IMPROVEMENT: 0 };
+  queue.forEach(function(e) { if (counts[e.learningType] !== undefined) counts[e.learningType]++; });
+  lines.push('合計: ' + queue.length + '件 | SUCCESS:' + counts.SUCCESS + ' FAIL:' + counts.FAIL + ' QUALITY:' + counts.QUALITY + ' IMPROVEMENT:' + counts.IMPROVEMENT);
+  lines.push('');
+
+  if (queue.length > 0) {
+    lines.push('### 最新Learning（直近5件）');
+    queue.slice(0, 5).forEach(function(e, i) {
+      lines.push((i + 1) + '. [' + e.learningType + '] Score:' + e.overallScore + ' / ' + (e.outputType || '—') + ' / ' + (e.mode || '—'));
+      if (e.failureCategories && e.failureCategories.length) {
+        lines.push('   失敗要因: ' + e.failureCategories.join(', '));
+      }
+      if (e.recommendations && e.recommendations.length) {
+        lines.push('   推奨: ' + e.recommendations.slice(0,2).map(function(r){ return typeof r === 'string' ? r : (r.text || JSON.stringify(r)); }).join(' / '));
+      }
+    });
+  }
+}
+
+function appendCompareLearningToExportJson(payload) {
+  payload.compareLearningQueueV1 = {
+    version:    COMPARE_LEARNING_VERSION,
+    totalCount: _compareLearningQueue.length,
+    queue:      _compareLearningQueue.slice(0, 20),
+    counts: (function() {
+      var c = { SUCCESS: 0, FAIL: 0, QUALITY: 0, IMPROVEMENT: 0 };
+      _compareLearningQueue.forEach(function(e) { if (c[e.learningType] !== undefined) c[e.learningType]++; });
+      return c;
+    })(),
   };
 }
 
@@ -21245,6 +21621,9 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     renderWorkflowLive();
   }
 
+  // Phase47-1: Compare Learning Queue へ追加（Output Engine再描画前に実行）
+  try { createCompareLearning(); } catch(_cle) {}
+
   // Phase46-8: Output Engine の oe-body を常に更新（パネル開閉状態に関わらず）
   try { renderOutputEnginePanel(); } catch(_re) {}
 
@@ -21644,6 +22023,7 @@ function serializeOutputDraft(format) {
     appendCompareRecommendationToExportJson(jsonObj);
     appendCompareIntegrationCheckToExportJson(jsonObj);
     appendImprovementToExportJson(jsonObj);
+    appendCompareLearningToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -21868,6 +22248,7 @@ function serializeOutputDraft(format) {
   // Phase46-7: Compare Integration Check
   appendCompareIntegrationCheckToExportMarkdown(mdLines);
   appendImprovementToExportMarkdown(mdLines);
+  appendCompareLearningToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -22168,6 +22549,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildCompareFailureAnalysisHtml,   'FailureAnalysis')
     + _oeSafe(buildCompareLearningHtml,          'CompareLearning')
     + _oeSafe(buildLeaderImprovementSummaryHtml, 'LeaderImprovementSummary')
+    + _oeSafe(buildCompareLearningSummaryHtml,   'CompareLearningQueue')
     + _oeSafe(buildExportUiHtml,                 'ExportUi')
     + '<div>'
     + '<div class="oe-section-title">代表成果物タイプ</div>'
@@ -22177,6 +22559,27 @@ function renderOutputEnginePanel() {
     + '<div class="oe-section-title">成果物ステータス一覧</div>'
     + '<div class="oe-status-grid">' + statusChips + '</div>'
     + '</div>';
+  console.log('[OE-FINAL] body.innerHTML.length=', body.innerHTML.length, 'hasClq=', body.innerHTML.includes('Compare Learning Queue'));
+  // Phase47-1 debug: DOM直接診断
+  try {
+    var _clqSect = body.querySelector('#oe-clq-section');
+    if (_clqSect) {
+      var _clqCs = window.getComputedStyle(_clqSect);
+      var _clqParCs = window.getComputedStyle(_clqSect.parentElement);
+      console.log('[OE-CLQ-DOM] found. offsetHeight=', _clqSect.offsetHeight,
+        'clientHeight=', _clqSect.clientHeight,
+        'display=', _clqCs.display,
+        'visibility=', _clqCs.visibility,
+        'opacity=', _clqCs.opacity,
+        'maxHeight=', _clqCs.maxHeight,
+        'overflow=', _clqCs.overflow,
+        'parentDisplay=', _clqParCs.display,
+        'parentOverflow=', _clqParCs.overflow,
+        'parentMaxHeight=', _clqParCs.maxHeight);
+    } else {
+      console.log('[OE-CLQ-DOM] element #oe-clq-section not found in body');
+    }
+  } catch(_clqE) { console.log('[OE-CLQ-DOM] error:', _clqE && _clqE.message); }
 }
 
 </script>

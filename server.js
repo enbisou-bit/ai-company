@@ -7,6 +7,7 @@ const { costTracker, resetCostTracker } = require('./costTracker');
 const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent } = require('./claudeClient');
+const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -1327,6 +1328,16 @@ app.get('/api/claude-status', (req, res) => {
 });
 // ─────────────────────────────────────────────────
 
+// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis追加）
+app.get('/api/claude-cost', (req, res) => {
+  try {
+    let analysis = null;
+    try { analysis = getClaudeCostAnalysis(); } catch (_e) { analysis = null; }
+    res.json({ ok: true, ...getClaudeCostSummary(), analysis });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
 // GET /api/claude-test?agent=writer — Phase36-2: Claude実接続テスト
 app.get('/api/claude-test', async (req, res) => {
   const agentId = (req.query.agent || 'writer').trim();
