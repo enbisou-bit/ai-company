@@ -307,6 +307,99 @@ function buildClaudeModelQualityCompare(currentModels) {
   };
 }
 
+// Phase47-2D: Claude Model Formal Adoption（正式採用の記録・表示のみ / モデル変更なし）
+const CLAUDE_MODEL_ADOPTION_VERSION = '1.0.0';
+
+// currentModels: { strategy, writer, reviewer, defaultClaudeRole }（呼び出し側から渡す）
+// qualityCompare: Phase47-2C buildClaudeModelQualityCompare() の戻り値（あれば再利用）
+function buildClaudeModelAdoptionStatus(currentModels, qualityCompare) {
+  const cm = currentModels || {};
+  const adoptedPolicy = {
+    strategy: cm.strategy || CLAUDE_PREVIOUS_POLICY.strategy,
+    writer:   cm.writer   || CLAUDE_PREVIOUS_POLICY.writer,
+    reviewer: cm.reviewer || CLAUDE_PREVIOUS_POLICY.reviewer,
+    defaultClaudeRole: cm.defaultClaudeRole || cm.writer || CLAUDE_PREVIOUS_POLICY.writer,
+    leader: 'openai',
+  };
+
+  const adoptionStatus = {
+    status: 'adopted',
+    phase: 'Phase47-2D',
+    adoptedAt: todayKey(),
+    readyForNextPhase: true,
+  };
+
+  const adoptionReason = [
+    'Writer / Reviewer は最安モデル化により大幅なコスト削減が見込める',
+    'Strategy は品質維持のため最高品質モデルを維持',
+    'Provider構成は変更していない',
+    'Workflow / Knowledge Chain / Routing への影響はない',
+    'Phase47-2Cで比較パネルを追加済み',
+  ];
+
+  const costReductionSummary = (qualityCompare && qualityCompare.costImpact)
+    ? {
+        strategy: qualityCompare.costImpact.strategy,
+        writer:   qualityCompare.costImpact.writer,
+        reviewer: qualityCompare.costImpact.reviewer,
+      }
+    : {
+        strategy: { summary: '変更なし', detail: null },
+        writer:   { summary: 'Sonnet → Haiku によりコスト削減見込み', detail: _claudeModelPriceDiff(CLAUDE_PREVIOUS_POLICY.writer, adoptedPolicy.writer) },
+        reviewer: { summary: 'Sonnet → Haiku によりコスト削減見込み', detail: _claudeModelPriceDiff(CLAUDE_PREVIOUS_POLICY.reviewer, adoptedPolicy.reviewer) },
+      };
+
+  const qualityDecision = {
+    qualityComparisonCompleted: true,
+    qualityRisk: 'monitoring_required',
+    note: '正式採用はするが、今後の実案件で品質監視を継続する',
+    followUp: 'Phase47-3以降でCompare Intelligenceと連携して品質低下がないか確認する',
+  };
+
+  const providerStatus = {
+    leader: 'openai',
+    strategy: 'claude',
+    writer: 'claude',
+    reviewer: 'claude',
+    changed: false,
+  };
+
+  const adoptionReadiness = {
+    costOptimized: true,
+    providerStable: true,
+    workflowStable: true,
+    qualityComparisonPending: false,
+    readyForPhase47_2D: true,
+    formalAdoptionCompleted: true,
+  };
+
+  const nextActions = [
+    'Phase47-3以降で品質監視・Compare Intelligence連携を継続する',
+    '実案件での品質・コスト実測を蓄積する',
+  ];
+
+  const warnings = [
+    'Phase47-2Dで正式採用したのはClaudeモデルポリシーのみ',
+    'Provider構成は変更していない',
+    'Writer / Reviewer は Haiku 採用',
+    'Strategy は Opus 維持',
+    '品質監視は今後も継続',
+  ];
+
+  return {
+    version: CLAUDE_MODEL_ADOPTION_VERSION,
+    adoptionStatus,
+    adoptedPolicy,
+    adoptionReason,
+    costReductionSummary,
+    qualityDecision,
+    providerStatus,
+    adoptionReadiness,
+    nextActions,
+    warnings,
+  };
+}
+
 module.exports = {
   addClaudeUsage,
   getSummary,
@@ -315,4 +408,7 @@ module.exports = {
   // Phase47-2C
   buildClaudeModelQualityCompare,
   CLAUDE_MODEL_QUALITY_COMPARE_VERSION,
+  // Phase47-2D
+  buildClaudeModelAdoptionStatus,
+  CLAUDE_MODEL_ADOPTION_VERSION,
 };

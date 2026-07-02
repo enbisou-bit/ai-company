@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-2C完了）
+> 更新日: 2026-07-02（Phase47-2D完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-2C 完了**
-- 現在バージョン: **v1.00-phase47-2C**
+- 現在フェーズ: **Phase47-2D 完了**
+- 現在バージョン: **v1.00-phase47-2D**
 
 ---
 
@@ -260,6 +260,19 @@ Git: v0.96相当
 - Provider構成変更なし
 - Git: Phase47-2C claude quality compare / Tag: v1.00-phase47-2C
 
+### Phase47-2D: Claude Model Formal Adoption ✅
+- `claudeCostTracker.js` — `CLAUDE_MODEL_ADOPTION_VERSION = '1.0.0'` / `buildClaudeModelAdoptionStatus(currentModels, qualityCompare)` 追加
+  - adoptionStatus（status="adopted" / phase="Phase47-2D" / adoptedAt / readyForNextPhase=true）
+  - adoptedPolicy: strategy=claude-opus-4-8（維持） / writer・reviewer=claude-haiku-4-5（正式採用） / defaultClaudeRole=claude-haiku-4-5 / leader=openai
+  - adoptionReason / costReductionSummary（qualityCompare.costImpactを再利用） / qualityDecision（qualityRisk="monitoring_required"） / providerStatus / nextActions / warnings
+  - adoptionReadiness更新: `readyForPhase47_2D: true` / `formalAdoptionCompleted: true` / `qualityComparisonPending: false`
+- `server.js` — `/api/claude-cost` に `adoptionStatus` を追加
+- `index.html` — Claude Model Quality Comparingパネル下に「✅ Claude Model Formal Adoption」パネル追加（`renderClaudeModelAdoptionStatus()`）
+  - Formal Adoption Status / Adopted Claude Model Policy / Cost Reduction Summary / Quality Monitoring Note / Provider Status / Next Actions
+- モデル変更は行っていない（正式採用の記録・表示のみ。実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）
+- Provider構成変更なし
+- Git: Phase47-2D claude model adoption / Tag: v1.00-phase47-2D
+
 ---
 
 # v1.0まで
@@ -288,7 +301,7 @@ Git: v0.96相当
 ☑ Claude Cost Analysis（Phase47-2A・分析のみ）
 ☑ Claude API コスト最適化（Phase47-2B）
 ☑ Claude Model Quality Compare（Phase47-2C・比較のみ）
-□ Claudeモデル正式採用判断（Phase47-2D）
+☑ Claudeモデル正式採用判断（Phase47-2D）
 □ v1.0正式版
 
 ---

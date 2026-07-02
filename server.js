@@ -7,7 +7,7 @@ const { costTracker, resetCostTracker } = require('./costTracker');
 const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent, getClaudeModelForRole, CLAUDE_MODEL_POLICY, CLAUDE_MODEL_POLICY_VERSION } = require('./claudeClient'); // Phase47-2B
-const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C
+const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -1328,7 +1328,7 @@ app.get('/api/claude-status', (req, res) => {
 });
 // ─────────────────────────────────────────────────
 
-// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis / Phase47-2B: modelPolicy / Phase47-2C: qualityCompare追加）
+// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis / Phase47-2B: modelPolicy / Phase47-2C: qualityCompare / Phase47-2D: adoptionStatus追加）
 app.get('/api/claude-cost', (req, res) => {
   try {
     let analysis = null;
@@ -1337,6 +1337,7 @@ app.get('/api/claude-cost', (req, res) => {
       strategy: getClaudeModelForRole('strategy'),
       writer:   getClaudeModelForRole('writer'),
       reviewer: getClaudeModelForRole('reviewer'),
+      defaultClaudeRole: getClaudeModelForRole('__default__'),
     };
     const modelPolicy = {
       version: CLAUDE_MODEL_POLICY_VERSION,
@@ -1347,7 +1348,9 @@ app.get('/api/claude-cost', (req, res) => {
     };
     let qualityCompare = null;
     try { qualityCompare = buildClaudeModelQualityCompare(currentModels); } catch (_e) { qualityCompare = null; }
-    res.json({ ok: true, ...getClaudeCostSummary(), analysis, modelPolicy, qualityCompare });
+    let adoptionStatus = null;
+    try { adoptionStatus = buildClaudeModelAdoptionStatus(currentModels, qualityCompare); } catch (_e) { adoptionStatus = null; }
+    res.json({ ok: true, ...getClaudeCostSummary(), analysis, modelPolicy, qualityCompare, adoptionStatus });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }

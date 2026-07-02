@@ -5461,8 +5461,28 @@
       <div id="qc-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
       <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
         ※ Phase47-2Cは比較フェーズ（モデル変更は行わない）<br>
-        ※ 正式採用はPhase47-2Dで判断<br>
         ※ Writer/ReviewerのHaiku化による品質低下がないか確認が必要
+      </div>
+      <!-- Phase47-2D: Claude Model Formal Adoption -->
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">✅ Claude Model Formal Adoption <span style="font-size:8px;background:rgba(78,205,196,0.15);color:#4ecdc4;padding:1px 5px;border-radius:3px;">Phase47-2D</span></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Formal Adoption Status</div>
+      <div id="fa-status"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Adopted Claude Model Policy</div>
+      <div id="fa-policy"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Cost Reduction Summary</div>
+      <div id="fa-cost"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Quality Monitoring Note</div>
+      <div id="fa-quality"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Provider Status</div>
+      <div id="fa-provider"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Next Actions</div>
+      <div id="fa-next"></div>
+      <div id="fa-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
+        ※ Phase47-2Dで正式採用したのはClaudeモデルポリシーのみ<br>
+        ※ Provider構成は変更していない<br>
+        ※ Writer / Reviewer は Haiku 採用・Strategy は Opus 維持<br>
+        ※ 品質監視は今後も継続
       </div>
     </div>
   </div>
@@ -8579,6 +8599,82 @@ function renderClaudeModelQualityCompare(qc) {
   }
 }
 
+// Phase47-2D: Claude Model Formal Adoption表示（正式採用の記録・表示のみ / モデル変更なし）
+function renderClaudeModelAdoptionStatus(fa) {
+  var statusEl   = document.getElementById('fa-status');
+  var policyEl   = document.getElementById('fa-policy');
+  var costEl     = document.getElementById('fa-cost');
+  var qualityEl  = document.getElementById('fa-quality');
+  var providerEl = document.getElementById('fa-provider');
+  var nextEl     = document.getElementById('fa-next');
+  var warnEl     = document.getElementById('fa-warnings');
+  var _row = function(label, val) {
+    return '<div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">' + label + '</span><span>' + val + '</span></div>';
+  };
+  if (!fa || !fa.adoptedPolicy) {
+    if (statusEl) statusEl.innerHTML = '--';
+    if (policyEl) policyEl.innerHTML = '--';
+    if (costEl) costEl.innerHTML = '--';
+    if (qualityEl) qualityEl.innerHTML = '--';
+    if (providerEl) providerEl.innerHTML = '--';
+    if (nextEl) nextEl.innerHTML = '';
+    if (warnEl) warnEl.textContent = '';
+    return;
+  }
+  if (statusEl) {
+    var s = fa.adoptionStatus || {};
+    statusEl.innerHTML = _row('Status', s.status || '--')
+      + _row('Phase', s.phase || '--')
+      + _row('Adopted At', s.adoptedAt || '--')
+      + _row('Ready For Next Phase', s.readyForNextPhase ? '✅' : '⬜');
+  }
+  if (policyEl) {
+    var p = fa.adoptedPolicy;
+    policyEl.innerHTML = _row('Strategy', p.strategy + '（最高品質モデル・維持）')
+      + _row('Writer', p.writer + '（最安モデル・正式採用）')
+      + _row('Reviewer', p.reviewer + '（最安モデル・正式採用）')
+      + _row('Default Claude Role', p.defaultClaudeRole || '--')
+      + _row('Leader', p.leader || '--');
+  }
+  if (costEl) {
+    var ci = fa.costReductionSummary || {};
+    var rows = [];
+    ['strategy', 'writer', 'reviewer'].forEach(function (role) {
+      var c = ci[role];
+      if (!c) return;
+      var detailText = '';
+      if (c.detail) {
+        detailText = ' / 入力単価' + c.detail.inputReductionPct + '%減・出力単価' + c.detail.outputReductionPct + '%減';
+      }
+      rows.push(_row(role, c.summary + detailText));
+    });
+    costEl.innerHTML = rows.join('');
+  }
+  if (qualityEl) {
+    var qd = fa.qualityDecision || {};
+    qualityEl.innerHTML = _row('比較完了', qd.qualityComparisonCompleted ? '✅' : '⬜')
+      + _row('リスク区分', qd.qualityRisk || '--')
+      + '<div style="font-size:8px;color:var(--text-dim);padding:2px 0;">' + (qd.note || '') + '</div>'
+      + '<div style="font-size:8px;color:var(--text-dim);padding:2px 0;">' + (qd.followUp || '') + '</div>';
+  }
+  if (providerEl) {
+    var ps = fa.providerStatus || {};
+    providerEl.innerHTML = _row('Leader', ps.leader || '--')
+      + _row('Strategy', ps.strategy || '--')
+      + _row('Writer', ps.writer || '--')
+      + _row('Reviewer', ps.reviewer || '--')
+      + _row('Provider変更', ps.changed ? 'あり' : 'なし');
+  }
+  if (nextEl) {
+    nextEl.innerHTML = (fa.nextActions || []).map(function (label) {
+      return '<div style="font-size:9px;color:var(--text-dim);padding:1px 0;">・' + label + '</div>';
+    }).join('');
+  }
+  if (warnEl) {
+    warnEl.textContent = (fa.warnings && fa.warnings.length > 0) ? '⚠ ' + fa.warnings.join(' / ') : '';
+  }
+}
+
 // Phase47-1.5/1.6: Provider別料金パネル更新（Claude永続データ対応）
 async function updateCostProviderPanel() {
   var section = document.getElementById('cp-provider-section');
@@ -8651,6 +8747,7 @@ async function updateCostProviderPanel() {
     renderClaudeCostAnalysis(cc && cc.ok ? cc.analysis : null, USD_TO_JPY);
     renderClaudeModelPolicy(cc && cc.ok ? cc.modelPolicy : null);
     renderClaudeModelQualityCompare(cc && cc.ok ? cc.qualityCompare : null);
+    renderClaudeModelAdoptionStatus(cc && cc.ok ? cc.adoptionStatus : null);
 
     // 上部サマリー: OpenAI + Claude 合計で上書き
     var totalTodayJpy = parseFloat((oaTodayJpy + clTodayJpy).toFixed(2));
