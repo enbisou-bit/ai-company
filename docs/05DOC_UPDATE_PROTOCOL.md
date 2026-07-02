@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - ドキュメント更新運用ルール
 
-更新日: 2026-06-29（Phase46-3完了）
+更新日: 2026-07-02（Phase48-3.2完了）
 
 ---
 
@@ -31,8 +31,8 @@ AI会社の開発が長期化しても、設計思想・進捗・ルール・現
 3. **02PHASE_PROGRESS.md**
    - Phase進捗 / 完了済み / 未完了 / 次工程
 
-4. **03CLAUDE_RULESmd**
-   - Claude実装ルール / 禁止事項 / 完了報告形式 / Knowledge運用
+4. **03CLAUDE_RULES.md**
+   - Claude実装ルール / 禁止事項 / 完了報告形式 / Knowledge運用 / Output品質
 
 5. **01PROJECT_STATUS.md**
    - 今の現在地 / 完了済み機能 / 次にやること
@@ -41,6 +41,16 @@ AI会社の開発が長期化しても、設計思想・進捗・ルール・現
 
 7. **04DECISIONS.md**
    - なぜその設計にしたかの記録
+
+8. **07CHATGPT_TRANSFER.md**
+   - ChatGPT → Claude Code 引き継ぎルール / 出力形式仕様
+
+9. **08CLAUDE_PROMPT_TEMPLATE.md**
+   - Claude Code 実装指示テンプレート正式仕様
+
+10. **04ROADMAP.md**（Phase48-3.1で正式追加）
+    - v1.0残フェーズ（Phase48-4〜54） / Version 2.0 / 将来的な完成イメージ
+    - ※ファイル名の先頭番号は04DECISIONS.mdと重複するが、意図的な命名のためリネームしない
 
 ---
 
@@ -57,8 +67,9 @@ AI会社の開発が長期化しても、設計思想・進捗・ルール・現
 1. docs/06HANDOVER_NEXT_CHAT.md
 2. docs/00ENBISOU_AI_COMPANY_MASTER.md
 3. docs/02PHASE_PROGRESS.md
-4. docs/03CLAUDE_RULESmd
+4. docs/03CLAUDE_RULES.md
 5. docs/01PROJECT_STATUS.md
+6. docs/04ROADMAP.md（v1.0残フェーズ / Version 2.0）
 
 内容を読んだら、
 ・現在の進捗
@@ -90,10 +101,13 @@ AI会社は完成成果物を大量生産し、品質を毎回向上させる会
 1. docs/00ENBISOU_AI_COMPANY_MASTER.md
 2. docs/01PROJECT_STATUS.md
 3. docs/02PHASE_PROGRESS.md
-4. docs/03CLAUDE_RULESmd
+4. docs/03CLAUDE_RULES.md
 5. docs/04DECISIONS.md
 6. docs/05DOC_UPDATE_PROTOCOL.md
 7. docs/06HANDOVER_NEXT_CHAT.md（更新または作成）
+8. docs/07CHATGPT_TRANSFER.md
+9. docs/08CLAUDE_PROMPT_TEMPLATE.md
+10. docs/04ROADMAP.md
 
 更新内容：
 ・完了したPhase
@@ -134,6 +148,22 @@ Phase完了ごとに必ず更新。
 ## 06HANDOVER_NEXT_CHAT.md
 チャット終了時に必ず最新版に更新する。
 次チャットが安全に始められる状態にする。
+
+## 04ROADMAP.md
+Phase完了ごと、またはRoadmap自体（v1.0残フェーズ / Version 2.0）に変更があった時に更新。
+
+## Phase終了時の同期ルール（Phase48-3.2追加）
+
+Phase終了時は以下を必ず同期する：
+- PROJECT_STATUS（01PROJECT_STATUS.md）
+- PHASE_PROGRESS（02PHASE_PROGRESS.md）
+- ROADMAP（04ROADMAP.md）
+- HANDOVER（06HANDOVER_NEXT_CHAT.md）
+
+さらに、以下も同期対象であることを明記する：
+- MASTER（00ENBISOU_AI_COMPANY_MASTER.md）— 大きな設計変更・優先順位変更時
+- CLAUDE_RULES（03CLAUDE_RULES.md）— ルール変更時
+- DECISIONS（04DECISIONS.md）— 大きな設計判断があった時
 
 ---
 

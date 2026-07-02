@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - Claude実装ルール
 
-更新日: 2026-07-02（Phase47-2A.1完了）
+更新日: 2026-07-02（Phase48-3.2完了）
 
 ---
 
@@ -289,3 +289,27 @@ Knowledge → Learning → Memory → 次回Workflow で品質を毎回向上さ
 Instagram / TikTok / X / LP / チラシ / PDF / HTML
 
 まで含めた完成成果物を高品質で納品する。
+
+## 17. Output品質
+
+Output Engineは回答生成ではなく、完成成果物生成を最優先とする。
+
+Output Package Qualityは100点を目標とする。
+
+Output Qualityが90点未満の場合は改善提案を優先表示する。
+
+Output Preview完成後は、Preview品質も評価対象とする。
+
+画像生成 / 動画生成 / SNS投稿は必ずユーザー承認後のみ実行する。
+
+以下は自動生成してよい：
+- 画像生成プロンプト
+- 動画生成プロンプト
+- 投稿文
+- CTA
+- ハッシュタグ
+- HTML
+- LP
+- PDF
+
+Output Package Quality / Output Template / Output Auto Fill / Output Preview は Workflow正式構成要素とする。

@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-06-29（Project Rule v1.1 追加）
+更新日: 2026-07-02（Phase48-3.2完了）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -273,4 +273,141 @@ Phase46-7において、Compare Log / Compare Intelligence / Compare Recommendat
 - nextTestActions により、次の実案件で何をテストすべきか明確にする
 
 追記日: 2026-06-29（Phase46-7完了）
+
+---
+
+# Decision 017
+## API料金管理の設計仕様
+
+Phase47-1において、OpenAI + Claude の料金を統合管理する仕様を確定。
+
+採用方針：
+- OpenAI: costTracker.js → cost-logs.json（日次/月次/累計 + モデル別 + 日付リセット）
+- Claude: claudeCostTracker.js → claude-cost-logs.json（日次/月次/累計 + モデル別 + 日付リセット）
+- 表示: Provider別（OpenAI/Claude）を展開表示 + 上部に合計（OpenAI+Claude）
+- 右上ヘッダー料金ボタン = OpenAI+Claude合計
+- 今日/今月は日付変更でリセット / 累計(total)は絶対にリセットしない
+- /api/claude-cost（永続データ）が優先 / /api/claude-status（インメモリ）はフォールバック
+
+理由：
+- OpenAIだけでは実際のAPI総コストが把握できない
+- 月次上限管理はOpenAI+Claude合算で行うべき
+- モデル別表示によりどのAI社員がコストを発生させているか把握できる
+
+追記日: 2026-07-02（Phase47-1完了）
+
+---
+
+# Decision 018
+## Claudeモデル最適化方針
+
+Phase47-2（次工程）として、Claude AI社員のモデル選択を最適化する方針を決定。
+
+採用方針（予定）：
+- Writer: 最安モデル（品質より速度・コスト優先）
+- Reviewer: 最安モデル（チェック用途）
+- Strategy: 最高品質モデル（戦略判断は品質優先）
+- Leader: OpenAI固定（変更禁止）
+
+理由：
+- Writer/Reviewerは大量生成が前提でコスト最小化が重要
+- Strategyは重要な戦略判断をするため品質優先
+- 全担当を同一モデルにするとコストが爆発する
+- claude-cost-logs.jsonのモデル別集計でコスト効果を確認できる
+
+参照: Phase47-2実装時に正式仕様確定
+
+追記日: 2026-07-02（Phase47-1完了）
+
+**追記（Phase47-2B完了時点）**: 上記方針は Phase47-2B にて実装完了。Writer/Reviewer=`claude-haiku-4-5`、Strategy=`claude-opus-4-8` を正式採用（Phase47-2D）。Phase47-2C で最適化前後の品質比較、Phase47-3〜47-5 で品質監視・時系列履歴・永続化まで完成した。
+
+---
+
+# Decision 019
+## Output Engineは成果物完成を最優先とする
+
+Phase48-1以降の方針として、Output Engineは回答生成ではなく成果物完成を最優先とすることを決定。
+
+理由：
+- AI会社の最終目的（Decision 001）と一致させるため
+- Output Package Quality Checklistで「何が完成していないか」を可視化することが、成果物完成度を上げる第一歩になる
+
+追記日: 2026-07-02（Phase48-3.2 / Phase48-1〜48-3完了反映）
+
+---
+
+# Decision 020
+## Output Package Qualityは100点を目標とする
+
+Phase48-1〜48-3において、Output Package Qualityのスコア基準を確定。
+
+採用方針：
+- score 0〜100（完成項目数 / 全項目数）
+- status: 90以上=complete / 75以上=almost_ready / 50以上=needs_work / 49以下=insufficient
+- 90点未満の場合はRecommendationsを優先表示する改善ループを設ける
+
+理由：
+- 明確な数値目標があることで、成果物テンプレート強化（Phase48-2）・自動反映（Phase48-3）の効果を客観的に検証できる
+- 実際にInstagram/TikTok/Flyer/LP/PDF/HTML/Image Prompt/Video Promptの8タイプで100点到達を実証済み（Phase48-3）
+
+追記日: 2026-07-02（Phase48-3.2 / Phase48-1〜48-3完了反映）
+
+---
+
+# Decision 021
+## AI会社は画像生成・動画生成・SNS運用・マーケティングまで含めた会社として設計する
+
+Phase48以降のロードマップ（docs/04ROADMAP.md）として、AI会社の対象範囲を拡張する方針を決定。
+
+採用方針：
+- Phase48-4: Output Preview Engine
+- Phase48-5: Publishing Engine（SNS投稿データ生成）
+- Phase49: AI Creative Engine（画像・動画生成、ユーザー承認後のみ実行）
+- Phase50: Marketing Intelligence（市場・競合・SEO・SNS分析）
+- Phase51: Sales Engine
+- Phase52: Automation Engine（投稿自動化、ユーザー承認後のみ）
+- Phase53: Business Intelligence
+- Phase54: Company Brain v2
+
+理由：
+- 「完成成果物を納品するAI会社」という最終目的（Decision 001）を実現するには、成果物生成だけでなく、分析・投稿・自動化まで含めた会社機能が必要
+- 課金・外部API実行は引き続きユーザー承認制を維持する
+
+追記日: 2026-07-02（Phase48-3.2）
+
+---
+
+# Decision 022
+## Previewを見ながら改善→品質向上→完成を繰り返す設計とする
+
+Phase48-4（Output Preview Engine）に向けた設計方針を決定。
+
+採用方針：
+- Output Package Qualityで完成度をスコア化する（Phase48-1〜48-3で完成）
+- Previewで完成イメージを画面表示する（Phase48-4）
+- 90点未満の場合はRecommendationsを確認し改善する（改善ループ、Decision 020）
+- Preview品質も評価対象に加える（Phase48-4以降）
+
+理由：
+- スコアだけでは完成イメージが掴みにくく、Previewと組み合わせることで実際の納品判断がしやすくなる
+- 改善→品質向上→完成のループを明確にすることで、AI会社としての「品質が毎回向上していく」設計思想（Decision 004）と一致させる
+
+追記日: 2026-07-02（Phase48-3.2）
+
+---
+
+# Decision 023
+## AI会社の最終目標（Version 2.0 Ultimate Goal）
+
+AI会社の最終目標は、ユーザーが依頼すると
+
+市場分析 → 競合分析 → 企画 → 画像 → 動画 → LP → HTML → PDF → 投稿文 → CTA → ハッシュタグ → 改善案
+
+まで完成品として納品することである。
+
+理由：
+- 「回答するAI」ではなく「完成成果物を納品するAI会社」という最終目的（Decision 001 / 本ファイル冒頭）を、Version 2.0で完全自律型として実現する
+- 詳細は docs/04ROADMAP.md の「将来的な完成イメージ」「Ultimate Goal」を正式仕様とする
+
+追記日: 2026-07-02（Phase48-3.2）
 

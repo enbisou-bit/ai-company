@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
-> ENBISOU AI COMPANY 開発マスター（Version 2.0）
-> 更新日: 2026-06-29（Phase46-7完了）
+> ENBISOU AI COMPANY 開発マスター（Version 2.1）
+> 更新日: 2026-07-02（Phase48-3完了 / v1.00 Phase48-3 Complete）
 
 ## 1. AI会社の最終目的（最重要）
 
@@ -10,6 +10,8 @@ ENBISOU AI COMPANY は「AIチャット」ではない。
 **完成した成果物を大量生産し、会社全体が学習し、品質が毎回向上していくAI会社**を作る。
 
 回答を返すことではなく、そのまま使える完成品を納品する。
+
+ENBISOU AI COMPANYは「回答するAI」ではなく、「完成成果物を納品するAI会社」である。
 
 例：
 - Instagram：スライド10枚・画像プロンプト・キャプション・CTA・ハッシュタグまで
@@ -52,7 +54,13 @@ User
 - Leaderは統合・品質向上・最終責任を持つ
 - Knowledge注入で成果物品質を毎回改善する
 
-## 5. 優先順位（Phase46以降）
+## 5. 優先順位（Phase47以降）
+
+### Priority 0: APIコスト最適化（緊急）
+- Claude Writer / Reviewer / Strategy → 最安モデルへ切替（コスト削減優先）
+- Strategy → 最高品質モデルへ切替（品質担保）
+- Leader は OpenAI 固定（変更禁止）
+- コストと品質のバランスを毎Phase確認する
 
 ### Priority 1: 成果物品質向上（最優先）
 - Instagram / TikTok / X / ブログ / LP / チラシ / PDF / 動画台本
@@ -71,7 +79,26 @@ User
 - 動画生成もユーザー承認後
 - 外部API・有料サービス・SNS投稿連携は必ずユーザー承認制
 
-## 6. 現状（Phase46-3完了）
+## 5.1 現在の最優先（Phase48-3完了時点 / 上記Priority 0〜4は完了済み）
+
+### Priority 0: Output Preview Engine
+- Instagram / LP / PDF / HTML / チラシ / YouTube / TikTok の完成イメージをプレビュー表示
+
+### Priority 1: AI Creative Engine
+- 画像生成 / 動画生成 / 広告生成 / ロゴ / バナー（Phase49、ユーザー承認後のみ実行）
+
+### Priority 2: Marketing Intelligence
+- 市場分析 / 競合分析 / SEO分析 / SNS分析 / トレンド分析（Phase50）
+
+### Priority 3: Publishing Engine
+- SNS投稿データ生成（タイトル/説明文/ハッシュタグ/投稿時間/CTA）（Phase48-5）
+
+### Priority 4: Automation Engine
+- Instagram/TikTok/YouTube投稿・予約投稿の自動化（Phase52、ユーザー承認後のみ）
+
+詳細ロードマップは [docs/04ROADMAP.md](04ROADMAP.md) を参照。
+
+## 6. 現状（Phase48-3完了 / v1.00 Phase48-3 Complete）
 
 完成：
 - Company Brain
@@ -108,9 +135,27 @@ User
   - buildCompareIntegrationCheckHtml() — Output Engine に Integration Check パネル
   - Export（markdown / json）に自動反映
 
-次工程（Phase46-8〜）：
-- Compare Integration Check の結果を活用した実案件品質向上
-- 成果物品質の継続向上
+- API料金メーター（Phase47-1）
+  - OpenAI Cost Tracker（costTracker.js）: 日次/月次/累計 + モデル別 + 日付リセット
+  - Claude Cost Tracker（claudeCostTracker.js）: 日次/月次/累計 + モデル別 + 永続保存
+  - Provider別表示: OpenAI / Claude それぞれ今日・今月・累計
+  - 合計表示: 右上ヘッダー料金ボタン = OpenAI + Claude 合計
+  - 永続保存: cost-logs.json / claude-cost-logs.json
+  - 新エンドポイント: /api/claude-cost / /api/claude-status
+
+- Claude Cost Analysis（Phase47-2A） — モデル別料金・トークン集計 / 担当別集計
+- Claude Model Policy（Phase47-2B） — Writer/Reviewer=最安モデル(claude-haiku-4-5) / Strategy=最高品質モデル(claude-opus-4-8)へ正式最適化
+- Claude Model Quality Compare（Phase47-2C） — 最適化前後の品質比較パネル
+- Claude Model Formal Adoption（Phase47-2D） — モデルポリシー正式採用の記録
+- Claude Quality Monitor（Phase47-3） — Compare Intelligenceと連携した品質監視エンジン
+- Claude Quality History（Phase47-4 / 永続化はPhase47-5） — 時系列品質監視・JSON永続保存
+- Output Package Quality（Phase48-1） — 成果物ごとの完成度チェックリスト（0〜100点）
+- Output Template Enhancement（Phase48-2） — 全11成果物タイプへテンプレートフィールド拡張
+- Output Auto Fill Engine（Phase48-3） — Leader Final・Writer/Strategy/Designer回答からフィールド自動反映
+- Output Quality Score（100点対応） — Instagram/TikTok/Flyer/LP/PDF/HTML/Image Prompt/Video Promptの8タイプで100点到達可能なことを実証済み
+
+次工程（Priority 0）：
+- Output Preview Engine（Phase48-4） — 成果物を完成イメージで画面表示
 
 ## 7. v1.0完成像
 

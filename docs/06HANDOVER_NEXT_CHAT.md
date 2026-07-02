@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-01（Phase46-8完了）
+更新日: 2026-07-02（Phase48-3.2完了）
 
 ---
 
@@ -15,9 +15,17 @@
 
 ## 現在バージョン
 
-**v1.00-phase46-8**
+**v1.00 Phase48-3 Complete**
 
-最新Tag: `v1.00-phase46-8`
+最新Tag: `v1.00-phase48-3.2`
+
+---
+
+## 現在地
+
+Phase48-3（Output Auto Fill Engine）完了。
+
+次工程: **Phase48-4 — Output Preview Engine**
 
 ---
 
@@ -44,6 +52,20 @@
 | Phase46-6 | Compare Recommendation Engine v1 | v1.00-phase46-6 |
 | Phase46-7 | Compare Quality Integration Check v1 | v1.00-phase46-7 |
 | Phase46-8 | Compare Intelligence v2（Improvement Score / Failure Analysis / Learning / Summary） | v1.00-phase46-8 |
+| Phase47-1 | API料金メーター（OpenAI+Claude統合 / Provider別 / 永続保存 / 右上ヘッダー合計） | v1.00-phase47-1 |
+| Phase47-2A | Claude Cost Analysis（モデル別・担当別料金/トークン分析） | v1.00-phase47-2A |
+| Phase47-2B | Claude Model Policy（Writer/Reviewer=最安 / Strategy=最高品質へ最適化） | v1.00-phase47-2B |
+| Phase47-2C | Claude Model Quality Compare（最適化前後の比較） | v1.00-phase47-2C |
+| Phase47-2D | Claude Model Formal Adoption（モデルポリシー正式採用） | v1.00-phase47-2D |
+| Phase47-3 | Claude Quality Monitor（Compare Intelligence連携の品質監視） | v1.00-phase47-3 |
+| Phase47-4 | Claude Quality History（時系列品質監視・Trend/Warning） | v1.00-phase47-4 |
+| Phase47-S | Claude APIコスト最適化トラック v1.00 Stable確定 | v1.00-stable |
+| Phase47-5 | Claude Quality History永続化（claude-quality-history.json） | v1.00-phase47-5 |
+| Phase48-1 | Output Package Quality Checklist（成果物完成度0〜100点） | v1.00-phase48-1 |
+| Phase48-2 | Output Template Enhancement（全11タイプへフィールド拡張） | v1.00-phase48-2 |
+| Phase48-3 | Output Auto Fill Engine（Leader Final/Writer/Strategy/Designerから自動反映） | v1.00-phase48-3 |
+| Phase48-3.1 | docs正式反映 / Roadmap新設 | v1.00-phase48-3.1 |
+| Phase48-3.2 | docs全体整合性確認・強化 | v1.00-phase48-3.2 |
 
 ---
 
@@ -192,18 +214,54 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Phase46-9: 実案件品質改善（成果物品質の継続向上）
+### Priority 0: Phase48-4 — Output Preview Engine
 
 目的：
-Compare Intelligence v2 の Improvement Score・Failure Analysis・Learning を活用して、実案件ベースで成果物品質を継続改善する。
+Instagram / LP / PDF / HTML / チラシ / YouTube / TikTok の成果物を完成イメージで画面表示する。
 
-候補：
-1. Quality Score 判定精度向上（evaluateOutputQuality の精度改善）
-2. Learning精度向上（extractLearningItems の抽出ロジック改善）
-3. Instagram / TikTok / LP など特定タイプの成果物品質強化
-4. Failure Analysis HIGH 優先項目の実装対応
+Output Package Quality（Phase48-1〜48-3で完成）と組み合わせ、
+Previewを見ながら改善→品質向上→完成を繰り返す設計とする（Decision 022）。
 
-※ 実案件で動かしてからユーザーと判断する
+詳細は docs/04ROADMAP.md を参照。
+
+### 次工程チェーン（Phase48-3.2時点のRoadmap）
+
+```
+Phase48-4 Output Preview Engine
+  ↓
+Phase48-5 Publishing Engine
+  ↓
+Phase49 AI Creative Engine
+  ↓
+Phase50 Marketing Intelligence
+  ↓
+Phase51 Sales Engine
+  ↓
+Phase52 Automation Engine
+  ↓
+Phase53 Business Intelligence
+  ↓
+Phase54 Company Brain v2
+```
+
+### Phase47-2〜48-3で完成した実装（次チャットが把握すべき実装の要約）
+
+- Claude Model Policy: `claudeClient.js` の `getClaudeModelForRole(role)` — Writer/Reviewer=`claude-haiku-4-5` / Strategy=`claude-opus-4-8`
+- Claude Quality History: `claudeCostTracker.js` の `recordClaudeQualityHistory()` / `claude-quality-history.json`永続化（最大20件）
+- Output Package Quality: `index.html` の `evaluateOutputPackageCompleteness(draft)` — score 0〜100 / status 4段階
+- Output Auto Fill: `index.html` の `buildOutputDraftFromLeaderFinal()` 拡張 — `_extractLabeledSection()` 等でテキスト解析ベースの自動反映（新規AI呼び出しなし）
+- 詳細は docs/02PHASE_PROGRESS.md の各Phaseセクション、docs/04DECISIONS.md の Decision 017〜023 を参照
+
+### Phase47-1で追加した機能（次チャットが把握すべき実装）
+
+**API料金メーター（Phase47-1）:**
+- `costTracker.js` — addOpenAIUsage() / recordUsage() → todayAmount・monthlyAmount・totalAmount 更新。日付変更で today/month リセット、total は永続
+- `claudeCostTracker.js`（新規） — addClaudeUsage(model, inputTokens, outputTokens) → claude-cost-logs.json 永続保存 / ensureState()で日付リセット
+- `claudeClient.js` — モジュールレベルで `_addClaudeCost = require('./claudeCostTracker').addClaudeUsage` / trackUsage()末尾で呼び出し
+- `server.js` — GET /api/claude-cost → getSummary() from claudeCostTracker
+- `index.html` — updateCostProviderPanel(): /api/cost + /api/claude-cost + /api/claude-status を Promise.all で取得、OpenAI+Claude合計を cp-today/cp-month/cp-remain/cost-today に反映
+- Provider別パネル: cp-oa-today/cp-oa-month/cp-oa-total/cp-oa-41/cp-oa-mini/cp-oa-nano（OpenAI） + cp-cl-today/cp-cl-month/cp-cl-total/cp-cl-sonnet/cp-cl-opus/cp-cl-in/cp-cl-out/cp-cl-req（Claude）
+- フォールバック条件: cc.ok && cc.today.requests > 0 → 永続データ使用 / それ以外 → claude-status インメモリ使用
 
 ---
 
@@ -228,6 +286,7 @@ Phase46-5以降のすべての実装指示書は `docs/08CLAUDE_PROMPT_TEMPLATE.
 5. `getRoutedKnowledgeContext()` は既存Knowledge Routing Engine — 変更禁止
 6. `buildOutputDraftFromLeaderFinal()` の chain順序は変更禁止
 7. 修正ファイルは `index.html` のみ（server.jsは原則変更しない）
+   - 例外: Claude APIコスト最適化トラック（Phase47-1〜47-5）では `claudeCostTracker.js` / `claudeClient.js` / `server.js` への変更が正式に承認・実施された。Output Engineトラック（Phase48-1〜）は原則通り `index.html` のみで完結している
 
 ---
 
@@ -256,10 +315,17 @@ git tag v1.00-phase46-4
 
 ## 次チャット開始時の確認手順
 
-1. このファイル（06HANDOVER_NEXT_CHAT.md）を読む
+新しいClaudeセッションでは、以下 00〜08（+04ROADMAP.md）だけ読めば開発を継続できる状態にしてある。
+
+1. docs/06HANDOVER_NEXT_CHAT.md（このファイル）を読む
 2. docs/00ENBISOU_AI_COMPANY_MASTER.md を読む
-3. docs/02PHASE_PROGRESS.md を読む
-4. docs/03CLAUDE_RULESmd を読む
-5. docs/01PROJECT_STATUS.md を読む
-6. 現在地を要約する
-7. Phase46-4から開発再開
+3. docs/01PROJECT_STATUS.md を読む
+4. docs/02PHASE_PROGRESS.md を読む
+5. docs/03CLAUDE_RULES.md を読む
+6. docs/04ROADMAP.md を読む（v1.0残フェーズ / Version 2.0）
+7. docs/05DOC_UPDATE_PROTOCOL.md を読む
+8. docs/07CHATGPT_TRANSFER.md を読む（ChatGPT側の場合）
+9. docs/08CLAUDE_PROMPT_TEMPLATE.md を読む
+10. docs/04DECISIONS.md を読む（設計判断の背景確認）
+11. 現在地を要約する
+12. Phase48-4（Output Preview Engine）から開発再開

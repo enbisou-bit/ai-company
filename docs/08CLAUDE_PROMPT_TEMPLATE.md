@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY — Claude Code 実装指示テンプレート
 
-更新日: 2026-06-29（v1.2 — 最終出力形式 詳細ルール確定）
+更新日: 2026-07-02（v1.4 — Phase48-3完了反映）
 
 ---
 
@@ -185,6 +185,10 @@ Git
 ・Version 定数の追加が必要か
 ・AI会社全体で再利用できる設計か
 ・現 Phase だけでなく最低3 Phase 先まで見据えた設計か
+・Roadmapとの整合性（docs/04ROADMAP.md）
+・Version更新要否
+・docs更新要否
+・成果物品質100点設計（Output Package Quality基準）
 
 改善案がある場合は実装前に提案する。
 推測では実装しない。
@@ -209,6 +213,12 @@ Git
   - Compare（switchKnowledgeCompareMode / getInjectedKnowledgeContext）
   - Compare Log（recordKnowledgeCompareEntry）
 ・Output Engine（buildOutputDraftFromLeaderFinal / renderOutputEnginePanel）への影響なし
+・Preview Engineへの影響
+・Output Package Qualityへの影響（evaluateOutputPackageCompleteness）
+・Output Auto Fillへの影響（buildOutputDraftFromLeaderFinal の抽出ロジック）
+・将来のCreative Engineへの影響
+・Roadmapとの整合性（docs/04ROADMAP.md）
+・既存docsとの整合性
 ```
 
 ---
@@ -357,6 +367,7 @@ Phase完了レポート
 ・docs/02PHASE_PROGRESS.md
 ・docs/03CLAUDE_RULES.md
 ・docs/04DECISIONS.md
+・docs/04ROADMAP.md
 ・docs/06HANDOVER_NEXT_CHAT.md
 ・docs/07CHATGPT_TRANSFER.md（存在する場合）
 ・docs/08CLAUDE_PROMPT_TEMPLATE.md（本ファイル）
@@ -427,3 +438,5 @@ analyzeCompareLogTrends():
 | v1.0 | 2026-06-29 | 初版作成（Phase46-5前のドキュメント整備） |
 | v1.1 | 2026-06-29 | 最終出力形式 正式仕様追加（通常テキスト / ヘッダー / 出力順序 / コピー性） |
 | v1.2 | 2026-06-29 | 出力形式詳細ルール確定（5ルール明文化 / 説明文分離 / 分割禁止 / 見出し固定） |
+| v1.3 | 2026-07-02 | Phase47-1完了反映 / docs更新対象に07・08を追加明記 |
+| v1.4 | 2026-07-02 | Phase48-3完了反映 / 実装前レビューにRoadmap整合性・Version/docs更新要否・成果物品質100点設計を追加 / 品質レビューにPreview・Output Package Quality・Output Auto Fill・Creative Engine影響・Roadmap整合性・docs整合性を追加 / docs更新ルールにdocs/04ROADMAP.mdを追加 |
