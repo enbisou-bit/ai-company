@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-2B完了）
+> 更新日: 2026-07-02（Phase47-2C完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-2B 完了**
-- 現在バージョン: **v1.00-phase47-2B**
+- 現在フェーズ: **Phase47-2C 完了**
+- 現在バージョン: **v1.00-phase47-2C**
 
 ---
 
@@ -248,6 +248,18 @@ Git: v0.96相当
 - 既知の限界: `claudeCostTracker.js`のbyRole集計はsonnet固定ロジックのため、Phase47-2B以降のwriter/reviewer(haiku)利用は担当別集計に反映されない（byModelには正しく反映）。次フェーズ以降で対応要検討。
 - Git: Phase47-2B claude model optimization / Tag: v1.00-phase47-2B
 
+### Phase47-2C: Claude Model Quality Compare ✅
+- `claudeCostTracker.js` — `CLAUDE_MODEL_QUALITY_COMPARE_VERSION = '1.0.0'` / `buildClaudeModelQualityCompare(currentModels)` 追加
+  - `CLAUDE_PREVIOUS_POLICY`（Phase47-2B前の固定構成: strategy=opus / writer・reviewer=sonnet）
+  - previousPolicy / currentPolicy / comparisonItems / costImpact（Sonnet→Haiku単価差: 入力・出力とも73.3%減） / qualityCheckItems（9項目） / adoptionReadiness / warnings を返却
+  - `readyForPhase47_2D: false` 固定（今回は比較準備フェーズ、正式採用は未判定）
+- `server.js` — `/api/claude-cost` に `qualityCompare` を追加（currentModelsを渡して生成）
+- `index.html` — Claude Model Policyパネル下に「🧪 Claude Model Quality Compare」パネル追加（`renderClaudeModelQualityCompare()`）
+  - Before Optimization / After Optimization / Cost Impact / Quality Check Items / Adoption Readiness / Warnings を表示
+- モデル変更は一切なし（実API接続テストでwriter→claude-haiku-4-5のまま変化なしを確認）
+- Provider構成変更なし
+- Git: Phase47-2C claude quality compare / Tag: v1.00-phase47-2C
+
 ---
 
 # v1.0まで
@@ -275,6 +287,8 @@ Git: v0.96相当
 ☑ API料金メーター（Phase47-1）
 ☑ Claude Cost Analysis（Phase47-2A・分析のみ）
 ☑ Claude API コスト最適化（Phase47-2B）
+☑ Claude Model Quality Compare（Phase47-2C・比較のみ）
+□ Claudeモデル正式採用判断（Phase47-2D）
 □ v1.0正式版
 
 ---

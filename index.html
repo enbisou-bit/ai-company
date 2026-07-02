@@ -5444,8 +5444,25 @@
       <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
         ※ Phase47-2Bで変更したのはClaudeモデル選択のみ<br>
         ※ Provider構成は変更なし<br>
-        ※ LeaderはOpenAIのまま<br>
-        ※ Phase47-2Cで品質比較を実施予定
+        ※ LeaderはOpenAIのまま
+      </div>
+      <!-- Phase47-2C: Claude Model Quality Compare -->
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">🧪 Claude Model Quality Compare <span style="font-size:8px;background:rgba(200,158,242,0.15);color:#c89ef2;padding:1px 5px;border-radius:3px;">Phase47-2C</span></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Before Optimization</div>
+      <div id="qc-before"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">After Optimization</div>
+      <div id="qc-after"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Cost Impact</div>
+      <div id="qc-cost-impact"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Quality Check Items（要人手確認）</div>
+      <div id="qc-quality-items"></div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">Adoption Readiness</div>
+      <div id="qc-readiness"></div>
+      <div id="qc-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
+        ※ Phase47-2Cは比較フェーズ（モデル変更は行わない）<br>
+        ※ 正式採用はPhase47-2Dで判断<br>
+        ※ Writer/ReviewerのHaiku化による品質低下がないか確認が必要
       </div>
     </div>
   </div>
@@ -8490,6 +8507,78 @@ function renderClaudeModelPolicy(modelPolicy) {
   _set('cmp-reviewer', '最安モデル (' + (m.reviewer || '--') + ')');
 }
 
+// Phase47-2C: Claude Model Quality Compare表示（比較のみ / モデル変更なし）
+function renderClaudeModelQualityCompare(qc) {
+  var beforeEl    = document.getElementById('qc-before');
+  var afterEl     = document.getElementById('qc-after');
+  var costEl      = document.getElementById('qc-cost-impact');
+  var qualityEl   = document.getElementById('qc-quality-items');
+  var readyEl     = document.getElementById('qc-readiness');
+  var warnEl      = document.getElementById('qc-warnings');
+  var _row = function(label, val) {
+    return '<div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">' + label + '</span><span>' + val + '</span></div>';
+  };
+  if (!qc || !qc.previousPolicy || !qc.currentPolicy) {
+    if (beforeEl) beforeEl.innerHTML = '--';
+    if (afterEl) afterEl.innerHTML = '--';
+    if (costEl) costEl.innerHTML = '--';
+    if (qualityEl) qualityEl.innerHTML = '';
+    if (readyEl) readyEl.innerHTML = '--';
+    if (warnEl) warnEl.textContent = '';
+    return;
+  }
+  if (beforeEl) {
+    beforeEl.innerHTML = ['strategy', 'writer', 'reviewer'].map(function (role) {
+      return _row(role, qc.previousPolicy[role] || '--');
+    }).join('');
+  }
+  if (afterEl) {
+    afterEl.innerHTML = (qc.comparisonItems || []).map(function (item) {
+      var mark = item.changed ? ' <span style="color:#ffd166;">(変更)</span>' : ' <span style="color:var(--text-dim);">(変更なし)</span>';
+      return _row(item.role, (item.after || '--') + mark);
+    }).join('');
+  }
+  if (costEl) {
+    var ci = qc.costImpact || {};
+    var rows = [];
+    ['strategy', 'writer', 'reviewer'].forEach(function (role) {
+      var c = ci[role];
+      if (!c) return;
+      var detailText = '';
+      if (c.detail) {
+        detailText = ' / 入力単価' + c.detail.inputReductionPct + '%減・出力単価' + c.detail.outputReductionPct + '%減';
+      }
+      rows.push(_row(role, c.summary + detailText));
+    });
+    rows.push(_row('Provider', ci.provider || '--'));
+    rows.push(_row('Leader', ci.leader || '--'));
+    costEl.innerHTML = rows.join('');
+  }
+  if (qualityEl) {
+    qualityEl.innerHTML = (qc.qualityCheckItems || []).map(function (label) {
+      return '<div style="font-size:9px;color:var(--text-dim);padding:1px 0;">□ ' + label + '</div>';
+    }).join('');
+  }
+  if (readyEl) {
+    var ar = qc.adoptionReadiness || {};
+    var labelMap = {
+      costOptimized: 'コスト最適化',
+      providerStable: 'Provider安定',
+      workflowStable: 'Workflow安定',
+      qualityComparisonPending: '品質比較 未完了',
+      readyForPhase47_2D: 'Phase47-2D正式採用可否',
+    };
+    readyEl.innerHTML = Object.keys(labelMap).map(function (key) {
+      var v = ar[key];
+      var icon = v === true ? '✅' : (v === false ? '⬜' : '--');
+      return _row(labelMap[key], icon);
+    }).join('');
+  }
+  if (warnEl) {
+    warnEl.textContent = (qc.warnings && qc.warnings.length > 0) ? '⚠ ' + qc.warnings.join(' / ') : '';
+  }
+}
+
 // Phase47-1.5/1.6: Provider別料金パネル更新（Claude永続データ対応）
 async function updateCostProviderPanel() {
   var section = document.getElementById('cp-provider-section');
@@ -8561,6 +8650,7 @@ async function updateCostProviderPanel() {
     // Phase47-2A: Claude Cost Analysis 表示
     renderClaudeCostAnalysis(cc && cc.ok ? cc.analysis : null, USD_TO_JPY);
     renderClaudeModelPolicy(cc && cc.ok ? cc.modelPolicy : null);
+    renderClaudeModelQualityCompare(cc && cc.ok ? cc.qualityCompare : null);
 
     // 上部サマリー: OpenAI + Claude 合計で上書き
     var totalTodayJpy = parseFloat((oaTodayJpy + clTodayJpy).toFixed(2));

@@ -220,4 +220,99 @@ function getClaudeCostAnalysis() {
   };
 }
 
-module.exports = { addClaudeUsage, getSummary, getClaudeCostAnalysis, CLAUDE_COST_ANALYSIS_VERSION };
+// Phase47-2C: Claude Model Quality Compare（比較のみ / モデル変更なし）
+const CLAUDE_MODEL_QUALITY_COMPARE_VERSION = '1.0.0';
+
+// Phase47-2B適用前の構成（固定値・比較用）
+const CLAUDE_PREVIOUS_POLICY = {
+  strategy: 'claude-opus-4-8',
+  writer:   'claude-sonnet-4-6',
+  reviewer: 'claude-sonnet-4-6',
+};
+
+// SonnetとHaikuの単価差（既存 CLAUDE_PRICE_PER_1K を使用 / 推測値なし）
+function _claudeModelPriceDiff(beforeModel, afterModel) {
+  const before = CLAUDE_PRICE_PER_1K[beforeModel];
+  const after  = CLAUDE_PRICE_PER_1K[afterModel];
+  if (!before || !after) return null;
+  return {
+    beforeInputPer1K:  before.input,
+    beforeOutputPer1K: before.output,
+    afterInputPer1K:   after.input,
+    afterOutputPer1K:  after.output,
+    inputReductionPct:  Math.round((1 - after.input  / before.input)  * 1000) / 10,
+    outputReductionPct: Math.round((1 - after.output / before.output) * 1000) / 10,
+  };
+}
+
+// currentModels: { strategy, writer, reviewer }（呼び出し側で getClaudeModelForRole() / modelPolicy から渡す）
+function buildClaudeModelQualityCompare(currentModels) {
+  const currentPolicy = {
+    strategy: (currentModels && currentModels.strategy) || CLAUDE_PREVIOUS_POLICY.strategy,
+    writer:   (currentModels && currentModels.writer)   || CLAUDE_PREVIOUS_POLICY.writer,
+    reviewer: (currentModels && currentModels.reviewer) || CLAUDE_PREVIOUS_POLICY.reviewer,
+  };
+
+  const comparisonItems = ['strategy', 'writer', 'reviewer'].map((role) => ({
+    role,
+    before: CLAUDE_PREVIOUS_POLICY[role],
+    after: currentPolicy[role],
+    changed: CLAUDE_PREVIOUS_POLICY[role] !== currentPolicy[role],
+  }));
+
+  const costImpact = {
+    strategy: { summary: '変更なし', detail: null },
+    writer:   { summary: 'Sonnet → Haiku によりコスト削減見込み', detail: _claudeModelPriceDiff(CLAUDE_PREVIOUS_POLICY.writer, currentPolicy.writer) },
+    reviewer: { summary: 'Sonnet → Haiku によりコスト削減見込み', detail: _claudeModelPriceDiff(CLAUDE_PREVIOUS_POLICY.reviewer, currentPolicy.reviewer) },
+    provider: '変更なし',
+    leader:   'OpenAIのまま',
+  };
+
+  const qualityCheckItems = [
+    'Writer出力品質',
+    'Reviewerレビュー品質',
+    'Strategy判断品質',
+    'Leader Final品質',
+    '成果物完成度',
+    'CTA品質',
+    '構成品質',
+    '文章品質',
+    '画像/動画プロンプト品質',
+  ];
+
+  const adoptionReadiness = {
+    costOptimized: true,
+    providerStable: true,
+    workflowStable: true,
+    qualityComparisonPending: true,
+    readyForPhase47_2D: false,
+  };
+
+  const warnings = [
+    'Phase47-2Cは比較フェーズ（モデル変更は行わない）',
+    '正式採用はPhase47-2Dで判断',
+    'Writer/ReviewerのHaiku化による品質低下がないか確認が必要',
+    'Claude Cost Analysis の byRole 集計は現時点で注意あり（sonnet固定ロジックのため今後のhaiku利用は担当別集計に反映されない）',
+  ];
+
+  return {
+    version: CLAUDE_MODEL_QUALITY_COMPARE_VERSION,
+    previousPolicy: CLAUDE_PREVIOUS_POLICY,
+    currentPolicy,
+    comparisonItems,
+    costImpact,
+    qualityCheckItems,
+    adoptionReadiness,
+    warnings,
+  };
+}
+
+module.exports = {
+  addClaudeUsage,
+  getSummary,
+  getClaudeCostAnalysis,
+  CLAUDE_COST_ANALYSIS_VERSION,
+  // Phase47-2C
+  buildClaudeModelQualityCompare,
+  CLAUDE_MODEL_QUALITY_COMPARE_VERSION,
+};
