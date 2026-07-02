@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - Claude実装ルール
 
-更新日: 2026-06-29（Phase46-3完了）
+更新日: 2026-07-02（Phase47-2A.1完了）
 
 ---
 
@@ -147,7 +147,129 @@ Knowledgeを蓄積して品質を毎回向上させる。
 - 実際の動画生成（ユーザー承認後）
 - SNS投稿（ユーザー承認後）
 
-## 13. Knowledge運用ルール
+## 13. 確認不要の操作（自動実行OK）
+
+以下は毎回確認不要。自動で実行してよい：
+- `curl http://localhost:3000/...` / `fetch('/api/...')` — ローカルGETリクエスト
+- `/api/cost` / `/api/claude-cost` / `/api/claude-status` — 料金取得エンドポイント
+- `npm run dev-check` — dev-check実行
+- ブラウザ更新（Ctrl+Shift+R）の指示
+- JSON読み込み（cost-logs.json / claude-cost-logs.json）
+- 料金メーター確認（updateCostProviderPanel の呼び出し確認）
+
+以下は必ず確認を取る：
+- APIキー変更 / 課金設定変更 / 有料API追加 / 契約変更
+- git push / git reset / ファイル削除
+- server.js の大幅変更
+- Supabase 変更 / DBスキーマ変更
+
+## 14. Claude Code 操作許可ポリシー
+
+本プロジェクトでは、以下の基準でClaude Codeの操作を許可する。
+
+### 通常許可（ユーザー確認不要）
+
+以下は通常の開発作業として毎回確認不要。
+
+・dev-check
+
+・localhost確認
+
+・curl(GET)
+
+・GET API確認
+
+・JSON確認
+
+・ブラウザ更新
+
+・料金メーター確認
+
+・PowerShell読み取り
+
+・git add
+
+・git status
+
+・git commit
+
+・git tag
+
+### 一度だけ許可
+
+以下は読み取り・確認目的の操作であり、安全性を確認したうえで許可する。
+
+・git diff
+
+・git diff --stat
+
+・git log
+
+・.gitignore確認
+
+・launch.json確認
+
+・.claudeフォルダ確認
+
+・ディレクトリ一覧表示
+
+### 絶対ルール（ユーザー承認があるまで実行禁止）
+
+以下はプロジェクトへ重大な影響を与える可能性があるため、ユーザーの明示的な承認があるまで実行してはならない。
+
+・git push
+
+・git reset
+
+・git reset --hard
+
+・git revert
+
+・git clean
+
+・git checkout（変更を戻す場合）
+
+・git switch
+
+・git rebase
+
+・git merge（大規模変更時）
+
+・npm install
+
+・package.json変更
+
+・package-lock.json変更
+
+・.env変更
+
+・環境変数変更
+
+・DBスキーマ変更
+
+・Supabase構造変更
+
+・APIキー変更
+
+・課金が発生する操作
+
+・有料API契約
+
+・外部サービス契約
+
+・画像生成API実行（ユーザー承認後）
+
+・動画生成API実行（ユーザー承認後）
+
+### 補足
+
+このポリシーはENBISOU AI COMPANY専用の運用ルールである。
+
+Claude Codeは可能な限りこのルールを尊重して作業を進めること。
+
+ただし、Claude Code本体の安全機構によって追加確認が必要な場合は、その確認を優先する。
+
+## 15. Knowledge運用ルール
 
 - _knowledgeSaveHistory でセッション内重複を防止
 - isKnowledgeDuplicate() で保存前チェック
@@ -156,7 +278,7 @@ Knowledgeを蓄積して品質を毎回向上させる。
 - getInjectedKnowledgeContext() → Leader contextへ追記
 - KNOWLEDGE_COMPARE_MODE で効果検証可能
 
-## 14. 最終目標
+## 16. 最終目標
 
 v1.0では
 

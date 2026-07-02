@@ -2,22 +2,51 @@
 // 既存 openaiClient.js は変更しない。Claude担当のみこのファイルで処理する。
 
 const { buildSystemPrompt } = require('./openaiClient');
+// Phase47-1.6: Claude料金永続化
+let _addClaudeCost = null;
+try {
+  _addClaudeCost = require('./claudeCostTracker').addClaudeUsage;
+} catch (_e) {
+  console.error('[claudeCostTracker] load error:', _e && _e.message);
+}
 
 // Claude対象社員
 const CLAUDE_AGENTS = new Set(['writer', 'reviewer', 'strategy']);
 
-// 社員別Claude実モデルID（AI_MODEL_SETTINGS の model名 → 実ID）
-const CLAUDE_MODEL_MAP = {
-  writer:   'claude-sonnet-4-6',
-  reviewer: 'claude-sonnet-4-6',
-  strategy: 'claude-opus-4-8',
+// Phase47-2B: Claude Model Policy（モデル最適化 / Provider構成変更なし）
+// 実際のモデルIDは既存コード内で定義済みのものを使用（推測追加なし）
+// claude-opus-4-8:  既存の高単価モデル（最高品質。従来からstrategyが使用）
+// claude-haiku-4-5:  claudeCostTracker.js CLAUDE_PRICE_PER_1K に既存定義された最安モデル
+const CLAUDE_MODEL_POLICY_VERSION = '1.0.0';
+const CLAUDE_HIGHEST_QUALITY_MODEL = 'claude-opus-4-8';
+const CLAUDE_LOWEST_COST_MODEL     = 'claude-haiku-4-5';
+
+const CLAUDE_MODEL_POLICY = {
+  strategy: 'highest_quality',
+  writer: 'lowest_cost',
+  reviewer: 'lowest_cost',
+  defaultClaudeRole: 'lowest_cost',
 };
-const CLAUDE_FALLBACK_MODEL = 'claude-sonnet-4-6';
+
+// 担当roleに応じたClaudeモデルIDを返す（Leaderには適用しない / Providerは変更しない）
+function getClaudeModelForRole(role) {
+  const policy = CLAUDE_MODEL_POLICY[role] || CLAUDE_MODEL_POLICY.defaultClaudeRole;
+  return policy === 'highest_quality' ? CLAUDE_HIGHEST_QUALITY_MODEL : CLAUDE_LOWEST_COST_MODEL;
+}
+
+// 社員別Claude実モデルID（Phase47-2B: getClaudeModelForRole()の結果を反映）
+const CLAUDE_MODEL_MAP = {
+  writer:   getClaudeModelForRole('writer'),
+  reviewer: getClaudeModelForRole('reviewer'),
+  strategy: getClaudeModelForRole('strategy'),
+};
+const CLAUDE_FALLBACK_MODEL = CLAUDE_LOWEST_COST_MODEL;
 
 // Claude料金概算（1000トークン単価 USD）
 const CLAUDE_PRICE_PER_1K = {
-  'claude-sonnet-4-6': { input: 0.003, output: 0.015 },
-  'claude-opus-4-8':   { input: 0.015, output: 0.075 },
+  'claude-sonnet-4-6': { input: 0.003,  output: 0.015 },
+  'claude-opus-4-8':   { input: 0.015,  output: 0.075 },
+  'claude-haiku-4-5':  { input: 0.0008, output: 0.004 }, // Phase47-2B: 最安モデル価格追加
 };
 
 // In-memory 利用量トラッキング（再起動でリセット）
@@ -62,6 +91,12 @@ function trackUsage(model, inputTokens, outputTokens) {
   claudeUsage.month.outputTokens += outputTokens;
   claudeUsage.month.costUsd      += cost;
   claudeUsage.lastRequest = new Date().toISOString();
+  // Phase47-1.6: 永続保存
+  if (_addClaudeCost) {
+    try { _addClaudeCost(model, inputTokens, outputTokens); } catch (_e) {
+      console.error('[claudeCostTracker] addClaudeUsage error:', _e && _e.message);
+    }
+  }
 }
 
 // Claude API 呼び出し（Fallback: エラー時は null を返す）
@@ -69,7 +104,7 @@ async function callClaudeAI(systemPrompt, userMessage, history = [], agentId = '
   const client = getAnthropicClient();
   if (!client) return null; // APIキー未設定 → Fallback
 
-  const model = CLAUDE_MODEL_MAP[agentId] || CLAUDE_FALLBACK_MODEL;
+  const model = getClaudeModelForRole(agentId);
   const messages = [
     ...history.slice(-10).map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.content })),
     { role: 'user', content: userMessage },
@@ -119,7 +154,7 @@ async function generateClaudeReply({
   // Claude 呼び出し（失敗時は null）
   const claudeText = await callClaudeAI(systemPrompt, messageText, history, assignee);
   if (claudeText !== null) {
-    return { text: claudeText, provider: 'claude', model: CLAUDE_MODEL_MAP[assignee] || CLAUDE_FALLBACK_MODEL, fallback: false };
+    return { text: claudeText, provider: 'claude', model: getClaudeModelForRole(assignee), fallback: false };
   }
 
   // Fallback: OpenAI へ切り替え
@@ -131,7 +166,7 @@ async function generateClaudeReply({
 
 // Phase36-2: Claude接続テスト（社員別 / 実API呼び出し / Token・時間計測）
 async function testClaudeAgent(agentId = 'writer') {
-  const model = CLAUDE_MODEL_MAP[agentId] || CLAUDE_FALLBACK_MODEL;
+  const model = getClaudeModelForRole(agentId);
   const client = getAnthropicClient();
   if (!client) {
     return { success: false, error: 'ANTHROPIC_API_KEY未設定', httpStatus: null, model, inputTokens: 0, outputTokens: 0, elapsedMs: 0 };
@@ -168,4 +203,10 @@ module.exports = {
   claudeUsage,
   initClaudeStatus,
   testClaudeAgent,
+  // Phase47-2B: Claude Model Policy
+  CLAUDE_MODEL_POLICY_VERSION,
+  CLAUDE_MODEL_POLICY,
+  CLAUDE_HIGHEST_QUALITY_MODEL,
+  CLAUDE_LOWEST_COST_MODEL,
+  getClaudeModelForRole,
 };

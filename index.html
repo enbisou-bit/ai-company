@@ -5434,11 +5434,18 @@
       <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">担当別利用状況</div>
       <div id="ca-by-role"></div>
       <div id="ca-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
+      <!-- Phase47-2B: Claude Model Policy -->
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">⚙️ Claude Model Policy <span style="font-size:8px;background:rgba(200,158,242,0.15);color:#c89ef2;padding:1px 5px;border-radius:3px;">Phase47-2B</span></div>
+      <div class="cost-row"><span>Strategy</span><span id="cmp-strategy">--</span></div>
+      <div class="cost-row"><span>Writer</span><span id="cmp-writer">--</span></div>
+      <div class="cost-row"><span>Reviewer</span><span id="cmp-reviewer">--</span></div>
+      <div class="cost-row"><span>Default Claude Role</span><span id="cmp-default" style="font-size:9px;color:var(--text-dim);">最安モデル</span></div>
+      <div class="cost-row"><span>Provider構成</span><span style="color:#4ecdc4;">変更なし</span></div>
       <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
-        ※ Phase47-2Aは分析のみ（モデル変更なし）<br>
-        ※ Provider構成変更なし<br>
-        ※ Claudeモデル変更なし<br>
-        ※ Phase47-2Bでモデル最適化予定
+        ※ Phase47-2Bで変更したのはClaudeモデル選択のみ<br>
+        ※ Provider構成は変更なし<br>
+        ※ LeaderはOpenAIのまま<br>
+        ※ Phase47-2Cで品質比較を実施予定
       </div>
     </div>
   </div>
@@ -8468,6 +8475,21 @@ function renderClaudeCostAnalysis(analysis, usdToJpy) {
   }
 }
 
+// Phase47-2B: Claude Model Policy表示（Provider構成変更なし / Leader=OpenAI固定）
+function renderClaudeModelPolicy(modelPolicy) {
+  var _set = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  if (!modelPolicy || !modelPolicy.currentModels) {
+    _set('cmp-strategy', '--');
+    _set('cmp-writer', '--');
+    _set('cmp-reviewer', '--');
+    return;
+  }
+  var m = modelPolicy.currentModels;
+  _set('cmp-strategy', '最高品質モデル (' + (m.strategy || '--') + ')');
+  _set('cmp-writer',   '最安モデル (' + (m.writer || '--') + ')');
+  _set('cmp-reviewer', '最安モデル (' + (m.reviewer || '--') + ')');
+}
+
 // Phase47-1.5/1.6: Provider別料金パネル更新（Claude永続データ対応）
 async function updateCostProviderPanel() {
   var section = document.getElementById('cp-provider-section');
@@ -8538,6 +8560,7 @@ async function updateCostProviderPanel() {
 
     // Phase47-2A: Claude Cost Analysis 表示
     renderClaudeCostAnalysis(cc && cc.ok ? cc.analysis : null, USD_TO_JPY);
+    renderClaudeModelPolicy(cc && cc.ok ? cc.modelPolicy : null);
 
     // 上部サマリー: OpenAI + Claude 合計で上書き
     var totalTodayJpy = parseFloat((oaTodayJpy + clTodayJpy).toFixed(2));

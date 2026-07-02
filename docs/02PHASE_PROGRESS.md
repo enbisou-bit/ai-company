@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-2A完了）
+> 更新日: 2026-07-02（Phase47-2B完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-2A 完了**
-- 現在バージョン: **v1.00-phase47-2A**
+- 現在フェーズ: **Phase47-2B 完了**
+- 現在バージョン: **v1.00-phase47-2B**
 
 ---
 
@@ -234,7 +234,19 @@ Git: v0.96相当
 - モデル変更・Provider変更・Compare Intelligenceへの反映は一切なし
 - Git: 5a7d2d3 / Tag: v1.00-phase47-2A
 
-### Phase47-2B: モデル最適化 ⬜
+### Phase47-2B: モデル最適化 ✅
+- `claudeClient.js` — `CLAUDE_MODEL_POLICY_VERSION = '1.0.0'` / `CLAUDE_MODEL_POLICY` / `getClaudeModelForRole(role)` 追加
+  - `CLAUDE_HIGHEST_QUALITY_MODEL = 'claude-opus-4-8'`（既存モデル・strategy専用）
+  - `CLAUDE_LOWEST_COST_MODEL = 'claude-haiku-4-5'`（既存コード内定義済みモデル・writer/reviewerに適用）
+  - `CLAUDE_MODEL_MAP` は `getClaudeModelForRole()` の結果を反映する形に更新（strategy=opus / writer・reviewer=haiku）
+  - `CLAUDE_PRICE_PER_1K` に haiku 価格を追加（claudeCostTracker.jsと同一値）
+  - `callClaudeAI()` / `generateClaudeReply()` / `testClaudeAgent()` の呼び出し箇所を `getClaudeModelForRole()` 経由に変更
+- `server.js` — `workflowAgentCaller()` のmodel表示を`getClaudeModelForRole()`経由に変更 / `/api/claude-cost` に `modelPolicy`（policy・currentModels・providerChanged・leader）を追加
+- `index.html` — Claude Cost Analysis内に「⚙️ Claude Model Policy」パネル追加（`renderClaudeModelPolicy()`）
+- 実API接続テストで確認: Strategy→claude-opus-4-8 / Writer→claude-haiku-4-5 / Reviewer→claude-haiku-4-5
+- Provider構成（Leader=OpenAI / Strategy・Writer・Reviewer=Claude）は一切変更なし
+- 既知の限界: `claudeCostTracker.js`のbyRole集計はsonnet固定ロジックのため、Phase47-2B以降のwriter/reviewer(haiku)利用は担当別集計に反映されない（byModelには正しく反映）。次フェーズ以降で対応要検討。
+- Git: Phase47-2B claude model optimization / Tag: v1.00-phase47-2B
 
 ---
 
@@ -262,7 +274,7 @@ Git: v0.96相当
 □ Company Memory 永続化
 ☑ API料金メーター（Phase47-1）
 ☑ Claude Cost Analysis（Phase47-2A・分析のみ）
-□ Claude API コスト最適化（Phase47-2B）
+☑ Claude API コスト最適化（Phase47-2B）
 □ v1.0正式版
 
 ---
