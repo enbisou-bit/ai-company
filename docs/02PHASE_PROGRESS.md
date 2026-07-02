@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase48-1完了）
+> 更新日: 2026-07-02（Phase48-2完了）
 
 ## 現在地
-- 現在フェーズ: **Phase48-1 完了**
-- 現在バージョン: **v1.00-phase48-1**
+- 現在フェーズ: **Phase48-2 完了**
+- 現在バージョン: **v1.00-phase48-2**
 
 ---
 
@@ -346,6 +346,19 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - 既知の発見: 複数の成果物タイプでチェック項目の一部（CTA等）が現行テンプレートに対応フィールドを持たないことが判明（例: flyer/pdf/html/videoにCTA用フィールドなし）。Phase48-2の成果物テンプレート強化で対応検討
 - Git: Phase48-1 output package quality / Tag: v1.00-phase48-1
 
+### Phase48-2: 成果物テンプレート強化 ✅
+- `index.html`
+  - `OUTPUT_PACKAGE_QUALITY_VERSION` を`1.0.0`→`1.1.0`へ更新、`OUTPUT_PACKAGE_TEMPLATE_VERSION = '1.0.0'`追加
+  - `OUTPUT_TYPE_DEFINITIONS.outputFields` を全11対象タイプ（instagram_carousel/tiktok_video/youtube_shorts/lp/flyer/pdf/html/image_prompt/video_prompt/document）へ既存フィールドを維持したまま追加（削除・リネームなし）
+  - `OUTPUT_PACKAGE_QUALITY_TYPE_MAP` — image_prompt/video_promptを専用カテゴリへ変更（従来generic/video共有）。documentをpdfカテゴリへ統一（PDF/document/proposal系を同一構成に）
+  - `OUTPUT_PACKAGE_QUALITY_CHECKS` — 新規フィールドに対応するfieldKeysを設定し、多数の項目が`hasSchemaField: false`→`true`へ改善。image_prompt/video_promptの専用チェックリストを新規追加
+  - `OUTPUT_PACKAGE_QUALITY_RECOMMENDATIONS` — 新規チェック項目（subject/style/composition/lighting/background/negativePrompt/usage/scene/cameraMotion/subjectMotion）の改善提案文を追加
+- ロジック検証（Node vm実行）: 全対象タイプ（instagram_carousel/tiktok_video/flyer/pdf/html/image_prompt/video_prompt/document/lp）で全フィールド入力時に**score=100, status=complete**を確認。特にInstagram Carouselは従来上限70点→100点まで到達可能に改善
+- 後方互換性確認: 新規フィールド未入力の既存データ相当（旧5フィールドのみ）でもscore=70のまま変化なし（回帰なし）。ただし`hasSchemaField`がtrueに変わり「テンプレート未対応」の注記が解消
+- 生成ロジック（`buildOutputDraftFromLeaderFinal()`等）は一切変更していない（スキーマ・チェックリスト定義のみ追加）。画像/動画生成API・SNS投稿機能・PDF生成ライブラリ・外部API追加はなし
+- モデル変更・Provider構成変更は一切なし（実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）
+- Git: Phase48-2 output templates enhancement / Tag: v1.00-phase48-2
+
 ---
 
 # v1.0まで
@@ -380,6 +393,7 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 ☑ Claude APIコスト最適化トラック v1.00 Stable確定（Phase47-S）
 ☑ Claude Quality History永続化（Phase47-5）
 ☑ Output Package Quality Checklist（Phase48-1）
+☑ 成果物テンプレート強化（Phase48-2）
 □ v1.0正式版（Instagram/動画/チラシ/LP/PDF/HTML完成品生成・Company Memory永続化が未完了のため引き続き未達成）
 
 ---

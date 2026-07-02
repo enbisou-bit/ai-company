@@ -21734,7 +21734,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '📱',
     description: 'カルーセル投稿（スライド10枚まで）',
     defaultOwner: 'sns',
-    outputFields: ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts'],
+    // Phase48-2: targetAudience/benefit/saveSharePromptを追加（Output Package Quality不足項目強化）
+    outputFields: ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts', 'targetAudience', 'benefit', 'saveSharePrompt'],
   },
   {
     id: 'instagram_post',
@@ -21750,7 +21751,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '🎵',
     description: 'TikTok動画コンテンツ',
     defaultOwner: 'video',
-    outputFields: ['script', 'captions', 'videoPrompt', 'hashtags'],
+    // Phase48-2: cta/duration/musicMood/ending/visualPrompts/motionPromptsを追加
+    outputFields: ['script', 'captions', 'videoPrompt', 'hashtags', 'cta', 'duration', 'musicMood', 'ending', 'visualPrompts', 'motionPrompts'],
   },
   {
     id: 'youtube_shorts',
@@ -21758,7 +21760,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '▶️',
     description: 'Shorts用台本・プロンプト',
     defaultOwner: 'video',
-    outputFields: ['script', 'title', 'description', 'videoPrompt'],
+    // Phase48-2: cta/duration/musicMood/ending/visualPrompts/motionPromptsを追加
+    outputFields: ['script', 'title', 'description', 'videoPrompt', 'cta', 'duration', 'musicMood', 'ending', 'visualPrompts', 'motionPrompts'],
   },
   {
     id: 'lp',
@@ -21766,7 +21769,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '🌐',
     description: 'LP（ランディングページ）',
     defaultOwner: 'lp',
-    outputFields: ['headline', 'sections', 'cta', 'html'],
+    // Phase48-2: firstView/problem/solution/benefits/proof/flow/faq/htmlStructureを追加（既存sections/htmlの共有proxyから個別項目へ強化）
+    outputFields: ['headline', 'sections', 'cta', 'html', 'firstView', 'problem', 'solution', 'benefits', 'proof', 'flow', 'faq', 'htmlStructure'],
   },
   {
     id: 'flyer',
@@ -21774,7 +21778,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '📄',
     description: 'チラシ（コピー・デザイン指示）',
     defaultOwner: 'designer',
-    outputFields: ['catchcopy', 'body', 'offer', 'designNotes'],
+    // Phase48-2: subheadline/proof/area/cta/layoutInstruction/imageInstruction/contactを追加
+    outputFields: ['catchcopy', 'body', 'offer', 'designNotes', 'subheadline', 'proof', 'area', 'cta', 'layoutInstruction', 'imageInstruction', 'contact'],
   },
   {
     id: 'pdf',
@@ -21782,7 +21787,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '📕',
     description: 'PDF形式の文書',
     defaultOwner: 'writer',
-    outputFields: ['title', 'sections', 'summary'],
+    // Phase48-2: visualInstruction/proof/cta/nextActionを追加
+    outputFields: ['title', 'sections', 'summary', 'visualInstruction', 'proof', 'cta', 'nextAction'],
   },
   {
     id: 'html',
@@ -21790,7 +21796,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '💻',
     description: 'HTML単体ページ',
     defaultOwner: 'lp',
-    outputFields: ['title', 'html', 'css'],
+    // Phase48-2: copy/sections/htmlStructureは既に buildOutputDraftFromLeaderFinal() が実際に使用しているフィールドのため正式に宣言。cta/responsiveNote/visualInstructionを新規追加
+    outputFields: ['title', 'html', 'css', 'copy', 'sections', 'htmlStructure', 'cta', 'responsiveNote', 'visualInstruction'],
   },
   {
     id: 'powerpoint',
@@ -21814,7 +21821,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '🎨',
     description: '画像生成用プロンプトセット',
     defaultOwner: 'designer',
-    outputFields: ['prompt', 'negativePrompt', 'style', 'size'],
+    // Phase48-2: subject/composition/lighting/background/usageを追加
+    outputFields: ['prompt', 'negativePrompt', 'style', 'size', 'subject', 'composition', 'lighting', 'background', 'usage'],
   },
   {
     id: 'video_prompt',
@@ -21822,7 +21830,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '🎬',
     description: '動画生成用プロンプト',
     defaultOwner: 'video',
-    outputFields: ['prompt', 'style', 'duration', 'aspect'],
+    // Phase48-2: scene/cameraMotion/subjectMotion/endingを追加（negativePromptも追加）
+    outputFields: ['prompt', 'style', 'duration', 'aspect', 'scene', 'cameraMotion', 'subjectMotion', 'ending', 'negativePrompt'],
   },
   {
     id: 'document',
@@ -21830,7 +21839,8 @@ const OUTPUT_TYPE_DEFINITIONS = [
     icon: '📝',
     description: '汎用テキスト文書',
     defaultOwner: 'writer',
-    outputFields: ['title', 'body', 'summary'],
+    // Phase48-2: sections/visualInstruction/proof/cta/nextActionを追加（PDF/document/proposal系として統一強化）
+    outputFields: ['title', 'body', 'summary', 'sections', 'visualInstruction', 'proof', 'cta', 'nextAction'],
   },
 ];
 
@@ -21861,30 +21871,34 @@ function getOutputTypeDefinition(type) {
 // 成果物ごとの不足要素を見える化する（生成ロジックは変更しない・追加のみ）
 // ══════════════════════════════════════════════════
 
-const OUTPUT_PACKAGE_QUALITY_VERSION = '1.0.0';
+const OUTPUT_PACKAGE_QUALITY_VERSION = '1.1.0';
+// Phase48-2: 成果物テンプレート強化バージョン（OUTPUT_TYPE_DEFINITIONS.outputFields拡張）
+const OUTPUT_PACKAGE_TEMPLATE_VERSION = '1.0.0';
 
 // 実際のOUTPUT_TYPE_DEFINITIONS（13種）→ チェックリストカテゴリの対応
-// instagram_carousel/flyer/lp/pdf/html は実際の型名と一致。動画系(tiktok_video/youtube_shorts/video_prompt)は「video」、
-// それ以外（powerpoint/excel/image_prompt/document）は最も近いカテゴリへ対応させる（新しい型は追加しない）
+// instagram_carousel/flyer/lp/pdf/html は実際の型名と一致。動画系(tiktok_video/youtube_shorts)は「video」、
+// image_prompt/video_promptはPhase48-2で専用カテゴリへ変更（プロンプト構造がnarrative系と異なるため）。
+// document/powerpointはPhase48-2でpdfと同一のtitle/summary/sections/visualInstruction/proof/cta/nextAction構成へ統一
 const OUTPUT_PACKAGE_QUALITY_TYPE_MAP = {
   instagram_carousel: 'instagram',
   instagram_post:     'instagram',
   tiktok_video:        'video',
   youtube_shorts:      'video',
-  video_prompt:        'video',
+  video_prompt:        'video_prompt',
   flyer:               'flyer',
   lp:                  'lp',
   pdf:                 'pdf',
   html:                'html',
   powerpoint:          'pdf',
   excel:               'generic',
-  image_prompt:        'generic',
-  document:            'generic',
+  image_prompt:        'image_prompt',
+  document:            'pdf',
 };
 
 // チェック項目定義。fieldKeys は d.fields 内で存在チェックする候補キー（いずれか1つでも埋まっていれば充足）。
 // fieldKeys が空配列の項目は、現在の成果物テンプレート（OUTPUT_TYPE_DEFINITIONS.outputFields）に対応フィールドが
-// 存在しないため常に「未検出」として扱う（Phase48-2の成果物テンプレート強化の検討材料として活用する）
+// 存在しないため常に「未検出」として扱う。
+// Phase48-2でOUTPUT_TYPE_DEFINITIONSへ実フィールドを追加したため、多くの項目がfieldKeysを持つよう更新済み。
 const OUTPUT_PACKAGE_QUALITY_CHECKS = {
   instagram: [
     { key: 'hook',            label: 'フック（Hook）',     fieldKeys: ['slides'] },
@@ -21894,60 +21908,80 @@ const OUTPUT_PACKAGE_QUALITY_CHECKS = {
     { key: 'caption',         label: 'キャプション',       fieldKeys: ['caption'] },
     { key: 'hashtags',        label: 'ハッシュタグ',       fieldKeys: ['hashtags'] },
     { key: 'imagePrompts',    label: '画像生成プロンプト', fieldKeys: ['imagePrompts', 'imagePrompt'] },
-    { key: 'targetAudience',  label: 'ターゲット層',       fieldKeys: [] },
-    { key: 'benefit',         label: 'ベネフィット',       fieldKeys: [] },
-    { key: 'saveSharePrompt', label: '保存・シェア誘導',   fieldKeys: [] },
+    { key: 'targetAudience',  label: 'ターゲット層',       fieldKeys: ['targetAudience'] },
+    { key: 'benefit',         label: 'ベネフィット',       fieldKeys: ['benefit'] },
+    { key: 'saveSharePrompt', label: '保存・シェア誘導',   fieldKeys: ['saveSharePrompt'] },
   ],
   video: [
     { key: 'hook',          label: 'フック（Hook）',     fieldKeys: ['script'] },
     { key: 'sceneList',     label: 'シーン構成',         fieldKeys: ['script'] },
     { key: 'narration',     label: 'ナレーション',       fieldKeys: ['script'] },
-    { key: 'visualPrompts', label: '映像生成プロンプト', fieldKeys: ['videoPrompt', 'prompt'] },
-    { key: 'motionPrompts', label: 'モーション指示',     fieldKeys: ['videoPrompt', 'prompt'] },
+    { key: 'visualPrompts', label: '映像生成プロンプト', fieldKeys: ['visualPrompts', 'videoPrompt', 'prompt'] },
+    { key: 'motionPrompts', label: 'モーション指示',     fieldKeys: ['motionPrompts', 'videoPrompt', 'prompt'] },
     { key: 'caption',       label: 'キャプション',       fieldKeys: ['captions', 'description'] },
-    { key: 'cta',           label: 'CTA',                fieldKeys: [] },
+    { key: 'cta',           label: 'CTA',                fieldKeys: ['cta'] },
     { key: 'duration',      label: '尺（Duration）',     fieldKeys: ['duration'] },
-    { key: 'musicMood',     label: '音楽・雰囲気指示',   fieldKeys: [] },
-    { key: 'ending',        label: 'エンディング',       fieldKeys: [] },
+    { key: 'musicMood',     label: '音楽・雰囲気指示',   fieldKeys: ['musicMood'] },
+    { key: 'ending',        label: 'エンディング',       fieldKeys: ['ending'] },
   ],
   flyer: [
     { key: 'headline',          label: 'ヘッドライン',     fieldKeys: ['catchcopy'] },
-    { key: 'subheadline',       label: 'サブヘッドライン', fieldKeys: [] },
+    { key: 'subheadline',       label: 'サブヘッドライン', fieldKeys: ['subheadline'] },
     { key: 'offer',             label: 'オファー',         fieldKeys: ['offer'] },
-    { key: 'proof',             label: '実績・信頼要素',   fieldKeys: ['body'] },
-    { key: 'area',              label: '対応エリア',       fieldKeys: [] },
-    { key: 'cta',               label: 'CTA',              fieldKeys: [] },
-    { key: 'layoutInstruction', label: 'レイアウト指示',   fieldKeys: ['designNotes'] },
-    { key: 'imageInstruction',  label: '画像指示',         fieldKeys: ['designNotes'] },
-    { key: 'contact',           label: '連絡先',           fieldKeys: [] },
+    { key: 'proof',             label: '実績・信頼要素',   fieldKeys: ['proof', 'body'] },
+    { key: 'area',              label: '対応エリア',       fieldKeys: ['area'] },
+    { key: 'cta',               label: 'CTA',              fieldKeys: ['cta'] },
+    { key: 'layoutInstruction', label: 'レイアウト指示',   fieldKeys: ['layoutInstruction', 'designNotes'] },
+    { key: 'imageInstruction',  label: '画像指示',         fieldKeys: ['imageInstruction', 'designNotes'] },
+    { key: 'contact',           label: '連絡先',           fieldKeys: ['contact'] },
   ],
   lp: [
-    { key: 'firstView',     label: 'ファーストビュー', fieldKeys: ['headline'] },
-    { key: 'problem',       label: '課題提起',         fieldKeys: ['sections'] },
-    { key: 'solution',      label: '解決策',           fieldKeys: ['sections'] },
-    { key: 'benefits',      label: 'ベネフィット',     fieldKeys: ['sections'] },
-    { key: 'proof',         label: '実績・信頼要素',   fieldKeys: ['sections'] },
-    { key: 'flow',          label: 'ご利用の流れ',     fieldKeys: ['sections'] },
-    { key: 'faq',           label: 'FAQ',              fieldKeys: ['sections'] },
+    { key: 'firstView',     label: 'ファーストビュー', fieldKeys: ['firstView', 'headline'] },
+    { key: 'problem',       label: '課題提起',         fieldKeys: ['problem', 'sections'] },
+    { key: 'solution',      label: '解決策',           fieldKeys: ['solution', 'sections'] },
+    { key: 'benefits',      label: 'ベネフィット',     fieldKeys: ['benefits', 'sections'] },
+    { key: 'proof',         label: '実績・信頼要素',   fieldKeys: ['proof', 'sections'] },
+    { key: 'flow',          label: 'ご利用の流れ',     fieldKeys: ['flow', 'sections'] },
+    { key: 'faq',           label: 'FAQ',              fieldKeys: ['faq', 'sections'] },
     { key: 'cta',           label: 'CTA',              fieldKeys: ['cta'] },
-    { key: 'htmlStructure', label: 'HTML構造',         fieldKeys: ['html'] },
+    { key: 'htmlStructure', label: 'HTML構造',         fieldKeys: ['htmlStructure', 'html'] },
   ],
   pdf: [
     { key: 'title',             label: 'タイトル',       fieldKeys: ['title'] },
     { key: 'summary',           label: 'サマリー',       fieldKeys: ['summary'] },
     { key: 'sections',          label: '構成セクション', fieldKeys: ['sections'] },
-    { key: 'visualInstruction', label: 'ビジュアル指示', fieldKeys: [] },
-    { key: 'proof',             label: '実績・根拠',     fieldKeys: ['sections'] },
-    { key: 'cta',               label: 'CTA',            fieldKeys: [] },
-    { key: 'nextAction',        label: '次のアクション', fieldKeys: [] },
+    { key: 'visualInstruction', label: 'ビジュアル指示', fieldKeys: ['visualInstruction'] },
+    { key: 'proof',             label: '実績・根拠',     fieldKeys: ['proof', 'sections'] },
+    { key: 'cta',               label: 'CTA',            fieldKeys: ['cta'] },
+    { key: 'nextAction',        label: '次のアクション', fieldKeys: ['nextAction'] },
   ],
   html: [
     { key: 'structure',         label: '構造',                 fieldKeys: ['htmlStructure', 'html'] },
     { key: 'sections',          label: 'セクション',           fieldKeys: ['sections'] },
-    { key: 'cta',               label: 'CTA',                  fieldKeys: [] },
-    { key: 'responsiveNote',    label: 'レスポンシブ対応メモ', fieldKeys: [] },
+    { key: 'cta',               label: 'CTA',                  fieldKeys: ['cta'] },
+    { key: 'responsiveNote',    label: 'レスポンシブ対応メモ', fieldKeys: ['responsiveNote'] },
     { key: 'copyBlocks',        label: 'コピーブロック',       fieldKeys: ['copy'] },
-    { key: 'visualInstruction', label: 'ビジュアル指示',       fieldKeys: [] },
+    { key: 'visualInstruction', label: 'ビジュアル指示',       fieldKeys: ['visualInstruction'] },
+  ],
+  // Phase48-2: image_prompt専用カテゴリ（従来はgeneric共有）
+  image_prompt: [
+    { key: 'subject',         label: '被写体',                 fieldKeys: ['subject'] },
+    { key: 'style',           label: 'スタイル',               fieldKeys: ['style'] },
+    { key: 'composition',     label: '構図',                   fieldKeys: ['composition'] },
+    { key: 'lighting',        label: 'ライティング',           fieldKeys: ['lighting'] },
+    { key: 'background',      label: '背景',                   fieldKeys: ['background'] },
+    { key: 'negativePrompt',  label: 'ネガティブプロンプト',   fieldKeys: ['negativePrompt'] },
+    { key: 'usage',           label: '用途',                   fieldKeys: ['usage'] },
+  ],
+  // Phase48-2: video_prompt専用カテゴリ（従来はvideoカテゴリ共有）
+  video_prompt: [
+    { key: 'scene',          label: 'シーン',                 fieldKeys: ['scene'] },
+    { key: 'cameraMotion',   label: 'カメラワーク',           fieldKeys: ['cameraMotion'] },
+    { key: 'subjectMotion',  label: '被写体の動き',           fieldKeys: ['subjectMotion'] },
+    { key: 'duration',       label: '尺（Duration）',         fieldKeys: ['duration'] },
+    { key: 'style',          label: 'スタイル',               fieldKeys: ['style'] },
+    { key: 'ending',         label: 'エンディング',           fieldKeys: ['ending'] },
+    { key: 'negativePrompt', label: 'ネガティブプロンプト',   fieldKeys: ['negativePrompt'] },
   ],
   generic: [
     { key: 'title',      label: 'タイトル',       fieldKeys: ['title'] },
@@ -21999,6 +22033,17 @@ const OUTPUT_PACKAGE_QUALITY_RECOMMENDATIONS = {
   summary: 'サマリーの追加を検討してください',
   sections: '構成が弱い可能性があります',
   nextAction: '次のアクション（Next Action）の明記を検討してください',
+  // Phase48-2: image_prompt / video_prompt 専用カテゴリの改善提案
+  subject: '被写体の明記を検討してください',
+  style: 'スタイルの明記を検討してください',
+  composition: '構図の明記を検討してください',
+  lighting: 'ライティングの指示を検討してください',
+  background: '背景の指示を検討してください',
+  negativePrompt: 'ネガティブプロンプトの追加を検討してください',
+  usage: '用途の明記を検討してください',
+  scene: 'シーンの明記を検討してください',
+  cameraMotion: 'カメラワークの指示を検討してください',
+  subjectMotion: '被写体の動きの指示を検討してください',
 };
 
 function _outputPackageHasField(fields, key) {
