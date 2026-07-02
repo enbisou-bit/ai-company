@@ -5495,7 +5495,22 @@
       <div id="qm-warnings" style="font-size:9px;color:#ffd166;margin-top:4px;"></div>
       <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
         ※ Compare Intelligence（Improvement Score）の既存スコアを利用（新しい比較ロジックは追加なし）<br>
-        ※ モデルの自動切替は行いません（判断は必ず手動）<br>
+        ※ モデルの自動切替は行いません（判断は必ず手動）
+      </div>
+      <!-- Phase47-4: Claude Quality History（時系列品質監視） -->
+      <div class="cost-section-label" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.07);padding-top:10px;">📈 Claude Quality History <span style="font-size:8px;background:rgba(78,205,196,0.15);color:#4ecdc4;padding:1px 5px;border-radius:3px;">Phase47-4</span></div>
+      <div class="cost-row"><span>平均品質</span><span id="qh-average">--</span></div>
+      <div class="cost-row"><span>Excellent</span><span id="qh-excellent">--</span>件</div>
+      <div class="cost-row"><span>Good</span><span id="qh-good">--</span>件</div>
+      <div class="cost-row"><span>Watch</span><span id="qh-watch">--</span>件</div>
+      <div class="cost-row"><span>Critical</span><span id="qh-critical">--</span>件</div>
+      <div style="font-size:9px;color:var(--text-dim);padding:3px 0 2px;">品質推移（直近10件・新しい順）</div>
+      <div id="qh-trend-list"></div>
+      <div id="qh-warning" style="font-size:9px;margin-top:4px;"></div>
+      <div style="font-size:8px;color:var(--text-dim);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
+        ※ 履歴は最大20件（メモリ内保持・サーバー再起動でリセット）<br>
+        ※ 直近5件平均と前5件平均を比較し5%以上低下でWarning表示（表示のみ）<br>
+        ※ モデルの自動切替は行いません<br>
         ※ 品質監視は今後も継続
       </div>
     </div>
@@ -8427,6 +8442,8 @@ updateBillingLockBtn();
 
 // ── API料金メーター ────────────────────────────────
 let _costPanelOpen = false;
+// Phase47-4: Export用に最新の /api/claude-cost 応答をキャッシュ（qualityHistory/qualityTrend/qualityWarning）
+let _lastClaudeCostResponse = null;
 
 async function fetchCost() {
   // Phase27: Claude利用状況も同時取得
@@ -8728,6 +8745,53 @@ function renderClaudeQualityMonitor(qm) {
   }
 }
 
+// Phase47-4: Claude Quality History表示（時系列品質監視 / 表示のみ・モデル自動変更なし）
+var _lastQualityHistoryStatusLabel = { excellent: '✅', good: '🙂', watch: '⚠️', critical: '🔴' };
+function renderClaudeQualityHistory(qualityTrend, qualityHistory, qualityWarning) {
+  var _set = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; };
+  var trendListEl = document.getElementById('qh-trend-list');
+  var warnEl       = document.getElementById('qh-warning');
+
+  if (!qualityTrend) {
+    _set('qh-average', '--');
+    _set('qh-excellent', '--');
+    _set('qh-good', '--');
+    _set('qh-watch', '--');
+    _set('qh-critical', '--');
+    if (trendListEl) trendListEl.innerHTML = '';
+    if (warnEl) warnEl.textContent = '';
+    return;
+  }
+
+  _set('qh-average',   (qualityTrend.averageScore === null || qualityTrend.averageScore === undefined) ? '--' : qualityTrend.averageScore + '点');
+  _set('qh-excellent', (qualityTrend.counts && qualityTrend.counts.excellent) || 0);
+  _set('qh-good',      (qualityTrend.counts && qualityTrend.counts.good) || 0);
+  _set('qh-watch',     (qualityTrend.counts && qualityTrend.counts.watch) || 0);
+  _set('qh-critical',  (qualityTrend.counts && qualityTrend.counts.critical) || 0);
+
+  if (trendListEl) {
+    var list = (qualityHistory || []).slice(-10).reverse();
+    if (list.length === 0) {
+      trendListEl.innerHTML = '<div style="font-size:9px;color:var(--text-dim);">履歴なし</div>';
+    } else {
+      trendListEl.innerHTML = list.map(function (h) {
+        var icon = _lastQualityHistoryStatusLabel[h.status] || '--';
+        var time = h.timestamp ? new Date(h.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--';
+        return '<div class="cost-row" style="font-size:9px;"><span style="color:var(--text-dim);">' + time + '</span><span>' + icon + ' ' + (h.overallScore === null ? '--' : h.overallScore + '点') + '</span></div>';
+      }).join('');
+    }
+  }
+  if (warnEl) {
+    if (qualityWarning && qualityWarning.degradationDetected) {
+      warnEl.style.color = '#ff6b6b';
+      warnEl.textContent = '⚠ ' + qualityWarning.message;
+    } else {
+      warnEl.style.color = 'var(--text-dim)';
+      warnEl.textContent = qualityWarning ? qualityWarning.message : '';
+    }
+  }
+}
+
 // Phase47-1.5/1.6: Provider別料金パネル更新（Claude永続データ対応）
 async function updateCostProviderPanel() {
   var section = document.getElementById('cp-provider-section');
@@ -8821,6 +8885,9 @@ async function updateCostProviderPanel() {
     renderClaudeModelQualityCompare(cc && cc.ok ? cc.qualityCompare : null);
     renderClaudeModelAdoptionStatus(cc && cc.ok ? cc.adoptionStatus : null);
     renderClaudeQualityMonitor(cc && cc.ok ? cc.qualityMonitor : null);
+    renderClaudeQualityHistory(cc && cc.ok ? cc.qualityTrend : null, cc && cc.ok ? cc.qualityHistory : null, cc && cc.ok ? cc.qualityWarning : null);
+    // Phase47-4: Export用に最新の /api/claude-cost 応答をキャッシュ
+    _lastClaudeCostResponse = (cc && cc.ok) ? cc : null;
 
     // 上部サマリー: OpenAI + Claude 合計で上書き
     var totalTodayJpy = parseFloat((oaTodayJpy + clTodayJpy).toFixed(2));
@@ -21287,6 +21354,44 @@ function appendCompareLearningToExportJson(payload) {
   };
 }
 
+// Phase47-4: Claude Quality History Export（_lastClaudeCostResponse・/api/claude-cost取得済みデータのみ利用）
+function appendClaudeQualityHistoryToExportMarkdown(lines) {
+  var cc = _lastClaudeCostResponse;
+  if (!cc) return;
+  var trend   = cc.qualityTrend;
+  var history = cc.qualityHistory || [];
+  var warning = cc.qualityWarning;
+
+  lines.push('');
+  lines.push('## Claude Quality History (Phase47-4)');
+
+  if (trend) {
+    lines.push('- 平均品質: ' + (trend.averageScore === null ? '--' : trend.averageScore + '点') + ' / 履歴件数: ' + trend.historyCount);
+    lines.push('- Excellent:' + trend.counts.excellent + ' Good:' + trend.counts.good + ' Watch:' + trend.counts.watch + ' Critical:' + trend.counts.critical);
+    lines.push('- 最高スコア: ' + (trend.maxScore === null ? '--' : trend.maxScore) + ' / 最低スコア: ' + (trend.minScore === null ? '--' : trend.minScore));
+  }
+  if (warning) {
+    lines.push('- Warning: ' + (warning.degradationDetected ? '⚠ ' : '') + warning.message);
+  }
+  if (history.length > 0) {
+    lines.push('');
+    lines.push('### 品質推移（直近10件）');
+    history.slice(-10).forEach(function(h, i) {
+      lines.push((i + 1) + '. [' + (h.timestamp || '—') + '] ' + (h.status || '—') + ' / Score:' + (h.overallScore === null ? '--' : h.overallScore) + ' / ' + (h.recommendation || '—'));
+    });
+  }
+}
+
+function appendClaudeQualityHistoryToExportJson(payload) {
+  var cc = _lastClaudeCostResponse;
+  if (!cc) return;
+  payload.claudeQualityHistoryPhase47_4 = {
+    qualityHistory: cc.qualityHistory || [],
+    qualityTrend:   cc.qualityTrend   || null,
+    qualityWarning: cc.qualityWarning || null,
+  };
+}
+
 // ══════════════════════════════════════════════════
 
 function switchKnowledgeCompareMode(mode) {
@@ -22307,6 +22412,7 @@ function serializeOutputDraft(format) {
     appendCompareIntegrationCheckToExportJson(jsonObj);
     appendImprovementToExportJson(jsonObj);
     appendCompareLearningToExportJson(jsonObj);
+    appendClaudeQualityHistoryToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -22532,6 +22638,7 @@ function serializeOutputDraft(format) {
   appendCompareIntegrationCheckToExportMarkdown(mdLines);
   appendImprovementToExportMarkdown(mdLines);
   appendCompareLearningToExportMarkdown(mdLines);
+  appendClaudeQualityHistoryToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 

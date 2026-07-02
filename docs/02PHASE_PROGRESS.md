@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase47-3完了）
+> 更新日: 2026-07-02（Phase47-4完了）
 
 ## 現在地
-- 現在フェーズ: **Phase47-3 完了**
-- 現在バージョン: **v1.00-phase47-3**
+- 現在フェーズ: **Phase47-4 完了**
+- 現在バージョン: **v1.00-phase47-4**
 
 ---
 
@@ -285,6 +285,23 @@ Git: v0.96相当
 - モデル変更・自動切替は一切なし（実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）。Provider構成変更なし
 - Git: Phase47-3 quality monitor / Tag: v1.00-phase47-3
 
+### Phase47-4: Claude Quality History（時系列品質監視） ✅
+- `claudeCostTracker.js` — 追加関数・Version
+  - `CLAUDE_QUALITY_HISTORY_VERSION = '1.0.0'` / `recordClaudeQualityHistory(entry)` / `getClaudeQualityHistory()`
+    - `_claudeQualityHistory[]`（メモリ内・最大20件・FIFO。timestamp/workflowId/outputType/provider/model/overallScore/status/recommendation/cost/tokensを保持）
+    - 短時間内（3秒以内）の同一スコア連続記録は重複防止のためスキップ
+  - `CLAUDE_QUALITY_TREND_VERSION = '1.0.0'` / `buildClaudeQualityTrend()` — Excellent/Good/Watch/Critical件数・平均/最高/最低スコアを集計
+  - `CLAUDE_QUALITY_WARNING_VERSION = '1.0.0'` / `buildClaudeQualityWarning()` — 直近5件平均 vs 前5件平均で5%以上低下ならWarning（履歴10件未満は判定保留）。モデル自動変更は一切行わない
+- `server.js` — `/api/claude-cost` に `qualityHistory` / `qualityTrend` / `qualityWarning` を追加（新規APIなし）。実スコア受信時（overallパラメータあり）のみ履歴へ記録
+- `index.html` — Claude Quality Monitorパネル下に「📈 Claude Quality History」パネル追加（`renderClaudeQualityHistory()`）
+  - 平均品質 / Excellent・Good・Watch・Critical件数 / 品質推移（直近10件） / 品質悪化Warning
+  - Export（Markdown/JSON）へ`appendClaudeQualityHistoryToExportMarkdown()` / `appendClaudeQualityHistoryToExportJson()`を追加（既存Export関数群と同じ呼び出しパターンで連結）
+  - `_lastClaudeCostResponse`をキャッシュし、Export時に最新の qualityHistory/qualityTrend/qualityWarning を利用
+- 動作確認: 高スコア5件→低スコア5件を連続投入し、Excellent:5/Watch:5・degradationDetected:true（33.3%低下）を確認。15件追加投入で20件キャップ・FIFO動作を確認
+- モデル変更・自動切替は一切なし（実API接続テストでwriter→claude-haiku-4-5、strategy→claude-opus-4-8のまま変化なしを確認）。Provider構成変更なし
+- 既知の制限: 履歴はメモリ内のみでサーバー再起動によりリセットされる（永続化なし）
+- Git: Phase47-4 quality history / Tag: v1.00-phase47-4
+
 ---
 
 # v1.0まで
@@ -315,6 +332,7 @@ Git: v0.96相当
 ☑ Claude Model Quality Compare（Phase47-2C・比較のみ）
 ☑ Claudeモデル正式採用判断（Phase47-2D）
 ☑ Claude Quality Monitor / Compare Intelligence連携（Phase47-3）
+☑ Claude Quality History / 時系列品質監視（Phase47-4）
 □ v1.0正式版
 
 ---

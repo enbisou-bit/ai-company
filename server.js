@@ -7,7 +7,7 @@ const { costTracker, resetCostTracker } = require('./costTracker');
 const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP } = require('./openaiClient');
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent, getClaudeModelForRole, CLAUDE_MODEL_POLICY, CLAUDE_MODEL_POLICY_VERSION } = require('./claudeClient'); // Phase47-2B
-const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus, buildClaudeQualityMonitor } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D / Phase47-3
+const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus, buildClaudeQualityMonitor, recordClaudeQualityHistory, getClaudeQualityHistory, buildClaudeQualityTrend, buildClaudeQualityWarning } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D / Phase47-3 / Phase47-4
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -1328,10 +1328,12 @@ app.get('/api/claude-status', (req, res) => {
 });
 // ─────────────────────────────────────────────────
 
-// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis / Phase47-2B: modelPolicy / Phase47-2C: qualityCompare / Phase47-2D: adoptionStatus / Phase47-3: qualityMonitor追加）
+// GET /api/claude-cost — Phase47-1.6: Claude API料金永続データ（Phase47-2A: analysis / Phase47-2B: modelPolicy / Phase47-2C: qualityCompare / Phase47-2D: adoptionStatus / Phase47-3: qualityMonitor / Phase47-4: qualityHistory・qualityTrend・qualityWarning追加）
 // Phase47-3: Compare Intelligenceのスコアはブラウザ側にのみ存在するため、任意のqueryパラメータ経由で受け取る（未指定時はデータ不足として扱う）
+// Phase47-4: 実スコア受信時のみ、時系列履歴（メモリ内・最大20件）へ記録する。モデル自動変更は行わない（表示のみ）
 app.get('/api/claude-cost', (req, res) => {
   try {
+    const costSummary = getClaudeCostSummary();
     let analysis = null;
     try { analysis = getClaudeCostAnalysis(); } catch (_e) { analysis = null; }
     const currentModels = {
@@ -1352,8 +1354,8 @@ app.get('/api/claude-cost', (req, res) => {
     let adoptionStatus = null;
     try { adoptionStatus = buildClaudeModelAdoptionStatus(currentModels, qualityCompare); } catch (_e) { adoptionStatus = null; }
     let qualityMonitor = null;
+    const q = req.query || {};
     try {
-      const q = req.query || {};
       const toNum = (v) => (v !== undefined && v !== '' && !isNaN(Number(v))) ? Number(v) : undefined;
       const toCat = (key) => { const s = toNum(q[key]); return s !== undefined ? { score: s } : null; };
       const overall = toNum(q.overall);
@@ -1367,8 +1369,27 @@ app.get('/api/claude-cost', (req, res) => {
         images:    toCat('imagesScore'),
       } : null;
       qualityMonitor = buildClaudeQualityMonitor(compareData);
+      // Phase47-4: 実スコアが渡された場合のみ履歴へ記録
+      if (compareData && qualityMonitor) {
+        recordClaudeQualityHistory({
+          workflowId: q.workflowId || null,
+          outputType: q.outputType || null,
+          model: currentModels,
+          overallScore: qualityMonitor.qualityScore,
+          status: qualityMonitor.qualityStatus,
+          recommendation: qualityMonitor.recommendation,
+          cost: costSummary.today ? costSummary.today.costUsd : null,
+          tokens: costSummary.today ? (costSummary.today.inputTokens + costSummary.today.outputTokens) : null,
+        });
+      }
     } catch (_e) { qualityMonitor = null; }
-    res.json({ ok: true, ...getClaudeCostSummary(), analysis, modelPolicy, qualityCompare, adoptionStatus, qualityMonitor });
+    let qualityHistory = [];
+    let qualityTrend = null;
+    let qualityWarning = null;
+    try { qualityHistory = getClaudeQualityHistory(); } catch (_e) { qualityHistory = []; }
+    try { qualityTrend = buildClaudeQualityTrend(); } catch (_e) { qualityTrend = null; }
+    try { qualityWarning = buildClaudeQualityWarning(); } catch (_e) { qualityWarning = null; }
+    res.json({ ok: true, ...costSummary, analysis, modelPolicy, qualityCompare, adoptionStatus, qualityMonitor, qualityHistory, qualityTrend, qualityWarning });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }

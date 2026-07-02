@@ -488,6 +488,103 @@ function buildClaudeQualityMonitor(compareData) {
   };
 }
 
+// Phase47-4: Claude Quality History（時系列品質監視 / 表示のみ・モデル自動変更なし・追加のみ）
+const CLAUDE_QUALITY_HISTORY_VERSION = '1.0.0';
+const CLAUDE_QUALITY_HISTORY_MAX = 20;
+let _claudeQualityHistory = [];
+
+// entry: { workflowId, outputType, model, overallScore, status, recommendation, cost, tokens }
+// provider は常に 'claude' 固定（Strategy/Writer/ReviewerはすべてClaude担当のため）
+function recordClaudeQualityHistory(entry) {
+  if (!entry || typeof entry.overallScore !== 'number') return null;
+  const last = _claudeQualityHistory[_claudeQualityHistory.length - 1];
+  // 短時間内の同一スコア再記録を防止（パネル再描画・連続fetch対策の重複防止のみ。新しい比較ロジックではない）
+  if (last && last.overallScore === entry.overallScore && (Date.now() - new Date(last.timestamp).getTime()) < 3000) {
+    return last;
+  }
+  const record = {
+    timestamp: new Date().toISOString(),
+    workflowId: entry.workflowId || null,
+    outputType: entry.outputType || null,
+    provider: 'claude',
+    model: entry.model || null,
+    overallScore: entry.overallScore,
+    status: entry.status || null,
+    recommendation: entry.recommendation || null,
+    cost: typeof entry.cost === 'number' ? entry.cost : null,
+    tokens: typeof entry.tokens === 'number' ? entry.tokens : null,
+  };
+  _claudeQualityHistory.push(record);
+  if (_claudeQualityHistory.length > CLAUDE_QUALITY_HISTORY_MAX) {
+    _claudeQualityHistory.splice(0, _claudeQualityHistory.length - CLAUDE_QUALITY_HISTORY_MAX);
+  }
+  return record;
+}
+
+function getClaudeQualityHistory() {
+  return _claudeQualityHistory.map((e) => ({ ...e }));
+}
+
+// Phase47-4: Quality Trend（Excellent/Good/Watch/Critical件数・平均/最高/最低スコア）
+const CLAUDE_QUALITY_TREND_VERSION = '1.0.0';
+
+function buildClaudeQualityTrend() {
+  const history = _claudeQualityHistory;
+  const counts = { excellent: 0, good: 0, watch: 0, critical: 0 };
+  let sum = 0, sampleCount = 0, maxScore = null, minScore = null;
+  history.forEach((h) => {
+    if (h.status && Object.prototype.hasOwnProperty.call(counts, h.status)) counts[h.status]++;
+    if (typeof h.overallScore === 'number') {
+      sum += h.overallScore;
+      sampleCount++;
+      if (maxScore === null || h.overallScore > maxScore) maxScore = h.overallScore;
+      if (minScore === null || h.overallScore < minScore) minScore = h.overallScore;
+    }
+  });
+  return {
+    version: CLAUDE_QUALITY_TREND_VERSION,
+    historyCount: history.length,
+    counts,
+    averageScore: sampleCount > 0 ? Math.round((sum / sampleCount) * 10) / 10 : null,
+    maxScore,
+    minScore,
+  };
+}
+
+// Phase47-4: Quality Warning（直近5件平均 vs その前5件平均。5%以上低下でWarning。モデル自動変更は行わない・表示のみ）
+const CLAUDE_QUALITY_WARNING_VERSION = '1.0.0';
+
+function buildClaudeQualityWarning() {
+  const scored = _claudeQualityHistory.filter((h) => typeof h.overallScore === 'number');
+  if (scored.length < 10) {
+    return {
+      version: CLAUDE_QUALITY_WARNING_VERSION,
+      degradationDetected: false,
+      recentAvg: null,
+      previousAvg: null,
+      dropPct: null,
+      message: '履歴が10件未満のため品質悪化判定は保留中です（表示のみ・自動変更なし）',
+    };
+  }
+  const recent5 = scored.slice(-5);
+  const previous5 = scored.slice(-10, -5);
+  const avg = (arr) => arr.reduce((a, b) => a + b.overallScore, 0) / arr.length;
+  const recentAvg = Math.round(avg(recent5) * 10) / 10;
+  const previousAvg = Math.round(avg(previous5) * 10) / 10;
+  const dropPct = previousAvg > 0 ? Math.round(((previousAvg - recentAvg) / previousAvg) * 1000) / 10 : 0;
+  const degradationDetected = dropPct >= 5;
+  return {
+    version: CLAUDE_QUALITY_WARNING_VERSION,
+    degradationDetected,
+    recentAvg,
+    previousAvg,
+    dropPct,
+    message: degradationDetected
+      ? `直近5件平均(${recentAvg}点)が前5件平均(${previousAvg}点)より${dropPct}%低下しています。モデル自動変更は行いません（表示のみ・手動判断が必要）。`
+      : '品質悪化は検出されていません',
+  };
+}
+
 module.exports = {
   addClaudeUsage,
   getSummary,
@@ -502,4 +599,12 @@ module.exports = {
   // Phase47-3
   buildClaudeQualityMonitor,
   CLAUDE_QUALITY_MONITOR_VERSION,
+  // Phase47-4
+  recordClaudeQualityHistory,
+  getClaudeQualityHistory,
+  buildClaudeQualityTrend,
+  buildClaudeQualityWarning,
+  CLAUDE_QUALITY_HISTORY_VERSION,
+  CLAUDE_QUALITY_TREND_VERSION,
+  CLAUDE_QUALITY_WARNING_VERSION,
 };
