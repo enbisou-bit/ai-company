@@ -1,16 +1,19 @@
 {
-  "todayAmount": 37.209999999999944,
-  "monthlyAmount": 37.209999999999944,
+  "todayKey": "2026-07-02",
+  "monthKey": "2026-07",
+  "todayAmount": 0,
+  "monthlyAmount": 0,
+  "totalAmount": 49.20000000000006,
   "monthlyLimit": 1000,
   "stopped": false,
   "byAssignee": {
     "web": 0,
     "snsVideo": 0,
-    "aiDevelopment": 37.209999999999944,
+    "aiDevelopment": 49.20000000000006,
     "estimate": 0
   },
   "byType": {
-    "text": 37.209999999999944,
+    "text": 49.20000000000006,
     "image": 0,
     "video": 0,
     "analysis": 0
@@ -18,24 +21,24 @@
   "agentCosts": {
     "web": 0,
     "snsVideo": 0,
-    "aiDevelopment": 37.209999999999944,
+    "aiDevelopment": 49.20000000000006,
     "estimate": 0
   },
   "departmentCosts": {
     "web": 0,
     "snsVideo": 0,
-    "aiDevelopment": 37.209999999999944,
+    "aiDevelopment": 49.20000000000006,
     "estimate": 0
   },
   "breakdown": {
     "byAssignee": {
       "web": 0,
       "snsVideo": 0,
-      "aiDevelopment": 37.209999999999944,
+      "aiDevelopment": 49.20000000000006,
       "estimate": 0
     },
     "byType": {
-      "text": 37.209999999999944,
+      "text": 49.20000000000006,
       "image": 0,
       "video": 0,
       "analysis": 0
@@ -43,6 +46,6 @@
   },
   "modelCosts": {
     "gpt-4.1-mini": 0,
-    "gpt-4.1-nano": 37.209999999999944
+    "gpt-4.1-nano": 49.20000000000006
   }
 }

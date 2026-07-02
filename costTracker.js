@@ -14,9 +14,16 @@ const MODEL_PRICES = {
     output: 0.40,
   },
 };
+// Phase47-1.6: 日付キー追加（日次・月次リセット用）
+function _todayKey() { return new Date().toISOString().slice(0, 10); }
+function _monthKey() { return new Date().toISOString().slice(0, 7);  }
+
 const DEFAULT_STATE = {
+  todayKey: '',
+  monthKey: '',
   todayAmount: 0,
   monthlyAmount: 0,
+  totalAmount: 0,
   monthlyLimit: DEFAULT_MONTHLY_LIMIT,
   stopped: false,
   byAssignee: {
@@ -67,6 +74,9 @@ function normalizeState(state) {
   const normalizedState = {
     ...DEFAULT_STATE,
     ...state,
+    todayKey:     state?.todayKey     || '',
+    monthKey:     state?.monthKey     || '',
+    totalAmount:  Number(state?.totalAmount)  || 0,
     byAssignee: { ...DEFAULT_STATE.byAssignee, ...(state?.byAssignee || {}) },
     byType: { ...DEFAULT_STATE.byType, ...(state?.byType || {}) },
     agentCosts: { ...DEFAULT_STATE.agentCosts, ...(state?.agentCosts || state?.byAssignee || {}) },
@@ -113,7 +123,37 @@ function ensureState() {
   if (!global.__costTrackerState) {
     global.__costTrackerState = loadState();
   }
-  return global.__costTrackerState;
+  const state = global.__costTrackerState;
+  const today = _todayKey();
+  const month = _monthKey();
+
+  // Phase47-1.6: 旧フォーマット移行（todayKey未設定 = 日付追跡なし時代のデータ）
+  if (!state.todayKey) {
+    // 累計として保存し、当日・月次は0からリスタート
+    state.totalAmount  = Number(state.monthlyAmount) || 0;
+    state.todayAmount  = 0;
+    state.monthlyAmount = 0;
+    state.todayKey = today;
+    state.monthKey = month;
+    saveState(state);
+  } else {
+    let changed = false;
+    // 日付変更 → 当日リセット（totalは触らない）
+    if (state.todayKey !== today) {
+      state.todayAmount = 0;
+      state.todayKey    = today;
+      changed = true;
+    }
+    // 月変更 → 月次リセット（totalは触らない）
+    if (state.monthKey !== month) {
+      state.monthlyAmount = 0;
+      state.monthKey      = month;
+      changed = true;
+    }
+    // リセットが発生した場合のみJSON書き込み
+    if (changed) saveState(state);
+  }
+  return state;
 }
 
 function resetCostTracker() {
@@ -151,8 +191,9 @@ function addOpenAIUsage(model = '', inputTokens = 0, outputTokens = 0, agent = '
     return costTracker.getSummary();
   }
 
-  state.todayAmount += normalizedAmount;
+  state.todayAmount   += normalizedAmount;
   state.monthlyAmount += normalizedAmount;
+  state.totalAmount   = (state.totalAmount || 0) + normalizedAmount; // Phase47-1.6
   state.byAssignee[normalizedAssignee] = (state.byAssignee[normalizedAssignee] || 0) + normalizedAmount;
   state.byType[normalizedType] = (state.byType[normalizedType] || 0) + normalizedAmount;
   state.agentCosts[normalizedAssignee] = (state.agentCosts[normalizedAssignee] || 0) + normalizedAmount;
@@ -176,6 +217,9 @@ const costTracker = {
     return {
       todayAmount: normalizedState.todayAmount,
       monthlyAmount: normalizedState.monthlyAmount,
+      totalAmount: normalizedState.totalAmount || 0, // Phase47-1.6
+      todayKey: normalizedState.todayKey || '',      // Phase47-1.6
+      monthKey: normalizedState.monthKey || '',      // Phase47-1.6
       monthlyLimit: normalizedState.monthlyLimit,
       remaining: Math.max(normalizedState.monthlyLimit - normalizedState.monthlyAmount, 0),
       byAssignee: { ...normalizedState.byAssignee },
@@ -201,8 +245,9 @@ const costTracker = {
       return this.getSummary();
     }
 
-    state.todayAmount += normalizedAmount;
+    state.todayAmount   += normalizedAmount;
     state.monthlyAmount += normalizedAmount;
+    state.totalAmount   = (state.totalAmount || 0) + normalizedAmount; // Phase47-1.6
     state.byAssignee[normalizedAssignee] = (state.byAssignee[normalizedAssignee] || 0) + normalizedAmount;
     state.byType[normalizedType] = (state.byType[normalizedType] || 0) + normalizedAmount;
     state.agentCosts[normalizedAssignee] = (state.agentCosts[normalizedAssignee] || 0) + normalizedAmount;

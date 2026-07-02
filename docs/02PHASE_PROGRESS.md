@@ -221,6 +221,25 @@ Git: v0.96相当
 - `updateCostProviderPanel()` — 3エンドポイント並行取得・合計計算・上部+ヘッダー反映
 - Git: Phase47-1 API cost meter / Tag: v1.00-phase47-1
 
+### Phase47-1.6: OpenAI費用トラッカー累計対応（正式化）✅
+Phase47-1完了直後にOpenAI版`costTracker.js`へ日次/月次/累計トラッキングを追加する作業が行われ、対応するフロントエンド（`index.html`の`cp-oa-total`表示、`// Phase47-1.6 累計`コメント）はPhase47-2Aのコミット（5a7d2d3）に含まれてコミット済みだったが、バックエンド側`costTracker.js`のコミットが漏れ、Phase47-2A〜Phase48-4まで未コミットのまま作業ツリーに残存していたことが判明。今回、内容を検証したうえで正式にコミットし、Phase47-1.6として記録する。
+
+- `costTracker.js`
+  - `_todayKey()` / `_monthKey()` — 日付キー生成ヘルパー追加
+  - `DEFAULT_STATE` / `normalizeState()` に `todayKey` / `monthKey` / `totalAmount` を追加（`claudeCostTracker.js`と同一の設計パターン）
+  - `ensureState()` — 旧データ移行（`todayKey`未設定時に既存`monthlyAmount`を`totalAmount`へ退避し、today/monthlyを0からリスタート）+ 日付変更時のtoday/monthly個別リセット（total は変更しない）
+  - `addOpenAIUsage()` / `costTracker.recordUsage()` — `totalAmount`への加算処理を追加
+  - `costTracker.getSummary()` — 戻り値に `totalAmount` / `todayKey` / `monthKey` を追加
+- `cost-logs.json` — 上記コードの実行結果として、旧`monthlyAmount`（37.21円）が`totalAmount`へ移行され、その後の実利用分を含め`totalAmount: 49.20`円として永続化
+- 検証内容:
+  - dev-check 200/200/200 を実施し、既存コードとの整合性を確認
+  - `/api/cost` で `todayAmount` / `monthlyAmount` / `totalAmount` / `todayKey` / `monthKey` の5項目すべてが正常に返ることを確認
+  - ブラウザ実機確認（Chrome Preview）でAPI料金メーターパネルの「OpenAI API」内「累計」が `49.20円` と正しく表示されることを確認（`cp-oa-total`要素）
+  - console.errorなし。既存のOpenAI/Claude Provider別表示・右上ヘッダー合計・Claude側の集計には影響なし
+- `claude-cost-logs.json` / `claude-quality-history.json` は今回はコミット対象外とする（Phase47-1・Phase47-5で実装済みのコード生成データだが、一度もgit追跡されたことがなく、`cost-logs.json`との追跡方針の統一は別途判断が必要なため）
+- モデル変更・Provider構成変更・新規API追加・DB変更は一切なし
+- Git: Phase47-1.6 openai cost tracker total / Tag: v1.00-phase47-1.6
+
 ### Phase47-2A: Claude Cost Analysis（分析のみ）✅
 - `claudeCostTracker.js` — `CLAUDE_COST_ANALYSIS_VERSION = '1.0.0'` / `getClaudeCostAnalysis()`追加
   - totalRequests / totalInputTokens / totalOutputTokens / totalTokens / totalCost / todayCost / monthCost
