@@ -896,6 +896,18 @@
   .oe-gw-copybtn:hover { background: rgba(255,190,80,0.3); }
   .oe-gw-copymsg    { font-size: 10px; color: rgba(255,205,110,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-gw-copymsg.show { opacity: 1; }
+  /* Phase49-2: Image Prompt Intelligence */
+  .oe-ipi-section    { border-radius: 10px; border: 1px solid rgba(190,100,255,0.28); background: linear-gradient(135deg, rgba(30,10,40,0.92), rgba(15,6,20,0.96)); padding: 12px 14px; }
+  .oe-ipi-title      { font-size: 11px; color: rgba(210,150,255,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-ipi-tool-card  { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.5; }
+  .oe-ipi-tool-name  { font-size: 9px; color: rgba(210,150,255,0.7); font-weight: 700; margin-bottom: 3px; }
+  .oe-ipi-check-item { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .oe-ipi-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-ipi-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-ipi-copybtn    { background: rgba(190,100,255,0.15); border: 1px solid rgba(190,100,255,0.4); border-radius: 14px; color: rgba(210,150,255,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-ipi-copybtn:hover { background: rgba(190,100,255,0.3); }
+  .oe-ipi-copymsg    { font-size: 10px; color: rgba(210,150,255,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-ipi-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22916,6 +22928,7 @@ function serializeOutputDraft(format) {
     appendOutputPackageQualityToExportJson(jsonObj);
     appendPublishingToExportJson(jsonObj);
     appendAIGatewayToExportJson(jsonObj);
+    appendImagePromptIntelligenceToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23145,6 +23158,7 @@ function serializeOutputDraft(format) {
   appendOutputPackageQualityToExportMarkdown(mdLines);
   appendPublishingToExportMarkdown(mdLines);
   appendAIGatewayToExportMarkdown(mdLines);
+  appendImagePromptIntelligenceToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -24716,6 +24730,319 @@ function appendAIGatewayToExportJson(payload) {
   payload.aiGateway = decision;
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-2: Image Prompt Intelligence
+// Output Draft / Publishing / AI Gatewayの情報から、各画像生成AIへ貼り付けられる
+// 高品質なプロンプトを生成する（画像生成は一切実行しない・コピー用プロンプト生成のみ）
+// ══════════════════════════════════════════════════
+
+const IMAGE_PROMPT_INTELLIGENCE_VERSION = '1.0.0';
+
+function _ipiSafetyChecklist() {
+  return [
+    '実在の人物・著名人を描写していないか確認',
+    '商標・ロゴを捏造していないか確認',
+    '差別的・不適切な表現が含まれていないか確認',
+    '生成前に利用する画像生成AIの利用規約・年齢制限を確認',
+    '生成後、著作権・肖像権に抵触しないか目視確認',
+  ];
+}
+
+function _ipiBuildWarnings(qualityScore) {
+  var warnings = [];
+  if (qualityScore !== null && qualityScore < 80) {
+    warnings.push('成果物の完成度（' + qualityScore + '点）が80点未満です。プロンプトの前提となる内容を再確認してください。');
+  }
+  warnings.push('画像生成の実行はこのPhaseでは行いません。実際の生成はPhase49-4以降、ユーザー承認後にのみ行ってください。');
+  return warnings;
+}
+
+// Phase49-2: Instagram（カルーセル/通常投稿）向け最適化
+function _ipiFillInstagram(base, f) {
+  var subject = (Array.isArray(f.slides) && f.slides.length) ? String(f.slides[0]) : (f.caption || '');
+  base.mainPrompt = _pubTruncate(subject, 200) + '。Instagram投稿用の主要ビジュアル。';
+  base.embeddedText = subject || null;
+  base.compositionPrompt = '縦長構図(4:5)、主要被写体を中央〜上部に配置、下部にテキストオーバーレイ用の余白を確保。';
+  base.stylePrompt = '清潔感のある実写風、統一されたトーン&マナー、SNS向けの明るい印象。';
+  base.lightingPrompt = '柔らかい自然光、影が強すぎない均一な照明。';
+  base.cameraPrompt = 'ミドルショット、目線の高さ、標準〜やや広角レンズ。';
+  base.colorPrompt = 'ブランドカラーと調和した暖色〜中間色、彩度は控えめ。';
+  base.formatPrompt = '縦長 4:5（1080x1350px相当）、Instagramフィード投稿用。';
+}
+
+// Phase49-2: チラシ（A4）向け最適化
+function _ipiFillFlyer(base, f) {
+  var subject = f.catchcopy || f.subheadline || '';
+  base.mainPrompt = _pubTruncate(subject, 200) + '。A4チラシの主要ビジュアル。';
+  base.embeddedText = f.catchcopy || null;
+  base.compositionPrompt = 'A4チラシ向け、上部30%に見出しスペース、中央に主要ビジュアル、下部に問い合わせ情報用の余白を確保。';
+  base.stylePrompt = '清潔感がありプロフェッショナルな印象、過度な装飾を避けたシンプルなデザイン。';
+  base.lightingPrompt = '均一で明るい照明、印刷を想定した高コントラスト。';
+  base.cameraPrompt = '正面〜やや俯瞰、被写体全体が収まる構図。';
+  base.colorPrompt = 'ブランドカラーを基調とした2〜3色構成。';
+  base.formatPrompt = 'A4サイズ（210x297mm）、印刷用高解像度（300dpi相当）。';
+}
+
+// Phase49-2: LP（ヒーロー画像）向け最適化
+function _ipiFillLp(base, f) {
+  var subject = f.firstView || f.headline || '';
+  base.mainPrompt = _pubTruncate(subject, 200) + '。LPファーストビュー用のヒーロー画像。';
+  base.embeddedText = null;
+  base.compositionPrompt = 'ヒーロー画像向け、横長(16:9)、左右どちらかにCTAボタン配置スペースを確保。';
+  base.stylePrompt = 'Webサイト向けのモダンで洗練された印象、ブランドの世界観を表現。';
+  base.lightingPrompt = '明るく開放的な照明。';
+  base.cameraPrompt = 'ワイドショット、奥行きのある構図。';
+  base.colorPrompt = 'ブランドカラーを基調とし、CTAボタンが映えるコントラスト。';
+  base.formatPrompt = '横長 16:9、Webファーストビュー用。';
+}
+
+// Phase49-2: PDF/汎用文書（資料用ビジュアル）向け最適化
+function _ipiFillDocument(base, f) {
+  var subject = f.title || f.summary || '';
+  base.mainPrompt = _pubTruncate(subject, 200) + '。資料・説明図用のビジュアル。';
+  base.embeddedText = null;
+  base.compositionPrompt = '資料・説明図向け、シンプルな構図、余白を十分に確保。';
+  base.stylePrompt = '清潔感のあるビジネス向けスタイル、過度な装飾を避ける。';
+  base.lightingPrompt = '均一でフラットな照明（図解表現の場合は照明指定は緩やかでよい）。';
+  base.cameraPrompt = '該当なし（図解・グラフィック中心のためカメラ指定は任意）。';
+  base.colorPrompt = '落ち着いたトーン、企業カラーとの親和性を意識。';
+  base.formatPrompt = 'A4またはWebページ用、資料添付を想定。';
+}
+
+// Phase49-2: 既存Image Prompt（f.prompt等）の高品質化
+function _ipiFillImagePromptEnhance(base, f) {
+  base.mainPrompt = f.prompt ? String(f.prompt) : '（既存プロンプト未生成。Output Engineでプロンプトを生成してから高品質化してください）';
+  base.embeddedText = null;
+  if (f.negativePrompt) base.negativePrompt = String(f.negativePrompt);
+  base.stylePrompt = f.style ? String(f.style) : '（既存プロンプトにスタイル指定なし。高品質・自然な仕上がりを追加指定）';
+  base.compositionPrompt = f.composition ? String(f.composition) : '（未指定。バランスの取れた構図を推奨）';
+  base.lightingPrompt = f.lighting ? String(f.lighting) : '（未指定。自然で柔らかい照明を推奨）';
+  base.cameraPrompt = '（既存プロンプトに準拠。追加のカメラ指定は用途に応じて調整）';
+  base.colorPrompt = f.background ? ('背景: ' + String(f.background)) : '（背景指定なし）';
+  base.formatPrompt = f.size ? String(f.size) : '1:1（未指定のためデフォルト）';
+}
+
+// Phase49-2: Generic fallback（安全な汎用プロンプト）
+function _ipiFillGeneric(base, f) {
+  var subject = f.title || f.caption || f.headline || '成果物の内容に基づく安全な汎用ビジュアル';
+  base.mainPrompt = '安全な汎用ビジュアル: ' + _pubTruncate(subject, 100) + '。特定の業種・人物に依存しない一般的な表現。';
+  base.embeddedText = null;
+  base.compositionPrompt = 'バランスの取れた中央構図。';
+  base.stylePrompt = '汎用的でクセのないスタイル。';
+  base.lightingPrompt = '自然で均一な照明。';
+  base.cameraPrompt = '標準的なミドルショット。';
+  base.colorPrompt = '落ち着いた中間色。';
+  base.formatPrompt = '1:1（正方形、汎用フォーマット）。';
+}
+
+// Phase49-2: 6ツール向けプロンプト整形（実行はしない・コピー用テキスト生成のみ）
+function _ipiBuildPlatformPrompts(base) {
+  var core = [base.mainPrompt, base.stylePrompt, base.compositionPrompt, base.lightingPrompt, base.cameraPrompt, base.colorPrompt].filter(Boolean).join(' ');
+  var textNote = base.embeddedText ? '（画像内テキスト: ' + base.embeddedText + '）' : '';
+  return {
+    gptImage: core + ' ' + base.formatPrompt + ' 高品質・違和感のない自然な仕上がりで。' + textNote,
+    chatgptImage: core + ' ' + base.formatPrompt + ' 指示に忠実に、高解像度で生成してください。' + textNote,
+    midjourney: core.replace(/。/g, ',') + ', ' + base.formatPrompt + ' --style raw --no ' + base.negativePrompt.split('、').slice(0, 3).join(', '),
+    flux: core.replace(/。/g, ',') + ', ' + base.formatPrompt + ', high detail, photorealistic',
+    ideogram: core + ' ' + base.formatPrompt + textNote,
+    recraft: core + ' ' + base.formatPrompt + ' フラットデザイン/ベクター調にも対応可能。ロゴ・アイコン用途に最適化。',
+  };
+}
+
+function _ipiBuildCopyText(base) {
+  var lines = ['【Image Prompt Intelligence】', ''];
+  lines.push('Main Prompt: ' + base.mainPrompt);
+  lines.push('Negative Prompt: ' + base.negativePrompt);
+  lines.push('Style: ' + base.stylePrompt);
+  lines.push('Composition: ' + base.compositionPrompt);
+  lines.push('Lighting: ' + base.lightingPrompt);
+  lines.push('Camera: ' + base.cameraPrompt);
+  lines.push('Color: ' + base.colorPrompt);
+  lines.push('Format: ' + base.formatPrompt);
+  return lines.join('\n');
+}
+
+// Phase49-2: Image Prompt Intelligence Draft生成（実行はしない。既存Output Draftは破壊しない）
+function createImagePromptIntelligenceDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+  var f = outputDraft.fields;
+
+  var base = {
+    version: IMAGE_PROMPT_INTELLIGENCE_VERSION,
+    outputType: type,
+    mainPrompt: '',
+    negativePrompt: '低品質、ぼやけた、不自然な手や指、余計なテキストの混入、透かし、歪んだ構図、実在の著名人の描写',
+    stylePrompt: '',
+    compositionPrompt: '',
+    lightingPrompt: '',
+    cameraPrompt: '',
+    colorPrompt: '',
+    formatPrompt: '',
+    embeddedText: null,
+    platformPrompts: {},
+    safetyChecklist: _ipiSafetyChecklist(),
+    copyText: '',
+    warnings: [],
+    sourceGatewayDecision: null,
+    qualityScore: null,
+  };
+
+  switch (type) {
+    case OUTPUT_TYPES.INSTAGRAM_CAROUSEL:
+    case OUTPUT_TYPES.INSTAGRAM_POST:
+      _ipiFillInstagram(base, f); break;
+    case OUTPUT_TYPES.FLYER:
+      _ipiFillFlyer(base, f); break;
+    case OUTPUT_TYPES.LP:
+      _ipiFillLp(base, f); break;
+    case OUTPUT_TYPES.PDF:
+    case OUTPUT_TYPES.DOCUMENT:
+      _ipiFillDocument(base, f); break;
+    case OUTPUT_TYPES.IMAGE_PROMPT:
+      _ipiFillImagePromptEnhance(base, f); break;
+    default:
+      _ipiFillGeneric(base, f); break;
+  }
+
+  var q = (outputDraft.publishing && typeof outputDraft.publishing.qualityScore === 'number') ? outputDraft.publishing.qualityScore
+    : ((outputDraft.packageQuality && typeof outputDraft.packageQuality.score === 'number') ? outputDraft.packageQuality.score : null);
+  base.qualityScore = q;
+  base.warnings = _ipiBuildWarnings(q);
+
+  // Phase49-2: AI Gateway連携（recommendedTool/routePriority/capability/learningを参照するのみ。実行はしない）
+  var gw = outputDraft.aiGateway || createAIGatewayDecision(outputDraft);
+  base.sourceGatewayDecision = gw ? {
+    recommendedTool: gw.recommendedTool,
+    recommendedRoute: gw.recommendedRoute,
+    routePriority: gw.routePriority,
+    capabilityScore: gw.capabilityScore,
+    learning: gw.learning,
+  } : null;
+
+  base.platformPrompts = _ipiBuildPlatformPrompts(base);
+  base.copyText = _ipiBuildCopyText(base);
+  return base;
+}
+
+// Phase49-2: AI Gatewayの推奨ツール名 → platformPromptsキーの対応（画像特化ツールが明確でない場合はgptImageへ安全にfallback）
+function _ipiToolKeyForGatewayTool(toolName) {
+  if (toolName === 'GPT Image') return 'gptImage';
+  if (toolName === 'ChatGPT') return 'chatgptImage';
+  return 'gptImage';
+}
+
+// Phase49-2: クリップボードコピー（既存Copy Export/Publishing/Gateway Copyとは独立）
+function copyImagePromptField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (fieldKey === 'mainPrompt') text = draft.mainPrompt;
+  else if (fieldKey === 'negativePrompt') text = draft.negativePrompt;
+  else if (fieldKey === 'toolPrompt') {
+    var toolName = draft.sourceGatewayDecision ? draft.sourceGatewayDecision.recommendedTool : null;
+    var key = _ipiToolKeyForGatewayTool(toolName);
+    text = draft.platformPrompts[key] || draft.mainPrompt;
+  } else if (fieldKey === 'all') {
+    text = draft.copyText;
+  }
+  if (!text) return;
+
+  var msg = document.getElementById('oe-ipi-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase49-2: Image Prompt Intelligence HTML生成（AI Gatewayの直後に表示。データ不足でも安全に空文字を返す）
+function buildImagePromptIntelligenceHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var draft = _lastOutputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return '';
+  _lastOutputDraft.imagePromptIntelligence = draft;
+  var esc = escapeHtml;
+
+  var toolLabels = { gptImage: 'GPT Image', chatgptImage: 'ChatGPT Image', midjourney: 'Midjourney', flux: 'Flux', ideogram: 'Ideogram', recraft: 'Recraft' };
+  var toolPromptsHtml = Object.keys(draft.platformPrompts).map(function(key) {
+    return '<div class="oe-ipi-tool-card"><div class="oe-ipi-tool-name">' + esc(toolLabels[key] || key) + '</div>' + esc(_pubTruncate(draft.platformPrompts[key], 200)) + '</div>';
+  }).join('');
+
+  var checklistHtml = draft.safetyChecklist.map(function(c) { return '<div class="oe-ipi-check-item">☐ ' + esc(c) + '</div>'; }).join('');
+  var warningsHtml = draft.warnings.length ? draft.warnings.map(function(w) { return '<div class="oe-ipi-warning">⚠ ' + esc(w) + '</div>'; }).join('') : '';
+
+  var gwHtml = draft.sourceGatewayDecision
+    ? '<div class="oe-field-val">推奨ツール: ' + esc(draft.sourceGatewayDecision.recommendedTool || '該当なし') + '（' + esc(draft.sourceGatewayDecision.recommendedRoute || '-') + '）</div>'
+    : '<div class="oe-empty-val">AI Gateway情報なし</div>';
+
+  return '<div class="oe-ipi-section">'
+    + '<div class="oe-ipi-title">🖼 Image Prompt Intelligence <span style="font-weight:400;opacity:.5;">v' + IMAGE_PROMPT_INTELLIGENCE_VERSION + '</span></div>'
+    + '<div class="oe-pkg-label">AI Gateway推奨</div>' + gwHtml
+    + '<div class="oe-pkg-label">Main Prompt</div><div class="oe-field-val">' + esc(draft.mainPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Negative Prompt</div><div class="oe-field-val">' + esc(draft.negativePrompt) + '</div>'
+    + '<div class="oe-pkg-label">Style</div><div class="oe-field-val">' + esc(draft.stylePrompt) + '</div>'
+    + '<div class="oe-pkg-label">Composition</div><div class="oe-field-val">' + esc(draft.compositionPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Lighting</div><div class="oe-field-val">' + esc(draft.lightingPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Camera</div><div class="oe-field-val">' + esc(draft.cameraPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Color</div><div class="oe-field-val">' + esc(draft.colorPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Format</div><div class="oe-field-val">' + esc(draft.formatPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Tool Prompts</div>' + toolPromptsHtml
+    + '<div class="oe-pkg-label">Safety Checklist</div>' + checklistHtml
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-ipi-copyrow">'
+    +   '<button class="oe-ipi-copybtn" onclick="copyImagePromptField(\'mainPrompt\')">Copy Main Prompt</button>'
+    +   '<button class="oe-ipi-copybtn" onclick="copyImagePromptField(\'negativePrompt\')">Copy Negative Prompt</button>'
+    +   '<button class="oe-ipi-copybtn" onclick="copyImagePromptField(\'toolPrompt\')">Copy Tool Prompt</button>'
+    +   '<button class="oe-ipi-copybtn" onclick="copyImagePromptField(\'all\')">Copy All Image Prompts</button>'
+    +   '<span id="oe-ipi-copy-msg" class="oe-ipi-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase49-2: Export反映
+function appendImagePromptIntelligenceToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Image Prompt Intelligence (Phase49-2)');
+  lines.push('- Main Prompt: ' + draft.mainPrompt);
+  lines.push('- Negative Prompt: ' + draft.negativePrompt);
+  lines.push('- Style: ' + draft.stylePrompt);
+  lines.push('- Composition: ' + draft.compositionPrompt);
+  lines.push('- Lighting: ' + draft.lightingPrompt);
+  lines.push('- Camera: ' + draft.cameraPrompt);
+  lines.push('- Color: ' + draft.colorPrompt);
+  lines.push('- Format: ' + draft.formatPrompt);
+  if (draft.sourceGatewayDecision) {
+    lines.push('- Recommended Tool (AI Gateway): ' + (draft.sourceGatewayDecision.recommendedTool || '（該当なし）'));
+  }
+  if (draft.warnings.length) {
+    lines.push('- Warnings:');
+    draft.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+}
+
+function appendImagePromptIntelligenceToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.imagePromptIntelligence = draft;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -24839,6 +25166,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
     + _oeSafe(buildAIGatewayHtml,                'AIGateway')
+    + _oeSafe(buildImagePromptIntelligenceHtml,  'ImagePromptIntelligence')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')

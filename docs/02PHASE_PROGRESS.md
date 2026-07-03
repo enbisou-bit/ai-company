@@ -1,12 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-03（Phase49-1.2 AI Registry Learning完了）
+> 更新日: 2026-07-03（Phase49-2 Image Prompt Intelligence完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-1.2 完了（AI Registry Learning）**
-- 現在バージョン: **v1.00-phase49-1.2**
-- 次工程: **Phase49-2 Image Prompt Intelligence**
+- 現在フェーズ: **Phase49-2 完了（Image Prompt Intelligence）**
+- 現在バージョン: **v1.00-phase49-2**
+- 次工程: **Phase49-3 Video Prompt Intelligence**
 
 ---
 
@@ -558,6 +558,30 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49-2 Image Prompt Intelligence
 - Git: Phase49-1.2 ai registry learning / Tag: v1.00-phase49-1.2
+
+### Phase49-2: Image Prompt Intelligence ✅
+- `index.html`（Phase49-1/49-1.1/49-1.2のAI Gateway一式・Publishing/Preview Engineを壊さず拡張。既存コードは無変更）
+  - `IMAGE_PROMPT_INTELLIGENCE_VERSION = '1.0.0'`
+  - `createImagePromptIntelligenceDraft(outputDraft)` — version/outputType/mainPrompt/negativePrompt/stylePrompt/compositionPrompt/lightingPrompt/cameraPrompt/colorPrompt/formatPrompt/platformPrompts/safetyChecklist/copyText/warnings/sourceGatewayDecision/qualityScoreを生成
+  - Output Type別最適化（1責務1関数）: `_ipiFillInstagram()`（縦長4:5・統一感・読みやすさ）/ `_ipiFillFlyer()`（A4・余白・文字配置）/ `_ipiFillLp()`（ヒーロー画像・CTA導線・Web向け）/ `_ipiFillDocument()`（資料用ビジュアル・説明図・清潔感、pdf/document共用）/ `_ipiFillImagePromptEnhance()`（既存プロンプトの高品質化）/ `_ipiFillGeneric()`（安全な汎用プロンプト、上記以外の全タイプ）
+  - `_ipiBuildPlatformPrompts()` — GPT Image/ChatGPT Image/Midjourney/Flux/Ideogram/Recraftの6ツール形式でプロンプトを整形（Midjourneyは`--ar`/`--no`フラグ形式、Flux/SDはタグ形式、GPT Image/ChatGPTは自然文形式、Ideogramは画像内テキスト指定に対応）。実行は一切しない
+  - `_ipiSafetyChecklist()` / `_ipiBuildWarnings()` / `_ipiBuildCopyText()` — 共通ヘルパー
+  - AI Gateway連携: `outputDraft.aiGateway || createAIGatewayDecision(outputDraft)`からrecommendedTool/recommendedRoute/routePriority/capabilityScore/learningを`sourceGatewayDecision`として参照（コピーではなく必要項目のみ抽出、実行はしない）
+  - `_ipiToolKeyForGatewayTool()` — AI Gatewayの推奨ツール名（GPT Image/ChatGPT）をplatformPromptsキーへ対応付け。画像特化ツールが明確でない場合はGPT Imageへ安全にfallback
+  - `copyImagePromptField()` — Copy Main Prompt/Copy Negative Prompt/Copy Tool Prompt（AI Gateway推奨ツールのプロンプトをコピー）/Copy All Image Promptsの4ケース
+  - `buildImagePromptIntelligenceHtml()` — `renderOutputEnginePanel()`内、`buildAIGatewayHtml`の直後に表示。Main/Negative/Style/Composition/Lighting/Camera/Color/Format/Tool Prompts（6ツール）/Safety Checklist/Warningsを表示
+  - `appendImagePromptIntelligenceToExportMarkdown()` / `appendImagePromptIntelligenceToExportJson()` — Export（Markdown`## Image Prompt Intelligence`セクション/JSON`imagePromptIntelligence`キー）に反映
+  - CSS: `.oe-ipi-*`（section/title/tool-card/tool-name/check-item/warning/copyrow/copybtn/copymsg）を新規追加
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプ（instagram_carousel/instagram_post/flyer/lp/pdf/document/image_prompt/tiktok_video/youtube_shorts/video_prompt/powerpoint/excel/html）でImage Prompt Intelligenceパネル表示・6ツール分のTool Promptsが生成されることを確認。html/tiktok_video等の未分類タイプはGeneric fallbackへ正しく分岐することを確認
+  - AI Gateway連携: instagram_carousel/flyer/image_prompt→GPT Image、tiktok_video/youtube_shorts/video_prompt→Seedance、lp/pdf/document等→ChatGPTがsourceGatewayDecision.recommendedToolに正しく反映されることを確認
+  - Markdown/JSON Export双方への反映を確認（JSON: platformPrompts 6キー全て確認）
+  - Copy 4ボタンとも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・AI Gateway（Foundation/Expansion/Learning）・Quality各パネルへの影響なし
+- 生成ロジック・Preview/Publishing/AI Gateway・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・実際の画像生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし（プロンプト・コピー用テキストの生成のみ）
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49-3 Video Prompt Intelligence
+- Git: Phase49-2 image prompt intelligence / Tag: v1.00-phase49-2
 
 ---
 

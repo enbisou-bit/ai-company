@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-03（Phase49-1.2 AI Registry Learning完了）
+更新日: 2026-07-03（Phase49-2 Image Prompt Intelligence完了）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -590,4 +590,25 @@ Phase49-1.2において、Phase49-1.1で完成した静的Registry（Capability/
 - 実績0件の状態で高評価・低評価を推測すると、Phase48-3/48-5から継続している「実在しない事実は捏造しない」という誠実性方針に反するため、中立値とConfidence連動の設計で担保した
 
 追記日: 2026-07-03（Phase49-1.2完了）
+
+---
+
+# Decision 033
+## Image Prompt Intelligenceは画像生成実行ではなくプロンプト最適化層として実装する
+
+Phase49-2において、Image Prompt Intelligenceのスコープを「プロンプト最適化のみ」に限定する方針を決定した。
+
+内容：
+- Phase49-2では画像生成APIを実行しない
+- 外部AI連携（実際のGPT Image/Midjourney/Flux/Ideogram/Recraft等への通信）はしない
+- AI Gateway（Phase49-1）/ Registry（Phase49-1.1）/ Learning（Phase49-1.2）を判断材料として使う（`sourceGatewayDecision`でrecommendedTool/recommendedRoute/routePriority/capabilityScore/learningを参照）
+- 各画像AI（GPT Image/ChatGPT Image/Midjourney/Flux/Ideogram/Recraft）に貼り付けられる、ツール形式に応じたプロンプトを生成する（`platformPrompts`）
+- Output Type別（Instagram/チラシ/LP/PDF・文書/Image Prompt高品質化/Generic）に最適化されたcomposition/lighting/camera/color/formatを生成する
+- 実行は将来Phase49-4（Creative Engine Execution）以降、ユーザー承認後のみとする
+
+理由：
+- Decision 030（AI Gateway Foundationは実行層ではなく判断層から開始する）の方針を継承し、Image Prompt Intelligenceも同様に「実行しないプロンプト生成層」として設計することで、Phase49-4以前の全フェーズを安全に完結させる
+- ツール別のプロンプト形式差異（Midjourneyの`--ar`/`--no`フラグ形式、Flux/SDのタグ形式、GPT Image/ChatGPTの自然文形式等）を吸収することで、ユーザーが手動コピー＆ペーストするだけで各ツールにそのまま使える完成品を提供する
+
+追記日: 2026-07-03（Phase49-2完了）
 
