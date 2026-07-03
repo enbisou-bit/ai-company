@@ -881,6 +881,21 @@
   .oe-pub-copybtn:hover { background: rgba(80,200,120,0.3); }
   .oe-pub-copymsg   { font-size: 10px; color: rgba(80,220,120,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-pub-copymsg.show { opacity: 1; }
+  /* Phase49-1: AI Gateway Foundation */
+  .oe-gw-section    { border-radius: 10px; border: 1px solid rgba(255,190,80,0.28); background: linear-gradient(135deg, rgba(40,28,6,0.92), rgba(20,14,4,0.96)); padding: 12px 14px; }
+  .oe-gw-title      { font-size: 11px; color: rgba(255,205,110,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-gw-badge      { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 6px; }
+  .oe-gw-badge.allowed    { background: rgba(80,220,120,0.18); color: rgba(100,230,140,0.95); border: 1px solid rgba(80,220,120,0.4); }
+  .oe-gw-badge.notallowed { background: rgba(255,100,90,0.18); color: rgba(255,130,120,0.95); border: 1px solid rgba(255,100,90,0.4); }
+  .oe-gw-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-gw-registry-chip { display: inline-block; font-size: 9px; color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 2px 8px; margin: 2px 4px 2px 0; }
+  .oe-gw-registry-chip.connected     { color: rgba(100,230,140,0.9); border-color: rgba(80,220,120,0.35); }
+  .oe-gw-registry-chip.notconnected  { color: rgba(255,255,255,0.4); }
+  .oe-gw-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-gw-copybtn    { background: rgba(255,190,80,0.15); border: 1px solid rgba(255,190,80,0.4); border-radius: 14px; color: rgba(255,205,110,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-gw-copybtn:hover { background: rgba(255,190,80,0.3); }
+  .oe-gw-copymsg    { font-size: 10px; color: rgba(255,205,110,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-gw-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22900,6 +22915,7 @@ function serializeOutputDraft(format) {
     appendClaudeQualityHistoryToExportJson(jsonObj);
     appendOutputPackageQualityToExportJson(jsonObj);
     appendPublishingToExportJson(jsonObj);
+    appendAIGatewayToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23128,6 +23144,7 @@ function serializeOutputDraft(format) {
   appendClaudeQualityHistoryToExportMarkdown(mdLines);
   appendOutputPackageQualityToExportMarkdown(mdLines);
   appendPublishingToExportMarkdown(mdLines);
+  appendAIGatewayToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -23884,6 +23901,379 @@ function appendPublishingToExportJson(payload) {
   payload.publishing = pub;
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-1: AI Gateway Foundation
+// API / PCアプリ操作 / ブラウザ操作を将来選択できる中継層の判断層（設計骨格のみ）
+// 今回は実際の外部AI操作・API実行・PC操作・ブラウザ自動操作は一切行わない（プロンプト生成/コピーのみ）
+// 既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）には一切影響しない
+// ══════════════════════════════════════════════════
+
+const AI_GATEWAY_VERSION = '1.0.0';
+
+// Phase49-1: AI Skill Registry（将来の判断材料としての静的定義。実行状態の検証は行わない）
+const AI_SKILL_REGISTRY = [
+  {
+    id: 'chatgpt', name: 'ChatGPT', type: 'text_and_image',
+    supportedModes: ['api', 'browser'],
+    strengths: ['汎用文章生成', '画像生成（DALL-E経由）', 'マルチモーダル対応'],
+    costLevel: 'medium', qualityLevel: 'high', speedLevel: 'fast',
+    executionStatus: 'connected_text_only',
+    requiresApproval: true,
+    notes: '本AI会社ではLeader担当としてAPI接続済み（変更不可）。AI Gatewayが新規ドメイン（画像/動画生成等）の候補として参照する場合も、Leaderの役割・Provider設定は一切変更しない。',
+  },
+  {
+    id: 'claude', name: 'Claude', type: 'text',
+    supportedModes: ['api'],
+    strengths: ['高品質な長文生成', 'コード生成', '構造化された文章'],
+    costLevel: 'medium', qualityLevel: 'high', speedLevel: 'fast',
+    executionStatus: 'connected_text_only',
+    requiresApproval: true,
+    notes: '本AI会社ではWriter/Reviewer/Strategy担当としてAPI接続済み（変更不可）。AI GatewayはこのProvider構成を一切変更しない。',
+  },
+  {
+    id: 'gpt_image', name: 'GPT Image', type: 'image',
+    supportedModes: ['api'],
+    strengths: ['指示追従性', 'テキスト描画'],
+    costLevel: 'medium', qualityLevel: 'high', speedLevel: 'medium',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続。実際のAPI提供条件・料金は導入時に要確認（現時点では推定値）。',
+  },
+  {
+    id: 'seedance', name: 'Seedance', type: 'video',
+    supportedModes: ['browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態（API/ブラウザ）は導入時に要確認。',
+  },
+  {
+    id: 'domoai', name: 'DOMOAI', type: 'multi',
+    supportedModes: ['browser'],
+    strengths: ['動画変換・エフェクト系'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'genspark', name: 'Genspark', type: 'multi',
+    supportedModes: ['browser'],
+    strengths: ['複合AIエージェント・資料生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'flow', name: 'Flow', type: 'video',
+    supportedModes: ['browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'veo', name: 'Veo', type: 'video',
+    supportedModes: ['api', 'browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'kling', name: 'Kling', type: 'video',
+    supportedModes: ['browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'runway', name: 'Runway', type: 'video',
+    supportedModes: ['api', 'browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'luma', name: 'Luma', type: 'video',
+    supportedModes: ['api', 'browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'pika', name: 'Pika', type: 'video',
+    supportedModes: ['browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+  {
+    id: 'hailuo', name: 'Hailuo', type: 'video',
+    supportedModes: ['browser'],
+    strengths: ['動画生成'],
+    costLevel: 'unknown', qualityLevel: 'unknown', speedLevel: 'unknown',
+    executionStatus: 'not_connected',
+    requiresApproval: true,
+    notes: '本AI会社では未接続・未検証。提供形態は導入時に要確認。',
+  },
+];
+
+function getAISkillById(id) {
+  return AI_SKILL_REGISTRY.find(function(s) { return s.id === id; }) || null;
+}
+
+// Phase49-1: OutputTypeごとの候補ツールマップ（Publishing/Preview非対応タイプにもfallbackを用意）
+const AI_GATEWAY_TASK_TOOL_MAP = {
+  instagram_carousel: { tools: ['gpt_image', 'chatgpt', 'genspark'] },
+  instagram_post:     { tools: ['gpt_image', 'chatgpt', 'genspark'] },
+  flyer:              { tools: ['gpt_image', 'chatgpt', 'genspark'] },
+  image_prompt:       { tools: ['gpt_image', 'chatgpt'] },
+  tiktok_video:       { tools: ['seedance', 'flow', 'kling', 'runway'] },
+  youtube_shorts:     { tools: ['seedance', 'flow', 'kling', 'runway'] },
+  video_prompt:       { tools: ['seedance', 'flow', 'kling', 'runway'] },
+  lp:                 { tools: ['chatgpt', 'claude', 'genspark'], textOnly: true },
+  html:               { tools: ['chatgpt', 'claude', 'genspark'], textOnly: true },
+  pdf:                { tools: ['chatgpt', 'claude', 'genspark'], textOnly: true },
+  document:           { tools: ['chatgpt', 'claude', 'genspark'], textOnly: true },
+  powerpoint:         { tools: ['chatgpt', 'claude'], textOnly: true },
+  excel:              { tools: ['chatgpt', 'claude'], textOnly: true },
+};
+
+// Phase49-1: Gateway判断関数（実行はしない。判断材料の算出のみ）
+function createAIGatewayDecision(outputDraft) {
+  if (!outputDraft || !outputDraft.type) return null;
+  var type = outputDraft.type;
+  var mapping = AI_GATEWAY_TASK_TOOL_MAP[type] || null;
+  var warnings = [];
+
+  var toolIds = mapping ? mapping.tools : [];
+  var toolEntries = toolIds.map(getAISkillById).filter(Boolean);
+  var primary = toolEntries.length ? toolEntries[0] : null;
+  var fallbackTools = toolEntries.slice(1).map(function(t) { return t.name; });
+
+  var recommendedRoute;
+  if (!mapping) {
+    recommendedRoute = 'manual_copy';
+  } else if (mapping.textOnly) {
+    recommendedRoute = 'prompt_only';
+  } else if (primary && primary.supportedModes.indexOf('api') !== -1) {
+    recommendedRoute = 'api_candidate';
+  } else if (primary && primary.supportedModes.indexOf('browser') !== -1) {
+    recommendedRoute = 'browser_candidate';
+  } else if (primary && primary.supportedModes.indexOf('desktop') !== -1) {
+    recommendedRoute = 'desktop_candidate';
+  } else {
+    recommendedRoute = 'manual_copy';
+  }
+
+  var allowedNow = (recommendedRoute === 'prompt_only' || recommendedRoute === 'manual_copy');
+  var requiresApproval = !allowedNow;
+
+  // Publishing連携: Publishing Draftがあれば判断材料に使う。無くても安全に動作する（fallback）
+  var pub = outputDraft.publishing || null;
+  var qualityScore = (pub && typeof pub.qualityScore === 'number') ? pub.qualityScore
+    : ((outputDraft.packageQuality && typeof outputDraft.packageQuality.score === 'number') ? outputDraft.packageQuality.score : null);
+  if (qualityScore !== null && qualityScore < 80) {
+    warnings.push('成果物の完成度（' + qualityScore + '点）が80点未満です。プロンプト・構成を再確認してください。');
+  }
+  warnings.push('実際のAPI実行・PC操作・ブラウザ操作・生成・投稿は必ずユーザー承認後にのみ行ってください。');
+
+  var reasonParts = [];
+  if (!mapping) {
+    reasonParts.push('成果物タイプ「' + type + '」はAI Gateway候補ツール未定義のため、手動コピー（manual_copy）を推奨します。');
+  } else if (recommendedRoute === 'prompt_only') {
+    reasonParts.push('テキスト/構成生成が中心の成果物のため、既存Output/Publishing Engineによるプロンプト・コピー生成のみで完結します。');
+  } else {
+    reasonParts.push((primary ? primary.name : '候補ツール') + 'を推奨候補としますが、現時点では' + (recommendedRoute === 'api_candidate' ? 'API未接続' : 'ブラウザ自動操作は未実装') + 'のため実行はできません。');
+  }
+  if (pub && pub.title) reasonParts.push('Publishing Engineのタイトル「' + _pubTruncate(pub.title, 30) + '」を判断材料として使用しました。');
+
+  return {
+    version: AI_GATEWAY_VERSION,
+    taskType: type,
+    recommendedTool: primary ? primary.name : null,
+    recommendedRoute: recommendedRoute,
+    reason: reasonParts.join(' '),
+    costLevel: primary ? primary.costLevel : 'unknown',
+    qualityLevel: primary ? primary.qualityLevel : 'unknown',
+    speedLevel: primary ? primary.speedLevel : 'unknown',
+    requiresApproval: requiresApproval,
+    allowedNow: allowedNow,
+    warnings: warnings,
+    fallbackTools: fallbackTools,
+  };
+}
+
+// Phase49-1: 安全ゲート（実行系アクションは常にfalse。プロンプト生成/コピー用テキスト作成のみtrue）
+function isAIGatewayExecutionAllowed(decision, actionType) {
+  var ALWAYS_ALLOWED = ['prompt_generation', 'copy_text'];
+  var ALWAYS_BLOCKED = ['api', 'external_comm', 'pc_operation', 'browser_operation', 'image_generation', 'video_generation', 'sns_post'];
+  if (ALWAYS_ALLOWED.indexOf(actionType) !== -1) return true;
+  if (ALWAYS_BLOCKED.indexOf(actionType) !== -1) return false;
+  return false; // 未知のactionTypeは安全側に倒す
+}
+
+function _gwBuildDecisionSummary(decision) {
+  var lines = ['【AI Gateway Decision】', ''];
+  lines.push('Recommended Tool: ' + (decision.recommendedTool || '（該当なし）'));
+  lines.push('Recommended Route: ' + decision.recommendedRoute);
+  lines.push('Reason: ' + decision.reason);
+  lines.push('Cost / Quality / Speed: ' + decision.costLevel + ' / ' + decision.qualityLevel + ' / ' + decision.speedLevel);
+  lines.push('Approval Required: ' + (decision.requiresApproval ? 'yes' : 'no'));
+  lines.push('Allowed Now: ' + (decision.allowedNow ? 'yes' : 'no'));
+  lines.push('Fallback Tools: ' + (decision.fallbackTools.length ? decision.fallbackTools.join(' / ') : '（なし）'));
+  if (decision.warnings.length) {
+    lines.push('Warnings:');
+    decision.warnings.forEach(function(w) { lines.push('- ' + w); });
+  }
+  return lines.join('\n');
+}
+
+// Phase49-1: 推奨ツールへ手動で貼り付けるためのプロンプト抽出（実行はしない）
+function _gwBuildToolPrompt(outputDraft, decision) {
+  if (!outputDraft || !outputDraft.fields) return '';
+  var f = outputDraft.fields;
+  if (decision.recommendedRoute === 'prompt_only') {
+    var pub = outputDraft.publishing;
+    return pub && pub.copyText ? pub.copyText : 'このタイプはプロンプト生成ではなく、既存Output/Publishing Engineのコピー用テキストをご利用ください。';
+  }
+  if (f.prompt) return String(f.prompt);
+  if (Array.isArray(f.imagePrompts) && f.imagePrompts.length) return String(f.imagePrompts[0]);
+  if (f.videoPrompt) return String(f.videoPrompt);
+  if (Array.isArray(f.visualPrompts) && f.visualPrompts.length) return String(f.visualPrompts[0]);
+  if (f.imageInstruction) return String(f.imageInstruction);
+  if (f.caption) return String(f.caption);
+  return '（プロンプト未生成）';
+}
+
+function _gwBuildManualInstructions(outputDraft, decision) {
+  var toolName = decision.recommendedTool || '推奨ツール（未定義）';
+  var lines = [
+    '【手動実行手順（AI Gatewayは自動実行しません）】',
+    '',
+    '1. ' + toolName + '（ブラウザまたはアプリ）を開く',
+    '2. 「Copy Tool Prompt」でコピーしたプロンプトを貼り付ける',
+    '3. 生成結果を確認し、品質・内容に問題がないか確認する',
+    '4. 社内承認（ユーザー承認）を得てから利用する',
+    '5. 本AI会社はこの手順を自動実行しません。すべて手動で行ってください。',
+  ];
+  if (decision.fallbackTools.length) {
+    lines.push('', '代替候補: ' + decision.fallbackTools.join(' / '));
+  }
+  return lines.join('\n');
+}
+
+// Phase49-1: クリップボードコピー（既存Copy Export/Publishing Copyとは独立）
+function copyGatewayField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var decision = _lastOutputDraft.aiGateway || createAIGatewayDecision(_lastOutputDraft);
+  if (!decision) return;
+  var text = '';
+  if (fieldKey === 'decision') text = _gwBuildDecisionSummary(decision);
+  else if (fieldKey === 'toolPrompt') text = _gwBuildToolPrompt(_lastOutputDraft, decision);
+  else if (fieldKey === 'manualInstructions') text = _gwBuildManualInstructions(_lastOutputDraft, decision);
+  if (!text) return;
+
+  var msg = document.getElementById('oe-gw-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase49-1: AI Gateway HTML生成（Publishing Engineの直後に表示。データ不足・未対応タイプでも安全に空文字を返す）
+function buildAIGatewayHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.type) return '';
+  var decision = _lastOutputDraft.aiGateway || createAIGatewayDecision(_lastOutputDraft);
+  if (!decision) return '';
+  _lastOutputDraft.aiGateway = decision;
+  var esc = escapeHtml;
+
+  var allowedBadge = '<span class="oe-gw-badge ' + (decision.allowedNow ? 'allowed' : 'notallowed') + '">'
+    + (decision.allowedNow ? 'ALLOWED NOW' : 'REQUIRES APPROVAL') + '</span>';
+
+  var warningsHtml = decision.warnings.length
+    ? decision.warnings.map(function(w) { return '<div class="oe-gw-warning">⚠ ' + esc(w) + '</div>'; }).join('')
+    : '';
+
+  var registryConnected = AI_SKILL_REGISTRY.filter(function(s) { return s.executionStatus.indexOf('connected') === 0; }).length;
+  var registryHtml = AI_SKILL_REGISTRY.map(function(s) {
+    var cls = s.executionStatus.indexOf('connected') === 0 ? 'connected' : 'notconnected';
+    return '<span class="oe-gw-registry-chip ' + cls + '">' + esc(s.name) + '</span>';
+  }).join('');
+
+  return '<div class="oe-gw-section">'
+    + '<div class="oe-gw-title">🧭 AI Gateway <span style="font-weight:400;opacity:.5;">v' + AI_GATEWAY_VERSION + '</span>' + allowedBadge + '</div>'
+    + '<div class="oe-pkg-label">Recommended Tool</div><div class="oe-field-val">' + (decision.recommendedTool ? esc(decision.recommendedTool) : '<span class="oe-empty-val">該当なし</span>') + '</div>'
+    + '<div class="oe-pkg-label">Recommended Route</div><div class="oe-field-val">' + esc(decision.recommendedRoute) + '</div>'
+    + '<div class="oe-pkg-label">Reason</div><div class="oe-field-val">' + esc(decision.reason) + '</div>'
+    + '<div class="oe-pkg-label">Cost / Quality / Speed</div><div class="oe-field-val">' + esc(decision.costLevel) + ' / ' + esc(decision.qualityLevel) + ' / ' + esc(decision.speedLevel) + '</div>'
+    + '<div class="oe-pkg-label">Approval Required</div><div class="oe-field-val">' + (decision.requiresApproval ? 'yes' : 'no') + '</div>'
+    + '<div class="oe-pkg-label">Allowed Now</div><div class="oe-field-val">' + (decision.allowedNow ? 'yes' : 'no') + '</div>'
+    + '<div class="oe-pkg-label">Fallback Tools</div><div class="oe-field-val">' + (decision.fallbackTools.length ? esc(decision.fallbackTools.join(' / ')) : '<span class="oe-empty-val">なし</span>') + '</div>'
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">AI Skill Registry Summary（' + registryConnected + '/' + AI_SKILL_REGISTRY.length + ' connected_text_only）</div>'
+    + '<div>' + registryHtml + '</div>'
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-gw-copyrow">'
+    +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'decision\')">Copy Gateway Decision</button>'
+    +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'toolPrompt\')">Copy Tool Prompt</button>'
+    +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'manualInstructions\')">Copy Manual Instructions</button>'
+    +   '<span id="oe-gw-copy-msg" class="oe-gw-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase49-1: Export反映
+function appendAIGatewayToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var decision = _lastOutputDraft.aiGateway || createAIGatewayDecision(_lastOutputDraft);
+  if (!decision) return;
+  lines.push('');
+  lines.push('## AI Gateway (Phase49-1)');
+  lines.push('- Recommended Tool: ' + (decision.recommendedTool || '（該当なし）'));
+  lines.push('- Route: ' + decision.recommendedRoute);
+  lines.push('- Reason: ' + decision.reason);
+  lines.push('- Approval Required: ' + (decision.requiresApproval ? 'yes' : 'no'));
+  lines.push('- Allowed Now: ' + (decision.allowedNow ? 'yes' : 'no'));
+  if (decision.warnings.length) {
+    lines.push('- Warnings:');
+    decision.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+  lines.push('- Fallback Tools: ' + (decision.fallbackTools.length ? decision.fallbackTools.join(' / ') : '（なし）'));
+}
+
+function appendAIGatewayToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var decision = _lastOutputDraft.aiGateway || createAIGatewayDecision(_lastOutputDraft);
+  if (!decision) return;
+  payload.aiGateway = decision;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -24006,6 +24396,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
+    + _oeSafe(buildAIGatewayHtml,                'AIGateway')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')

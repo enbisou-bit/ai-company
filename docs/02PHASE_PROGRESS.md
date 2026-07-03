@@ -1,12 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase49-0.1完了 / Version2 Roadmap正式化）
+> 更新日: 2026-07-02（Phase49-1 AI Gateway Foundation完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-0.1 完了（v1.00 Phase48-5 Complete / Version2 Roadmap正式化済み）**
-- 現在バージョン: **v1.00-phase48-5**（Version1機能は完成。Phase49-0.1はdocs正式化のみのためVersion番号は据え置き）
-- 次工程: **Phase49-1 AI Gateway Foundation**
+- 現在フェーズ: **Phase49-1 完了（AI Gateway Foundation）**
+- 現在バージョン: **v1.00-phase49-1**
+- 次工程: **Phase49-2 Image Prompt Intelligence**
 
 ---
 
@@ -472,6 +472,33 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - `docs/06HANDOVER_NEXT_CHAT.md` / `docs/01PROJECT_STATUS.md` — 現在地・次工程（Phase49-1 AI Gateway Foundation）を更新
 - 次工程: Phase49-1 AI Gateway Foundation（設計・骨格構築。実行連携は行わない）
 - Git: Phase49-0.1 roadmap formalization / Tag: v1.00-phase49-0.1
+
+### Phase49-1: AI Gateway Foundation ✅
+- `index.html`
+  - CSS: `.oe-gw-*`（section/title/badge/warning/registry-chip/copyrow/copybtn/copymsg）を新規追加（既存`.oe-pkg-*`/`.oe-preview-*`/`.oe-pub-*`は無変更）
+  - `AI_GATEWAY_VERSION = '1.0.0'` / `AI_SKILL_REGISTRY`（ChatGPT/Claude/GPT Image/Seedance/DOMOAI/Genspark/Flow/Veo/Kling/Runway/Luma/Pika/Hailuoの13ツール、各id/name/type/supportedModes/strengths/costLevel/qualityLevel/speedLevel/executionStatus/requiresApproval/notesを保持）
+  - `AI_GATEWAY_TASK_TOOL_MAP` — OUTPUT_TYPE_DEFINITIONS全13タイプに候補ツールを対応（image系: instagram_carousel/instagram_post/flyer/image_prompt→GPT Image、video系: tiktok_video/youtube_shorts/video_prompt→Seedance、text系: lp/html/pdf/document/powerpoint/excel→ChatGPT・`textOnly`フラグでprompt_only固定）
+  - `getAISkillById(id)` / `createAIGatewayDecision(outputDraft)` — Registry+マップからrecommendedTool/recommendedRoute/reason/costLevel/qualityLevel/speedLevel/requiresApproval/allowedNow/warnings/fallbackToolsを算出。`allowedNow`は`recommendedRoute`が`prompt_only`/`manual_copy`の場合のみtrue（api_candidate/browser_candidate/desktop_candidateは常にrequiresApproval:true・allowedNow:false）
+  - `isAIGatewayExecutionAllowed(decision, actionType)` — api/external_comm/pc_operation/browser_operation/image_generation/video_generation/sns_postは恒久的にfalse、prompt_generation/copy_textのみtrue、未知のactionTypeはfalse（安全側デフォルト）を返すハード安全ゲート
+  - `_gwBuildDecisionSummary()` / `_gwBuildToolPrompt()`（既存`_pubTruncate`等Publishing Engineヘルパーを流用） / `_gwBuildManualInstructions()` — Copy用テキスト生成ヘルパー
+  - `buildAIGatewayHtml()` — `renderOutputEnginePanel()`の`_oeSafe()`チェーンへ`buildPublishingEngineHtml`の直後に追加。Recommended Tool/Route/Reason/Cost・Quality・Speed/Approval Required/Allowed Now/Warnings/Fallback Tools/AI Skill Registry Summary（接続数バッジ付き）を表示
+  - `copyGatewayField(fieldKey)` — Copy Gateway Decision/Copy Tool Prompt/Copy Manual Instructionsの3ボタンに対応。`navigator.clipboard.writeText()`＋フォールバック（既存Publishing Copyと同一パターン、独立実装）
+  - `appendAIGatewayToExportMarkdown(lines)` / `appendAIGatewayToExportJson(payload)` — `serializeOutputDraft()`のMarkdown（`## AI Gateway (Phase49-1)`）/JSON（`aiGateway`キー）に反映。既存Export構造・他セクションは無変更
+  - Publishing Engine連携: `outputDraft.publishing`（Phase48-5）が存在すればタイトルを判断理由に使用、`packageQuality`/`publishing.qualityScore`が80点未満の場合はwarningsへ追加。Publishing Draftが存在しない・未生成でも安全に動作することを確認（fallback）
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入し`renderOutputEnginePanel()`を直接呼び出す方式 = Phase48-4/48-5と同じAPI課金なしの確認手法）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプでAI Gatewayパネル表示・判断結果を確認
+  - image系（instagram_carousel/instagram_post/flyer/image_prompt）→ recommendedTool=GPT Image・route=api_candidate・allowedNow=false・requiresApproval=trueを確認
+  - video系（tiktok_video/youtube_shorts/video_prompt）→ recommendedTool=Seedance・route=browser_candidate・allowedNow=false・requiresApproval=trueを確認
+  - text系（lp/html/pdf/document/powerpoint/excel）→ recommendedTool=ChatGPT・route=prompt_only・allowedNow=true・requiresApproval=falseを確認（fallback表示を確認）
+  - 未定義の将来タイプ・`_lastOutputDraft`がnullの場合・Publishing Draft未生成の場合でも例外が発生せず安全にfallback（manual_copy等）することを確認
+  - `isAIGatewayExecutionAllowed()`の全アクション種別（api/external_comm/pc_operation/browser_operation/image_generation/video_generation/sns_post/prompt_generation/copy_text/未知の値）で正しい真偽値を返すことを確認
+  - Markdown/JSON Export双方に`AI Gateway`セクション・`aiGateway`キーが正しく反映されることを確認
+  - Copy 3ボタンとも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・Quality Score・Knowledge/Compare各パネルへの影響なし
+- 生成ロジック（`buildOutputDraftFromLeaderFinal()`）・Preview/Publishing Engine・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・実際の画像/動画生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし（判断材料の算出とプロンプト/コピー用テキストの表示のみ）
+- モデル変更・Provider構成変更は一切なし（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定を維持。AI Skill Registry内のChatGPT/Claudeエントリも「Provider構成は変更しない」旨をnotesに明記）
+- 次工程: Phase49-2 Image Prompt Intelligence
+- Git: Phase49-1 ai gateway foundation / Tag: v1.00-phase49-1
 
 ---
 

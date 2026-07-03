@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-02（Phase49-0.1完了 / Version2 Roadmap正式化）
+更新日: 2026-07-02（Phase49-1完了 / AI Gateway Foundation）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00 Phase48-5 Complete**
+**v1.00-phase49-1**（AI Gateway Foundation・判断層のみ）
 
-最新Tag: `v1.00-phase48-5`
+最新Tag: `v1.00-phase49-1`
 
 補足: `v1.00-phase47-1.6` はPhase48-4完了後に発見された過去の未コミット差分（OpenAI費用トラッカーの累計対応）を正式化した**遡及タグ**。作成日時の順序と機能の進行フェーズ番号は一致しない（Phase47-1系の一部）。詳細はPHASE_PROGRESS.mdのPhase47-1.6セクション・Decision 025（04DECISIONS.md）を参照。
 
@@ -26,13 +26,13 @@
 ## 現在地
 
 Phase48-5（Publishing Engine）完了＝**Version1機能完成**。
-Phase49-0（Version2設計レビュー）・Phase49-0.1（Version2 Roadmap Formalization）完了＝**docs正式化のみ、コード変更なし**。
+Phase49-0（Version2設計レビュー）・Phase49-0.1（Roadmap Formalization）・**Phase49-1（AI Gateway Foundation）完了**。
 
-Version2は今回、6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027、docs/04ROADMAP.mdの「Version 2.0 Roadmap」参照）。
+Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1でCreative Engineファミリーの最初のコード実装（AI Gateway＝判断層のみ）が完了した（Decision 030）。
 
-次工程: **Phase49-1 — AI Gateway Foundation**（Version2最初のコード実装フェーズ）
+次工程: **Phase49-2 — Image Prompt Intelligence**（GPT Image/Midjourney/Flux/Ideogram/Recraft等の画像プロンプト最適化。生成実行はしない）
 
-コード実装に入る前に必ずAI Gateway（Phase49-1）から着手すること。Creative Engine実行（Phase49-4）やAutomation（Phase52-2）はAI Gatewayに依存するため、順序を飛ばさない。
+AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExecutionAllowed()`）は判断層のみで、実行層（Phase49-4 Creative Engine Execution）はまだ実装されていない。実行系アクション（API/PC操作/ブラウザ操作/画像・動画生成/SNS投稿）は`isAIGatewayExecutionAllowed()`で恒久的にfalseとなるよう安全ゲートを設置済み。
 
 画像生成・動画生成・外部AI操作（PCアプリ操作/ブラウザ操作含む）は引き続きユーザー承認後のみ実行可能。git pushは引き続き禁止。
 
@@ -82,6 +82,7 @@ Version2は今回、6ファミリー（Creative Engine / Intelligence / Sales / 
 | Phase48-5 | Publishing Engine（10タイプでタイトル/説明文/ハッシュタグ/投稿時間/画像・動画一覧/CTA/チェックリスト自動生成） | v1.00-phase48-5 |
 | Phase49-0 | Version2設計レビュー（コード変更なし。責務整理・AI Gateway/Asset Library案・Creative Engine再構成案・Company Brain v2分割案） | （タグなし・レビューのみ） |
 | Phase49-0.1 | Version2 Roadmap Formalization（レビュー内容をdocsへ正式反映。コード変更なし） | v1.00-phase49-0.1 |
+| Phase49-1 | AI Gateway Foundation（AI Skill Registry 13ツール・Gateway判断・安全ゲート・UI/Copy/Export、判断層のみ・実行なし） | v1.00-phase49-1 |
 
 ---
 
@@ -230,14 +231,24 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Priority 0: Phase49-1 — AI Gateway Foundation
+### Priority 0: Phase49-2 — Image Prompt Intelligence
 
 目的：
-API / PCアプリ操作 / ブラウザ操作を将来選択できる中継層の設計・骨格構築。今回は実行連携ではなく設計と安全ゲートを優先する。既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）には一切影響させない。
-
-Phase49-4（Creative Engine Execution）・Phase52-2（Posting Automation）はAI Gatewayに依存するため、必ずPhase49-1から着手すること。
+GPT Image / Midjourney / Flux / Ideogram / Recraft / ChatGPT画像生成などに対応した画像プロンプト最適化。生成実行はしない。
 
 詳細は docs/04ROADMAP.md の「Version 2.0 Roadmap」を参照。
+
+### Phase49-1で完成した内容（次チャットが把握すべき実装）
+
+- `index.html` の `AI_SKILL_REGISTRY`（13ツール: ChatGPT/Claude/GPT Image/Seedance/DOMOAI/Genspark/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo） / `AI_GATEWAY_TASK_TOOL_MAP`（OUTPUT_TYPE_DEFINITIONS全13タイプに候補ツール対応済み）
+- `createAIGatewayDecision(outputDraft)` — recommendedTool/recommendedRoute/reason/costLevel/qualityLevel/speedLevel/requiresApproval/allowedNow/warnings/fallbackToolsを算出。`allowedNow`はrecommendedRouteがprompt_only/manual_copyの場合のみtrue
+- `isAIGatewayExecutionAllowed(decision, actionType)` — api/external_comm/pc_operation/browser_operation/image_generation/video_generation/sns_postは恒久的にfalse、prompt_generation/copy_textのみtrue、未知の値もfalse（安全側デフォルト）のハード安全ゲート
+- `buildAIGatewayHtml()` — `renderOutputEnginePanel()`内、`buildPublishingEngineHtml`の直後に表示。Copy Gateway Decision/Copy Tool Prompt/Copy Manual Instructionsの3ボタン付き
+- `appendAIGatewayToExportMarkdown()` / `appendAIGatewayToExportJson()` — Export（Markdown`## AI Gateway`セクション/JSON`aiGateway`キー）に反映
+- Publishing Engine（`outputDraft.publishing`）が存在すれば判断理由に利用。存在しなくても安全にfallback動作することを確認済み
+- 既存Package表示・Preview/Publishing Engine・Export構造・Workflow・Knowledge Chain・Provider構成（Leader=OpenAI固定/Writer・Reviewer・Strategy=Claude固定）は無変更
+- 実際のAPI実行・PC操作・ブラウザ自動操作・画像/動画生成・SNS投稿は一切行っていない
+- 詳細は Decision 030（docs/04DECISIONS.md）を参照
 
 ### Phase49-0 / Phase49-0.1で完成した内容（次チャットが把握すべき事項）
 
@@ -274,10 +285,10 @@ Phase49-4（Creative Engine Execution）・Phase52-2（Posting Automation）はA
 - 既存`buildXxxPackageHtml()`（コピー用途）・Export・Workflow・Knowledge Chainは無変更
 - 詳細は Decision 024（docs/04DECISIONS.md）を参照
 
-### 次工程チェーン（Phase49-0.1時点のRoadmap / Decision 027で責務分離型へ再構成済み）
+### 次工程チェーン（Phase49-1完了時点のRoadmap / Decision 027で責務分離型へ再構成済み）
 
 ```
-Phase49-1 AI Gateway Foundation
+Phase49-1 AI Gateway Foundation ✅ 完了
   ↓
 Phase49-2 Image Prompt Intelligence
   ↓
@@ -400,4 +411,4 @@ git tag v1.00-phase46-4
 9. docs/08CLAUDE_PROMPT_TEMPLATE.md を読む
 10. docs/04DECISIONS.md を読む（設計判断の背景確認）
 11. 現在地を要約する
-12. Phase49-1（AI Gateway Foundation）から開発再開
+12. Phase49-2（Image Prompt Intelligence）から開発再開
