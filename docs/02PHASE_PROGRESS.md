@@ -1,11 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase48-5完了）
+> 更新日: 2026-07-02（Phase49-0.1完了 / Version2 Roadmap正式化）
 
 ## 現在地
-- 現在フェーズ: **Phase48-5 完了（v1.00 Phase48-5 Complete）**
-- 現在バージョン: **v1.00-phase48-5**
+- 現在フェーズ: **Phase49-0.1 完了（v1.00 Phase48-5 Complete / Version2 Roadmap正式化済み）**
+- 現在バージョン: **v1.00-phase48-5**（Version1機能は完成。Phase49-0.1はdocs正式化のみのためVersion番号は据え置き）
+- 次工程: **Phase49-1 AI Gateway Foundation**
 
 ---
 
@@ -446,6 +447,31 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49 AI Creative Engine（画像・動画生成、ユーザー承認後のみ）
 - Git: Phase48-5 publishing engine / Tag: v1.00-phase48-5
+
+---
+
+# Phase49（Version2着手 / Roadmap整理）
+
+### Phase49-0: Version2設計レビュー ✅
+- コード変更なし・docs変更なし（レビューのみ、チャット上で提出）
+- Phase49〜54の責務レビューを実施し、以下の問題を確認
+  - Phase49系にCreative（生成）とIntelligence（分析）が混在（旧Phase49-1 Instagram Intelligenceは分析、Phase49本体・49-2は生成系）
+  - 旧Phase49-1（Instagram Intelligence）とPhase50（Marketing Intelligence）のアルゴリズム分析が重複
+  - 旧Phase50-1（Image Prompt Intelligence）が家族違い（Creative系なのにIntelligence系の番号）
+  - Phase51・53・54がPhase49・50と異なりサブフェーズ化されておらず肥大化リスクあり
+  - Phase53の「コスト分析」「品質分析」が既存Phase47/46/48と重複するリスク
+  - `loadCompanyBrain()`/`renderCompanyBrain()`を確認し、現行Company Brainは読み取り専用の集計ダッシュボードであることを実コードで確認。一方`autonomousConsult`フラグ・`toggleAutonomousConsult()`は既存の自律相談機能の下地として存在することを確認
+- 改善案として、Creative/Intelligence/Sales/Automation/Business Intelligence/Company Brainの6ファミリーへの責務再編、AI Gateway・Asset Libraryの新設、Company Brain v2のサブフェーズ分割を提案
+- 次工程: Phase49-0.1 Version2 Roadmap Formalization（docs正式反映）
+
+### Phase49-0.1: Version2 Roadmap Formalization ✅
+- Phase49-0のレビュー内容をdocsへ正式反映（コード変更なし・index.html/server.js/package.json/DB関連ファイル一切変更なし）
+- `docs/04ROADMAP.md` — Version 2.0を6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）× 全19サブフェーズへ正式整理。旧Phase49-1（Instagram Intelligence）→Phase50-2（Platform Intelligence）、旧Phase50-1（Image Prompt Intelligence）→Phase49-2へ移動
+- `docs/00ENBISOU_AI_COMPANY_MASTER.md` — 現在Version・Version2最優先（AI Gateway/Creative Prompt Intelligence/Asset Library）・Provider構成維持を明記
+- `docs/04DECISIONS.md` — Decision 027（Roadmap責務分離型再構成）/ Decision 028（AI Gateway採用）/ Decision 029（Asset LibraryはKnowledge Libraryとは別物）を追記
+- `docs/06HANDOVER_NEXT_CHAT.md` / `docs/01PROJECT_STATUS.md` — 現在地・次工程（Phase49-1 AI Gateway Foundation）を更新
+- 次工程: Phase49-1 AI Gateway Foundation（設計・骨格構築。実行連携は行わない）
+- Git: Phase49-0.1 roadmap formalization / Tag: v1.00-phase49-0.1
 
 ---
 

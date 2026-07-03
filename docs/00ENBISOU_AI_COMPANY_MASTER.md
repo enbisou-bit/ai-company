@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.1）
-> 更新日: 2026-07-02（Phase48-5完了 / v1.00 Phase48-5 Complete）
+> 更新日: 2026-07-02（Phase49-0.1完了 / v1.00 Phase48-5 Complete・Version2 Roadmap正式化済み）
 
 ## 1. AI会社の最終目的（最重要）
 
@@ -79,20 +79,27 @@ User
 - 動画生成もユーザー承認後
 - 外部API・有料サービス・SNS投稿連携は必ずユーザー承認制
 
-## 5.1 現在の最優先（Phase48-5完了時点 / Publishing Engineは完了済み）
+## 5.1 現在の最優先（Phase49-0.1完了時点 / Version2 Roadmapを責務分離型へ正式再構成済み）
 
-### Priority 0: AI Creative Engine
-- 画像生成 / 動画生成 / 広告生成 / ロゴ / バナー（Phase49、ユーザー承認後のみ実行）
+Version2はCreative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2 の6ファミリーへ再編済み（Decision 027）。詳細は [docs/04ROADMAP.md](04ROADMAP.md) を参照。
 
-### Priority 1: Marketing Intelligence
-- 市場分析 / 競合分析 / SEO分析 / SNS分析 / トレンド分析（Phase50）
+### Priority 0: AI Gateway / Creative Prompt Intelligence / Asset Library
+- AI Gateway Foundation（Phase49-1）— API / PCアプリ操作 / ブラウザ操作を選択する中継層の設計・骨格。**既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）は一切変更しない**
+- Image Prompt Intelligence（Phase49-2）/ Video Prompt Intelligence（Phase49-3）— 各生成AI専用のプロンプト最適化。生成実行はしない
+- Asset Library（Phase49-6）— 生成資産・既存成果物（画像/動画/LP/PDF/HTML/チラシ等）の保存・検索・再利用。Knowledge Libraryとは別物（Decision 029）
 
-### Priority 2: Automation Engine
-- Instagram/TikTok/YouTube投稿・予約投稿の自動化（Phase52、ユーザー承認後のみ）
+### Priority 1: Creative Engine Execution / Ad Assembly
+- 画像生成・動画生成・広告組み立て（Phase49-4・49-5、AI Gateway経由・ユーザー承認後のみ実行）
+
+### Priority 2: Marketing / Platform Intelligence
+- 市場分析・競合分析・SEO分析・プラットフォーム別アルゴリズム分析（Phase50-1〜50-3）
+
+### Priority 3: Automation Engine
+- Publishing Engine出力を利用した投稿・予約投稿の自動化（Phase52、ユーザー承認後のみ）
 
 詳細ロードマップは [docs/04ROADMAP.md](04ROADMAP.md) を参照。
 
-## 6. 現状（Phase48-5完了 / v1.00 Phase48-5 Complete）
+## 6. 現状（Phase49-0.1完了 / v1.00 Phase48-5 Complete・Version2 Roadmap正式化済み）
 
 完成：
 - Company Brain
@@ -150,8 +157,11 @@ User
 - Output Preview Engine（Phase48-4） — Instagram/LP/チラシ/PDF/HTML/TikTok/YouTube Shortsを完成イメージ（モックアップ・HTMLはiframe実描画）で画面表示。Package Qualityスコアをバッジ連動表示
 - Publishing Engine（Phase48-5） — 10タイプ（Instagram/TikTok/YouTube Shorts/チラシ/LP/HTML/PDF/画像プロンプト/動画プロンプト/汎用文書）でタイトル・説明文・ハッシュタグ・投稿時間・画像/動画一覧・CTA・公開前チェックリストを自動生成。Copy 5ボタン・Markdown/JSON Export反映済み
 
+- Version2設計レビュー（Phase49-0） — Roadmap責務分離・AI Gateway/Asset Library追加案・Creative Engine再構成案・Company Brain v2分割案をレビュー（コード変更なし）
+- Version2 Roadmap Formalization（Phase49-0.1） — 上記レビュー内容をdocsへ正式反映（コード変更なし）
+
 次工程（Priority 0）：
-- AI Creative Engine（Phase49） — 画像生成・動画生成・広告生成（ロゴ・バナー）、ユーザー承認後のみ実行
+- AI Gateway Foundation（Phase49-1） — API/PCアプリ操作/ブラウザ操作の中継層設計・骨格構築。既存Provider構成は変更しない
 
 ## 7. v1.0完成像
 

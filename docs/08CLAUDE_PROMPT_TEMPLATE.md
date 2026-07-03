@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY — Claude Code 実装指示テンプレート
 
-更新日: 2026-07-02（v1.4 — Phase48-3完了反映）
+更新日: 2026-07-02（v1.5 — Phase49-0.1 Version2 Roadmap正式化反映）
 
 ---
 
@@ -189,6 +189,8 @@ Git
 ・Version更新要否
 ・docs更新要否
 ・成果物品質100点設計（Output Package Quality基準）
+・実行系（API実行/PCアプリ操作/ブラウザ操作の実行）かプロンプト生成系かを明記する（Phase49以降 / Version2）
+・AI Gateway（Phase49-1〜）に関わる変更の場合、既存Provider設定（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）を変更しないことを確認する
 
 改善案がある場合は実装前に提案する。
 推測では実装しない。
@@ -234,6 +236,7 @@ Git
 ・外部 API / SaaS / サブスク連携
 ・SNS 有料連携
 ・画像生成 API / 動画生成 API 実行
+・PC アプリ操作 / ブラウザ操作を伴う実行（AI Gateway経由含む。Phase49以降）
 ・GitHub 設定変更
 ・Render 設定変更
 ・環境変数変更
@@ -440,3 +443,4 @@ analyzeCompareLogTrends():
 | v1.2 | 2026-06-29 | 出力形式詳細ルール確定（5ルール明文化 / 説明文分離 / 分割禁止 / 見出し固定） |
 | v1.3 | 2026-07-02 | Phase47-1完了反映 / docs更新対象に07・08を追加明記 |
 | v1.4 | 2026-07-02 | Phase48-3完了反映 / 実装前レビューにRoadmap整合性・Version/docs更新要否・成果物品質100点設計を追加 / 品質レビューにPreview・Output Package Quality・Output Auto Fill・Creative Engine影響・Roadmap整合性・docs整合性を追加 / docs更新ルールにdocs/04ROADMAP.mdを追加 |
+| v1.5 | 2026-07-02 | Phase49-0.1完了反映（Version2 Roadmap正式化） / 実装前レビューに「実行系かプロンプト生成系かの明記」「AI Gateway変更時のProvider不変確認」を追加 / 安全レビューに「PCアプリ操作/ブラウザ操作を伴う実行」を追加 |

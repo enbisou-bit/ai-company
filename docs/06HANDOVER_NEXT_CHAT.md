@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-02（Phase48-5完了）
+更新日: 2026-07-02（Phase49-0.1完了 / Version2 Roadmap正式化）
 
 ---
 
@@ -25,9 +25,18 @@
 
 ## 現在地
 
-Phase48-5（Publishing Engine）完了。
+Phase48-5（Publishing Engine）完了＝**Version1機能完成**。
+Phase49-0（Version2設計レビュー）・Phase49-0.1（Version2 Roadmap Formalization）完了＝**docs正式化のみ、コード変更なし**。
 
-次工程: **Phase49 — AI Creative Engine**
+Version2は今回、6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027、docs/04ROADMAP.mdの「Version 2.0 Roadmap」参照）。
+
+次工程: **Phase49-1 — AI Gateway Foundation**（Version2最初のコード実装フェーズ）
+
+コード実装に入る前に必ずAI Gateway（Phase49-1）から着手すること。Creative Engine実行（Phase49-4）やAutomation（Phase52-2）はAI Gatewayに依存するため、順序を飛ばさない。
+
+画像生成・動画生成・外部AI操作（PCアプリ操作/ブラウザ操作含む）は引き続きユーザー承認後のみ実行可能。git pushは引き続き禁止。
+
+未追跡ファイル `claude-cost-logs.json` / `claude-quality-history.json` は引き続き方針未決定のまま据え置き（Decision 025参照）。
 
 ---
 
@@ -71,6 +80,8 @@ Phase48-5（Publishing Engine）完了。
 | Phase48-4 | Output Preview Engine（Instagram/LP/チラシ/PDF/HTML/TikTok/YouTube Shortsの完成イメージ表示） | v1.00-phase48-4 |
 | Phase47-1.6 | OpenAI費用トラッカー累計対応の正式化（Phase48-4完了後に発見した未コミット差分を検証・コミット、遡及記録） | v1.00-phase47-1.6 |
 | Phase48-5 | Publishing Engine（10タイプでタイトル/説明文/ハッシュタグ/投稿時間/画像・動画一覧/CTA/チェックリスト自動生成） | v1.00-phase48-5 |
+| Phase49-0 | Version2設計レビュー（コード変更なし。責務整理・AI Gateway/Asset Library案・Creative Engine再構成案・Company Brain v2分割案） | （タグなし・レビューのみ） |
+| Phase49-0.1 | Version2 Roadmap Formalization（レビュー内容をdocsへ正式反映。コード変更なし） | v1.00-phase49-0.1 |
 
 ---
 
@@ -219,12 +230,22 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Priority 0: Phase49 — AI Creative Engine
+### Priority 0: Phase49-1 — AI Gateway Foundation
 
 目的：
-画像生成・動画生成・広告生成（ロゴ・バナー）を行う。Flow / Veo / Kling / Runway / DALL·Eなどの外部生成API呼び出しは、実行前に必ずユーザー承認を得る（プロンプト作成自体は自動でよい）。
+API / PCアプリ操作 / ブラウザ操作を将来選択できる中継層の設計・骨格構築。今回は実行連携ではなく設計と安全ゲートを優先する。既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）には一切影響させない。
 
-詳細は docs/04ROADMAP.md を参照。
+Phase49-4（Creative Engine Execution）・Phase52-2（Posting Automation）はAI Gatewayに依存するため、必ずPhase49-1から着手すること。
+
+詳細は docs/04ROADMAP.md の「Version 2.0 Roadmap」を参照。
+
+### Phase49-0 / Phase49-0.1で完成した内容（次チャットが把握すべき事項）
+
+- Roadmap（docs/04ROADMAP.md）をCreative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2 の6ファミリーへ責務分離型で再構成済み（Decision 027）
+- 旧Phase49-1「Instagram Intelligence」→ Phase50-2「Platform Intelligence」へ移動、旧Phase50-1「Image Prompt Intelligence」→ Phase49-2へ移動（Creative系プロンプト最適化をPhase49ファミリー内に統一）
+- AI Gateway（Decision 028）・Asset Library（Decision 029）を新規コンセプトとして採用。どちらも今回は設計のみで実装は行っていない
+- `loadCompanyBrain()`/`renderCompanyBrain()`を確認し、現行Company Brainが読み取り専用の集計ダッシュボードであることを実コードで確認済み。`autonomousConsult`フラグ・`toggleAutonomousConsult()`をCompany Brain v2（Phase54-1 Consult Engine）の土台として活用する方針
+- コード変更は一切なし（index.html/server.js/package.json/DB関連ファイルとも無変更）
 
 ### Phase48-5で完成した実装（次チャットが把握すべき実装）
 
@@ -253,20 +274,46 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 - 既存`buildXxxPackageHtml()`（コピー用途）・Export・Workflow・Knowledge Chainは無変更
 - 詳細は Decision 024（docs/04DECISIONS.md）を参照
 
-### 次工程チェーン（Phase48-5時点のRoadmap）
+### 次工程チェーン（Phase49-0.1時点のRoadmap / Decision 027で責務分離型へ再構成済み）
 
 ```
-Phase49 AI Creative Engine
+Phase49-1 AI Gateway Foundation
   ↓
-Phase50 Marketing Intelligence
+Phase49-2 Image Prompt Intelligence
   ↓
-Phase51 Sales Engine
+Phase49-3 Video Prompt Intelligence
   ↓
-Phase52 Automation Engine
+Phase49-4 Creative Engine Execution
   ↓
-Phase53 Business Intelligence
+Phase49-5 Creative Ad Assembly
   ↓
-Phase54 Company Brain v2
+Phase49-6 Asset Library
+  ↓
+Phase50-1 Marketing Intelligence Foundation
+  ↓
+Phase50-2 Platform Intelligence
+  ↓
+Phase50-3 AB Test & Buzz Analysis
+  ↓
+Phase51-1 Sales Document Engine
+  ↓
+Phase51-2 Presentation Engine
+  ↓
+Phase52-1 Publishing to Automation Bridge
+  ↓
+Phase52-2 Posting Automation
+  ↓
+Phase53-1 Cross Engine Dashboard
+  ↓
+Phase53-2 Business KPI Intelligence
+  ↓
+Phase54-1 Consult Engine
+  ↓
+Phase54-2 Self Review Engine
+  ↓
+Phase54-3 Autonomous Quality Loop
+  ↓
+Phase54-4 Company Brain v2 Integration
 ```
 
 ### Phase47-2〜48-3で完成した実装（次チャットが把握すべき実装の要約）
@@ -353,4 +400,4 @@ git tag v1.00-phase46-4
 9. docs/08CLAUDE_PROMPT_TEMPLATE.md を読む
 10. docs/04DECISIONS.md を読む（設計判断の背景確認）
 11. 現在地を要約する
-12. Phase49（AI Creative Engine）から開発再開
+12. Phase49-1（AI Gateway Foundation）から開発再開
