@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-03（Phase49-1.1 AI Registry Expansion完了）
+> 更新日: 2026-07-03（Phase49-1.2 AI Registry Learning完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-1.1 完了（AI Registry Expansion）**
-- 現在バージョン: **v1.00-phase49-1.1**
+- 現在フェーズ: **Phase49-1.2 完了（AI Registry Learning）**
+- 現在バージョン: **v1.00-phase49-1.2**
 - 次工程: **Phase49-2 Image Prompt Intelligence**
 
 ---
@@ -529,6 +529,35 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49-2 Image Prompt Intelligence
 - Git: Phase49-1.1 ai registry expansion / Tag: v1.00-phase49-1.1
+
+### Phase49-1.2: AI Registry Learning ✅
+- `index.html`（Phase49-1/49-1.1のAI Gateway Foundation・Registry Expansionを壊さず拡張。既存フィールド・関数は無変更）
+  - `AI_REGISTRY_LEARNING_VERSION = '1.0.0'`
+  - `AI_REGISTRY_LEARNING` — `AI_SKILL_REGISTRY`から機械的に初期化（13ツール分、手動重複定義なし）。各エントリ: successCount/failureCount/qualityAverage/speedAverage/costAverage/lastUsed/lastUpdated/confidence/recommendationScore/learningVersion。初期状態は全ツールとも実績0件
+  - `calculateAIConfidence(toolId)` — 実績数・成功率・更新日時の鮮度から low/medium/high を判定（実績5件未満または30日超の陳腐化でlow、20件未満または成功率60%未満でmedium、それ以外high）
+  - `calculateAIRecommendationScore(toolId)` — 成功率(35%)・品質(30%)・速度(15%)・コスト(20%)の加重平均をConfidenceで中立値50へブレンドし0〜100を算出。実績0件は中立値50を返す（推測で高評価/低評価にしない）
+  - `recordAIRegistryLearning(toolId, quality, cost, speed, success, actionType)` — 呼び出し関数のみ用意。Workflow等からの自動呼び出しは行っていない（実際のAPI実績はまだ保存しない）。未登録toolIdは安全にnullを返す
+  - `buildAIRegistryLearningSummary()` — 全13ツールの現在のLearning状況（totalRuns/successRate/recommendationScore/confidence/lastUsed）を生成
+  - `_gwLearningStatus(totalRuns, confidence)` — no_data/learning/building_confidence/established の4段階判定
+  - `createAIGatewayDecision()` — 既存フィールド（Phase49-1の12種+Phase49-1.1の8種）は完全に無変更。返り値へ`learning`オブジェクト（version/recommendationScore/confidence/status/count/successRate/warnings）を1つ追加のみ
+  - `_gwBuildLearningSummary()` — Copy用テキスト生成の追加ヘルパー
+  - `copyGatewayField()` — `learningSummary`ケースを追加（既存5ケースは無変更）
+  - `buildAIGatewayHtml()` — Learning Status/Recommendation Score/Learning Confidence/Success Rate/Learning Count/Learning Warningsを追加表示。Copy Learning Summaryボタンを追加（既存5ボタンは無変更）
+  - `appendAIGatewayToExportMarkdown()` — Learning Summary/Recommendation Score/Confidence/Learning Count/Success Rate/Learning Warningsを追記（既存項目は無変更）。JSON Exportは`payload.aiGateway = decision`が`decision.learning`を自動的に含むため、コード変更不要で`aiGateway.learning`が反映される
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - 全13 OUTPUT_TYPEで既存フィールド（recommendedTool/recommendedRoute等）が完全に同一の値を返すことを確認（回帰なし）。初期状態では全タイプで`learning.status='no_data'`・`count=0`・`recommendationScore=50`・`successRate=null`を確認
+  - `recordAIRegistryLearning('gpt_image', ...)`を3回手動呼び出し（成功2件・失敗1件）し、successCount/failureCount/qualityAverage（移動平均）/confidence/recommendationScoreが正しく更新されることを確認。呼び出し前の`beforeCount=0`により、Workflow等からの自動呼び出しが一切発生していないことも確認
+  - 未登録toolId（存在しないツールID）への記録が安全にnullを返すことを確認
+  - `buildAIRegistryLearningSummary()`が13ツール分のサマリーを正しく生成することを確認
+  - 学習データ反映後、同一ツールを推奨する別のOutputType（image_prompt）で`learning`情報が正しく更新済みの値を返すことを確認（セッション内の学習反映を確認）
+  - Markdown Export（Learning Summary等6項目）・JSON Export（`aiGateway.learning`）双方への反映を確認
+  - Copy 6ボタン（Learning Summary含む）とも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview/Publishing Engine・Quality Score・AI Gateway Foundation（Phase49-1）・Registry Expansion（Phase49-1.1）への影響なし
+  - dev-check再起動によりテスト用Learningデータ（インメモリ）がリセットされ、コードベースは初期状態（全ツール実績0件）を維持することを確認
+- 生成ロジック・Preview/Publishing Engine・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・実際の画像/動画生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49-2 Image Prompt Intelligence
+- Git: Phase49-1.2 ai registry learning / Tag: v1.00-phase49-1.2
 
 ---
 

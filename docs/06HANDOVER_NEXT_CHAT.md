@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-03（Phase49-1.1完了 / AI Registry Expansion）
+更新日: 2026-07-03（Phase49-1.2完了 / AI Registry Learning）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase49-1.1**（AI Registry Expansion・判断層のみ）
+**v1.00-phase49-1.2**（AI Registry Learning・判断層のみ）
 
-最新Tag: `v1.00-phase49-1.1`
+最新Tag: `v1.00-phase49-1.2`
 
 補足: `v1.00-phase47-1.6` はPhase48-4完了後に発見された過去の未コミット差分（OpenAI費用トラッカーの累計対応）を正式化した**遡及タグ**。作成日時の順序と機能の進行フェーズ番号は一致しない（Phase47-1系の一部）。詳細はPHASE_PROGRESS.mdのPhase47-1.6セクション・Decision 025（04DECISIONS.md）を参照。
 
@@ -26,13 +26,13 @@
 ## 現在地
 
 Phase48-5（Publishing Engine）完了＝**Version1機能完成**。
-Phase49-0（Version2設計レビュー）・Phase49-0.1（Roadmap Formalization）・Phase49-1（AI Gateway Foundation）・**Phase49-1.1（AI Registry Expansion）完了**。
+Phase49-0（Version2設計レビュー）・Phase49-0.1（Roadmap Formalization）・Phase49-1（AI Gateway Foundation）・Phase49-1.1（AI Registry Expansion）・**Phase49-1.2（AI Registry Learning）完了**。
 
-Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1でAI Gateway（判断層のみ）、Phase49-1.1でCapability/Health/Cost/Approval/Route Priority/Version Registryを追加した（Decision 030・031）。
+Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1でAI Gateway（判断層のみ）、Phase49-1.1でCapability/Health/Cost/Approval/Route Priority/Version Registry、Phase49-1.2で実績ベースのLearning Registryを追加した（Decision 030・031・032）。
 
 次工程: **Phase49-2 — Image Prompt Intelligence**（GPT Image/Midjourney/Flux/Ideogram/Recraft等の画像プロンプト最適化。生成実行はしない）
 
-AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExecutionAllowed()` / `AI_CAPABILITY_REGISTRY` / `AI_HEALTH_REGISTRY` / `AI_COST_PROFILE` / `AI_ROUTE_PRIORITY`）は判断層のみで、実行層（Phase49-4 Creative Engine Execution）はまだ実装されていない。実行系アクション（API/PC操作/ブラウザ操作/画像・動画生成/SNS投稿）は`isAIGatewayExecutionAllowed()`で恒久的にfalseとなるよう安全ゲートを設置済み。
+AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExecutionAllowed()` / `AI_CAPABILITY_REGISTRY` / `AI_HEALTH_REGISTRY` / `AI_COST_PROFILE` / `AI_ROUTE_PRIORITY` / `AI_REGISTRY_LEARNING`）は判断層のみで、実行層（Phase49-4 Creative Engine Execution）はまだ実装されていない。実行系アクション（API/PC操作/ブラウザ操作/画像・動画生成/SNS投稿）は`isAIGatewayExecutionAllowed()`で恒久的にfalseとなるよう安全ゲートを設置済み。`recordAIRegistryLearning()`は呼び出し関数のみ用意し、自動呼び出しは行っていない（全ツール実績0件の初期状態を維持）。
 
 画像生成・動画生成・外部AI操作（PCアプリ操作/ブラウザ操作含む）は引き続きユーザー承認後のみ実行可能。git pushは引き続き禁止。
 
@@ -84,6 +84,7 @@ AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExe
 | Phase49-0.1 | Version2 Roadmap Formalization（レビュー内容をdocsへ正式反映。コード変更なし） | v1.00-phase49-0.1 |
 | Phase49-1 | AI Gateway Foundation（AI Skill Registry 13ツール・Gateway判断・安全ゲート・UI/Copy/Export、判断層のみ・実行なし） | v1.00-phase49-1 |
 | Phase49-1.1 | AI Registry Expansion（Capability/Health/Cost/Approval/Route Priority/Version Registryを追加、既存12フィールドは無変更） | v1.00-phase49-1.1 |
+| Phase49-1.2 | AI Registry Learning（実績ベースのrecommendationScore/confidence算出、`learning`オブジェクト追加。recordAIRegistryLearning()は呼び出し関数のみ・自動呼び出しなし） | v1.00-phase49-1.2 |
 
 ---
 
@@ -238,6 +239,19 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 GPT Image / Midjourney / Flux / Ideogram / Recraft / ChatGPT画像生成などに対応した画像プロンプト最適化。生成実行はしない。
 
 詳細は docs/04ROADMAP.md の「Version 2.0 Roadmap」を参照。
+
+### Phase49-1.2で完成した内容（次チャットが把握すべき実装）
+
+- `AI_REGISTRY_LEARNING_VERSION = '1.0.0'` / `AI_REGISTRY_LEARNING`（`AI_SKILL_REGISTRY`から機械的初期化、13ツール分、全て実績0件の初期状態）
+- `calculateAIConfidence(toolId)` — 実績数・成功率・更新日時の鮮度から low/medium/high を判定
+- `calculateAIRecommendationScore(toolId)` — 成功率35%/品質30%/速度15%/コスト20%の加重平均をConfidenceで中立値50へブレンド。実績0件は中立値50（推測で高評価/低評価にしない）
+- `recordAIRegistryLearning(toolId, quality, cost, speed, success, actionType)` — **呼び出し関数のみ用意。Workflow等からの自動呼び出しは一切行っていない**（実際のAPI実績はまだ保存されない。次チャットでも安全に呼び出しなしの状態から開始できる）
+- `buildAIRegistryLearningSummary()` — 全13ツールのLearning状況サマリー生成
+- `createAIGatewayDecision()`の既存フィールド（Phase49-1の12種+Phase49-1.1の8種）は完全に無変更。返り値へ`learning`オブジェクト（version/recommendationScore/confidence/status/count/successRate/warnings）を1つ追加のみ
+- `buildAIGatewayHtml()`にLearning Status/Recommendation Score/Learning Confidence/Success Rate/Learning Count/Learning Warningsを追加表示。Copy Learning Summaryボタンを追加（既存5ボタンは無変更）
+- Markdown Export（Learning Summary等6項目追記）/ JSON Export（`payload.aiGateway = decision`が`decision.learning`を自動的に含むためコード変更不要で`aiGateway.learning`が反映）
+- 全13 OUTPUT_TYPEで既存フィールドが完全に同一の値を返すことを回帰確認済み
+- 詳細は Decision 032（docs/04DECISIONS.md）を参照
 
 ### Phase49-1.1で完成した内容（次チャットが把握すべき実装）
 

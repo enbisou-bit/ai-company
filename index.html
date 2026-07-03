@@ -24193,6 +24193,123 @@ function _gwComputeSelectionConfidence(toolId, capabilityScore) {
   return 'low';
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-1.2: AI Registry Learning
+// AI Registryを固定情報だけでなく実績から成長できるRegistryへ拡張する
+// 今回はLearningの土台のみ実装。recordAIRegistryLearning()は呼び出し関数を用意するのみで、
+// Workflow等からの自動呼び出しは行わない（実際のAPI実績はまだ保存しない）
+// 実行はしない・推測で学習しない・実績のみ学習対象とする（Decision 032）
+// ══════════════════════════════════════════════════
+
+const AI_REGISTRY_LEARNING_VERSION = '1.0.0';
+
+// Phase49-1.2: Learning Registry（AI_SKILL_REGISTRYから機械的に初期化。手動重複定義なし）
+const AI_REGISTRY_LEARNING = {};
+AI_SKILL_REGISTRY.forEach(function(s) {
+  AI_REGISTRY_LEARNING[s.id] = {
+    successCount: 0,
+    failureCount: 0,
+    qualityAverage: null,
+    speedAverage: null,
+    costAverage: null,
+    lastUsed: null,
+    lastUpdated: null,
+    confidence: 'low',
+    recommendationScore: null,
+    learningVersion: AI_REGISTRY_LEARNING_VERSION,
+  };
+});
+
+// Phase49-1.2: Confidence算出（実績数・成功率・更新日時の鮮度を考慮。低実績・古いデータはlowへ）
+function calculateAIConfidence(toolId) {
+  var entry = AI_REGISTRY_LEARNING[toolId];
+  if (!entry) return 'low';
+  var total = entry.successCount + entry.failureCount;
+  if (total === 0) return 'low';
+  var successRate = entry.successCount / total;
+  var daysSinceUpdate = entry.lastUpdated ? Math.floor((Date.now() - new Date(entry.lastUpdated).getTime()) / 86400000) : null;
+  var isStale = daysSinceUpdate !== null && daysSinceUpdate > 30;
+  if (total < 5 || isStale) return 'low';
+  if (total < 20 || successRate < 0.6) return 'medium';
+  return 'high';
+}
+
+// Phase49-1.2: Recommendation Score算出（品質・速度・コスト・成功率・Confidenceから0〜100を算出）
+// 実績が無い場合は中立値50を返す（推測で高評価/低評価にしない）。Confidenceが低いほど中立値50に近づける
+function calculateAIRecommendationScore(toolId) {
+  var entry = AI_REGISTRY_LEARNING[toolId];
+  if (!entry) return null;
+  var total = entry.successCount + entry.failureCount;
+  if (total === 0) return 50;
+
+  var successRate = entry.successCount / total; // 0-1
+  var qualityScore = (typeof entry.qualityAverage === 'number') ? entry.qualityAverage : 50; // 0-100想定
+  var speedScore = (typeof entry.speedAverage === 'number') ? entry.speedAverage : 50; // 0-100想定
+  var costScore = (typeof entry.costAverage === 'number') ? (100 - entry.costAverage) : 50; // costAverageは0-100の費用の高さ。低いほど高スコア
+  var confidence = calculateAIConfidence(toolId);
+  var confidenceWeight = confidence === 'high' ? 1 : confidence === 'medium' ? 0.7 : 0.4;
+
+  var raw = (successRate * 100 * 0.35) + (qualityScore * 0.30) + (speedScore * 0.15) + (costScore * 0.20);
+  var blended = 50 + (raw - 50) * confidenceWeight;
+  return Math.round(Math.max(0, Math.min(100, blended)));
+}
+
+// Phase49-1.2: Learning更新関数（呼び出しのみ用意。Workflow等からの自動呼び出しは行わない）
+function recordAIRegistryLearning(toolId, quality, cost, speed, success, actionType) {
+  var entry = AI_REGISTRY_LEARNING[toolId];
+  if (!entry) return null; // 未登録ツールは記録しない（既存Registryを壊さない安全なfallback）
+
+  var totalPrev = entry.successCount + entry.failureCount;
+  if (success) entry.successCount += 1;
+  else entry.failureCount += 1;
+
+  function rollingAvg(prevAvg, newVal) {
+    if (typeof newVal !== 'number') return prevAvg;
+    if (prevAvg === null || totalPrev <= 0) return newVal;
+    return Math.round(((prevAvg * totalPrev) + newVal) / (totalPrev + 1));
+  }
+  entry.qualityAverage = rollingAvg(entry.qualityAverage, quality);
+  entry.speedAverage = rollingAvg(entry.speedAverage, speed);
+  entry.costAverage = rollingAvg(entry.costAverage, cost);
+
+  entry.lastUsed = new Date().toISOString();
+  entry.lastUpdated = new Date().toISOString();
+  entry.learningVersion = AI_REGISTRY_LEARNING_VERSION;
+  entry.confidence = calculateAIConfidence(toolId);
+  entry.recommendationScore = calculateAIRecommendationScore(toolId);
+  // actionType（用途種別）は将来のアクション種別別Learning拡張のために受け取るのみ。今回は集計に使用しない
+  return entry;
+}
+
+// Phase49-1.2: Learning Registry Summary（全ツールの現在のLearning状況）
+function buildAIRegistryLearningSummary() {
+  var summary = {
+    version: AI_REGISTRY_LEARNING_VERSION,
+    generatedAt: new Date().toISOString(),
+    tools: [],
+  };
+  Object.keys(AI_REGISTRY_LEARNING).forEach(function(id) {
+    var e = AI_REGISTRY_LEARNING[id];
+    var total = e.successCount + e.failureCount;
+    summary.tools.push({
+      toolId: id,
+      totalRuns: total,
+      successRate: total > 0 ? Math.round((e.successCount / total) * 100) : null,
+      recommendationScore: calculateAIRecommendationScore(id),
+      confidence: calculateAIConfidence(id),
+      lastUsed: e.lastUsed,
+    });
+  });
+  return summary;
+}
+
+function _gwLearningStatus(totalRuns, confidence) {
+  if (totalRuns === 0) return 'no_data';
+  if (confidence === 'low') return 'learning';
+  if (confidence === 'medium') return 'building_confidence';
+  return 'established';
+}
+
 // Phase49-1: Gateway判断関数（実行はしない。判断材料の算出のみ）
 function createAIGatewayDecision(outputDraft) {
   if (!outputDraft || !outputDraft.type) return null;
@@ -24260,6 +24377,21 @@ function createAIGatewayDecision(outputDraft) {
   }
   registryWarnings.push('Registry情報は静的定義であり、実際の疎通確認は行っていません（Phase49-1.1）。');
 
+  // Phase49-1.2: AI Registry Learning — 追加情報の算出（既存フィールド・既存ロジックは一切変更しない）
+  var learningEntry = primary ? AI_REGISTRY_LEARNING[primary.id] : null;
+  var learningCount = learningEntry ? (learningEntry.successCount + learningEntry.failureCount) : 0;
+  var learningConfidence = primary ? calculateAIConfidence(primary.id) : 'low';
+  var learningRecommendationScore = primary ? calculateAIRecommendationScore(primary.id) : null;
+  var learningSuccessRate = (learningEntry && learningCount > 0) ? Math.round((learningEntry.successCount / learningCount) * 100) : null;
+  var learningStatus = _gwLearningStatus(learningCount, learningConfidence);
+  var learningWarnings = [];
+  if (learningCount === 0) {
+    learningWarnings.push('この用途の実績データはまだありません。推奨スコアは中立値です。');
+  } else if (learningConfidence === 'low') {
+    learningWarnings.push('実績数がまだ少ないため、Learning信頼度は低めです。');
+  }
+  learningWarnings.push('Learning情報は実際の実績のみを学習対象とし、推測では生成していません。');
+
   return {
     version: AI_GATEWAY_VERSION,
     taskType: type,
@@ -24282,6 +24414,16 @@ function createAIGatewayDecision(outputDraft) {
     registryVersion: AI_REGISTRY_EXPANSION_VERSION,
     selectionConfidence: selectionConfidence,
     registryWarnings: registryWarnings,
+    // Phase49-1.2: AI Registry Learning（追加フィールドのみ。上記の既存フィールドは無変更）
+    learning: {
+      version: AI_REGISTRY_LEARNING_VERSION,
+      recommendationScore: learningRecommendationScore,
+      confidence: learningConfidence,
+      status: learningStatus,
+      count: learningCount,
+      successRate: learningSuccessRate,
+      warnings: learningWarnings,
+    },
   };
 }
 
@@ -24378,6 +24520,24 @@ function _gwBuildRouteRecommendation(decision) {
   return lines.join('\n');
 }
 
+// Phase49-1.2: Learning Summaryのコピー用テキスト生成
+function _gwBuildLearningSummary(decision) {
+  var lines = ['【AI Registry Learning Summary】', ''];
+  if (!decision.learning) { lines.push('（Learning情報なし）'); return lines.join('\n'); }
+  var l = decision.learning;
+  lines.push('Tool: ' + (decision.recommendedTool || '（該当なし）'));
+  lines.push('Learning Status: ' + l.status);
+  lines.push('Recommendation Score: ' + (l.recommendationScore !== null ? l.recommendationScore + ' / 100' : '未算出'));
+  lines.push('Confidence: ' + l.confidence);
+  lines.push('Success Rate: ' + (l.successRate !== null ? l.successRate + '%' : '実績なし'));
+  lines.push('Learning Count: ' + l.count + '件');
+  if (l.warnings.length) {
+    lines.push('Warnings:');
+    l.warnings.forEach(function(w) { lines.push('- ' + w); });
+  }
+  return lines.join('\n');
+}
+
 // Phase49-1: クリップボードコピー（既存Copy Export/Publishing Copyとは独立）
 function copyGatewayField(fieldKey) {
   if (!_lastOutputDraft) return;
@@ -24389,6 +24549,7 @@ function copyGatewayField(fieldKey) {
   else if (fieldKey === 'manualInstructions') text = _gwBuildManualInstructions(_lastOutputDraft, decision);
   else if (fieldKey === 'registrySummary') text = _gwBuildRegistrySummary(decision);
   else if (fieldKey === 'routeRecommendation') text = _gwBuildRouteRecommendation(decision);
+  else if (fieldKey === 'learningSummary') text = _gwBuildLearningSummary(decision);
   if (!text) return;
 
   var msg = document.getElementById('oe-gw-copy-msg');
@@ -24451,6 +24612,21 @@ function buildAIGatewayHtml() {
     ? decision.registryWarnings.map(function(w) { return '<div class="oe-gw-warning">⚠ ' + esc(w) + '</div>'; }).join('')
     : '';
 
+  // Phase49-1.2: Learning表示（コンパクト表示）
+  var learningHtml = '';
+  if (decision.learning) {
+    var l = decision.learning;
+    var lWarningsHtml = l.warnings.length
+      ? l.warnings.map(function(w) { return '<div class="oe-gw-warning">⚠ ' + esc(w) + '</div>'; }).join('')
+      : '';
+    learningHtml = '<div class="oe-pkg-label">Learning Status</div><div class="oe-field-val">' + esc(l.status) + '</div>'
+      + '<div class="oe-pkg-label">Recommendation Score</div><div class="oe-field-val">' + (l.recommendationScore !== null ? l.recommendationScore + ' / 100' : '<span class="oe-empty-val">未算出</span>') + '</div>'
+      + '<div class="oe-pkg-label">Learning Confidence</div><div class="oe-field-val">' + esc(l.confidence) + '</div>'
+      + '<div class="oe-pkg-label">Success Rate</div><div class="oe-field-val">' + (l.successRate !== null ? l.successRate + '%' : '<span class="oe-empty-val">実績なし</span>') + '</div>'
+      + '<div class="oe-pkg-label">Learning Count</div><div class="oe-field-val">' + l.count + '件</div>'
+      + (lWarningsHtml ? '<div class="oe-pkg-label">Learning Warnings</div>' + lWarningsHtml : '');
+  }
+
   return '<div class="oe-gw-section">'
     + '<div class="oe-gw-title">🧭 AI Gateway <span style="font-weight:400;opacity:.5;">v' + AI_GATEWAY_VERSION + ' / Registry v' + AI_REGISTRY_EXPANSION_VERSION + '</span>' + allowedBadge + '</div>'
     + '<div class="oe-pkg-label">Recommended Tool</div><div class="oe-field-val">' + (decision.recommendedTool ? esc(decision.recommendedTool) : '<span class="oe-empty-val">該当なし</span>') + '</div>'
@@ -24468,6 +24644,7 @@ function buildAIGatewayHtml() {
     + '<div class="oe-pkg-label">Route Priority</div>' + routePriorityHtml
     + '<div class="oe-pkg-label">Selection Confidence</div><div class="oe-field-val">' + esc(decision.selectionConfidence) + '</div>'
     + (registryWarningsHtml ? '<div class="oe-pkg-label">Registry Warnings</div>' + registryWarningsHtml : '')
+    + learningHtml
     + '<div class="oe-pkg-label">AI Skill Registry Summary（' + registryConnected + '/' + AI_SKILL_REGISTRY.length + ' connected_text_only）</div>'
     + '<div>' + registryHtml + '</div>'
     + '<div class="oe-pkg-label">Copy</div>'
@@ -24477,6 +24654,7 @@ function buildAIGatewayHtml() {
     +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'manualInstructions\')">Copy Manual Instructions</button>'
     +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'registrySummary\')">Copy Registry Summary</button>'
     +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'routeRecommendation\')">Copy Route Recommendation</button>'
+    +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'learningSummary\')">Copy Learning Summary</button>'
     +   '<span id="oe-gw-copy-msg" class="oe-gw-copymsg">コピーしました</span>'
     + '</div>'
     + '</div>';
@@ -24515,6 +24693,19 @@ function appendAIGatewayToExportMarkdown(lines) {
   if (decision.registryWarnings.length) {
     lines.push('- Registry Warnings:');
     decision.registryWarnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+  // Phase49-1.2: AI Registry Learning
+  if (decision.learning) {
+    var l = decision.learning;
+    lines.push('- Learning Summary: ' + l.status);
+    lines.push('- Recommendation Score: ' + (l.recommendationScore !== null ? l.recommendationScore : '（未算出）'));
+    lines.push('- Confidence: ' + l.confidence);
+    lines.push('- Learning Count: ' + l.count);
+    lines.push('- Success Rate: ' + (l.successRate !== null ? l.successRate + '%' : '（実績なし）'));
+    if (l.warnings.length) {
+      lines.push('- Learning Warnings:');
+      l.warnings.forEach(function(w) { lines.push('  - ' + w); });
+    }
   }
 }
 
