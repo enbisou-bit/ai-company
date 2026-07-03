@@ -24052,6 +24052,147 @@ const AI_GATEWAY_TASK_TOOL_MAP = {
   excel:              { tools: ['chatgpt', 'claude'], textOnly: true },
 };
 
+// ══════════════════════════════════════════════════
+// Phase49-1.1: AI Registry Expansion
+// Phase49-1のAI_SKILL_REGISTRY/createAIGatewayDecision()を壊さず、判断材料を補強する
+// 今回も実行はしない（Capability/Health/Cost/Approval/Route Priority/Versionの静的定義のみ）
+// ══════════════════════════════════════════════════
+
+const AI_REGISTRY_EXPANSION_VERSION = '1.0.0';
+
+// Phase49-1.1: AI Capability Registry（0〜5の数値 or 'unknown'。推測での高評価はしない）
+const AI_CAPABILITY_REGISTRY = {
+  chatgpt:  { writing: 5, review: 4, coding: 4, imagePrompt: 4, imageGeneration: 3, videoPrompt: 3, videoGeneration: 0, research: 3, marketing: 4, design: 2, automation: 2, businessAnalysis: 3 },
+  claude:   { writing: 5, review: 5, coding: 5, imagePrompt: 3, imageGeneration: 0, videoPrompt: 2, videoGeneration: 0, research: 3, marketing: 3, design: 1, automation: 2, businessAnalysis: 4 },
+  gpt_image:{ writing: 1, review: 1, coding: 0, imagePrompt: 4, imageGeneration: 5, videoPrompt: 0, videoGeneration: 0, research: 0, marketing: 1, design: 3, automation: 1, businessAnalysis: 0 },
+  seedance: { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 4, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  domoai:   { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 3, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  genspark: { writing: 3, review: 2, coding: 'unknown', imagePrompt: 1, imageGeneration: 1, videoPrompt: 1, videoGeneration: 1, research: 4, marketing: 3, design: 2, automation: 3, businessAnalysis: 3 },
+  flow:     { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 4, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  veo:      { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 4, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  kling:    { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 4, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  runway:   { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 4, research: 0, marketing: 1, design: 2, automation: 1, businessAnalysis: 0 },
+  luma:     { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 3, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  pika:     { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 3, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+  hailuo:   { writing: 0, review: 0, coding: 0, imagePrompt: 0, imageGeneration: 1, videoPrompt: 1, videoGeneration: 3, research: 0, marketing: 1, design: 1, automation: 1, businessAnalysis: 0 },
+};
+
+// Phase49-1.1: AI Health Registry（静的定義。実際の疎通確認は行わない）
+const AI_HEALTH_REGISTRY = {
+  chatgpt: { connectionStatus: 'connected_text_only', apiStatus: 'connected', browserStatus: 'unknown', desktopStatus: 'unknown', lastChecked: null, riskLevel: 'low', healthNotes: 'OpenAI APIでLeader用途として接続済み（テキストのみ）。画像生成等の新規用途は未接続。' },
+  claude:  { connectionStatus: 'connected_text_only', apiStatus: 'connected', browserStatus: 'unknown', desktopStatus: 'unknown', lastChecked: null, riskLevel: 'low', healthNotes: 'Claude APIでWriter/Reviewer/Strategy用途として接続済み（テキストのみ）。' },
+};
+['gpt_image', 'seedance', 'domoai', 'genspark', 'flow', 'veo', 'kling', 'runway', 'luma', 'pika', 'hailuo'].forEach(function(id) {
+  AI_HEALTH_REGISTRY[id] = { connectionStatus: 'not_connected', apiStatus: 'unknown', browserStatus: 'unknown', desktopStatus: 'unknown', lastChecked: null, riskLevel: 'unknown', healthNotes: '本AI会社では未接続・未検証。静的Registry定義のみ（Phase49-1.1）。' };
+});
+
+// Phase49-1.1: Cost Profile（不明はunknown。捏造しない）
+const AI_COST_PROFILE = {
+  chatgpt: { costType: 'api_usage', costLevel: 'medium', subscriptionRequired: false, apiBilling: true, freePlanAvailable: false, costNotes: 'OpenAI API従量課金で接続済み（Leader用途）。Phase47コストメーターで実績追跡中。' },
+  claude:  { costType: 'api_usage', costLevel: 'medium', subscriptionRequired: false, apiBilling: true, freePlanAvailable: false, costNotes: 'Claude API従量課金で接続済み（Writer/Reviewer/Strategy用途）。Phase47-1コストメーターで実績追跡中。' },
+};
+['gpt_image', 'seedance', 'domoai', 'genspark', 'flow', 'veo', 'kling', 'runway', 'luma', 'pika', 'hailuo'].forEach(function(id) {
+  AI_COST_PROFILE[id] = { costType: 'unknown', costLevel: 'unknown', subscriptionRequired: 'unknown', apiBilling: 'unknown', freePlanAvailable: 'unknown', costNotes: '本AI会社では未接続。料金体系は導入時に要確認。' };
+});
+
+// Phase49-1.1: Approval Profile（承認要否はツールではなくアクション種別で一律決定。isAIGatewayExecutionAllowed()と同じ安全方針）
+const AI_APPROVAL_PROFILE_TEMPLATE = {
+  promptGeneration: false,
+  copyText: false,
+  apiExecution: true,
+  browserAutomation: true,
+  desktopAutomation: true,
+  imageGeneration: true,
+  videoGeneration: true,
+  snsPosting: true,
+};
+function getApprovalProfile(toolId) {
+  return Object.assign({}, AI_APPROVAL_PROFILE_TEMPLATE);
+}
+
+// Phase49-1.1: Route Priority（用途別の推奨ツール順位。not_connectedのツールも将来候補として一覧には含める）
+const AI_ROUTE_PRIORITY = {
+  text_generation:  ['chatgpt', 'claude'],
+  review:           ['claude', 'chatgpt'],
+  coding:           ['claude', 'chatgpt'],
+  image_prompt:     ['chatgpt', 'gpt_image', 'claude'],
+  image_generation: ['gpt_image', 'chatgpt'],
+  video_prompt:     ['chatgpt', 'claude', 'seedance'],
+  video_generation: ['seedance', 'flow', 'veo', 'kling', 'runway', 'luma', 'pika', 'hailuo', 'domoai'],
+  research:         ['genspark', 'chatgpt', 'claude'],
+  marketing:        ['chatgpt', 'claude', 'genspark'],
+  design:           ['gpt_image', 'chatgpt'],
+  sales_document:   ['chatgpt', 'claude'],
+  automation:       ['genspark', 'chatgpt', 'claude'],
+};
+
+// Phase49-1.1: OutputTypeごとの用途キー（Route Priority / Capability参照用）
+const AI_GATEWAY_TASK_USECASE_MAP = {
+  instagram_carousel: 'image_generation',
+  instagram_post:     'image_generation',
+  flyer:              'image_generation',
+  image_prompt:       'image_prompt',
+  tiktok_video:       'video_generation',
+  youtube_shorts:     'video_generation',
+  video_prompt:       'video_prompt',
+  lp:                 'text_generation',
+  html:               'text_generation',
+  pdf:                'sales_document',
+  document:           'text_generation',
+  powerpoint:         'design',
+  excel:              'automation',
+};
+
+const AI_USECASE_CAPABILITY_KEY = {
+  text_generation: 'writing', review: 'review', coding: 'coding',
+  image_prompt: 'imagePrompt', image_generation: 'imageGeneration',
+  video_prompt: 'videoPrompt', video_generation: 'videoGeneration',
+  research: 'research', marketing: 'marketing', design: 'design',
+  sales_document: 'writing', automation: 'automation',
+};
+
+// Phase49-1.1: Version Registry（AI_SKILL_REGISTRYから機械的に生成。手動での重複定義はしない）
+const AI_VERSION_REGISTRY = {};
+AI_SKILL_REGISTRY.forEach(function(s) {
+  AI_VERSION_REGISTRY[s.id] = {
+    toolId: s.id,
+    registryVersion: AI_REGISTRY_EXPANSION_VERSION,
+    supportedSince: 'Phase49-1',
+    lastPolicyReview: '2026-07-03',
+    notes: 'Phase49-1でAI Skill Registryへ初登録。Phase49-1.1でCapability/Health/Cost/Approval/Route Priority情報を追加。',
+  };
+});
+
+function _gwGetCapability(toolId, capabilityKey) {
+  var c = AI_CAPABILITY_REGISTRY[toolId];
+  if (!c || !(capabilityKey in c)) return 'unknown';
+  return c[capabilityKey];
+}
+function _gwGetHealthStatus(toolId) { return AI_HEALTH_REGISTRY[toolId] || null; }
+function _gwGetCostProfile(toolId) { return AI_COST_PROFILE[toolId] || null; }
+function _gwIsToolConnected(toolId) {
+  var h = _gwGetHealthStatus(toolId);
+  return !!(h && h.connectionStatus && h.connectionStatus.indexOf('connected') === 0);
+}
+function _gwGetRoutePriority(useCase) {
+  var ids = AI_ROUTE_PRIORITY[useCase] || [];
+  return ids.map(function(id) {
+    var skill = getAISkillById(id);
+    return { id: id, name: skill ? skill.name : id, connected: _gwIsToolConnected(id) };
+  });
+}
+function _gwComputeSelectionConfidence(toolId, capabilityScore) {
+  if (!toolId) return 'low';
+  var connected = _gwIsToolConnected(toolId);
+  if (capabilityScore === 'unknown') return connected ? 'medium' : 'low';
+  if (typeof capabilityScore === 'number') {
+    if (capabilityScore >= 4 && connected) return 'high';
+    if (capabilityScore >= 3) return 'medium';
+    return 'low';
+  }
+  return 'low';
+}
+
 // Phase49-1: Gateway判断関数（実行はしない。判断材料の算出のみ）
 function createAIGatewayDecision(outputDraft) {
   if (!outputDraft || !outputDraft.type) return null;
@@ -24101,6 +24242,24 @@ function createAIGatewayDecision(outputDraft) {
   }
   if (pub && pub.title) reasonParts.push('Publishing Engineのタイトル「' + _pubTruncate(pub.title, 30) + '」を判断材料として使用しました。');
 
+  // Phase49-1.1: AI Registry Expansion — 追加情報の算出（既存フィールド・既存ロジックは一切変更しない）
+  var useCase = AI_GATEWAY_TASK_USECASE_MAP[type] || null;
+  var capabilityKey = useCase ? AI_USECASE_CAPABILITY_KEY[useCase] : null;
+  var capabilityScore = (primary && capabilityKey) ? _gwGetCapability(primary.id, capabilityKey) : 'unknown';
+  var healthEntry = primary ? _gwGetHealthStatus(primary.id) : null;
+  var costEntry = primary ? _gwGetCostProfile(primary.id) : null;
+  var approvalEntry = primary ? getApprovalProfile(primary.id) : Object.assign({}, AI_APPROVAL_PROFILE_TEMPLATE);
+  var routePriorityList = useCase ? _gwGetRoutePriority(useCase) : [];
+  var selectionConfidence = primary ? _gwComputeSelectionConfidence(primary.id, capabilityScore) : 'low';
+  var registryWarnings = [];
+  if (healthEntry && healthEntry.connectionStatus === 'not_connected') {
+    registryWarnings.push('推奨ツールは本AI会社で未接続です。将来候補として扱ってください（実行不可）。');
+  }
+  if (capabilityScore === 'unknown') {
+    registryWarnings.push('この用途における能力値は未検証です（unknown）。');
+  }
+  registryWarnings.push('Registry情報は静的定義であり、実際の疎通確認は行っていません（Phase49-1.1）。');
+
   return {
     version: AI_GATEWAY_VERSION,
     taskType: type,
@@ -24114,6 +24273,15 @@ function createAIGatewayDecision(outputDraft) {
     allowedNow: allowedNow,
     warnings: warnings,
     fallbackTools: fallbackTools,
+    // Phase49-1.1: AI Registry Expansion（追加フィールドのみ。上記の既存フィールドは無変更）
+    capabilityScore: capabilityScore,
+    healthStatus: healthEntry,
+    costProfile: costEntry,
+    approvalProfile: approvalEntry,
+    routePriority: routePriorityList,
+    registryVersion: AI_REGISTRY_EXPANSION_VERSION,
+    selectionConfidence: selectionConfidence,
+    registryWarnings: registryWarnings,
   };
 }
 
@@ -24176,6 +24344,40 @@ function _gwBuildManualInstructions(outputDraft, decision) {
   return lines.join('\n');
 }
 
+// Phase49-1.1: Registry拡張情報のコピー用テキスト生成
+function _gwBuildRegistrySummary(decision) {
+  var lines = ['【AI Registry Summary】', ''];
+  lines.push('Registry Version: ' + decision.registryVersion);
+  lines.push('Capability Score: ' + decision.capabilityScore);
+  if (decision.healthStatus) {
+    lines.push('Health: connection=' + decision.healthStatus.connectionStatus + ' / risk=' + decision.healthStatus.riskLevel);
+  }
+  if (decision.costProfile) {
+    lines.push('Cost: type=' + decision.costProfile.costType + ' / level=' + decision.costProfile.costLevel);
+  }
+  if (decision.approvalProfile) {
+    lines.push('Approval Profile: ' + Object.keys(decision.approvalProfile).map(function(k) { return k + '=' + decision.approvalProfile[k]; }).join(', '));
+  }
+  lines.push('Selection Confidence: ' + decision.selectionConfidence);
+  if (decision.registryWarnings.length) {
+    lines.push('Registry Warnings:');
+    decision.registryWarnings.forEach(function(w) { lines.push('- ' + w); });
+  }
+  return lines.join('\n');
+}
+
+function _gwBuildRouteRecommendation(decision) {
+  var lines = ['【Route Priority Recommendation】', ''];
+  if (decision.routePriority.length) {
+    decision.routePriority.forEach(function(t, i) {
+      lines.push((i + 1) + '. ' + t.name + (t.connected ? '（接続済み）' : '（未接続・将来候補）'));
+    });
+  } else {
+    lines.push('（この用途のRoute Priorityは未定義です）');
+  }
+  return lines.join('\n');
+}
+
 // Phase49-1: クリップボードコピー（既存Copy Export/Publishing Copyとは独立）
 function copyGatewayField(fieldKey) {
   if (!_lastOutputDraft) return;
@@ -24185,6 +24387,8 @@ function copyGatewayField(fieldKey) {
   if (fieldKey === 'decision') text = _gwBuildDecisionSummary(decision);
   else if (fieldKey === 'toolPrompt') text = _gwBuildToolPrompt(_lastOutputDraft, decision);
   else if (fieldKey === 'manualInstructions') text = _gwBuildManualInstructions(_lastOutputDraft, decision);
+  else if (fieldKey === 'registrySummary') text = _gwBuildRegistrySummary(decision);
+  else if (fieldKey === 'routeRecommendation') text = _gwBuildRouteRecommendation(decision);
   if (!text) return;
 
   var msg = document.getElementById('oe-gw-copy-msg');
@@ -24226,8 +24430,29 @@ function buildAIGatewayHtml() {
     return '<span class="oe-gw-registry-chip ' + cls + '">' + esc(s.name) + '</span>';
   }).join('');
 
+  // Phase49-1.1: AI Registry Expansion表示（コンパクト表示）
+  var healthHtml = decision.healthStatus
+    ? esc(decision.healthStatus.connectionStatus) + ' / risk: ' + esc(String(decision.healthStatus.riskLevel))
+    : '<span class="oe-empty-val">未定義</span>';
+  var costProfileHtml = decision.costProfile
+    ? esc(String(decision.costProfile.costType)) + ' / ' + esc(String(decision.costProfile.costLevel))
+    : '<span class="oe-empty-val">未定義</span>';
+  var approvalProfileHtml = decision.approvalProfile
+    ? Object.keys(decision.approvalProfile).map(function(k) {
+        return '<span class="oe-gw-registry-chip ' + (decision.approvalProfile[k] ? 'notconnected' : 'connected') + '">' + esc(k) + ':' + (decision.approvalProfile[k] ? '要承認' : '不要') + '</span>';
+      }).join('')
+    : '<span class="oe-empty-val">未定義</span>';
+  var routePriorityHtml = decision.routePriority.length
+    ? decision.routePriority.map(function(t, i) {
+        return '<div class="oe-pub-list-item">' + (i + 1) + '. ' + esc(t.name) + (t.connected ? '（接続済み）' : '（未接続・将来候補）') + '</div>';
+      }).join('')
+    : '<span class="oe-empty-val">未定義</span>';
+  var registryWarningsHtml = decision.registryWarnings.length
+    ? decision.registryWarnings.map(function(w) { return '<div class="oe-gw-warning">⚠ ' + esc(w) + '</div>'; }).join('')
+    : '';
+
   return '<div class="oe-gw-section">'
-    + '<div class="oe-gw-title">🧭 AI Gateway <span style="font-weight:400;opacity:.5;">v' + AI_GATEWAY_VERSION + '</span>' + allowedBadge + '</div>'
+    + '<div class="oe-gw-title">🧭 AI Gateway <span style="font-weight:400;opacity:.5;">v' + AI_GATEWAY_VERSION + ' / Registry v' + AI_REGISTRY_EXPANSION_VERSION + '</span>' + allowedBadge + '</div>'
     + '<div class="oe-pkg-label">Recommended Tool</div><div class="oe-field-val">' + (decision.recommendedTool ? esc(decision.recommendedTool) : '<span class="oe-empty-val">該当なし</span>') + '</div>'
     + '<div class="oe-pkg-label">Recommended Route</div><div class="oe-field-val">' + esc(decision.recommendedRoute) + '</div>'
     + '<div class="oe-pkg-label">Reason</div><div class="oe-field-val">' + esc(decision.reason) + '</div>'
@@ -24236,6 +24461,13 @@ function buildAIGatewayHtml() {
     + '<div class="oe-pkg-label">Allowed Now</div><div class="oe-field-val">' + (decision.allowedNow ? 'yes' : 'no') + '</div>'
     + '<div class="oe-pkg-label">Fallback Tools</div><div class="oe-field-val">' + (decision.fallbackTools.length ? esc(decision.fallbackTools.join(' / ')) : '<span class="oe-empty-val">なし</span>') + '</div>'
     + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Capability Score（' + esc(String(useCaseLabelFor(decision))) + '）</div><div class="oe-field-val">' + esc(String(decision.capabilityScore)) + ' / 5</div>'
+    + '<div class="oe-pkg-label">Health Status</div><div class="oe-field-val">' + healthHtml + '</div>'
+    + '<div class="oe-pkg-label">Cost Profile</div><div class="oe-field-val">' + costProfileHtml + '</div>'
+    + '<div class="oe-pkg-label">Approval Profile</div><div>' + approvalProfileHtml + '</div>'
+    + '<div class="oe-pkg-label">Route Priority</div>' + routePriorityHtml
+    + '<div class="oe-pkg-label">Selection Confidence</div><div class="oe-field-val">' + esc(decision.selectionConfidence) + '</div>'
+    + (registryWarningsHtml ? '<div class="oe-pkg-label">Registry Warnings</div>' + registryWarningsHtml : '')
     + '<div class="oe-pkg-label">AI Skill Registry Summary（' + registryConnected + '/' + AI_SKILL_REGISTRY.length + ' connected_text_only）</div>'
     + '<div>' + registryHtml + '</div>'
     + '<div class="oe-pkg-label">Copy</div>'
@@ -24243,9 +24475,17 @@ function buildAIGatewayHtml() {
     +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'decision\')">Copy Gateway Decision</button>'
     +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'toolPrompt\')">Copy Tool Prompt</button>'
     +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'manualInstructions\')">Copy Manual Instructions</button>'
+    +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'registrySummary\')">Copy Registry Summary</button>'
+    +   '<button class="oe-gw-copybtn" onclick="copyGatewayField(\'routeRecommendation\')">Copy Route Recommendation</button>'
     +   '<span id="oe-gw-copy-msg" class="oe-gw-copymsg">コピーしました</span>'
     + '</div>'
     + '</div>';
+}
+
+// Phase49-1.1: Capability Score表示ラベル用（outputType→用途名）
+function useCaseLabelFor(decision) {
+  var useCase = AI_GATEWAY_TASK_USECASE_MAP[decision.taskType];
+  return useCase || 'unknown';
 }
 
 // Phase49-1: Export反映
@@ -24265,6 +24505,17 @@ function appendAIGatewayToExportMarkdown(lines) {
     decision.warnings.forEach(function(w) { lines.push('  - ' + w); });
   }
   lines.push('- Fallback Tools: ' + (decision.fallbackTools.length ? decision.fallbackTools.join(' / ') : '（なし）'));
+  // Phase49-1.1: AI Registry Expansion
+  lines.push('- Capability Score: ' + decision.capabilityScore);
+  lines.push('- Health Status: ' + (decision.healthStatus ? decision.healthStatus.connectionStatus + ' / risk=' + decision.healthStatus.riskLevel : '（未定義）'));
+  lines.push('- Cost Profile: ' + (decision.costProfile ? decision.costProfile.costType + ' / ' + decision.costProfile.costLevel : '（未定義）'));
+  lines.push('- Approval Profile: ' + (decision.approvalProfile ? Object.keys(decision.approvalProfile).map(function(k) { return k + '=' + decision.approvalProfile[k]; }).join(', ') : '（未定義）'));
+  lines.push('- Route Priority: ' + (decision.routePriority.length ? decision.routePriority.map(function(t) { return t.name + (t.connected ? '(connected)' : '(future)'); }).join(' > ') : '（未定義）'));
+  lines.push('- Selection Confidence: ' + decision.selectionConfidence);
+  if (decision.registryWarnings.length) {
+    lines.push('- Registry Warnings:');
+    decision.registryWarnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
 }
 
 function appendAIGatewayToExportJson(payload) {

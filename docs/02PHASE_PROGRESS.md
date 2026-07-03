@@ -1,11 +1,11 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-02（Phase49-1 AI Gateway Foundation完了）
+> 更新日: 2026-07-03（Phase49-1.1 AI Registry Expansion完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-1 完了（AI Gateway Foundation）**
-- 現在バージョン: **v1.00-phase49-1**
+- 現在フェーズ: **Phase49-1.1 完了（AI Registry Expansion）**
+- 現在バージョン: **v1.00-phase49-1.1**
 - 次工程: **Phase49-2 Image Prompt Intelligence**
 
 ---
@@ -499,6 +499,36 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定を維持。AI Skill Registry内のChatGPT/Claudeエントリも「Provider構成は変更しない」旨をnotesに明記）
 - 次工程: Phase49-2 Image Prompt Intelligence
 - Git: Phase49-1 ai gateway foundation / Tag: v1.00-phase49-1
+
+### Phase49-1.1: AI Registry Expansion ✅
+- `index.html`（Phase49-1のAI Gateway Foundationを壊さず拡張。既存12フィールド・`AI_SKILL_REGISTRY`・`AI_GATEWAY_TASK_TOOL_MAP`・`isAIGatewayExecutionAllowed()`は無変更）
+  - `AI_REGISTRY_EXPANSION_VERSION = '1.0.0'`
+  - `AI_CAPABILITY_REGISTRY` — 13ツール×12能力（writing/review/coding/imagePrompt/imageGeneration/videoPrompt/videoGeneration/research/marketing/design/automation/businessAnalysis）を0〜5または`'unknown'`で定義。推測での高評価はせず、未検証の能力は安全な低い値または`unknown`とした
+  - `AI_HEALTH_REGISTRY` — 各ツールのconnectionStatus/apiStatus/browserStatus/desktopStatus/lastChecked/riskLevel/healthNotes。ChatGPT/Claudeのみ`connected_text_only`（実際にAPI接続済みだがテキスト用途のみ）、他11ツールは`not_connected`。実際の疎通確認は行っていない（静的定義のみ）
+  - `AI_COST_PROFILE` — costType/costLevel/subscriptionRequired/apiBilling/freePlanAvailable/costNotes。ChatGPT/Claudeは`api_usage`（Phase47コストメーターと整合）、他11ツールは`unknown`
+  - `AI_APPROVAL_PROFILE_TEMPLATE` / `getApprovalProfile(toolId)` — 承認要否はツールではなくアクション種別で一律決定（promptGeneration/copyTextのみ不要、他6項目は全て要承認）。`isAIGatewayExecutionAllowed()`と同じ安全方針をProfile化
+  - `AI_ROUTE_PRIORITY` — 12用途（text_generation/review/coding/image_prompt/image_generation/video_prompt/video_generation/research/marketing/design/sales_document/automation）別の推奨ツール順位
+  - `AI_GATEWAY_TASK_USECASE_MAP` / `AI_USECASE_CAPABILITY_KEY` — OUTPUT_TYPE_DEFINITIONS全13タイプを12用途へ対応付け
+  - `AI_VERSION_REGISTRY` — `AI_SKILL_REGISTRY`から機械的に生成（手動重複定義なし）。toolId/registryVersion/supportedSince/lastPolicyReview/notes
+  - `_gwGetCapability()` / `_gwGetHealthStatus()` / `_gwGetCostProfile()` / `_gwIsToolConnected()` / `_gwGetRoutePriority()` / `_gwComputeSelectionConfidence()` — 1責務1関数のRegistry参照ヘルパー
+  - `createAIGatewayDecision()` — 既存12フィールド（version/taskType/recommendedTool/recommendedRoute/reason/costLevel/qualityLevel/speedLevel/requiresApproval/allowedNow/warnings/fallbackTools）は完全に無変更。返り値へ`capabilityScore`/`healthStatus`/`costProfile`/`approvalProfile`/`routePriority`/`registryVersion`/`selectionConfidence`/`registryWarnings`の8フィールドを追加のみ
+  - `_gwBuildRegistrySummary()` / `_gwBuildRouteRecommendation()` — Copy用テキスト生成の追加ヘルパー
+  - `copyGatewayField()` — `registrySummary`/`routeRecommendation`の2ケースを追加（既存3ケースは無変更）
+  - `buildAIGatewayHtml()` — Capability Score/Health Status/Cost Profile/Approval Profile/Route Priority/Selection Confidence/Registry Warningsをコンパクト表示。Copy Registry Summary/Copy Route Recommendationの2ボタンを追加（既存3ボタンは無変更）
+  - `appendAIGatewayToExportMarkdown()` — 新規7項目を追記（既存項目は無変更）。JSON Exportは`payload.aiGateway = decision`が`decision`全体を代入する既存実装のため、新規フィールドは自動的に反映される（コード変更不要）
+  - CSSは既存`.oe-gw-*`を再利用（新規クラス追加なし）
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプでPhase49-1の既存4フィールド（recommendedTool/recommendedRoute/allowedNow/requiresApproval）が完全に同一の値を返すことを確認（回帰なし）
+  - 新規8フィールドが全13タイプで正しく算出されることを確認（例: instagram_carousel→capabilityScore=5/GPT Image・image_generation用途、video_prompt→capabilityScore=1/Seedance・低スコアで正しくselectionConfidence=low、tiktok_video/youtube_shorts→routePriorityCount=9で全video系ツールを列挙）
+  - 未定義の将来タイプ・draft自体がnullの場合でも新規フィールドが安全にfallback（capabilityScore='unknown'、healthStatus=null、routePriority=[]、selectionConfidence='low'）することを確認
+  - Markdown/JSON Export双方に新規7項目が反映されることを確認
+  - Copy 5ボタン（Registry Summary・Route Recommendationの新規2つ含む）とも例外なく実行されることを確認
+  - `isAIGatewayExecutionAllowed()`の回帰確認（全アクション種別で従来通りの真偽値）
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・Quality Score・Knowledge/Compare各パネルへの影響なし
+- 生成ロジック・Preview/Publishing Engine・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・実際の画像/動画生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49-2 Image Prompt Intelligence
+- Git: Phase49-1.1 ai registry expansion / Tag: v1.00-phase49-1.1
 
 ---
 
