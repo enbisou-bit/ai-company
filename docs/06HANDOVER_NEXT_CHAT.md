@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-03（Phase49-2完了 / Image Prompt Intelligence）
+更新日: 2026-07-04（Phase49-3完了 / Video Prompt Intelligence）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase49-2**（Image Prompt Intelligence・判断層/プロンプト生成層のみ）
+**v1.00-phase49-3**（Video Prompt Intelligence・判断層/プロンプト生成層のみ）
 
-最新Tag: `v1.00-phase49-2`
+最新Tag: `v1.00-phase49-3`
 
 補足: `v1.00-phase47-1.6` はPhase48-4完了後に発見された過去の未コミット差分（OpenAI費用トラッカーの累計対応）を正式化した**遡及タグ**。作成日時の順序と機能の進行フェーズ番号は一致しない（Phase47-1系の一部）。詳細はPHASE_PROGRESS.mdのPhase47-1.6セクション・Decision 025（04DECISIONS.md）を参照。
 
@@ -26,13 +26,13 @@
 ## 現在地
 
 Phase48-5（Publishing Engine）完了＝**Version1機能完成**。
-Phase49-0（Version2設計レビュー）・Phase49-0.1（Roadmap Formalization）・Phase49-1（AI Gateway Foundation）・Phase49-1.1（AI Registry Expansion）・Phase49-1.2（AI Registry Learning）・**Phase49-2（Image Prompt Intelligence）完了**。
+Phase49-0（Version2設計レビュー）・Phase49-0.1（Roadmap Formalization）・Phase49-1（AI Gateway Foundation）・Phase49-1.1（AI Registry Expansion）・Phase49-1.2（AI Registry Learning）・Phase49-2（Image Prompt Intelligence）・**Phase49-3（Video Prompt Intelligence）完了**。
 
-Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1〜49-1.2でAI Gateway一式（判断層・Registry Expansion・Learning）、Phase49-2でImage Prompt Intelligence（画像生成プロンプトの自動生成）を追加した（Decision 030・031・032・033）。
+Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1〜49-1.2でAI Gateway一式、Phase49-2でImage Prompt Intelligence、Phase49-3でVideo Prompt Intelligence（動画生成プロンプトの自動生成、Image Prompt Intelligence連携）を追加した（Decision 030・031・032・033・034）。
 
-次工程: **Phase49-3 — Video Prompt Intelligence**（Seedance/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo/DOMOAI等の動画プロンプト最適化。生成実行はしない）
+次工程: **Phase49-4 — Creative Engine Execution**（画像生成・動画生成・広告生成の実行本体。ユーザー承認後のみ、AI Gateway経由）
 
-AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExecutionAllowed()` / `AI_CAPABILITY_REGISTRY` / `AI_HEALTH_REGISTRY` / `AI_COST_PROFILE` / `AI_ROUTE_PRIORITY` / `AI_REGISTRY_LEARNING`）は判断層のみで、実行層（Phase49-4 Creative Engine Execution）はまだ実装されていない。Image Prompt Intelligence（`createImagePromptIntelligenceDraft()`）もプロンプト生成のみで、実際の画像生成は一切実行していない。実行系アクションは`isAIGatewayExecutionAllowed()`で恒久的にfalseとなるよう安全ゲートを設置済み。
+AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExecutionAllowed()` / `AI_CAPABILITY_REGISTRY` / `AI_HEALTH_REGISTRY` / `AI_COST_PROFILE` / `AI_ROUTE_PRIORITY` / `AI_REGISTRY_LEARNING`）は判断層のみで、実行層（Phase49-4 Creative Engine Execution）はまだ実装されていない。Image Prompt Intelligence（`createImagePromptIntelligenceDraft()`）・Video Prompt Intelligence（`createVideoPromptIntelligenceDraft()`）もプロンプト生成のみで、実際の画像生成・動画生成は一切実行していない。実行系アクションは`isAIGatewayExecutionAllowed()`で恒久的にfalseとなるよう安全ゲートを設置済み。
 
 画像生成・動画生成・外部AI操作（PCアプリ操作/ブラウザ操作含む）は引き続きユーザー承認後のみ実行可能。git pushは引き続き禁止。
 
@@ -86,6 +86,7 @@ AI Gateway（`AI_SKILL_REGISTRY` / `createAIGatewayDecision()` / `isAIGatewayExe
 | Phase49-1.1 | AI Registry Expansion（Capability/Health/Cost/Approval/Route Priority/Version Registryを追加、既存12フィールドは無変更） | v1.00-phase49-1.1 |
 | Phase49-1.2 | AI Registry Learning（実績ベースのrecommendationScore/confidence算出、`learning`オブジェクト追加。recordAIRegistryLearning()は呼び出し関数のみ・自動呼び出しなし） | v1.00-phase49-1.2 |
 | Phase49-2 | Image Prompt Intelligence（GPT Image/ChatGPT Image/Midjourney/Flux/Ideogram/Recraft向けプロンプト自動生成。Output Type別最適化・AI Gateway連携。画像生成は未実行） | v1.00-phase49-2 |
+| Phase49-3 | Video Prompt Intelligence（Seedance/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo/DOMOAI向けプロンプト自動生成。Output Type別最適化・AI Gateway/Image Prompt Intelligence連携。動画生成は未実行） | v1.00-phase49-3 |
 
 ---
 
@@ -234,12 +235,25 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Priority 0: Phase49-3 — Video Prompt Intelligence
+### Priority 0: Phase49-4 — Creative Engine Execution
 
 目的：
-Seedance / Flow / Veo / Kling / Runway / Luma / Pika / Hailuo / DOMOAI などに対応した動画プロンプト最適化。生成実行はしない。
+画像生成・動画生成・広告生成の実行本体。ユーザー承認後のみ。AI Gateway経由。
 
 詳細は docs/04ROADMAP.md の「Version 2.0 Roadmap」を参照。
+
+### Phase49-3で完成した内容（次チャットが把握すべき実装）
+
+- `VIDEO_PROMPT_INTELLIGENCE_VERSION = '1.0.0'` / `createVideoPromptIntelligenceDraft(outputDraft)` — version/outputType/mainPrompt/scenePrompt/motionPrompt/cameraPrompt/lightingPrompt/stylePrompt/audioPrompt/captionPrompt/durationPrompt/formatPrompt/negativePrompt/platformPrompts/safetyChecklist/copyText/warnings/sourceGatewayDecision/sourceImagePromptIntelligence/qualityScoreを生成
+- Output Type別最適化（1責務1関数）: `_vpiFillTikTok()` / `_vpiFillYouTubeShorts()` / `_vpiFillInstagram()` / `_vpiFillVideoPromptEnhance()`（既存プロンプト高品質化） / `_vpiFillImagePromptToVideo()`（Image-to-Video前提） / `_vpiFillLp()` / `_vpiFillFlyerPdfDocument()`（動画広告化） / `_vpiFillGeneric()`（それ以外の全タイプへの安全な汎用fallback）
+- `_vpiBuildPlatformPrompts()` — Seedance/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo/DOMOAIの9ツール形式でプロンプトを整形。実行は一切しない
+- AI Gateway連携（`sourceGatewayDecision`）+ Image Prompt Intelligence連携（`sourceImagePromptIntelligence`: mainPromptをvisual base、stylePromptを動画style、compositionPromptをscenePromptへ反映）。画像生成・動画生成はしない
+- `copyVideoPromptField()` — Copy Main Video Prompt/Copy Tool Video Prompt（AI Gateway推奨ツールのプロンプト）/Copy Scene Prompt/Copy All Video Prompts
+- `buildVideoPromptIntelligenceHtml()` — `renderOutputEnginePanel()`内、`buildImagePromptIntelligenceHtml`の直後に表示
+- Markdown Export（`## Video Prompt Intelligence`）/ JSON Export（`videoPromptIntelligence`キー、`platformPrompts`9キー含む）に反映
+- 全13 OUTPUT_TYPEで動作確認済み（powerpoint/excel/html等はGeneric fallbackへ正しく分岐）
+- 既存Package/Preview/Publishing/AI Gateway/Image Prompt Intelligence・Workflow・Knowledge Chainは無変更。実際の動画生成・画像生成・外部AI通信は一切なし
+- 詳細は Decision 034（docs/04DECISIONS.md）を参照
 
 ### Phase49-2で完成した内容（次チャットが把握すべき実装）
 
@@ -449,4 +463,4 @@ git tag v1.00-phase46-4
 9. docs/08CLAUDE_PROMPT_TEMPLATE.md を読む
 10. docs/04DECISIONS.md を読む（設計判断の背景確認）
 11. 現在地を要約する
-12. Phase49-3（Video Prompt Intelligence）から開発再開
+12. Phase49-4（Creative Engine Execution）から開発再開

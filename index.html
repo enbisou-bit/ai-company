@@ -908,6 +908,18 @@
   .oe-ipi-copybtn:hover { background: rgba(190,100,255,0.3); }
   .oe-ipi-copymsg    { font-size: 10px; color: rgba(210,150,255,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-ipi-copymsg.show { opacity: 1; }
+  /* Phase49-3: Video Prompt Intelligence */
+  .oe-vpi-section    { border-radius: 10px; border: 1px solid rgba(255,90,110,0.28); background: linear-gradient(135deg, rgba(40,10,15,0.92), rgba(20,6,8,0.96)); padding: 12px 14px; }
+  .oe-vpi-title      { font-size: 11px; color: rgba(255,140,150,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-vpi-tool-card  { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.5; }
+  .oe-vpi-tool-name  { font-size: 9px; color: rgba(255,140,150,0.7); font-weight: 700; margin-bottom: 3px; }
+  .oe-vpi-check-item { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .oe-vpi-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-vpi-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-vpi-copybtn    { background: rgba(255,90,110,0.15); border: 1px solid rgba(255,90,110,0.4); border-radius: 14px; color: rgba(255,140,150,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-vpi-copybtn:hover { background: rgba(255,90,110,0.3); }
+  .oe-vpi-copymsg    { font-size: 10px; color: rgba(255,140,150,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-vpi-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22929,6 +22941,7 @@ function serializeOutputDraft(format) {
     appendPublishingToExportJson(jsonObj);
     appendAIGatewayToExportJson(jsonObj);
     appendImagePromptIntelligenceToExportJson(jsonObj);
+    appendVideoPromptIntelligenceToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23159,6 +23172,7 @@ function serializeOutputDraft(format) {
   appendPublishingToExportMarkdown(mdLines);
   appendAIGatewayToExportMarkdown(mdLines);
   appendImagePromptIntelligenceToExportMarkdown(mdLines);
+  appendVideoPromptIntelligenceToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -25043,6 +25057,390 @@ function appendImagePromptIntelligenceToExportJson(payload) {
   payload.imagePromptIntelligence = draft;
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-3: Video Prompt Intelligence
+// Output Draft / Publishing / AI Gateway / Image Prompt Intelligenceの情報から、各動画生成AIへ
+// 貼り付けられる高品質なプロンプトを生成する（動画生成・画像生成は一切実行しない・コピー用プロンプト生成のみ）
+// ══════════════════════════════════════════════════
+
+const VIDEO_PROMPT_INTELLIGENCE_VERSION = '1.0.0';
+
+function _vpiSafetyChecklist() {
+  return [
+    '実在の人物・著名人を描写していないか確認',
+    '商標・ロゴを捏造していないか確認',
+    '差別的・不適切な表現が含まれていないか確認',
+    '生成前に利用する動画生成AIの利用規約・年齢制限を確認',
+    '生成後、著作権・肖像権・音源利用権に抵触しないか確認',
+  ];
+}
+
+function _vpiBuildWarnings(qualityScore) {
+  var warnings = [];
+  if (qualityScore !== null && qualityScore < 80) {
+    warnings.push('成果物の完成度（' + qualityScore + '点）が80点未満です。プロンプトの前提となる内容を再確認してください。');
+  }
+  warnings.push('動画生成の実行はこのPhaseでは行いません。実際の生成はPhase49-4以降、ユーザー承認後にのみ行ってください。');
+  return warnings;
+}
+
+// Phase49-3: TikTok向け最適化（縦型ショート・冒頭フック・テンポ・字幕想定）
+function _vpiFillTikTok(base, f, ipi) {
+  var scriptLines = (f.script || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var hook = scriptLines.length ? scriptLines[0] : '';
+  base.mainPrompt = (hook ? _pubTruncate(hook, 150) : 'TikTok投稿用の縦型ショート動画') + '。冒頭2〜3秒で視聴者を惹きつける構成。';
+  base.scenePrompt = (ipi && ipi.compositionPrompt) ? ipi.compositionPrompt + '（動画シーンとして展開）' : '縦型フレームでの被写体クローズアップから始まるシーン展開。';
+  base.motionPrompt = 'テンポの良いカット割り、素早いズーム/パン、動きにメリハリをつける。';
+  base.cameraPrompt = '手持ち風の自然な揺れ、クローズアップ多用、目線の高さ。';
+  base.lightingPrompt = '明るく均一な照明、SNS映えする鮮やかさ。';
+  base.stylePrompt = (ipi && ipi.stylePrompt) ? ipi.stylePrompt : '清潔感のある実写風、統一されたトーン。';
+  base.audioPrompt = 'アップテンポなBGM、テンポの良い切り替え効果音。';
+  base.captionPrompt = '大きく読みやすい字幕、要点を短く表示。';
+  base.durationPrompt = '15〜30秒、冒頭2〜3秒でフックを効かせる。';
+  base.formatPrompt = '縦型 9:16、TikTok投稿用。';
+}
+
+// Phase49-3: YouTube Shorts向け最適化（縦型ショート・3秒フック・視聴維持・サムネ想定）
+function _vpiFillYouTubeShorts(base, f, ipi) {
+  var scriptLines = (f.script || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var hook = scriptLines.length ? scriptLines[0] : (f.title || '');
+  base.mainPrompt = (hook ? _pubTruncate(hook, 150) : 'YouTube Shorts用の縦型ショート動画') + '。冒頭3秒で離脱を防ぐ構成。';
+  base.scenePrompt = (ipi && ipi.compositionPrompt) ? ipi.compositionPrompt + '（動画シーンとして展開）' : '縦型フレームでの導入シーンから視聴維持を意識した展開。';
+  base.motionPrompt = '視聴維持を意識したテンポ、単調にならないカット割り。';
+  base.cameraPrompt = 'クローズアップとミドルショットの組み合わせ、サムネ向けの静止しやすい構図を含む。';
+  base.lightingPrompt = '明るくコントラストのある照明（サムネでの視認性を意識）。';
+  base.stylePrompt = (ipi && ipi.stylePrompt) ? ipi.stylePrompt : '清潔感のある実写風。';
+  base.audioPrompt = '視聴維持を意識したBGM、無音区間を作らない。';
+  base.captionPrompt = 'キーワードを強調した字幕、サムネにも使える1カットを含める。';
+  base.durationPrompt = '〜60秒、冒頭3秒で離脱を防ぐフック必須。';
+  base.formatPrompt = '縦型 9:16、YouTube Shorts投稿用。';
+}
+
+// Phase49-3: Instagram（Reels/カルーセル動画化）向け最適化
+function _vpiFillInstagram(base, f, ipi) {
+  var subject = (Array.isArray(f.slides) && f.slides.length) ? String(f.slides[0]) : (f.caption || '');
+  base.mainPrompt = _pubTruncate(subject, 150) + '。Instagram Reels/カルーセル動画化用の短尺動画。';
+  base.scenePrompt = (ipi && ipi.compositionPrompt) ? ipi.compositionPrompt + '（動画シーンとして展開）' : '縦長構図での統一感のあるシーン展開。';
+  base.motionPrompt = '短尺向けのテンポの良い動き、統一感のあるカット割り。';
+  base.cameraPrompt = 'ミドルショット中心、縦型フレームでの安定した構図。';
+  base.lightingPrompt = '柔らかい自然光、統一されたトーン。';
+  base.stylePrompt = (ipi && ipi.stylePrompt) ? ipi.stylePrompt : '清潔感のある実写風、統一されたトーン&マナー。';
+  base.audioPrompt = 'トレンド感のあるBGM、短尺に合わせたテンポ。';
+  base.captionPrompt = '読みやすいテキストオーバーレイ、短く簡潔に。';
+  base.durationPrompt = '7〜15秒、短尺向け。';
+  base.formatPrompt = '縦長 4:5または9:16、Instagram投稿用。';
+}
+
+// Phase49-3: 既存Video Prompt（f.prompt等）の高品質化
+function _vpiFillVideoPromptEnhance(base, f) {
+  base.mainPrompt = f.prompt ? String(f.prompt) : '（既存プロンプト未生成。Output Engineでプロンプトを生成してから高品質化してください）';
+  base.scenePrompt = f.scene ? String(f.scene) : '（未指定。既存プロンプトのシーン設定を推奨）';
+  base.motionPrompt = f.subjectMotion ? String(f.subjectMotion) : '（未指定。自然な被写体の動きを推奨）';
+  base.cameraPrompt = f.cameraMotion ? String(f.cameraMotion) : '（未指定。ゆっくりとしたカメラワークを推奨）';
+  base.lightingPrompt = '（既存プロンプトに準拠。追加の照明指定は用途に応じて調整）';
+  base.stylePrompt = f.style ? String(f.style) : '（既存プロンプトにスタイル指定なし。高品質・自然な仕上がりを追加指定）';
+  base.audioPrompt = '（既存プロンプトに音声指定なし。用途に応じて追加検討）';
+  base.captionPrompt = '（既存プロンプトに字幕指定なし。用途に応じて追加検討）';
+  base.durationPrompt = f.duration ? String(f.duration) : '（未指定のためデフォルト15秒程度を推奨）';
+  base.formatPrompt = f.aspect ? String(f.aspect) : '9:16（未指定のためデフォルト）';
+  if (f.negativePrompt) base.negativePrompt = String(f.negativePrompt);
+}
+
+// Phase49-3: Image Prompt Intelligence連携（Image-to-Video前提。画像生成はしない）
+function _vpiFillImagePromptToVideo(base, f, ipi) {
+  var visualBase = (ipi && ipi.mainPrompt) ? ipi.mainPrompt : (f.prompt || '');
+  base.mainPrompt = _pubTruncate(visualBase, 200) + '（この静止画/構図を起点に動画化する前提のImage-to-Videoプロンプト）';
+  base.scenePrompt = (ipi && ipi.compositionPrompt) ? ipi.compositionPrompt + '（このコンポジションを起点に動きを展開）' : '静止画の構図を起点としたシーン展開。';
+  base.motionPrompt = '静止画の被写体を自然に動かす、過度な変形を避ける。';
+  base.cameraPrompt = 'ゆっくりとしたズーム/パンで静止画に動きを与える。';
+  base.lightingPrompt = (ipi && ipi.lightingPrompt) ? ipi.lightingPrompt : '元の静止画の照明を維持。';
+  base.stylePrompt = (ipi && ipi.stylePrompt) ? ipi.stylePrompt : '元の静止画のスタイルを維持。';
+  base.audioPrompt = '（用途に応じて追加検討。指定なければ無音でも可）';
+  base.captionPrompt = '（用途に応じて追加検討）';
+  base.durationPrompt = '3〜5秒程度のショートループを推奨。';
+  base.formatPrompt = (ipi && ipi.formatPrompt) ? ipi.formatPrompt : '1:1（未指定のためデフォルト）';
+}
+
+// Phase49-3: LP（ヒーロー動画）向け最適化
+function _vpiFillLp(base, f, ipi) {
+  var subject = f.firstView || f.headline || '';
+  base.mainPrompt = _pubTruncate(subject, 150) + '。LPファーストビュー用のヒーロー動画、サービス紹介。';
+  base.scenePrompt = (ipi && ipi.compositionPrompt) ? ipi.compositionPrompt + '（動画シーンとして展開）' : 'サービスの世界観を伝える導入シーン。';
+  base.motionPrompt = 'ゆったりとしたカメラワーク、CTAへ視線誘導する動き。';
+  base.cameraPrompt = 'ワイドショット中心、奥行きのある構図。';
+  base.lightingPrompt = '明るく開放的な照明。';
+  base.stylePrompt = (ipi && ipi.stylePrompt) ? ipi.stylePrompt : 'Webサイト向けのモダンで洗練された印象。';
+  base.audioPrompt = '落ち着いたBGM、ブランドの世界観に合わせる。';
+  base.captionPrompt = 'CTA文言を強調するテロップ。';
+  base.durationPrompt = '5〜10秒程度のループ動画を推奨。';
+  base.formatPrompt = '横長 16:9、Webファーストビュー用。';
+}
+
+// Phase49-3: チラシ/PDF/文書（動画広告化）向け最適化
+function _vpiFillFlyerPdfDocument(base, f, ipi) {
+  var subject = f.catchcopy || f.title || f.summary || '';
+  base.mainPrompt = _pubTruncate(subject, 150) + '。チラシ・資料の内容を動画広告化するプロンプト。';
+  base.scenePrompt = (ipi && ipi.compositionPrompt) ? ipi.compositionPrompt + '（動画シーンとして展開）' : '資料の要点を順に見せるシーン展開。';
+  base.motionPrompt = 'シンプルなトランジション、情報を順序立てて見せる動き。';
+  base.cameraPrompt = '正面〜やや俯瞰、資料全体が収まる構図。';
+  base.lightingPrompt = '均一で明るい照明、高コントラスト。';
+  base.stylePrompt = (ipi && ipi.stylePrompt) ? ipi.stylePrompt : '清潔感がありプロフェッショナルな印象。';
+  base.audioPrompt = '落ち着いたBGM、ナレーションを想定する場合は間を確保。';
+  base.captionPrompt = '要点を短くまとめたテロップ、連絡先情報を最後に表示。';
+  base.durationPrompt = '15〜30秒程度。';
+  base.formatPrompt = '横長 16:9または正方形1:1、広告配信用。';
+}
+
+// Phase49-3: Generic fallback（安全な汎用動画プロンプト）
+function _vpiFillGeneric(base, f) {
+  var subject = f.title || f.caption || f.headline || '成果物の内容に基づく安全な汎用動画';
+  base.mainPrompt = '安全な汎用動画: ' + _pubTruncate(subject, 100) + '。特定の業種・人物に依存しない一般的な表現。';
+  base.scenePrompt = 'バランスの取れたシンプルなシーン展開。';
+  base.motionPrompt = '自然で控えめな動き。';
+  base.cameraPrompt = '標準的なミドルショット、固定またはゆるやかな動き。';
+  base.lightingPrompt = '自然で均一な照明。';
+  base.stylePrompt = '汎用的でクセのないスタイル。';
+  base.audioPrompt = '（指定なし。用途に応じて追加検討）';
+  base.captionPrompt = '（指定なし。用途に応じて追加検討）';
+  base.durationPrompt = '10〜15秒程度。';
+  base.formatPrompt = '1:1（正方形、汎用フォーマット）。';
+}
+
+// Phase49-3: 9ツール向けプロンプト整形（実行はしない・コピー用テキスト生成のみ）
+function _vpiBuildPlatformPrompts(base) {
+  var core = [base.mainPrompt, base.scenePrompt, base.motionPrompt, base.cameraPrompt, base.lightingPrompt, base.stylePrompt].filter(Boolean).join(' ');
+  var meta = base.durationPrompt + ' ' + base.formatPrompt;
+  return {
+    seedance: core + ' ' + meta + ' 自然で滑らかな動きを重視。',
+    flow: core + ' ' + meta + ' シーンの連続性・一貫性を重視。',
+    veo: core + ' ' + meta + ' 映画的な質感・シネマティックな表現で。',
+    kling: core + ' ' + meta + ' 物理的に自然な動き・一貫性のある被写体表現で。',
+    runway: core + ' ' + meta + ' カメラワークの指定（' + base.cameraPrompt + '）を重視。',
+    luma: core + ' ' + meta + ' 高精細でリアルな質感を重視。',
+    pika: core + ' ' + meta + ' 遊び心のあるエフェクト表現も許容。',
+    hailuo: core + ' ' + meta,
+    domoai: (base.sourceImagePromptIntelligence ? '既存画像/動画素材のスタイル変換として: ' : '') + core + ' ' + meta,
+  };
+}
+
+function _vpiBuildCopyText(base) {
+  var lines = ['【Video Prompt Intelligence】', ''];
+  lines.push('Main Prompt: ' + base.mainPrompt);
+  lines.push('Scene: ' + base.scenePrompt);
+  lines.push('Motion: ' + base.motionPrompt);
+  lines.push('Camera: ' + base.cameraPrompt);
+  lines.push('Lighting: ' + base.lightingPrompt);
+  lines.push('Style: ' + base.stylePrompt);
+  lines.push('Audio: ' + base.audioPrompt);
+  lines.push('Caption: ' + base.captionPrompt);
+  lines.push('Duration: ' + base.durationPrompt);
+  lines.push('Format: ' + base.formatPrompt);
+  lines.push('Negative Prompt: ' + base.negativePrompt);
+  return lines.join('\n');
+}
+
+// Phase49-3: Video Prompt Intelligence Draft生成（実行はしない。既存Output Draftは破壊しない）
+function createVideoPromptIntelligenceDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+  var f = outputDraft.fields;
+
+  // Phase49-3: Image Prompt Intelligence連携（Phase49-2の情報を動画化前提素材として参照。画像生成はしない）
+  var ipi = outputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(outputDraft);
+
+  var base = {
+    version: VIDEO_PROMPT_INTELLIGENCE_VERSION,
+    outputType: type,
+    mainPrompt: '',
+    scenePrompt: '',
+    motionPrompt: '',
+    cameraPrompt: '',
+    lightingPrompt: '',
+    stylePrompt: '',
+    audioPrompt: '',
+    captionPrompt: '',
+    durationPrompt: '',
+    formatPrompt: '',
+    negativePrompt: '低品質、不自然な動き、テレポート的な不連続性、歪んだ被写体、余計なテキストの混入、実在の著名人の描写',
+    platformPrompts: {},
+    safetyChecklist: _vpiSafetyChecklist(),
+    copyText: '',
+    warnings: [],
+    sourceGatewayDecision: null,
+    sourceImagePromptIntelligence: ipi ? { outputType: ipi.outputType, mainPrompt: ipi.mainPrompt, stylePrompt: ipi.stylePrompt, compositionPrompt: ipi.compositionPrompt } : null,
+    qualityScore: null,
+  };
+
+  switch (type) {
+    case OUTPUT_TYPES.TIKTOK_VIDEO:
+      _vpiFillTikTok(base, f, ipi); break;
+    case OUTPUT_TYPES.YOUTUBE_SHORTS:
+      _vpiFillYouTubeShorts(base, f, ipi); break;
+    case OUTPUT_TYPES.INSTAGRAM_CAROUSEL:
+    case OUTPUT_TYPES.INSTAGRAM_POST:
+      _vpiFillInstagram(base, f, ipi); break;
+    case OUTPUT_TYPES.VIDEO_PROMPT:
+      _vpiFillVideoPromptEnhance(base, f); break;
+    case OUTPUT_TYPES.IMAGE_PROMPT:
+      _vpiFillImagePromptToVideo(base, f, ipi); break;
+    case OUTPUT_TYPES.LP:
+      _vpiFillLp(base, f, ipi); break;
+    case OUTPUT_TYPES.FLYER:
+    case OUTPUT_TYPES.PDF:
+    case OUTPUT_TYPES.DOCUMENT:
+      _vpiFillFlyerPdfDocument(base, f, ipi); break;
+    default:
+      _vpiFillGeneric(base, f); break;
+  }
+
+  var q = (outputDraft.publishing && typeof outputDraft.publishing.qualityScore === 'number') ? outputDraft.publishing.qualityScore
+    : ((outputDraft.packageQuality && typeof outputDraft.packageQuality.score === 'number') ? outputDraft.packageQuality.score : null);
+  base.qualityScore = q;
+  base.warnings = _vpiBuildWarnings(q);
+
+  // Phase49-3: AI Gateway連携（recommendedTool/routePriority/capability/learningを参照するのみ。実行はしない）
+  var gw = outputDraft.aiGateway || createAIGatewayDecision(outputDraft);
+  base.sourceGatewayDecision = gw ? {
+    recommendedTool: gw.recommendedTool,
+    recommendedRoute: gw.recommendedRoute,
+    routePriority: gw.routePriority,
+    capabilityScore: gw.capabilityScore,
+    learning: gw.learning,
+  } : null;
+
+  base.platformPrompts = _vpiBuildPlatformPrompts(base);
+  base.copyText = _vpiBuildCopyText(base);
+  return base;
+}
+
+// Phase49-3: AI Gatewayの推奨ツール名 → platformPromptsキーの対応（動画特化ツールが明確でない場合はseedanceへ安全にfallback）
+function _vpiToolKeyForGatewayTool(toolName) {
+  var map = { 'Seedance': 'seedance', 'Flow': 'flow', 'Veo': 'veo', 'Kling': 'kling', 'Runway': 'runway', 'Luma': 'luma', 'Pika': 'pika', 'Hailuo': 'hailuo', 'DOMOAI': 'domoai' };
+  return map[toolName] || 'seedance';
+}
+
+// Phase49-3: クリップボードコピー（既存Copy Export/Publishing/Gateway/Image Prompt Copyとは独立）
+function copyVideoPromptField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (fieldKey === 'mainPrompt') text = draft.mainPrompt;
+  else if (fieldKey === 'scenePrompt') text = draft.scenePrompt;
+  else if (fieldKey === 'toolPrompt') {
+    var toolName = draft.sourceGatewayDecision ? draft.sourceGatewayDecision.recommendedTool : null;
+    var key = _vpiToolKeyForGatewayTool(toolName);
+    text = draft.platformPrompts[key] || draft.mainPrompt;
+  } else if (fieldKey === 'all') {
+    text = draft.copyText;
+  }
+  if (!text) return;
+
+  var msg = document.getElementById('oe-vpi-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase49-3: Video Prompt Intelligence HTML生成（Image Prompt Intelligenceの直後に表示。データ不足でも安全に空文字を返す）
+function buildVideoPromptIntelligenceHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var draft = _lastOutputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return '';
+  _lastOutputDraft.videoPromptIntelligence = draft;
+  var esc = escapeHtml;
+
+  var toolLabels = { seedance: 'Seedance', flow: 'Flow', veo: 'Veo', kling: 'Kling', runway: 'Runway', luma: 'Luma', pika: 'Pika', hailuo: 'Hailuo', domoai: 'DOMOAI' };
+  var toolPromptsHtml = Object.keys(draft.platformPrompts).map(function(key) {
+    return '<div class="oe-vpi-tool-card"><div class="oe-vpi-tool-name">' + esc(toolLabels[key] || key) + '</div>' + esc(_pubTruncate(draft.platformPrompts[key], 200)) + '</div>';
+  }).join('');
+
+  var checklistHtml = draft.safetyChecklist.map(function(c) { return '<div class="oe-vpi-check-item">☐ ' + esc(c) + '</div>'; }).join('');
+  var warningsHtml = draft.warnings.length ? draft.warnings.map(function(w) { return '<div class="oe-vpi-warning">⚠ ' + esc(w) + '</div>'; }).join('') : '';
+
+  var gwHtml = draft.sourceGatewayDecision
+    ? '<div class="oe-field-val">推奨ツール: ' + esc(draft.sourceGatewayDecision.recommendedTool || '該当なし') + '（' + esc(draft.sourceGatewayDecision.recommendedRoute || '-') + '）</div>'
+    : '<div class="oe-empty-val">AI Gateway情報なし</div>';
+
+  var ipiHtml = draft.sourceImagePromptIntelligence
+    ? '<div class="oe-field-val">Image Prompt Intelligenceを動画化前提素材として参照済み（outputType: ' + esc(draft.sourceImagePromptIntelligence.outputType) + '）</div>'
+    : '<div class="oe-empty-val">Image Prompt Intelligence情報なし</div>';
+
+  return '<div class="oe-vpi-section">'
+    + '<div class="oe-vpi-title">🎬 Video Prompt Intelligence <span style="font-weight:400;opacity:.5;">v' + VIDEO_PROMPT_INTELLIGENCE_VERSION + '</span></div>'
+    + '<div class="oe-pkg-label">AI Gateway推奨</div>' + gwHtml
+    + '<div class="oe-pkg-label">Image Prompt Intelligence連携</div>' + ipiHtml
+    + '<div class="oe-pkg-label">Main Prompt</div><div class="oe-field-val">' + esc(draft.mainPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Scene</div><div class="oe-field-val">' + esc(draft.scenePrompt) + '</div>'
+    + '<div class="oe-pkg-label">Motion</div><div class="oe-field-val">' + esc(draft.motionPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Camera</div><div class="oe-field-val">' + esc(draft.cameraPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Lighting</div><div class="oe-field-val">' + esc(draft.lightingPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Style</div><div class="oe-field-val">' + esc(draft.stylePrompt) + '</div>'
+    + '<div class="oe-pkg-label">Audio</div><div class="oe-field-val">' + esc(draft.audioPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Caption</div><div class="oe-field-val">' + esc(draft.captionPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Duration</div><div class="oe-field-val">' + esc(draft.durationPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Format</div><div class="oe-field-val">' + esc(draft.formatPrompt) + '</div>'
+    + '<div class="oe-pkg-label">Negative Prompt</div><div class="oe-field-val">' + esc(draft.negativePrompt) + '</div>'
+    + '<div class="oe-pkg-label">Tool Prompts</div>' + toolPromptsHtml
+    + '<div class="oe-pkg-label">Safety Checklist</div>' + checklistHtml
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-vpi-copyrow">'
+    +   '<button class="oe-vpi-copybtn" onclick="copyVideoPromptField(\'mainPrompt\')">Copy Main Video Prompt</button>'
+    +   '<button class="oe-vpi-copybtn" onclick="copyVideoPromptField(\'toolPrompt\')">Copy Tool Video Prompt</button>'
+    +   '<button class="oe-vpi-copybtn" onclick="copyVideoPromptField(\'scenePrompt\')">Copy Scene Prompt</button>'
+    +   '<button class="oe-vpi-copybtn" onclick="copyVideoPromptField(\'all\')">Copy All Video Prompts</button>'
+    +   '<span id="oe-vpi-copy-msg" class="oe-vpi-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase49-3: Export反映
+function appendVideoPromptIntelligenceToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Video Prompt Intelligence (Phase49-3)');
+  lines.push('- Main Prompt: ' + draft.mainPrompt);
+  lines.push('- Scene: ' + draft.scenePrompt);
+  lines.push('- Motion: ' + draft.motionPrompt);
+  lines.push('- Camera: ' + draft.cameraPrompt);
+  lines.push('- Lighting: ' + draft.lightingPrompt);
+  lines.push('- Style: ' + draft.stylePrompt);
+  lines.push('- Audio: ' + draft.audioPrompt);
+  lines.push('- Caption: ' + draft.captionPrompt);
+  lines.push('- Duration: ' + draft.durationPrompt);
+  lines.push('- Format: ' + draft.formatPrompt);
+  lines.push('- Negative Prompt: ' + draft.negativePrompt);
+  if (draft.sourceGatewayDecision) {
+    lines.push('- Recommended Tool (AI Gateway): ' + (draft.sourceGatewayDecision.recommendedTool || '（該当なし）'));
+  }
+  if (draft.warnings.length) {
+    lines.push('- Warnings:');
+    draft.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+}
+
+function appendVideoPromptIntelligenceToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.videoPromptIntelligence = draft;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -25167,6 +25565,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
     + _oeSafe(buildAIGatewayHtml,                'AIGateway')
     + _oeSafe(buildImagePromptIntelligenceHtml,  'ImagePromptIntelligence')
+    + _oeSafe(buildVideoPromptIntelligenceHtml,  'VideoPromptIntelligence')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')

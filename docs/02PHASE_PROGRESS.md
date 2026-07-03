@@ -1,12 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-03（Phase49-2 Image Prompt Intelligence完了）
+> 更新日: 2026-07-04（Phase49-3 Video Prompt Intelligence完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-2 完了（Image Prompt Intelligence）**
-- 現在バージョン: **v1.00-phase49-2**
-- 次工程: **Phase49-3 Video Prompt Intelligence**
+- 現在フェーズ: **Phase49-3 完了（Video Prompt Intelligence）**
+- 現在バージョン: **v1.00-phase49-3**
+- 次工程: **Phase49-4 Creative Engine Execution**
 
 ---
 
@@ -582,6 +582,32 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49-3 Video Prompt Intelligence
 - Git: Phase49-2 image prompt intelligence / Tag: v1.00-phase49-2
+
+### Phase49-3: Video Prompt Intelligence ✅
+- `index.html`（Phase49-1〜49-1.2のAI Gateway一式・Phase49-2のImage Prompt Intelligence・Publishing/Preview Engineを壊さず拡張。既存コードは無変更）
+  - `VIDEO_PROMPT_INTELLIGENCE_VERSION = '1.0.0'`
+  - `createVideoPromptIntelligenceDraft(outputDraft)` — version/outputType/mainPrompt/scenePrompt/motionPrompt/cameraPrompt/lightingPrompt/stylePrompt/audioPrompt/captionPrompt/durationPrompt/formatPrompt/negativePrompt/platformPrompts/safetyChecklist/copyText/warnings/sourceGatewayDecision/sourceImagePromptIntelligence/qualityScoreを生成
+  - Output Type別最適化（1責務1関数）: `_vpiFillTikTok()`（縦型・冒頭フック・テンポ・字幕） / `_vpiFillYouTubeShorts()`（縦型・3秒フック・視聴維持・サムネ想定） / `_vpiFillInstagram()`（Reels/カルーセル動画化・統一感・短尺） / `_vpiFillVideoPromptEnhance()`（既存動画プロンプト高品質化） / `_vpiFillImagePromptToVideo()`（Image-to-Video前提） / `_vpiFillLp()`（ヒーロー動画・CTA導線） / `_vpiFillFlyerPdfDocument()`（チラシ・資料の動画広告化、flyer/pdf/document共用） / `_vpiFillGeneric()`（それ以外の全タイプへの安全な汎用fallback）
+  - `_vpiBuildPlatformPrompts()` — Seedance/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo/DOMOAIの9ツール形式でプロンプトを整形（各ツールの特性差異を軽く反映、実行はしない）
+  - `_vpiSafetyChecklist()` / `_vpiBuildWarnings()` / `_vpiBuildCopyText()` — 共通ヘルパー
+  - AI Gateway連携: `outputDraft.aiGateway || createAIGatewayDecision(outputDraft)`からrecommendedTool/recommendedRoute/routePriority/capabilityScore/learningを`sourceGatewayDecision`として参照
+  - Image Prompt Intelligence連携: `outputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(outputDraft)`からmainPrompt（visual base）/stylePrompt（動画style）/compositionPrompt（scenePromptへ反映）を`sourceImagePromptIntelligence`として参照。画像生成はしない
+  - `_vpiToolKeyForGatewayTool()` — AI Gatewayの推奨ツール名（Seedance/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo/DOMOAI）をplatformPromptsキーへ対応付け。不明な場合はSeedanceへ安全にfallback
+  - `copyVideoPromptField()` — Copy Main Video Prompt/Copy Tool Video Prompt（AI Gateway推奨ツールのプロンプトをコピー）/Copy Scene Prompt/Copy All Video Promptsの4ケース
+  - `buildVideoPromptIntelligenceHtml()` — `renderOutputEnginePanel()`内、`buildImagePromptIntelligenceHtml`の直後に表示。Main/Scene/Motion/Camera/Lighting/Style/Audio/Caption/Duration/Format/Negative Prompt/Tool Prompts（9ツール）/Safety Checklist/Warningsを表示
+  - `appendVideoPromptIntelligenceToExportMarkdown()` / `appendVideoPromptIntelligenceToExportJson()` — Export（Markdown`## Video Prompt Intelligence`セクション/JSON`videoPromptIntelligence`キー）に反映
+  - CSS: `.oe-vpi-*`（section/title/tool-card/tool-name/check-item/warning/copyrow/copybtn/copymsg）を新規追加
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプ（tiktok_video/youtube_shorts/instagram_carousel/instagram_post/video_prompt/image_prompt/lp/flyer/pdf/document/powerpoint/excel/html）でVideo Prompt Intelligenceパネル表示・9ツール分のTool Promptsが生成されることを確認。powerpoint/excel/html等はGeneric fallbackへ正しく分岐することを確認
+  - AI Gateway連携: tiktok_video/youtube_shorts/video_prompt→Seedance、instagram/flyer/image_prompt→GPT Image、lp/pdf/document等→ChatGPTがsourceGatewayDecision.recommendedToolに正しく反映されることを確認
+  - Image Prompt Intelligence連携: 全13タイプで`sourceImagePromptIntelligence`が正しく参照されることを確認（Image Prompt Intelligence自体もGeneric fallbackを持つため、未分類タイプでも連携が途切れないことを確認）
+  - Markdown/JSON Export双方への反映を確認（JSON: platformPrompts 9キー全て確認）
+  - Copy 4ボタンとも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・AI Gateway（Foundation/Expansion/Learning）・Image Prompt Intelligence・Quality各パネルへの影響なし
+- 生成ロジック・Preview/Publishing/AI Gateway/Image Prompt Intelligence・Workflow・Knowledge Chainは一切変更していない。新規API・外部通信・実際の動画生成・画像生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし（プロンプト・コピー用テキストの生成のみ）
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49-4 Creative Engine Execution
+- Git: Phase49-3 video prompt intelligence / Tag: v1.00-phase49-3
 
 ---
 
