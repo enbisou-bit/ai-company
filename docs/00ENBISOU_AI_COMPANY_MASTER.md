@@ -3,6 +3,87 @@
 > ENBISOU AI COMPANY 開発マスター（Version 2.2）
 > 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
 
+---
+
+## 【Version1 最重要目的】（最優先・すべての実装判断の基準）
+
+Version1では
+
+「AI会社を完成させること」
+
+ではありません。
+
+Instagramカルーセルを毎日運用し、
+
+アフィリエイト収益を生みながら
+
+AI会社自身を Learning・Asset Library で成長させること
+
+を Version1 最優先目的とします。
+
+今後の全ての実装は、この目的を最優先基準として判断してください。
+
+---
+
+## 【Version1 完成条件】（正式リリース条件）
+
+Version1 正式リリース条件は
+
+AI会社が Instagram 運用を毎日支援できること。
+
+具体的には
+
+市場分析
+↓
+テーマ提案
+↓
+カルーセル構成
+↓
+画像生成
+↓
+背景画像＋文字レイアウト済みカルーセル完成
+↓
+投稿文
+↓
+CTA
+↓
+ハッシュタグ
+↓
+iPhone成果物確認
+↓
+iPhone修正依頼
+↓
+iPhone承認
+↓
+Instagram手動投稿
+↓
+Learning
+↓
+Asset Library保存
+
+この一連の流れを毎日運用できることを Version1 完成条件とします。
+
+なお、Instagram投稿は最後までユーザー承認後の手動投稿を維持してください。
+
+### Version1 完成条件チェック（Phase52-2 記録・すべて完成済み）
+
+Version1 = **完成**（現在Version v1.00-phase52-2 / Version1 Documentation Complete・Decision 041）。
+
+- ☑ 市場分析（Instagram Marketing Intelligence / Phase50-1）
+- ☑ コンテンツ企画（Instagram Content Planning / Phase50-2）
+- ☑ カルーセル作成（Instagram Carousel Builder / Phase50-3）
+- ☑ デザイン設計（Instagram Design System / Phase50-4）
+- ☑ Mobile Review（Mobile Review Center / Phase50-5）
+- ☑ Mobile Approval（Mobile Approval / Phase50-6）
+- ☑ Publishing Ready（Publishing Ready Center / Phase50-7）
+- ☑ 手動投稿（Publishing Readyの「投稿しました」手動ボタン・自動投稿なし）
+- ☑ Instagram Learning（Instagram Learning Center / Phase51-1）
+- ☑ Asset Library Save（Creative Asset Library Save Center / Phase52-1・表示のみ）
+
+すべて完成済みとして記録する。次はVersion1の実運用（実際のInstagram投稿）を開始し、その後にVersion2（Asset Library実保存 / Learning永続化 / Instagram分析高度化 / TikTok / YouTube Shorts / LP連携 / AI自動改善）へ進む。
+
+---
+
 ## 1. AI会社の最終目的（最重要）
 
 ENBISOU AI COMPANY は「AIチャット」ではない。

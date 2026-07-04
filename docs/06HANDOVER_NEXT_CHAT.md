@@ -2,7 +2,19 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
+更新日: 2026-07-05（Phase52-2 Version1 Documentation Complete・Instagram収益化パイプライン完成記録・Decision 041）
+
+---
+
+## 【最重要】Version1 完成・運用フェーズ（Phase52-2記録）
+
+- **Version1 = 完成**。現在Version **v1.00-phase52-2** / 現在フェーズ **Version1 Documentation Complete**
+- **Instagram収益化を最優先**（Decision 039）。Version1のInstagram収益化パイプラインは全工程実装完了（市場分析→企画→カルーセル生成→デザイン設計→レビュー→承認→投稿準備→手動投稿→Learning→Asset Library候補生成）
+- **現在は運用フェーズ**。次チャットは新機能追加より先に、まず**実運用（実際のInstagram投稿）を開始**することを最優先とする
+- **新機能追加前に実運用開始**。Version2（Asset Library実保存 / Learning永続化 / Instagram分析高度化 / TikTok / YouTube Shorts / LP連携 / AI自動改善）はVersion1運用が回り始めてから着手する
+- Version1の正式仕様（Decision 041）: Instagram APIは使用しない / 手動投稿が正式仕様 / Learningは投稿後に手入力 / Asset Libraryは表示のみ（実保存はVersion2）
+- 完成9機能: Instagram Marketing Intelligence / Instagram Content Planning / Instagram Carousel Builder / Instagram Design System / Mobile Review Center / Mobile Approval / Publishing Ready Center / Instagram Learning Center / Creative Asset Library Save Center（すべてindex.htmlへ追加のみ・既存無変更）
+- 最新Tag: **v1.00-phase52-2**（Phase50-2〜52-1の各Tag: v1.00-phase50-2 〜 v1.00-phase52-1）
 
 ---
 

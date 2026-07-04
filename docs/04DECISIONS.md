@@ -758,3 +758,25 @@ Version1最優先ゴール（Instagram収益化支援・Decision 039）の第一
 
 追記日: 2026-07-04（Phase50-1 Instagram Marketing Intelligence完了）
 
+---
+
+# Decision 041
+## Version1はInstagram APIを使わず手動運用を正式仕様とし、Version1完成を確定する
+
+Phase50-2〜52-1でInstagram収益化パイプラインの全工程を実装完了し、Phase52-2でdocsへ正式記録した（コード変更なし・docsのみ）。これをもってInstagram収益化Version1を一区切り（完成）とする。
+
+内容（Version1正式仕様）：
+- **Instagram APIは使用しない**（Graph API等の実接続・自動データ取得は行わない）
+- **手動投稿を正式仕様とする**（自動投稿は実装しない。投稿はユーザーがInstagramアプリ/Webから手動で行う）
+- **Learningは投稿後に手入力**（実績はユーザーがInsightsを見て手入力。`_instagramLearningHistory`メモリのみ）
+- **Asset Libraryは表示のみ**（保存候補の生成・表示のみ。実DB保存・Creative Asset Libraryへの書き込みは行わない）
+- **Version2で実保存へ移行**（Asset Library実保存 / Learning永続化 / Instagram分析高度化 / TikTok / YouTube Shorts / LP連携 / AI自動改善）
+- Version1完成9機能（すべてindex.htmlへ追加のみ・既存無変更）: Instagram Marketing Intelligence（Phase50-1）/ Instagram Content Planning（Phase50-2）/ Instagram Carousel Builder（Phase50-3）/ Instagram Design System（Phase50-4）/ Mobile Review Center（Phase50-5）/ Mobile Approval（Phase50-6）/ Publishing Ready Center（Phase50-7）/ Instagram Learning Center（Phase51-1）/ Creative Asset Library Save Center（Phase52-1）
+- 現在Version: **v1.00-phase52-2** / 現在フェーズ: **Version1 Documentation Complete**
+
+理由：
+- 外部API接続・自動投稿・実DB保存は課金・契約・事故リスクを伴うため、Manual Only方針（Decision 039）を最後まで一貫させ、承認なしで安全に実運用を開始できる状態でVersion1を確定する
+- まず実運用（実際のInstagram投稿）を回して実績データを蓄積し、その学びをもってVersion2（実保存・永続化・高度化・多プラットフォーム展開）へ進むことで、机上ではなく現場に基づいた拡張ができる
+
+追記日: 2026-07-05（Phase52-2 Version1 Documentation Complete）
+
