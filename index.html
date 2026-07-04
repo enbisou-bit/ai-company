@@ -29408,7 +29408,7 @@ var PRC_AXIS_LABELS = { readiness: 'Readiness', caption: 'Caption', cta: 'CTA', 
 // 投稿状態はメモリ保持のみ（DB/localStorage/Learning/Asset Libraryへは書き込まない）
 let _publishingReadyState = { published: false, publishedAt: null, archived: false };
 
-function _prcStatus(approvalStatus) {
+function _prcResolveStatus(approvalStatus) {
   if (_publishingReadyState.archived) return 'archived';
   if (_publishingReadyState.published) return 'published';
   if (approvalStatus === 'approved') return 'ready';
@@ -29499,7 +29499,7 @@ function createPublishingReadyDraft(outputDraft) {
   var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
 
   var approvalStatus = pri.approvalStatus;
-  var status = _prcStatus(approvalStatus);
+  var status = _prcResolveStatus(approvalStatus);
   var published = _publishingReadyState.published;
 
   var title = (pub && pub.title) || (pri.template ? pri.template.name : 'Instagram投稿');
