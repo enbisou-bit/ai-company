@@ -1154,6 +1154,50 @@
     .oe-map-review, .oe-map-meta { font-size: 12px; }
     .oe-map-approvebtn { min-width: 100%; }
   }
+  /* Phase50-7: Publishing Ready Center (mobile-first) */
+  .oe-prc-section    { border-radius: 10px; border: 1px solid rgba(230,110,220,0.32); background: linear-gradient(135deg, rgba(34,8,34,0.92), rgba(18,4,18,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-prc-title      { font-size: 11px; color: rgba(240,150,230,0.92); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-prc-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(230,110,220,0.16); color: rgba(245,175,235,0.95); border: 1px solid rgba(230,110,220,0.4); }
+  .oe-prc-statusrow  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .oe-prc-statuschip { font-size: 12px; font-weight: 800; padding: 4px 14px; border-radius: 12px; }
+  .oe-prc-st-draft     { color: rgba(255,255,255,0.72); background: rgba(255,255,255,0.08); }
+  .oe-prc-st-preparing { color: rgba(255,210,120,0.95); background: rgba(255,180,60,0.15); }
+  .oe-prc-st-ready     { color: rgba(150,200,255,0.98); background: rgba(60,150,255,0.16); }
+  .oe-prc-st-published { color: rgba(150,240,190,0.98); background: rgba(80,210,140,0.2); }
+  .oe-prc-st-archived  { color: rgba(200,180,255,0.98); background: rgba(150,120,255,0.18); }
+  .oe-prc-scorebar   { display: flex; align-items: center; gap: 10px; background: rgba(230,110,220,0.08); border: 1px solid rgba(230,110,220,0.25); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+  .oe-prc-scorebig   { font-size: 22px; font-weight: 800; color: rgba(245,175,235,0.98); }
+  .oe-prc-scorelabel { font-size: 10px; color: rgba(255,255,255,0.6); }
+  .oe-prc-chips      { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .oe-prc-chip       { font-size: 9px; color: rgba(245,195,238,0.85); background: rgba(230,110,220,0.1); border: 1px solid rgba(230,110,220,0.22); border-radius: 8px; padding: 1px 7px; }
+  .oe-prc-summary    { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+  .oe-prc-sumcell    { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 7px 10px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .oe-prc-sumk       { font-size: 10px; color: rgba(255,255,255,0.55); }
+  .oe-prc-sumv       { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.85); }
+  .oe-prc-sumv.ok    { color: rgba(150,240,190,0.95); }
+  .oe-prc-block      { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 11px; margin: 5px 0; }
+  .oe-prc-blockt     { font-size: 10px; font-weight: 800; color: rgba(240,150,230,0.9); margin-bottom: 3px; }
+  .oe-prc-meta       { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.6; word-break: break-word; }
+  .oe-prc-tag        { display: inline-block; font-size: 9px; color: rgba(245,195,238,0.85); background: rgba(230,110,220,0.1); border: 1px solid rgba(230,110,220,0.2); border-radius: 6px; padding: 1px 6px; margin: 2px 4px 0 0; }
+  .oe-prc-checkrow   { display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,0.7); line-height: 1.7; }
+  .oe-prc-pubbtn     { width: 100%; min-height: 52px; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; margin-top: 8px; background: rgba(80,210,140,0.2); border: 1px solid rgba(80,210,140,0.5); color: rgba(150,240,190,0.98); }
+  .oe-prc-pubbtn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .oe-prc-pubbtn.done { background: rgba(80,210,140,0.4); color: #eafff3; cursor: default; }
+  .oe-prc-subbtn     { min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); padding: 0 16px; margin-top: 8px; }
+  .oe-prc-ready      { background: rgba(80,210,140,0.08); border: 1px solid rgba(80,210,140,0.3); border-radius: 10px; padding: 9px 12px; margin: 8px 0; }
+  .oe-prc-ready-title{ font-size: 11px; font-weight: 800; color: rgba(150,240,190,0.95); margin-bottom: 4px; }
+  .oe-prc-review     { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.7; margin-bottom: 3px; }
+  .oe-prc-warning    { font-size: 11px; color: rgba(255,180,80,0.92); line-height: 1.6; }
+  .oe-prc-btn        { background: rgba(230,110,220,0.15); border: 1px solid rgba(230,110,220,0.4); border-radius: 14px; color: rgba(245,175,235,0.95); font-size: 12px; font-weight: 600; min-height: 40px; padding: 6px 14px; cursor: pointer; }
+  .oe-prc-btn:hover  { background: rgba(230,110,220,0.3); }
+  .oe-prc-copyrow    { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-prc-copymsg    { font-size: 11px; color: rgba(245,175,235,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-prc-copymsg.show { opacity: 1; }
+  @media (max-width: 480px) {
+    .oe-prc-summary { grid-template-columns: 1fr; }
+    .oe-prc-title { font-size: 12px; }
+    .oe-prc-review, .oe-prc-meta { font-size: 12px; }
+  }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23185,6 +23229,7 @@ function serializeOutputDraft(format) {
     appendInstagramDesignSystemToExportJson(jsonObj);
     appendMobileReviewCenterToExportJson(jsonObj);
     appendMobileApprovalToExportJson(jsonObj);
+    appendPublishingReadyToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23425,6 +23470,7 @@ function serializeOutputDraft(format) {
   appendInstagramDesignSystemToExportMarkdown(mdLines);
   appendMobileReviewCenterToExportMarkdown(mdLines);
   appendMobileApprovalToExportMarkdown(mdLines);
+  appendPublishingReadyToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -29257,6 +29303,438 @@ function appendMobileApprovalToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase50-7: Publishing Ready Center（Decision 039・Version1完成条件「投稿直前まで」の最終集約工程）
+// 目的: Phase50-6 Mobile Approval の publishingReadyInput / approvalPackage をもとに、
+//   Instagramへ手動投稿する直前に必要なもの（タイトル/本文/CTA/ハッシュタグ/カルーセル10枚/画像一覧/
+//   画像プロンプト/投稿予定日時/保存用Markdown/JSON/投稿チェックリスト/注意事項）を1画面へ集約する。
+// Version1では自動投稿は行わない。「投稿しました」は手動ボタンのみ（Published状態の記録）。
+// 実際の投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行わない（Publishing Ready Only）。
+// Asset Library / Learning は「保存対象の表示」のみで、実際の書き込みは行わない（既存機能無変更）。
+// 既存関数（Mobile Approval / Publishing / Design System / Carousel Builder等）は読み取り専用で参照する。
+// ============================================================
+
+const PUBLISHING_READY_VERSION = '1.0.0';
+
+const PRC_SAFETY_LABELS = [
+  'Publishing Ready Only', 'No Instagram API', 'No Auto Posting',
+  'No Image Generation', 'No External AI', 'Manual Posting Required',
+];
+
+var PRC_STATUS_LABELS = { draft: 'Draft', preparing: 'Preparing', ready: 'Ready', published: 'Published（手動投稿済）', archived: 'Archived' };
+var PRC_AXIS_LABELS = { readiness: 'Readiness', caption: 'Caption', cta: 'CTA', hashtag: 'Hashtag', carousel: 'Carousel', approval: 'Approval', learning: 'Learning', archive: 'Archive' };
+
+// 投稿状態はメモリ保持のみ（DB/localStorage/Learning/Asset Libraryへは書き込まない）
+let _publishingReadyState = { published: false, publishedAt: null, archived: false };
+
+function _prcStatus(approvalStatus) {
+  if (_publishingReadyState.archived) return 'archived';
+  if (_publishingReadyState.published) return 'published';
+  if (approvalStatus === 'approved') return 'ready';
+  if (approvalStatus === 'ready') return 'preparing';
+  return 'draft';
+}
+
+// Phase50-7: 投稿準備度を8軸100点満点で評価する
+function scorePublishingReady(d) {
+  function clamp(n) { return Math.max(0, Math.min(100, Math.round(typeof n === 'number' ? n : 0))); }
+  d = d || {};
+  var st = d.approvalStatus;
+  var slideN = Array.isArray(d.slides) ? d.slides.length : 0;
+  var hn = Array.isArray(d.hashtags) ? d.hashtags.length : 0;
+  var readiness = clamp((d.published || d.archived) ? 100 : (st === 'approved' ? 85 : (st === 'ready' ? 60 : 35)));
+  var caption = clamp(!d.caption ? 0 : (d.caption.length >= 40 ? 100 : (d.caption.length >= 10 ? 75 : 50)));
+  var cta = clamp(d.cta ? 100 : 0);
+  var hashtag = clamp(hn >= 15 && hn <= 30 ? 100 : (hn >= 8 ? 80 : (hn > 0 ? 50 : 0)));
+  var carousel = clamp(slideN === 10 ? 100 : (slideN >= 6 ? 70 : (slideN > 0 ? 40 : 0)));
+  var approval = clamp((st === 'approved' || d.published || d.archived) ? 100 : (st === 'ready' ? 70 : 40));
+  var learning = clamp(d.published ? 100 : (st === 'approved' ? 60 : 40));
+  var archive = clamp((d.published || d.archived) ? 100 : (st === 'approved' ? 55 : 35));
+  var w = { readiness: 0.18, caption: 0.14, cta: 0.10, hashtag: 0.12, carousel: 0.16, approval: 0.16, learning: 0.07, archive: 0.07 };
+  var publishingScore = clamp(readiness * w.readiness + caption * w.caption + cta * w.cta + hashtag * w.hashtag
+    + carousel * w.carousel + approval * w.approval + learning * w.learning + archive * w.archive);
+  return {
+    readiness: readiness, caption: caption, cta: cta, hashtag: hashtag, carousel: carousel,
+    approval: approval, learning: learning, archive: archive, publishingScore: publishingScore,
+  };
+}
+
+function _prcBuildSummary(approvalStatus, pri, slides, caption, hashtags, published) {
+  return [
+    { label: 'Instagram Ready', value: approvalStatus === 'approved' ? '✓ 承認済' : '未承認', ok: approvalStatus === 'approved' },
+    { label: 'Instagram Manual Posting', value: '手動のみ（自動投稿なし）', ok: true },
+    { label: 'Slides', value: slides.length + '/10', ok: slides.length === 10 },
+    { label: 'Caption', value: caption ? '✓' : '—', ok: !!caption },
+    { label: 'Hashtags', value: hashtags.length + '件', ok: hashtags.length > 0 },
+    { label: 'Design', value: 'Score ' + pri.designScore, ok: pri.designScore >= 70 },
+    { label: 'Review', value: (MRC_OVERALL_LABELS[pri.reviewSummary.overallStatus] || pri.reviewSummary.overallStatus), ok: pri.reviewSummary.overallStatus === 'approved' },
+    { label: 'Approval', value: (MAP_STATUS_LABELS[approvalStatus] || approvalStatus), ok: approvalStatus === 'approved' },
+    { label: 'Learning Ready', value: published ? '✓' : '投稿後', ok: published },
+    { label: 'Asset Library Ready', value: published ? '✓' : '投稿後', ok: published },
+  ];
+}
+
+function _prcBuildSaveMarkdown(pkg, checklist, notes) {
+  var L = ['# Instagram Publishing Package', ''];
+  L.push('- Status: ' + (PRC_STATUS_LABELS[pkg.publishingStatus] || pkg.publishingStatus));
+  L.push('- Template: ' + (pkg.template ? pkg.template.name : '') + ' / Design ' + pkg.scores.designScore + ' / Carousel ' + pkg.scores.carouselScore + ' / Publishing ' + pkg.scores.publishingScore);
+  L.push('- 投稿予定: ' + pkg.publishDateTime);
+  L.push('');
+  L.push('## タイトル');
+  L.push(pkg.title);
+  L.push('');
+  L.push('## 投稿本文（Caption）');
+  L.push(pkg.caption || '（未設定）');
+  L.push('');
+  L.push('## CTA');
+  L.push(pkg.cta || '（未設定）');
+  L.push('');
+  L.push('## ハッシュタグ（' + pkg.hashtags.length + '件）');
+  L.push(pkg.hashtags.join(' '));
+  L.push('');
+  L.push('## カルーセル（' + pkg.slides.length + '枚）');
+  pkg.slides.forEach(function(s) { L.push('- #' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.headline); });
+  L.push('');
+  L.push('## 画像生成プロンプト');
+  pkg.imagePrompts.forEach(function(p) { L.push('- #' + p.slideNumber + ' ' + p.prompt); });
+  L.push('');
+  L.push('## 投稿チェックリスト');
+  checklist.forEach(function(c) { L.push('- ' + (c.done ? '[x]' : '[ ]') + ' ' + c.label); });
+  L.push('');
+  L.push('## 注意事項');
+  notes.forEach(function(n) { L.push('- ' + n); });
+  return L.join('\n');
+}
+
+// Phase50-7: Publishing Ready Center Draft生成（Mobile ApprovalのpublishingReadyInput/approvalPackageを参照。null draftでも例外なし）
+function createPublishingReadyDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var approval = outputDraft.mobileApproval || createMobileApprovalDraft(outputDraft);
+  if (!approval || !approval.publishingReadyInput) return null;
+  var pri = approval.publishingReadyInput;
+  var pkg = approval.approvalPackage;
+  var pub = outputDraft.publishing || createPublishingDraft(outputDraft);
+  var design = outputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(outputDraft);
+  var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
+
+  var approvalStatus = pri.approvalStatus;
+  var status = _prcStatus(approvalStatus);
+  var published = _publishingReadyState.published;
+
+  var title = (pub && pub.title) || (pri.template ? pri.template.name : 'Instagram投稿');
+  var caption = pri.caption || (pub && pub.description) || '';
+  var cta = pri.cta || (pub && pub.cta) || '';
+  var hashtags = (pri.hashtags && pri.hashtags.length) ? pri.hashtags.slice() : ((pub && pub.hashtags) || []).slice();
+  var slides = pri.slides.slice();
+  var imageList = (pub && Array.isArray(pub.imageList) && pub.imageList.length) ? pub.imageList.slice()
+    : slides.map(function(s) { return 'スライド' + s.slideNumber + ' 画像（手動生成）'; });
+  var imagePrompts = (design && Array.isArray(design.slides))
+    ? design.slides.map(function(s) { return { slideNumber: s.slideNumber, prompt: s.imagePromptSeed }; })
+    : ((builder && builder.imageLayoutEngineInput && builder.imageLayoutEngineInput.imagePromptSeeds) ? builder.imageLayoutEngineInput.imagePromptSeeds.slice() : []);
+  var publishDateTime = (pub && pub.publishTimeSuggestion) || '平日 12:00-13:00 または 19:00-21:00（目安・要調整）';
+
+  var postingChecklist = [
+    { label: 'カルーセル画像を生成（手動・ユーザー承認後）', done: false },
+    { label: '背景＋文字レイアウトを確認', done: false },
+    { label: '投稿本文（Caption）を貼り付け', done: !!caption },
+    { label: 'ハッシュタグを貼り付け', done: hashtags.length > 0 },
+    { label: 'CTA/プロフィール導線を確認', done: !!cta },
+    { label: '投稿時間を確認', done: !!publishDateTime },
+    { label: 'Mobile Approvalで承認済みであること', done: approvalStatus === 'approved' },
+  ];
+
+  var notes = [
+    'Version1では自動投稿は行いません。Instagramアプリ/Webから手動で投稿してください。',
+    '画像生成・文字入れはユーザー承認後の手動作業です（本Phaseでは生成しません）。',
+    'アフィリエイトはPR表記を守ってください。',
+  ];
+
+  var scoreDetail = scorePublishingReady({ approvalStatus: approvalStatus, caption: caption, cta: cta, hashtags: hashtags, slides: slides, published: published, archived: _publishingReadyState.archived });
+  var publishingScore = scoreDetail.publishingScore;
+
+  var assetLibraryReady = {
+    caption: caption, hashtags: hashtags, slides: slides, template: pri.template,
+    scores: { designScore: pri.designScore, carouselScore: pri.carouselScore, publishingScore: publishingScore },
+    date: _publishingReadyState.publishedAt, approval: approvalStatus,
+  };
+  var learningReady = {
+    postedAt: _publishingReadyState.publishedAt, template: pri.template ? pri.template.name : '',
+    designScore: pri.designScore, carouselScore: pri.carouselScore,
+    plannedMetrics: ['saveRate', 'reach', 'profileVisits', 'followRate', 'cv'],
+    note: '投稿後に実績を手動入力しInstagram Marketing Intelligenceへ反映。分析はPhase51で拡張予定（Version1は保存のみ）',
+  };
+
+  var packageObj = {
+    title: title, caption: caption, cta: cta, hashtags: hashtags, slides: slides, imageList: imageList,
+    imagePrompts: imagePrompts, publishDateTime: publishDateTime, template: pri.template,
+    scores: assetLibraryReady.scores, approvalStatus: approvalStatus, publishingStatus: status,
+  };
+  var saveMarkdown = _prcBuildSaveMarkdown(packageObj, postingChecklist, notes);
+  var saveJson = JSON.stringify(packageObj, null, 2);
+
+  var summary = _prcBuildSummary(approvalStatus, pri, slides, caption, hashtags, published);
+
+  var version1Review = [
+    { label: 'Instagram収益化へ直接つながるか', note: '投稿に必要な収益導線付き一式（本文/CTA/ハッシュタグ/カルーセル/プロンプト）を1画面へ集約し、手動投稿で収益化を開始できる状態にする' },
+    { label: 'Version1完成条件へ近づいたか', note: '市場分析→…→承認→投稿準備完了までの「投稿直前」を完成。手動投稿→Learning→Asset Library保存へ接続' },
+    { label: 'iPhone運用へ近づいたか', note: 'モバイル最適化UIで投稿一式をコピー→Instagramアプリへ貼り付け可能。「投稿しました」ボタンで手動投稿を記録' },
+  ];
+
+  var warnings = ['本Phaseは投稿直前パッケージの集約のみです。自動投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行いません（投稿は手動）。'];
+  if (approvalStatus !== 'approved' && !published) warnings.push('Mobile Approvalで承認されていません。承認後に投稿準備が完了します。');
+
+  return {
+    version: PUBLISHING_READY_VERSION,
+    safetyLabels: PRC_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    publishingStatus: status,
+    canPublish: approvalStatus === 'approved',
+    published: published,
+    publishedAt: _publishingReadyState.publishedAt,
+    archived: _publishingReadyState.archived,
+    title: title, caption: caption, cta: cta, hashtags: hashtags, slides: slides, imageList: imageList,
+    imagePrompts: imagePrompts, publishDateTime: publishDateTime, postingChecklist: postingChecklist, notes: notes,
+    publishingScore: publishingScore, scoreDetail: scoreDetail, summary: summary,
+    assetLibraryReady: assetLibraryReady, learningReady: learningReady,
+    saveMarkdown: saveMarkdown, saveJson: saveJson, package: packageObj,
+    version1Review: version1Review, warnings: warnings,
+  };
+}
+
+function _prcRerender() {
+  if (_lastOutputDraft) _lastOutputDraft.publishingReady = createPublishingReadyDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+// 「投稿しました」手動ボタン（承認済みのときのみPublishedへ変更。実投稿は行わない・状態の記録のみ）
+function markInstagramPublished() {
+  var approval = _lastOutputDraft ? (_lastOutputDraft.mobileApproval || createMobileApprovalDraft(_lastOutputDraft)) : null;
+  var approved = approval && approval.publishingReadyInput && approval.publishingReadyInput.approvalStatus === 'approved';
+  if (!approved) return;
+  _publishingReadyState.published = true;
+  _publishingReadyState.publishedAt = new Date().toISOString();
+  _prcRerender();
+}
+
+function archivePublishingReady() {
+  if (_publishingReadyState.published) { _publishingReadyState.archived = true; _prcRerender(); }
+}
+
+function resetPublishingReadyStatus() {
+  _publishingReadyState.published = false;
+  _publishingReadyState.publishedAt = null;
+  _publishingReadyState.archived = false;
+  _prcRerender();
+}
+
+function _prcBuildFullText(draft) {
+  var L = ['【Instagram Publishing Package】', ''];
+  L.push('Status: ' + (PRC_STATUS_LABELS[draft.publishingStatus] || draft.publishingStatus) + ' / Publishing Score: ' + draft.publishingScore);
+  L.push('投稿予定: ' + draft.publishDateTime);
+  L.push('');
+  L.push('■ タイトル: ' + draft.title);
+  L.push('');
+  L.push('■ 投稿本文（Caption）');
+  L.push(draft.caption || '（未設定）');
+  L.push('');
+  L.push('■ CTA: ' + (draft.cta || '（未設定）'));
+  L.push('');
+  L.push('■ ハッシュタグ（' + draft.hashtags.length + '件）');
+  L.push(draft.hashtags.join(' '));
+  L.push('');
+  L.push('■ カルーセル（' + draft.slides.length + '枚）');
+  draft.slides.forEach(function(s) { L.push('#' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.headline); });
+  L.push('');
+  L.push('■ 画像生成プロンプト');
+  draft.imagePrompts.forEach(function(p) { L.push('#' + p.slideNumber + ' ' + p.prompt); });
+  L.push('');
+  L.push('■ 投稿チェックリスト');
+  draft.postingChecklist.forEach(function(c) { L.push((c.done ? '☑' : '☐') + ' ' + c.label); });
+  L.push('');
+  L.push('■ 注意事項');
+  draft.notes.forEach(function(n) { L.push('・' + n); });
+  return L.join('\n');
+}
+
+function _prcCopyToClipboard(text) {
+  var msg = document.getElementById('oe-prc-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-7: コピー（Caption / Hashtags / CTA / Prompt / Markdown / JSON / Full Package）
+function copyPublishingReadyField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.publishingReady || createPublishingReadyDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'caption') text = draft.caption || '';
+  else if (type === 'hashtags') text = draft.hashtags.join(' ');
+  else if (type === 'cta') text = draft.cta || '';
+  else if (type === 'prompt') text = draft.imagePrompts.map(function(p) { return '#' + p.slideNumber + ' ' + p.prompt; }).join('\n');
+  else if (type === 'markdown') text = draft.saveMarkdown;
+  else if (type === 'json') text = draft.saveJson;
+  else if (type === 'full') text = _prcBuildFullText(draft);
+  if (!text) return;
+  _prcCopyToClipboard(text);
+}
+
+// Phase50-7: Publishing Ready Center HTML生成（Mobile Approvalの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
+function buildPublishingReadyHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.publishingReady || createPublishingReadyDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.publishingReady = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-prc-badge">' + esc(l) + '</span>'; }).join('');
+
+  var statusHtml = '<div class="oe-prc-statusrow"><span class="oe-prc-statuschip oe-prc-st-' + draft.publishingStatus + '">' + esc(PRC_STATUS_LABELS[draft.publishingStatus] || draft.publishingStatus) + '</span>'
+    + (draft.publishedAt ? '<span class="oe-prc-meta">投稿記録: ' + esc(draft.publishedAt) + '</span>' : '') + '</div>';
+
+  var sd = draft.scoreDetail;
+  var axisKeys = ['readiness', 'caption', 'cta', 'hashtag', 'carousel', 'approval', 'learning', 'archive'];
+  var axisChips = axisKeys.map(function(k) { return '<span class="oe-prc-chip">' + esc(PRC_AXIS_LABELS[k]) + ' ' + sd[k] + '</span>'; }).join('');
+  var scoreBar = '<div class="oe-prc-scorebar"><span class="oe-prc-scorebig">' + draft.publishingScore + '</span>'
+    + '<div><div class="oe-prc-scorelabel">Publishing Score（投稿準備度・0〜100）</div><div class="oe-prc-chips">' + axisChips + '</div></div></div>';
+
+  var summaryHtml = '<div class="oe-prc-summary">' + draft.summary.map(function(r) {
+    return '<div class="oe-prc-sumcell"><span class="oe-prc-sumk">' + esc(r.label) + '</span><span class="oe-prc-sumv' + (r.ok ? ' ok' : '') + '">' + esc(r.value) + '</span></div>';
+  }).join('') + '</div>';
+
+  var slidesTags = draft.slides.map(function(s) { return '<span class="oe-prc-tag">#' + s.slideNumber + ' ' + esc(s.headline) + '</span>'; }).join('');
+  var promptsHtml = draft.imagePrompts.map(function(p) { return '<div class="oe-prc-meta">#' + p.slideNumber + ' ' + esc(p.prompt) + '</div>'; }).join('');
+
+  var packageHtml = '<div class="oe-prc-block"><div class="oe-prc-blockt">投稿タイトル</div><div class="oe-prc-meta">' + esc(draft.title) + '</div></div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">投稿本文（Caption）</div><div class="oe-prc-meta">' + esc(draft.caption || '（未設定）') + '</div></div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">CTA</div><div class="oe-prc-meta">' + esc(draft.cta || '（未設定）') + '</div></div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">ハッシュタグ（' + draft.hashtags.length + '件）</div><div class="oe-prc-meta">' + esc(draft.hashtags.join(' ')) + '</div></div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">カルーセル10枚</div><div>' + slidesTags + '</div></div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">画像一覧</div><div class="oe-prc-meta">' + esc(draft.imageList.join(' / ')) + '</div></div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">画像生成プロンプト</div>' + promptsHtml + '</div>'
+    + '<div class="oe-prc-block"><div class="oe-prc-blockt">投稿予定日時</div><div class="oe-prc-meta">' + esc(draft.publishDateTime) + '</div></div>';
+
+  var checklistHtml = '<div class="oe-prc-block"><div class="oe-prc-blockt">投稿チェックリスト</div>'
+    + draft.postingChecklist.map(function(c) { return '<div class="oe-prc-checkrow">' + (c.done ? '☑' : '☐') + ' ' + esc(c.label) + '</div>'; }).join('') + '</div>';
+
+  var notesHtml = '<div class="oe-prc-block"><div class="oe-prc-blockt">注意事項</div>'
+    + draft.notes.map(function(n) { return '<div class="oe-prc-meta">・' + esc(n) + '</div>'; }).join('') + '</div>';
+
+  var pubBtn;
+  if (draft.published) {
+    pubBtn = '<button class="oe-prc-pubbtn done">✅ 投稿しました（Published）</button>'
+      + (draft.archived ? '' : '<button class="oe-prc-subbtn" onclick="archivePublishingReady()">Asset Libraryへ保存済みにする（Archived）</button>')
+      + '<button class="oe-prc-subbtn" onclick="resetPublishingReadyStatus()">状態をリセット</button>';
+  } else if (draft.canPublish) {
+    pubBtn = '<button class="oe-prc-pubbtn" onclick="markInstagramPublished()">投稿しました（手動投稿を記録）</button>';
+  } else {
+    pubBtn = '<button class="oe-prc-pubbtn" disabled>投稿しました（Mobile Approvalで承認後に有効）</button>';
+  }
+
+  var readyBlocks = '';
+  if (draft.published) {
+    readyBlocks = '<div class="oe-prc-ready"><div class="oe-prc-ready-title">📚 Asset Library Ready（保存対象・表示のみ）</div>'
+      + '<div class="oe-prc-meta">caption / hashtags(' + draft.hashtags.length + ') / slides(' + draft.slides.length + ') / template(' + esc(draft.assetLibraryReady.template ? draft.assetLibraryReady.template.name : '') + ') / scores(D' + draft.assetLibraryReady.scores.designScore + '/C' + draft.assetLibraryReady.scores.carouselScore + '/P' + draft.assetLibraryReady.scores.publishingScore + ') / date(' + esc(draft.assetLibraryReady.date || '-') + ') / approval(' + esc(draft.assetLibraryReady.approval) + ')</div></div>'
+      + '<div class="oe-prc-ready"><div class="oe-prc-ready-title">🎓 Learning Ready（保存のみ・分析はPhase51）</div>'
+      + '<div class="oe-prc-meta">postedAt: ' + esc(draft.learningReady.postedAt || '-') + ' / 計測予定: ' + draft.learningReady.plannedMetrics.join(', ') + '<br>' + esc(draft.learningReady.note) + '</div></div>';
+  }
+
+  var reviewHtml = draft.version1Review.map(function(c) {
+    return '<div class="oe-prc-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-prc-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-prc-section">'
+    + '<div class="oe-prc-title">🚀 Publishing Ready Center <span style="font-weight:400;opacity:.5;">v' + PUBLISHING_READY_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + statusHtml
+    + scoreBar
+    + '<div class="oe-pkg-label">Publishing Summary</div>'
+    + summaryHtml
+    + '<div class="oe-pkg-label">投稿直前パッケージ</div>'
+    + packageHtml
+    + checklistHtml
+    + notesHtml
+    + '<div class="oe-pkg-label">手動投稿</div>'
+    + pubBtn
+    + readyBlocks
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-prc-copyrow">'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'caption\')">Copy Caption</button>'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'hashtags\')">Copy Hashtags</button>'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'cta\')">Copy CTA</button>'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'prompt\')">Copy Prompt</button>'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'markdown\')">Copy Markdown</button>'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'json\')">Copy JSON</button>'
+    +   '<button class="oe-prc-btn" onclick="copyPublishingReadyField(\'full\')">Copy Full Package</button>'
+    +   '<span id="oe-prc-copy-msg" class="oe-prc-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-7: Export反映
+function appendPublishingReadyToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.publishingReady || createPublishingReadyDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Publishing Ready (Phase50-7)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  lines.push('- Publishing Status: ' + (PRC_STATUS_LABELS[draft.publishingStatus] || draft.publishingStatus));
+  lines.push('- Publishing Score: ' + draft.publishingScore + '（' + ['readiness', 'caption', 'cta', 'hashtag', 'carousel', 'approval', 'learning', 'archive'].map(function(k) { return PRC_AXIS_LABELS[k] + ' ' + draft.scoreDetail[k]; }).join(' / ') + '）');
+  lines.push('- Title: ' + draft.title);
+  lines.push('- Caption: ' + (draft.caption || '（未設定）'));
+  lines.push('- CTA: ' + (draft.cta || '（未設定）'));
+  lines.push('- Hashtags (' + draft.hashtags.length + '): ' + draft.hashtags.join(' '));
+  lines.push('- Carousel (' + draft.slides.length + '):');
+  draft.slides.forEach(function(s) { lines.push('  - #' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.headline); });
+  lines.push('- Publish DateTime: ' + draft.publishDateTime);
+  lines.push('- Posting Checklist:');
+  draft.postingChecklist.forEach(function(c) { lines.push('  - ' + (c.done ? '[x]' : '[ ]') + ' ' + c.label); });
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+  lines.push('- Asset Library Ready: ' + (draft.published ? 'yes' : 'after posting') + ' / Learning Ready: ' + (draft.published ? 'yes' : 'after posting'));
+}
+
+function appendPublishingReadyToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.publishingReady || createPublishingReadyDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.publishingReady = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    publishingStatus: draft.publishingStatus,
+    published: draft.published,
+    publishedAt: draft.publishedAt,
+    archived: draft.archived,
+    publishingScore: draft.publishingScore,
+    scoreDetail: draft.scoreDetail,
+    summary: draft.summary,
+    package: draft.package,
+    postingChecklist: draft.postingChecklist,
+    notes: draft.notes,
+    assetLibraryReady: draft.assetLibraryReady,
+    learningReady: draft.learningReady,
+    version1Review: draft.version1Review,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -29391,6 +29869,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildInstagramDesignHtml,          'InstagramDesignSystem')
     + _oeSafe(buildMobileReviewHtml,             'MobileReviewCenter')
     + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
+    + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
