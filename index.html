@@ -1005,6 +1005,33 @@
   .oe-icp-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
   .oe-icp-copymsg    { font-size: 10px; color: rgba(140,230,230,0.9); opacity: 0; transition: opacity 0.3s; }
   .oe-icp-copymsg.show { opacity: 1; }
+  /* Phase50-3: Instagram Carousel Builder */
+  .oe-icb-section    { border-radius: 10px; border: 1px solid rgba(150,120,255,0.32); background: linear-gradient(135deg, rgba(22,14,44,0.92), rgba(10,6,22,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-icb-title      { font-size: 11px; color: rgba(190,170,255,0.9); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-icb-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(150,120,255,0.16); color: rgba(200,180,255,0.95); border: 1px solid rgba(150,120,255,0.4); }
+  .oe-icb-scorebar   { display: flex; align-items: center; gap: 10px; background: rgba(150,120,255,0.08); border: 1px solid rgba(150,120,255,0.25); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+  .oe-icb-scorebig   { font-size: 22px; font-weight: 800; color: rgba(200,180,255,0.98); }
+  .oe-icb-scorelabel { font-size: 10px; color: rgba(255,255,255,0.6); }
+  .oe-icb-chips      { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .oe-icb-chip       { font-size: 9px; color: rgba(210,195,255,0.85); background: rgba(150,120,255,0.1); border: 1px solid rgba(150,120,255,0.22); border-radius: 8px; padding: 1px 7px; }
+  .oe-icb-card       { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px 11px; margin-bottom: 6px; }
+  .oe-icb-card.selected { border-color: rgba(150,120,255,0.6); background: rgba(150,120,255,0.09); }
+  .oe-icb-card.cta      { border-color: rgba(255,180,80,0.45); }
+  .oe-icb-card-head  { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .oe-icb-slidenum   { font-size: 9px; font-weight: 800; color: rgba(200,180,255,0.95); background: rgba(150,120,255,0.16); border-radius: 8px; padding: 2px 8px; white-space: nowrap; }
+  .oe-icb-role       { font-size: 9px; color: rgba(190,170,255,0.8); font-weight: 700; }
+  .oe-icb-headline   { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.88); margin: 2px 0; }
+  .oe-icb-meta       { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.6; }
+  .oe-icb-tag        { display: inline-block; font-size: 8px; color: rgba(210,195,255,0.85); background: rgba(150,120,255,0.1); border: 1px solid rgba(150,120,255,0.2); border-radius: 6px; padding: 1px 6px; margin: 2px 4px 0 0; }
+  .oe-icb-review     { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.7; margin-bottom: 3px; }
+  .oe-icb-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-icb-btn        { background: rgba(150,120,255,0.15); border: 1px solid rgba(150,120,255,0.4); border-radius: 14px; color: rgba(200,180,255,0.95); font-size: 10px; font-weight: 600; padding: 4px 12px; cursor: pointer; transition: background 0.15s; }
+  .oe-icb-btn:hover  { background: rgba(150,120,255,0.3); }
+  .oe-icb-selbtn     { background: rgba(150,120,255,0.1); border: 1px solid rgba(150,120,255,0.35); border-radius: 12px; color: rgba(200,180,255,0.9); font-size: 9px; font-weight: 600; padding: 2px 10px; cursor: pointer; }
+  .oe-icb-selbtn:hover { background: rgba(150,120,255,0.25); }
+  .oe-icb-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-icb-copymsg    { font-size: 10px; color: rgba(200,180,255,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-icb-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23032,6 +23059,7 @@ function serializeOutputDraft(format) {
     appendCreativeAssetLibraryToExportJson(jsonObj);
     appendInstagramMarketingIntelligenceToExportJson(jsonObj);
     appendInstagramContentPlanningToExportJson(jsonObj);
+    appendInstagramCarouselBuilderToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23268,6 +23296,7 @@ function serializeOutputDraft(format) {
   appendCreativeAssetLibraryToExportMarkdown(mdLines);
   appendInstagramMarketingIntelligenceToExportMarkdown(mdLines);
   appendInstagramContentPlanningToExportMarkdown(mdLines);
+  appendInstagramCarouselBuilderToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -27430,6 +27459,478 @@ function appendInstagramContentPlanningToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase50-3: Instagram Carousel Builder（Decision 039・Version1完成条件の「カルーセル構成」工程）
+// 目的: Phase50-2 Content Planning の carouselBuilderInput / selectedPlan / bestPlan をもとに、
+//   Instagramカルーセル10枚のスライド構成案を生成し、次工程 Phase50-4 Image Layout Engine へ
+//   渡せる imageLayoutEngineInput を作る。
+// 既存関数（Content Planning/Marketing Intelligence/Publishing/Creative Ad Assembly/Asset Library）は
+//   読み取り専用で参照する（中身は変更しない）。
+// 画像生成・背景画像生成・文字入れ画像生成・投稿・Instagram API接続・外部AI実行は一切行わない（Carousel Structure Only）。
+// ============================================================
+
+const INSTAGRAM_CAROUSEL_BUILDER_VERSION = '1.0.0';
+
+const ICB_SAFETY_LABELS = [
+  'Carousel Structure Only', 'No Image Generation', 'No Instagram API',
+  'No Auto Posting', 'No External AI Execution', 'User Approval Required',
+];
+
+// 選択中スライドIDはメモリ保持のみ（localStorage/DB/Asset Library/Learningへは書き込まない）
+let _instagramCarouselSlideSelectedId = null;
+
+// planningInputを安全に正規化（undefined排除。null draftでも例外を出さないための土台）
+function _icbNormalizeInput(pi) {
+  pi = pi || {};
+  function arr(a) { return Array.isArray(a) ? a : []; }
+  return {
+    theme: pi.theme || pi.selectedTheme || 'あなたのテーマ',
+    targetAudience: pi.targetAudience || '想定ターゲット',
+    painPoint: pi.painPoint || '解決したい悩み',
+    benefit: pi.benefit || '得られるメリット',
+    carouselAngle: pi.carouselAngle || 'ステップ形式で分かりやすく',
+    hookIdeas: arr(pi.hookIdeas),
+    suggestedCTA: pi.suggestedCTA || 'プロフィールのリンクから詳細をチェック',
+    suggestedHashtags: arr(pi.suggestedHashtags),
+    priorityScore: typeof pi.priorityScore === 'number' ? pi.priorityScore : 0,
+  };
+}
+
+// Phase50-3: 10枚カルーセルのスライド構成を生成（1枚目=フック / 10枚目=CTA・アフィリ導線）
+function buildInstagramCarouselSlides(planningInput) {
+  var pi = _icbNormalizeInput(planningInput);
+  var hooks = pi.hookIdeas;
+  var seed = pi.theme;
+  var sol = [
+    { h: '解決策① まず基本を押さえる', b: '最初のステップ：' + pi.benefit + 'に必要な土台を作る（具体内容に編集してください）' },
+    { h: '解決策② 効率を上げるコツ', b: '次に：ムダを省いて' + pi.benefit + 'を加速させる工夫（具体内容に編集してください）' },
+    { h: '解決策③ 続けて定着させる', b: '最後に：習慣化して' + pi.benefit + 'を安定させる（具体内容に編集してください）' },
+  ];
+  function mk(n, role, roleLabel, o) {
+    return {
+      slideId: 'icb-' + n, slideNumber: n, role: role, roleLabel: roleLabel,
+      headline: o.headline || '', bodyText: o.bodyText || '', visualDirection: o.visualDirection || '',
+      layoutHint: o.layoutHint || '', emotionTarget: o.emotionTarget || '', saveTrigger: o.saveTrigger || '',
+      ctaElement: o.ctaElement || '', imagePromptSeed: o.imagePromptSeed || '', textDensity: o.textDensity || 'medium',
+      priority: o.priority || 'medium', notes: o.notes || '',
+    };
+  }
+  return [
+    mk(1, 'hook', 'フック / タイトル', {
+      headline: hooks[0] || ('【保存版】' + pi.theme),
+      bodyText: hooks[1] || ('この投稿で' + pi.benefit + 'が分かります'),
+      visualDirection: '大きな文字で1行フック。高コントラスト背景で視認性最優先',
+      layoutHint: 'タイトル中央大・余白多め・文字比率9割',
+      emotionTarget: '興味・保存欲', saveTrigger: '保存したくなる強いタイトル',
+      imagePromptSeed: seed + ' title card, bold japanese typography, high contrast, minimal background',
+      textDensity: 'low', priority: 'high', notes: '3秒で内容が伝わるかを最優先。1枚目が全体の保存率を決める',
+    }),
+    mk(2, 'empathy', '共感・悩み提示', {
+      headline: 'こんな悩み、ありませんか？', bodyText: pi.painPoint,
+      visualDirection: '悩みを象徴する人物/状況イメージ＋短い共感コピー',
+      layoutHint: '上に見出し・下に箇条書き2〜3行', emotionTarget: '共感・自分ごと化',
+      saveTrigger: '自分ごと化で「後で読む」動機づけ',
+      imagePromptSeed: seed + ' relatable struggle scene, empathetic mood, soft tone',
+      textDensity: 'medium', priority: 'high', notes: 'ターゲット（' + pi.targetAudience + '）の悩みに具体的に触れる',
+    }),
+    mk(3, 'cause', '問題の原因', {
+      headline: 'その原因は？', bodyText: '多くの人が上手くいかないのは、正しい進め方を知らないから',
+      visualDirection: '原因を図解する矢印/対比イメージ', layoutHint: '原因を1〜2点に絞って図解',
+      emotionTarget: '納得・気づき', saveTrigger: '「なるほど」で保存動機',
+      imagePromptSeed: seed + ' cause explanation diagram, arrows, simple infographic',
+      textDensity: 'medium', priority: 'medium', notes: '原因は絞る。多すぎると離脱される',
+    }),
+    mk(4, 'solution_1', '解決策1', {
+      headline: sol[0].h, bodyText: sol[0].b,
+      visualDirection: 'ステップ番号①を大きく＋要点', layoutHint: '番号大・本文3行以内',
+      emotionTarget: '期待・前向き', saveTrigger: '手順として保存したくなる',
+      imagePromptSeed: seed + ' step 1 illustration, numbered, clean layout',
+      textDensity: 'medium', priority: 'high', notes: '具体的なアクションに編集してください（テンプレート）',
+    }),
+    mk(5, 'solution_2', '解決策2', {
+      headline: sol[1].h, bodyText: sol[1].b,
+      visualDirection: 'ステップ番号②を大きく＋要点', layoutHint: '番号大・本文3行以内',
+      emotionTarget: '期待・前向き', saveTrigger: '手順として保存したくなる',
+      imagePromptSeed: seed + ' step 2 illustration, numbered, clean layout',
+      textDensity: 'medium', priority: 'high', notes: '具体的なアクションに編集してください（テンプレート）',
+    }),
+    mk(6, 'solution_3', '解決策3', {
+      headline: sol[2].h, bodyText: sol[2].b,
+      visualDirection: 'ステップ番号③を大きく＋要点', layoutHint: '番号大・本文3行以内',
+      emotionTarget: '期待・前向き', saveTrigger: '手順として保存したくなる',
+      imagePromptSeed: seed + ' step 3 illustration, numbered, clean layout',
+      textDensity: 'medium', priority: 'medium', notes: '具体的なアクションに編集してください（テンプレート）',
+    }),
+    mk(7, 'caution', '比較・NG例・注意点', {
+      headline: 'やりがちなNG', bodyText: '逆効果になりやすい例に注意。正しい方法と対比して確認しよう',
+      visualDirection: 'NG→OKのビフォーアフター対比', layoutHint: '左NG/右OKの2分割',
+      emotionTarget: '不安回避・安心', saveTrigger: '失敗回避のため保存',
+      imagePromptSeed: seed + ' NG vs OK comparison, split layout, red and green accents',
+      textDensity: 'medium', priority: 'high', notes: 'NGは共感度が高く保存されやすい',
+    }),
+    mk(8, 'howto', '実践手順', {
+      headline: '今日からできる手順', bodyText: '①準備 → ②実行 → ③振り返り の順で進めると継続しやすい',
+      visualDirection: 'チェックリスト/フロー図', layoutHint: '手順を番号付きで縦に整理',
+      emotionTarget: '行動意欲', saveTrigger: '実践チェックリストとして保存',
+      imagePromptSeed: seed + ' actionable checklist, step flow, clean icons',
+      textDensity: 'high', priority: 'medium', notes: '手順は3ステップ程度に圧縮する',
+    }),
+    mk(9, 'summary', 'まとめ・保存促進', {
+      headline: 'まとめ', bodyText: pi.benefit + 'のために大事なポイントを保存して見返そう',
+      visualDirection: '要点3つを箇条書き＋保存アイコン誘導', layoutHint: '要点を3行に集約・保存アイコンを明示',
+      emotionTarget: '満足・保存', saveTrigger: '「保存して見返す」を明示的に促す', ctaElement: '保存促進',
+      imagePromptSeed: seed + ' summary slide, 3 key points, save icon highlight',
+      textDensity: 'medium', priority: 'high', notes: '保存を直接促す文言を入れる',
+    }),
+    mk(10, 'cta', 'CTA / プロフィール誘導 / アフィリ導線', {
+      headline: pi.suggestedCTA, bodyText: '👉 プロフィールのリンクから詳しくチェック（PR）',
+      visualDirection: 'CTAボタン風の強調＋プロフィールへ上矢印誘導', layoutHint: 'CTA中央大・導線を明示',
+      emotionTarget: '行動・クリック', saveTrigger: '最後にもう一度保存を促す',
+      ctaElement: 'プロフィール誘導＋アフィリエイトリンク訴求',
+      imagePromptSeed: seed + ' call to action slide, arrow up to profile, button style, PR label',
+      textDensity: 'low', priority: 'high', notes: 'アフィリはPR表記を守る。実リンク設置・投稿は手動・ユーザー承認後',
+    }),
+  ];
+}
+
+// Phase50-3: 保存率重視でカルーセル全体を8軸評価し、総合carouselScoreを算出する
+function scoreInstagramCarouselStructure(slides) {
+  function clamp(n) { return Math.max(0, Math.min(100, Math.round(typeof n === 'number' ? n : 0))); }
+  if (!Array.isArray(slides) || !slides.length) {
+    return { hookStrength: 0, saveRatePotential: 0, readability: 0, storyFlow: 0, affiliateFlow: 0, ctaStrength: 0, mobileReadability: 0, layoutReadiness: 0, carouselScore: 0 };
+  }
+  var total = slides.length;
+  function find(role) { return slides.filter(function(s) { return s.role === role; })[0] || null; }
+  var hook = find('hook'), cta = find('cta'), summary = find('summary');
+  var saveCount = slides.filter(function(s) { return s.saveTrigger; }).length;
+  var layoutReady = slides.filter(function(s) { return s.layoutHint && s.visualDirection && s.imagePromptSeed; }).length;
+  var densMap = { low: 100, medium: 70, high: 40 };
+  var densAvg = slides.reduce(function(a, s) { return a + (densMap[s.textDensity] || 70); }, 0) / total;
+  var highDens = slides.filter(function(s) { return s.textDensity === 'high'; }).length;
+
+  var hookStrength = clamp((hook && hook.headline ? 70 : 25) + (hook && hook.headline && hook.headline.length >= 8 ? 20 : 0) + (hook && hook.saveTrigger ? 10 : 0));
+  var saveRatePotential = clamp((saveCount / total) * 80 + (summary ? 20 : 0));
+  var readability = clamp(densAvg);
+  var expected = ['hook', 'empathy', 'cause', 'solution_1', 'solution_2', 'solution_3', 'caution', 'howto', 'summary', 'cta'];
+  var matched = 0;
+  expected.forEach(function(r, i) { if (slides[i] && slides[i].role === r) matched++; });
+  var storyFlow = clamp((matched / expected.length) * 100);
+  var ctaText = cta ? ((cta.ctaElement || '') + (cta.bodyText || '')) : '';
+  var affiliateFlow = clamp((cta && cta.ctaElement ? 70 : 30) + (/プロフィ|アフィ|リンク/.test(ctaText) ? 20 : 0) + (summary ? 10 : 0));
+  var ctaStrength = clamp((cta && cta.headline ? 60 : 20) + (cta && cta.ctaElement ? 25 : 0) + (cta && cta.saveTrigger ? 15 : 0));
+  var mobileReadability = clamp(densAvg * 0.7 + 30 - highDens * 5);
+  var layoutReadiness = clamp((layoutReady / total) * 100);
+
+  var w = { hook: 0.15, save: 0.20, read: 0.12, story: 0.13, aff: 0.15, cta: 0.12, mobile: 0.08, layout: 0.05 };
+  var carouselScore = clamp(hookStrength * w.hook + saveRatePotential * w.save + readability * w.read + storyFlow * w.story
+    + affiliateFlow * w.aff + ctaStrength * w.cta + mobileReadability * w.mobile + layoutReadiness * w.layout);
+
+  return {
+    hookStrength: hookStrength, saveRatePotential: saveRatePotential, readability: readability, storyFlow: storyFlow,
+    affiliateFlow: affiliateFlow, ctaStrength: ctaStrength, mobileReadability: mobileReadability, layoutReadiness: layoutReadiness,
+    carouselScore: carouselScore,
+  };
+}
+
+var ICB_AXIS_LABELS = {
+  hookStrength: 'フック強度', saveRatePotential: '保存率ポテンシャル', readability: '可読性', storyFlow: 'ストーリー展開',
+  affiliateFlow: 'アフィリエイト導線', ctaStrength: 'CTA強度', mobileReadability: 'モバイル可読性', layoutReadiness: 'レイアウト準備度',
+};
+
+function _icbBuildStructureReview(score) {
+  var keys = ['hookStrength', 'saveRatePotential', 'readability', 'storyFlow', 'affiliateFlow', 'ctaStrength', 'mobileReadability', 'layoutReadiness'];
+  var strengths = [], improvements = [];
+  keys.forEach(function(k) {
+    if (score[k] >= 80) strengths.push(ICB_AXIS_LABELS[k] + '（' + score[k] + '点）');
+    else if (score[k] < 60) improvements.push(ICB_AXIS_LABELS[k] + '（' + score[k] + '点）を強化推奨');
+  });
+  var review = { carouselScore: score.carouselScore, strengths: strengths, improvements: improvements };
+  keys.forEach(function(k) { review[k] = score[k]; });
+  return review;
+}
+
+// Phase50-3: Instagram Carousel Builder Draft生成（selectedPlan優先→bestPlan→outputDraftからfallback。null draftでも例外なし）
+function createInstagramCarouselBuilderDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var planning = outputDraft.instagramContentPlanning || createInstagramContentPlanningDraft(outputDraft);
+  var sourceMeta = { source: 'fallback', theme: null, priorityScore: 0, usedSelected: false };
+  var piRaw = null;
+
+  if (planning) {
+    var plan = planning.selectedPlan || planning.bestPlan || null;
+    if (planning.carouselBuilderInput) {
+      piRaw = planning.carouselBuilderInput;
+    } else if (plan) {
+      piRaw = {
+        theme: plan.title, targetAudience: plan.targetAudience, painPoint: plan.painPoint, benefit: plan.benefit,
+        carouselAngle: plan.carouselAngle, hookIdeas: plan.hookIdeas, suggestedCTA: plan.suggestedCTA,
+        suggestedHashtags: plan.suggestedHashtags, priorityScore: plan.priorityScore,
+      };
+    }
+    if (plan) {
+      sourceMeta.source = planning.selectedPlan ? 'selectedPlan' : 'bestPlan';
+      sourceMeta.usedSelected = !!planning.selectedPlan;
+      sourceMeta.theme = plan.title;
+      sourceMeta.priorityScore = plan.priorityScore;
+    }
+  }
+  if (!piRaw) {
+    var f = outputDraft.fields || {};
+    var pubF = outputDraft.publishing || null;
+    piRaw = {
+      theme: f.title || f.theme || f.benefit || '', targetAudience: f.targetAudience || '', painPoint: f.painPoint || '',
+      benefit: f.benefit || '', carouselAngle: '', hookIdeas: [], suggestedCTA: (pubF && pubF.cta) || '',
+      suggestedHashtags: (pubF && pubF.hashtags) || [], priorityScore: 0,
+    };
+    if (sourceMeta.theme === null) sourceMeta.theme = piRaw.theme || '（fallback）';
+  }
+
+  var pi = _icbNormalizeInput(piRaw);
+  var slides = buildInstagramCarouselSlides(pi);
+  var score = scoreInstagramCarouselStructure(slides);
+  var carouselScore = score.carouselScore;
+
+  var selectedSlide = null;
+  if (_instagramCarouselSlideSelectedId) {
+    selectedSlide = slides.filter(function(s) { return s.slideId === _instagramCarouselSlideSelectedId; })[0] || null;
+  }
+  var ctaSlide = slides.filter(function(s) { return s.role === 'cta'; })[0] || null;
+
+  var imageLayoutEngineInput = {
+    theme: pi.theme,
+    targetAudience: pi.targetAudience,
+    carouselScore: carouselScore,
+    slides: slides,
+    visualDirection: pi.carouselAngle,
+    layoutHints: slides.map(function(s) { return { slideNumber: s.slideNumber, role: s.role, layoutHint: s.layoutHint }; }),
+    imagePromptSeeds: slides.map(function(s) { return { slideNumber: s.slideNumber, imagePromptSeed: s.imagePromptSeed }; }),
+    ctaSlide: ctaSlide,
+    suggestedHashtags: pi.suggestedHashtags.slice(),
+  };
+
+  var structureReview = _icbBuildStructureReview(score);
+
+  var version1Review = [
+    { label: 'Instagram収益化へ直接つながるか', note: '10枚目にアフィリエイト導線(プロフィール誘導)を配置し、affiliateFlow/ctaStrengthをcarouselScoreへ反映' },
+    { label: 'Version1完成条件へ近づいたか', note: '「カルーセル構成」工程を実装。imageLayoutEngineInputでPhase50-4 Image Layout Engineへ接続' },
+    { label: 'iPhone運用へ近づいたか', note: 'カルーセル構成をモバイル確認しやすい形へ整理。実際のiPhone確認・承認はPhase50-5/50-6で対応' },
+  ];
+
+  var warnings = ['本Phaseはカルーセル構成案のみです。画像生成・背景画像生成・文字入れ画像生成・投稿・Instagram API接続・外部AI実行は一切行っていません。'];
+  if (sourceMeta.source === 'fallback') warnings.push('Phase50-2 Content Planningの企画データが無いため、outputDraftの既存情報からfallbackで構成しています。');
+
+  return {
+    version: INSTAGRAM_CAROUSEL_BUILDER_VERSION,
+    safetyLabels: ICB_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    sourcePlanning: sourceMeta,
+    planningInput: pi,
+    slides: slides,
+    carouselScore: carouselScore,
+    structureReview: structureReview,
+    selectedSlide: selectedSlide,
+    imageLayoutEngineInput: imageLayoutEngineInput,
+    version1Review: version1Review,
+    warnings: warnings,
+  };
+}
+
+// スライド選択（メモリ保持のみ・DB/localStorage/Asset Library/Learningへは書き込まない）
+function selectInstagramCarouselSlide(slideId) {
+  _instagramCarouselSlideSelectedId = slideId;
+  if (_lastOutputDraft) _lastOutputDraft.instagramCarouselBuilder = createInstagramCarouselBuilderDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function _icbBuildSlideText(s) {
+  var L = [];
+  L.push('Slide ' + s.slideNumber + ' [' + s.roleLabel + ']');
+  L.push('  Headline: ' + s.headline);
+  L.push('  Body: ' + s.bodyText);
+  L.push('  Visual: ' + s.visualDirection);
+  L.push('  Layout: ' + s.layoutHint);
+  L.push('  Emotion: ' + s.emotionTarget + ' / SaveTrigger: ' + (s.saveTrigger || '-') + ' / CTA: ' + (s.ctaElement || '-'));
+  L.push('  TextDensity: ' + s.textDensity + ' / Priority: ' + s.priority);
+  L.push('  ImagePromptSeed: ' + s.imagePromptSeed);
+  L.push('  Notes: ' + s.notes);
+  return L.join('\n');
+}
+
+function _icbBuildLayoutInputText(input) {
+  if (!input) return '';
+  var L = ['【Image Layout Engine Input (Phase50-4)】', ''];
+  L.push('theme: ' + input.theme);
+  L.push('targetAudience: ' + input.targetAudience);
+  L.push('carouselScore: ' + input.carouselScore);
+  L.push('visualDirection: ' + input.visualDirection);
+  L.push('suggestedHashtags: ' + input.suggestedHashtags.join(' '));
+  L.push('');
+  L.push('layoutHints:');
+  input.layoutHints.forEach(function(h) { L.push('  #' + h.slideNumber + ' [' + h.role + '] ' + h.layoutHint); });
+  L.push('');
+  L.push('imagePromptSeeds:');
+  input.imagePromptSeeds.forEach(function(p) { L.push('  #' + p.slideNumber + ' ' + p.imagePromptSeed); });
+  if (input.ctaSlide) {
+    L.push('');
+    L.push('ctaSlide: #' + input.ctaSlide.slideNumber + ' ' + input.ctaSlide.headline);
+  }
+  return L.join('\n');
+}
+
+function _icbCopyToClipboard(text) {
+  var msg = document.getElementById('oe-icb-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-3: コピー（Full Carousel / Slide List / Image Prompt Seeds / Layout Brief / CTA Slide / Image Layout Engine Input）
+function copyInstagramCarouselBuilderField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'full') {
+    var L = ['【Instagram Carousel Builder (Phase50-3)】', '', 'Theme: ' + draft.sourcePlanning.theme, 'Carousel Score: ' + draft.carouselScore, 'Safety: ' + draft.safetyLabels.join(' / '), ''];
+    L.push('== Slides ==');
+    L.push(draft.slides.map(_icbBuildSlideText).join('\n\n'));
+    L.push('');
+    L.push(_icbBuildLayoutInputText(draft.imageLayoutEngineInput));
+    text = L.join('\n');
+  } else if (type === 'list') {
+    text = draft.slides.map(function(s) { return 'Slide ' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.headline; }).join('\n');
+  } else if (type === 'seeds') {
+    text = draft.slides.map(function(s) { return '#' + s.slideNumber + ' ' + s.imagePromptSeed; }).join('\n');
+  } else if (type === 'layout') {
+    text = draft.slides.map(function(s) { return '#' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.layoutHint + ' | ' + s.visualDirection; }).join('\n');
+  } else if (type === 'cta') {
+    var ctaSlide = draft.slides.filter(function(s) { return s.role === 'cta'; })[0];
+    text = ctaSlide ? _icbBuildSlideText(ctaSlide) : '';
+  } else if (type === 'layoutinput') {
+    text = _icbBuildLayoutInputText(draft.imageLayoutEngineInput);
+  }
+  if (!text) return;
+  _icbCopyToClipboard(text);
+}
+
+// Phase50-3: Instagram Carousel Builder HTML生成（Instagram Content Planningの直後に表示。データ不足でも安全に空文字を返す）
+function buildInstagramCarouselBuilderHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.instagramCarouselBuilder = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-icb-badge">' + esc(l) + '</span>'; }).join('');
+
+  var sr = draft.structureReview;
+  var axisKeys = ['hookStrength', 'saveRatePotential', 'readability', 'storyFlow', 'affiliateFlow', 'ctaStrength', 'mobileReadability', 'layoutReadiness'];
+  var axisChips = axisKeys.map(function(k) { return '<span class="oe-icb-chip">' + esc(ICB_AXIS_LABELS[k]) + ' ' + sr[k] + '</span>'; }).join('');
+
+  var scoreBar = '<div class="oe-icb-scorebar"><span class="oe-icb-scorebig">' + draft.carouselScore + '</span>'
+    + '<div><div class="oe-icb-scorelabel">Carousel Score（保存率重視・0〜100）</div><div class="oe-icb-chips">' + axisChips + '</div></div></div>';
+
+  var slidesHtml = draft.slides.map(function(s) {
+    var isSel = draft.selectedSlide && s.slideId === draft.selectedSlide.slideId;
+    var cls = 'oe-icb-card' + (isSel ? ' selected' : (s.role === 'cta' ? ' cta' : ''));
+    var tags = '<span class="oe-icb-tag">感情: ' + esc(s.emotionTarget) + '</span>'
+      + (s.saveTrigger ? '<span class="oe-icb-tag">保存: ' + esc(s.saveTrigger) + '</span>' : '')
+      + (s.ctaElement ? '<span class="oe-icb-tag">CTA: ' + esc(s.ctaElement) + '</span>' : '')
+      + '<span class="oe-icb-tag">密度: ' + esc(s.textDensity) + '</span>'
+      + '<span class="oe-icb-tag">優先: ' + esc(s.priority) + '</span>';
+    return '<div class="' + cls + '">'
+      + '<div class="oe-icb-card-head"><span class="oe-icb-slidenum">Slide ' + s.slideNumber + '</span><span class="oe-icb-role">' + esc(s.roleLabel) + '</span></div>'
+      + '<div class="oe-icb-headline">' + esc(s.headline) + '</div>'
+      + '<div class="oe-icb-meta">' + esc(s.bodyText) + '</div>'
+      + '<div class="oe-icb-meta">🎨 ' + esc(s.visualDirection) + '</div>'
+      + '<div class="oe-icb-meta">📐 ' + esc(s.layoutHint) + '</div>'
+      + '<div class="oe-icb-meta">🌱 ' + esc(s.imagePromptSeed) + '</div>'
+      + '<div>' + tags + '</div>'
+      + (s.notes ? '<div class="oe-icb-meta" style="opacity:.7;">📝 ' + esc(s.notes) + '</div>' : '')
+      + '<div style="margin-top:5px;"><button class="oe-icb-selbtn" onclick="selectInstagramCarouselSlide(\'' + esc(s.slideId) + '\')">' + (isSel ? '選択中' : 'このスライドを選択') + '</button></div>'
+      + '</div>';
+  }).join('');
+
+  var reviewHtml = draft.version1Review.map(function(c) {
+    return '<div class="oe-icb-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+
+  var improveHtml = (sr.improvements && sr.improvements.length)
+    ? '<div class="oe-pkg-label">改善推奨</div>' + sr.improvements.map(function(i) { return '<div class="oe-icb-meta">💡 ' + esc(i) + '</div>'; }).join('')
+    : '';
+
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-icb-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-icb-section">'
+    + '<div class="oe-icb-title">🎠 Instagram Carousel Builder <span style="font-weight:400;opacity:.5;">v' + INSTAGRAM_CAROUSEL_BUILDER_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + '<div class="oe-icb-meta">テーマ: ' + esc(draft.sourcePlanning.theme) + '（source: ' + esc(draft.sourcePlanning.source) + '）</div>'
+    + scoreBar
+    + '<div class="oe-pkg-label">カルーセル構成（10枚・1枚目フック / 10枚目CTA）</div>'
+    + slidesHtml
+    + improveHtml
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-icb-copyrow">'
+    +   '<button class="oe-icb-btn" onclick="copyInstagramCarouselBuilderField(\'full\')">Copy Full Carousel</button>'
+    +   '<button class="oe-icb-btn" onclick="copyInstagramCarouselBuilderField(\'list\')">Copy Slide List</button>'
+    +   '<button class="oe-icb-btn" onclick="copyInstagramCarouselBuilderField(\'seeds\')">Copy Image Prompt Seeds</button>'
+    +   '<button class="oe-icb-btn" onclick="copyInstagramCarouselBuilderField(\'layout\')">Copy Layout Brief</button>'
+    +   '<button class="oe-icb-btn" onclick="copyInstagramCarouselBuilderField(\'cta\')">Copy CTA Slide</button>'
+    +   '<button class="oe-icb-btn" onclick="copyInstagramCarouselBuilderField(\'layoutinput\')">Copy Image Layout Engine Input</button>'
+    +   '<span id="oe-icb-copy-msg" class="oe-icb-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-3: Export反映
+function appendInstagramCarouselBuilderToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Instagram Carousel Builder (Phase50-3)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  lines.push('- Theme: ' + draft.sourcePlanning.theme + '（source: ' + draft.sourcePlanning.source + '）');
+  lines.push('- Carousel Score: ' + draft.carouselScore);
+  lines.push('- Structure Review: ' + ['hookStrength', 'saveRatePotential', 'readability', 'storyFlow', 'affiliateFlow', 'ctaStrength', 'mobileReadability', 'layoutReadiness'].map(function(k) { return ICB_AXIS_LABELS[k] + ' ' + draft.structureReview[k]; }).join(' / '));
+  lines.push('- Slides (' + draft.slides.length + '):');
+  draft.slides.forEach(function(s) { lines.push('  - #' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.headline); });
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+  lines.push('- Image Layout Engine Input (Phase50-4): theme=' + draft.imageLayoutEngineInput.theme + ' / carouselScore=' + draft.imageLayoutEngineInput.carouselScore + ' / slides=' + draft.imageLayoutEngineInput.slides.length + ' / seeds=' + draft.imageLayoutEngineInput.imagePromptSeeds.length);
+}
+
+function appendInstagramCarouselBuilderToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.instagramCarouselBuilder = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    sourcePlanning: draft.sourcePlanning,
+    slides: draft.slides,
+    carouselScore: draft.carouselScore,
+    structureReview: draft.structureReview,
+    selectedSlide: draft.selectedSlide,
+    imageLayoutEngineInput: draft.imageLayoutEngineInput,
+    version1Review: draft.version1Review,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -27560,6 +28061,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildCreativeAssetLibraryHtml,     'CreativeAssetLibrary')
     + _oeSafe(buildInstagramMarketingIntelligenceHtml, 'InstagramMarketingIntelligence')
     + _oeSafe(buildInstagramContentPlanningHtml, 'InstagramContentPlanning')
+    + _oeSafe(buildInstagramCarouselBuilderHtml, 'InstagramCarouselBuilder')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
