@@ -979,6 +979,32 @@
   .oe-imi-copybtn:hover { background: rgba(255,80,150,0.3); }
   .oe-imi-copymsg     { font-size: 10px; color: rgba(255,140,190,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-imi-copymsg.show { opacity: 1; }
+  /* Phase50-2: Instagram Content Planning */
+  .oe-icp-section    { border-radius: 10px; border: 1px solid rgba(60,200,200,0.28); background: linear-gradient(135deg, rgba(6,34,40,0.92), rgba(3,16,20,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-icp-title      { font-size: 11px; color: rgba(120,220,220,0.9); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-icp-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(60,200,200,0.16); color: rgba(140,230,230,0.95); border: 1px solid rgba(60,200,200,0.4); }
+  .oe-icp-card       { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px 11px; margin-bottom: 7px; }
+  .oe-icp-card.best     { border-color: rgba(255,210,120,0.55); background: rgba(255,200,80,0.06); }
+  .oe-icp-card.selected { border-color: rgba(60,200,200,0.6); background: rgba(60,200,200,0.08); }
+  .oe-icp-card-head  { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .oe-icp-card-title { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.85); }
+  .oe-icp-priority   { font-size: 11px; font-weight: 800; color: rgba(140,230,230,0.95); background: rgba(60,200,200,0.15); border-radius: 10px; padding: 2px 9px; white-space: nowrap; }
+  .oe-icp-flag       { font-size: 8px; font-weight: 800; padding: 2px 6px; border-radius: 8px; margin-left: 5px; }
+  .oe-icp-flag.best     { color: rgba(255,215,130,0.98); background: rgba(255,200,80,0.16); border: 1px solid rgba(255,200,80,0.4); }
+  .oe-icp-flag.selected { color: rgba(140,230,230,0.98); background: rgba(60,200,200,0.16); border: 1px solid rgba(60,200,200,0.4); }
+  .oe-icp-meta       { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.7; }
+  .oe-icp-chips      { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0; }
+  .oe-icp-chip       { font-size: 9px; color: rgba(200,240,240,0.85); background: rgba(60,200,200,0.1); border: 1px solid rgba(60,200,200,0.22); border-radius: 8px; padding: 1px 7px; }
+  .oe-icp-reason     { font-size: 10px; color: rgba(140,230,230,0.85); line-height: 1.6; margin-top: 3px; }
+  .oe-icp-review     { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.7; margin-bottom: 3px; }
+  .oe-icp-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-icp-btn        { background: rgba(60,200,200,0.15); border: 1px solid rgba(60,200,200,0.4); border-radius: 14px; color: rgba(140,230,230,0.95); font-size: 10px; font-weight: 600; padding: 4px 12px; cursor: pointer; transition: background 0.15s; }
+  .oe-icp-btn:hover  { background: rgba(60,200,200,0.3); }
+  .oe-icp-selbtn     { background: rgba(60,200,200,0.1); border: 1px solid rgba(60,200,200,0.35); border-radius: 12px; color: rgba(140,230,230,0.9); font-size: 9px; font-weight: 600; padding: 2px 10px; cursor: pointer; }
+  .oe-icp-selbtn:hover { background: rgba(60,200,200,0.25); }
+  .oe-icp-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-icp-copymsg    { font-size: 10px; color: rgba(140,230,230,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-icp-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23005,6 +23031,7 @@ function serializeOutputDraft(format) {
     appendCreativeAdAssemblyToExportJson(jsonObj);
     appendCreativeAssetLibraryToExportJson(jsonObj);
     appendInstagramMarketingIntelligenceToExportJson(jsonObj);
+    appendInstagramContentPlanningToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23240,6 +23267,7 @@ function serializeOutputDraft(format) {
   appendCreativeAdAssemblyToExportMarkdown(mdLines);
   appendCreativeAssetLibraryToExportMarkdown(mdLines);
   appendInstagramMarketingIntelligenceToExportMarkdown(mdLines);
+  appendInstagramContentPlanningToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -26961,6 +26989,447 @@ function appendInstagramMarketingIntelligenceToExportJson(payload) {
   if (_instagramResultHistory.length) payload._instagramResultHistory = _instagramResultHistory.slice(0, 10);
 }
 
+// ============================================================
+// Phase50-2: Instagram Content Planning（Decision 039・Version1最優先ゴール = Instagram収益化支援）
+// 目的: 毎朝Instagramで伸びそうな投稿テーマを複数提案し、次工程 Phase50-3 Carousel Builder へ渡せる
+//   企画データ（carouselBuilderInput）を作る。市場分析→テーマ提案の工程を担う。
+// 既存のcreateInstagramMarketingIntelligenceDraft/createPublishingDraft/createCreativeAdAssemblyDraft/
+//   createCreativeAssetLibraryDraftは読み取り専用で参照する（中身は変更しない）。
+// 外部API・Instagram API・実トレンド取得・画像生成・投稿・外部AI実行・自動課金は一切行わない（Manual Planning Only）。
+// ============================================================
+
+const INSTAGRAM_CONTENT_PLANNING_VERSION = '1.0.0';
+
+const ICP_SAFETY_LABELS = [
+  'Manual Planning Only', 'No Instagram API', 'No Auto Posting',
+  'No External AI Execution', 'No Paid API', 'User Approval Required',
+];
+
+// 選択中テーマIDはメモリ保持のみ（localStorage/DB/Asset Library/Learningへは書き込まない）
+let _instagramContentPlanSelectedId = null;
+
+// 保存率が高いInstagramカルーセルの定番アングル（一般的な運用手法。外部データ取得・捏造はしない）
+const ICP_THEME_ARCHETYPES = [
+  {
+    key: 'list_roundup',
+    titleFn: function(t) { return '【保存版】' + t + ' おすすめ7選'; },
+    audienceFn: function(t) { return t + 'を検討中で選び方に迷っている人'; },
+    painPoint: '選択肢が多すぎて何を選べばいいか分からない',
+    benefit: '迷わず選べる決定版リストが手に入る',
+    carouselAngle: 'ランキング/比較形式で1枚1項目、最後に結論とCTA',
+    cta: '保存して見返す＋プロフィールのリンクから詳細をチェック',
+    base: { save: 88, reach: 72, profile: 60, affiliate: 90, carousel: 88, cta: 78, ease: 70, avoidance: 45 },
+    hookFn: function(t) { return ['知らないと損する' + t + 'を厳選', '9割が見落とす' + t + 'の選び方']; },
+  },
+  {
+    key: 'beginner_guide',
+    titleFn: function(t) { return '初心者向け ' + t + ' 完全ガイド'; },
+    audienceFn: function(t) { return t + 'をこれから始める初心者'; },
+    painPoint: '何から手をつければいいか分からず一歩踏み出せない',
+    benefit: '最初の一歩から迷わず進められる全体像が分かる',
+    carouselAngle: 'ステップ順に基礎→実践、専門用語を避けて図解的に',
+    cta: '保存して順番に実践＋質問はコメントへ',
+    base: { save: 80, reach: 85, profile: 62, affiliate: 72, carousel: 82, cta: 70, ease: 68, avoidance: 50 },
+    hookFn: function(t) { return ['今さら聞けない' + t + 'の基本', '初心者が最初にやるべき' + t]; },
+  },
+  {
+    key: 'mistakes_ng',
+    titleFn: function(t) { return 'やりがちな ' + t + ' のNG5つ'; },
+    audienceFn: function(t) { return t + 'で失敗したくない人'; },
+    painPoint: '知らないうちに損する失敗をしてしまう不安がある',
+    benefit: 'ありがちな失敗を先回りで回避できる',
+    carouselAngle: 'NG→正解のビフォーアフター対比で1枚ずつ',
+    cta: '保存して失敗を回避＋詳しくはプロフィールへ',
+    base: { save: 92, reach: 78, profile: 58, affiliate: 68, carousel: 85, cta: 72, ease: 75, avoidance: 60 },
+    hookFn: function(t) { return ['9割がやってる' + t + 'のNG', 'これやってたら要注意な' + t]; },
+  },
+  {
+    key: 'howto_steps',
+    titleFn: function(t) { return t + ' を始める5ステップ'; },
+    audienceFn: function(t) { return t + 'を始めたいが方法が分からない人'; },
+    painPoint: 'やり方が断片的で結局続かない',
+    benefit: '順番通りに進めるだけで成果が出せる',
+    carouselAngle: 'STEP1〜5を1枚ずつ、各ステップに具体アクション',
+    cta: '保存して今日から実践＋おすすめは概要欄リンクへ',
+    base: { save: 85, reach: 70, profile: 65, affiliate: 82, carousel: 84, cta: 80, ease: 72, avoidance: 55 },
+    hookFn: function(t) { return ['最短で' + t + 'を始める方法', '5分で分かる' + t + 'の始め方']; },
+  },
+  {
+    key: 'comparison',
+    titleFn: function(t) { return t + ' 徹底比較｜迷ったらこれ'; },
+    audienceFn: function(t) { return t + 'をどれにするか比較検討している人'; },
+    painPoint: '似た選択肢が多くどれが自分に合うか判断できない',
+    benefit: '目的別に自分に最適な選択肢がすぐ分かる',
+    carouselAngle: '比較表→目的別おすすめ→結論の順、CTAで詳細誘導',
+    cta: '目的別のおすすめはプロフィールのリンクから',
+    base: { save: 78, reach: 68, profile: 78, affiliate: 92, carousel: 80, cta: 82, ease: 58, avoidance: 65 },
+    hookFn: function(t) { return ['結局どれ？' + t + 'を比較', '目的別' + t + 'の選び方']; },
+  },
+  {
+    key: 'before_after',
+    titleFn: function(t) { return t + ' のビフォーアフター実例'; },
+    audienceFn: function(t) { return t + 'の効果を具体的にイメージしたい人'; },
+    painPoint: 'やる前に本当に変わるのかイメージできない',
+    benefit: '変化の具体像が分かり行動の後押しになる',
+    carouselAngle: 'Before→After→再現手順の順で共感を作る',
+    cta: 'あなたも試したい人はプロフィールへ＋保存推奨',
+    base: { save: 75, reach: 88, profile: 72, affiliate: 70, carousel: 78, cta: 68, ease: 55, avoidance: 70 },
+    hookFn: function(t) { return ['実録' + t + 'のビフォーアフター', 'これが' + t + 'のリアルな変化']; },
+  },
+];
+
+// テーマの8軸を0〜100へ正規化し、Version1（アフィリエイト収益化）重視のpriorityScoreと推奨理由を算出する
+function scoreInstagramContentTheme(theme) {
+  if (!theme) return theme;
+  function clamp(n) { return Math.max(0, Math.min(100, Math.round(typeof n === 'number' ? n : 0))); }
+  theme.saveRatePotential = clamp(theme.saveRatePotential);            // 保存率見込み
+  theme.reachPotential = clamp(theme.reachPotential);                  // リーチ見込み
+  theme.profileTransitionPotential = clamp(theme.profileTransitionPotential); // プロフィール遷移見込み
+  theme.affiliateFit = clamp(theme.affiliateFit);                      // アフィリエイト適性
+  theme.carouselFit = clamp(theme.carouselFit);                        // カルーセル適性
+  theme.ctaFit = clamp(theme.ctaFit);                                  // CTA適性
+  theme.difficulty = clamp(theme.difficulty);                          // 制作しやすさ（高いほど作りやすい）
+  theme.competitionLevel = clamp(theme.competitionLevel);              // 競合回避度（高いほど競合を避けられる）
+
+  var w = { save: 0.20, reach: 0.15, profile: 0.10, affiliate: 0.22, carousel: 0.11, cta: 0.10, ease: 0.05, avoid: 0.07 };
+  var priority = theme.saveRatePotential * w.save
+    + theme.reachPotential * w.reach
+    + theme.profileTransitionPotential * w.profile
+    + theme.affiliateFit * w.affiliate
+    + theme.carouselFit * w.carousel
+    + theme.ctaFit * w.cta
+    + theme.difficulty * w.ease
+    + theme.competitionLevel * w.avoid;
+  theme.priorityScore = clamp(priority);
+
+  var axes = [
+    { k: '保存率', v: theme.saveRatePotential },
+    { k: 'リーチ', v: theme.reachPotential },
+    { k: 'アフィリエイト適性', v: theme.affiliateFit },
+    { k: 'カルーセル適性', v: theme.carouselFit },
+    { k: 'プロフィール遷移', v: theme.profileTransitionPotential },
+    { k: 'CTA適性', v: theme.ctaFit },
+  ];
+  axes.sort(function(a, b) { return b.v - a.v; });
+  theme.recommendedReason = axes[0].k + '（' + axes[0].v + '点）と' + axes[1].k + '（' + axes[1].v
+    + '点）が高く、Version1のアフィリエイト収益化に直結しやすいテーマです。';
+  return theme;
+}
+
+// outputDraftから企画テーマの母体となるトピック文字列を導出する（外部取得・捏造はしない。既存fieldsからのみ抽出）
+function _icpDeriveTopic(outputDraft) {
+  var f = outputDraft.fields || {};
+  var caa = outputDraft.creativeAdAssembly;
+  var candidates = [f.theme, f.topic, f.title, f.headline, f.mainMessage, f.benefit, f.targetAudience];
+  if (caa && caa.campaignName) candidates.push(caa.campaignName);
+  for (var i = 0; i < candidates.length; i++) {
+    if (typeof candidates[i] === 'string' && candidates[i].trim()) {
+      var t = candidates[i].trim();
+      return t.length > 24 ? t.slice(0, 24) : t;
+    }
+  }
+  var def = (typeof OUTPUT_TYPE_DEFINITIONS !== 'undefined') ? OUTPUT_TYPE_DEFINITIONS[outputDraft.type] : null;
+  return (def && def.label) ? def.label : 'あなたの商品・サービス';
+}
+
+// ハッシュタグは既存Publishingがあれば再利用、なければトピック＋一般的なSNS慣用タグで補う（事実は捏造しない・Decision 026踏襲）
+function _icpBuildHashtags(topic, pub) {
+  if (pub && Array.isArray(pub.hashtags) && pub.hashtags.length) return pub.hashtags.slice(0, 8);
+  var base = ('' + topic).replace(/\s+/g, '');
+  var tags = [];
+  if (base) tags.push('#' + base);
+  ['#おすすめ', '#保存版', '#初心者向け', '#比較', '#まとめ', '#PR'].forEach(function(t) { if (tags.indexOf(t) < 0) tags.push(t); });
+  return tags.slice(0, 7);
+}
+
+// Phase50-2: Instagram Content Planning Draft生成
+// 既存4関数（Publishing/Creative Ad Assembly/Marketing Intelligence/Asset Library）を読み取り専用で参照する
+function createInstagramContentPlanningDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+  var pub = outputDraft.publishing || createPublishingDraft(outputDraft);
+  var caa = outputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(outputDraft);
+  var topic = _icpDeriveTopic(outputDraft);
+  var f = outputDraft.fields || {};
+  var audienceCtx = (typeof f.targetAudience === 'string' && f.targetAudience.trim()) ? f.targetAudience.trim() : null;
+
+  var isCarousel = type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL;
+  var hashInRange = !!(pub && Array.isArray(pub.hashtags) && pub.hashtags.length >= 15 && pub.hashtags.length <= 30);
+  var hasCta = !!(pub && pub.cta) || !!(caa && caa.ctaSet && caa.ctaSet.length);
+  var hashtags = _icpBuildHashtags(topic, pub);
+
+  var deltaCarousel = isCarousel ? 8 : -25;
+  var deltaReach = hashInRange ? 6 : 0;
+  var deltaCta = hasCta ? 8 : -6;
+
+  var plans = ICP_THEME_ARCHETYPES.map(function(arc, idx) {
+    var b = arc.base;
+    var theme = {
+      themeId: 'icp-' + (idx + 1),
+      title: arc.titleFn(topic),
+      targetAudience: audienceCtx || arc.audienceFn(topic),
+      painPoint: arc.painPoint,
+      benefit: arc.benefit,
+      affiliateFit: b.affiliate,
+      saveRatePotential: b.save,
+      reachPotential: b.reach + deltaReach,
+      profileTransitionPotential: b.profile,
+      carouselFit: b.carousel + deltaCarousel,
+      ctaFit: b.cta + deltaCta,
+      competitionLevel: b.avoidance,
+      difficulty: b.ease,
+      priorityScore: 0,
+      recommendedReason: '',
+      carouselAngle: arc.carouselAngle,
+      hookIdeas: arc.hookFn(topic),
+      suggestedCTA: arc.cta,
+      suggestedHashtags: hashtags.slice(),
+      nextAction: 'Phase50-3 Carousel Builder へ carouselAngle / hookIdeas / suggestedCTA / suggestedHashtags を渡し、スライド構成を生成する',
+    };
+    return scoreInstagramContentTheme(theme);
+  });
+
+  plans.sort(function(a, b) { return b.priorityScore - a.priorityScore; });
+
+  var bestPlan = plans.length ? plans[0] : null;
+  var selectedPlan = null;
+  if (_instagramContentPlanSelectedId) {
+    selectedPlan = plans.filter(function(p) { return p.themeId === _instagramContentPlanSelectedId; })[0] || null;
+  }
+
+  var activeForBuilder = selectedPlan || bestPlan;
+  var carouselBuilderInput = activeForBuilder ? {
+    selectedTheme: activeForBuilder.title,
+    targetAudience: activeForBuilder.targetAudience,
+    painPoint: activeForBuilder.painPoint,
+    benefit: activeForBuilder.benefit,
+    carouselAngle: activeForBuilder.carouselAngle,
+    hookIdeas: activeForBuilder.hookIdeas.slice(),
+    suggestedCTA: activeForBuilder.suggestedCTA,
+    suggestedHashtags: activeForBuilder.suggestedHashtags.slice(),
+    priorityScore: activeForBuilder.priorityScore,
+  } : null;
+
+  var reviewCriteria = [
+    { label: 'Instagram収益化へ直接つながるか', note: '各テーマにアフィリエイト適性スコアを付与し、priorityScoreへ最大の重み(0.22)で反映済み' },
+    { label: 'Version1完成条件へ近づいたか', note: '市場分析→テーマ提案の工程を担い、carouselBuilderInputでPhase50-3 Carousel Builderへ企画を接続' },
+    { label: 'iPhone運用へ近づいたか', note: '手動運用前提で企画データを生成。iPhone成果物確認・承認対応はPhase50-5・50-6予定' },
+  ];
+
+  var warnings = ['本Phaseは手動運用前提の企画支援のみです。Instagram API接続・実トレンド取得・自動投稿・外部AI実行・画像生成は一切行っていません。'];
+  if (!isCarousel) warnings.push('現Output TypeはInstagram Carousel以外のため、カルーセル適性スコアは参考値です。');
+
+  return {
+    version: INSTAGRAM_CONTENT_PLANNING_VERSION,
+    safetyLabels: ICP_SAFETY_LABELS.slice(),
+    outputType: type,
+    topic: topic,
+    createdTime: new Date().toISOString(),
+    plans: plans,
+    selectedPlan: selectedPlan,
+    bestPlan: bestPlan,
+    reviewCriteria: reviewCriteria,
+    carouselBuilderInput: carouselBuilderInput,
+    warnings: warnings,
+  };
+}
+
+// テーマ選択（メモリ保持のみ・DB/localStorage/Asset Library/Learningへは書き込まない）
+function selectInstagramContentPlan(planId) {
+  _instagramContentPlanSelectedId = planId;
+  if (_lastOutputDraft) _lastOutputDraft.instagramContentPlanning = createInstagramContentPlanningDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function _icpBuildThemeText(theme) {
+  if (!theme) return '';
+  var L = [];
+  L.push('■ ' + theme.title + '（priority ' + theme.priorityScore + '）');
+  L.push('  ターゲット: ' + theme.targetAudience);
+  L.push('  悩み: ' + theme.painPoint);
+  L.push('  ベネフィット: ' + theme.benefit);
+  L.push('  カルーセル構成: ' + theme.carouselAngle);
+  L.push('  フック案: ' + theme.hookIdeas.join(' / '));
+  L.push('  CTA: ' + theme.suggestedCTA);
+  L.push('  ハッシュタグ: ' + theme.suggestedHashtags.join(' '));
+  L.push('  スコア: 保存' + theme.saveRatePotential + ' / リーチ' + theme.reachPotential
+    + ' / プロフィール遷移' + theme.profileTransitionPotential + ' / アフィリ' + theme.affiliateFit
+    + ' / カルーセル' + theme.carouselFit + ' / CTA' + theme.ctaFit
+    + ' / 制作しやすさ' + theme.difficulty + ' / 競合回避' + theme.competitionLevel);
+  L.push('  推奨理由: ' + theme.recommendedReason);
+  L.push('  次工程: ' + theme.nextAction);
+  return L.join('\n');
+}
+
+function _icpBuildCarouselInputText(ci) {
+  if (!ci) return '';
+  var L = ['【Carousel Builder Input (Phase50-3)】', ''];
+  L.push('selectedTheme: ' + ci.selectedTheme);
+  L.push('targetAudience: ' + ci.targetAudience);
+  L.push('painPoint: ' + ci.painPoint);
+  L.push('benefit: ' + ci.benefit);
+  L.push('carouselAngle: ' + ci.carouselAngle);
+  L.push('hookIdeas: ' + ci.hookIdeas.join(' / '));
+  L.push('suggestedCTA: ' + ci.suggestedCTA);
+  L.push('suggestedHashtags: ' + ci.suggestedHashtags.join(' '));
+  L.push('priorityScore: ' + ci.priorityScore);
+  return L.join('\n');
+}
+
+function _icpCopyToClipboard(text) {
+  var msg = document.getElementById('oe-icp-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-2: クリップボードコピー（Best Theme / All Theme Plans / Carousel Builder Input / Full Content Planning）
+function copyInstagramContentPlanningField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramContentPlanning || createInstagramContentPlanningDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'best') text = draft.bestPlan ? _icpBuildThemeText(draft.bestPlan) : '';
+  else if (type === 'all') text = draft.plans.map(_icpBuildThemeText).join('\n\n');
+  else if (type === 'carousel') text = _icpBuildCarouselInputText(draft.carouselBuilderInput);
+  else if (type === 'full') {
+    var L = ['【Instagram Content Planning (Phase50-2)】', '', 'Topic: ' + draft.topic, 'Safety: ' + draft.safetyLabels.join(' / '), ''];
+    L.push('== Theme Plans ==');
+    L.push(draft.plans.map(_icpBuildThemeText).join('\n\n'));
+    L.push('');
+    L.push(_icpBuildCarouselInputText(draft.carouselBuilderInput));
+    L.push('');
+    L.push('== Version1 Review ==');
+    draft.reviewCriteria.forEach(function(c) { L.push('☐ ' + c.label + ' — ' + c.note); });
+    L.push('※ iPhone対応はPhase50-5・50-6予定');
+    text = L.join('\n');
+  }
+  if (!text) return;
+  _icpCopyToClipboard(text);
+}
+
+// Phase50-2: Instagram Content Planning HTML生成（Instagram Marketing Intelligenceの直後に表示。データ不足でも安全に空文字を返す）
+function buildInstagramContentPlanningHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.instagramContentPlanning || createInstagramContentPlanningDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.instagramContentPlanning = draft;
+  var esc = escapeHtml;
+
+  function chip(l, v) { return '<span class="oe-icp-chip">' + esc(l) + ' ' + v + '</span>'; }
+  function scoreChips(p) {
+    return '<div class="oe-icp-chips">'
+      + chip('保存', p.saveRatePotential) + chip('リーチ', p.reachPotential) + chip('遷移', p.profileTransitionPotential)
+      + chip('アフィリ', p.affiliateFit) + chip('カルーセル', p.carouselFit) + chip('CTA', p.ctaFit)
+      + chip('制作', p.difficulty) + chip('競合回避', p.competitionLevel)
+      + '</div>';
+  }
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-icp-badge">' + esc(l) + '</span>'; }).join('');
+
+  var plansHtml = draft.plans.map(function(p) {
+    var isBest = draft.bestPlan && p.themeId === draft.bestPlan.themeId;
+    var isSel = draft.selectedPlan && p.themeId === draft.selectedPlan.themeId;
+    var cls = 'oe-icp-card' + (isSel ? ' selected' : (isBest ? ' best' : ''));
+    var flags = (isBest ? '<span class="oe-icp-flag best">⭐ BEST</span>' : '')
+      + (isSel ? '<span class="oe-icp-flag selected">✓ SELECTED</span>' : '');
+    return '<div class="' + cls + '">'
+      + '<div class="oe-icp-card-head"><div class="oe-icp-card-title">' + esc(p.title) + flags + '</div><span class="oe-icp-priority">priority ' + p.priorityScore + '</span></div>'
+      + '<div class="oe-icp-meta">🎯 ' + esc(p.targetAudience) + '</div>'
+      + '<div class="oe-icp-meta">😣 ' + esc(p.painPoint) + '</div>'
+      + '<div class="oe-icp-meta">✨ ' + esc(p.benefit) + '</div>'
+      + '<div class="oe-icp-meta">🎠 ' + esc(p.carouselAngle) + '</div>'
+      + '<div class="oe-icp-meta">🪝 ' + esc(p.hookIdeas.join(' / ')) + '</div>'
+      + '<div class="oe-icp-meta">📣 ' + esc(p.suggestedCTA) + '</div>'
+      + '<div class="oe-icp-meta"># ' + esc(p.suggestedHashtags.join(' ')) + '</div>'
+      + scoreChips(p)
+      + '<div class="oe-icp-reason">💡 ' + esc(p.recommendedReason) + '</div>'
+      + '<div style="margin-top:5px;"><button class="oe-icp-selbtn" onclick="selectInstagramContentPlan(\'' + esc(p.themeId) + '\')">' + (isSel ? '選択中' : 'このテーマを選択') + '</button></div>'
+      + '</div>';
+  }).join('');
+
+  var reviewHtml = draft.reviewCriteria.map(function(c) {
+    return '<div class="oe-icp-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+  reviewHtml += '<div class="oe-icp-review" style="opacity:.7;">※ iPhone対応はPhase50-5・50-6予定</div>';
+
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-icp-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  var bestLine = draft.bestPlan
+    ? '<div class="oe-pkg-label">最優先テーマ（Best Theme）</div><div class="oe-icp-meta" style="color:rgba(255,215,130,0.9);">⭐ ' + esc(draft.bestPlan.title) + '（priority ' + draft.bestPlan.priorityScore + '）</div>'
+    : '';
+
+  return '<div class="oe-icp-section">'
+    + '<div class="oe-icp-title">🗂 Instagram Content Planning <span style="font-weight:400;opacity:.5;">v' + INSTAGRAM_CONTENT_PLANNING_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + bestLine
+    + '<div class="oe-pkg-label">投稿テーマ案（priorityScore順・' + draft.plans.length + '件）</div>'
+    + plansHtml
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-icp-copyrow">'
+    +   '<button class="oe-icp-btn" onclick="copyInstagramContentPlanningField(\'best\')">Copy Best Theme</button>'
+    +   '<button class="oe-icp-btn" onclick="copyInstagramContentPlanningField(\'all\')">Copy All Theme Plans</button>'
+    +   '<button class="oe-icp-btn" onclick="copyInstagramContentPlanningField(\'carousel\')">Copy Carousel Builder Input</button>'
+    +   '<button class="oe-icp-btn" onclick="copyInstagramContentPlanningField(\'full\')">Copy Full Content Planning</button>'
+    +   '<span id="oe-icp-copy-msg" class="oe-icp-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-2: Export反映
+function appendInstagramContentPlanningToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramContentPlanning || createInstagramContentPlanningDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Instagram Content Planning (Phase50-2)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  if (draft.bestPlan) lines.push('- Best Theme: ' + draft.bestPlan.title + '（priority ' + draft.bestPlan.priorityScore + '）');
+  if (draft.selectedPlan) lines.push('- Selected Theme: ' + draft.selectedPlan.title);
+  lines.push('- Theme Plans (' + draft.plans.length + '):');
+  draft.plans.forEach(function(p) {
+    lines.push('  - [' + p.priorityScore + '] ' + p.title + ' | 保存' + p.saveRatePotential + '/リーチ' + p.reachPotential + '/アフィリ' + p.affiliateFit + '/カルーセル' + p.carouselFit);
+  });
+  lines.push('- Version1 Review Criteria:');
+  draft.reviewCriteria.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+  if (draft.carouselBuilderInput) {
+    lines.push('- Carousel Builder Input (Phase50-3):');
+    lines.push('  - selectedTheme: ' + draft.carouselBuilderInput.selectedTheme);
+    lines.push('  - carouselAngle: ' + draft.carouselBuilderInput.carouselAngle);
+    lines.push('  - suggestedCTA: ' + draft.carouselBuilderInput.suggestedCTA);
+    lines.push('  - priorityScore: ' + draft.carouselBuilderInput.priorityScore);
+  }
+}
+
+function appendInstagramContentPlanningToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramContentPlanning || createInstagramContentPlanningDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.instagramContentPlanning = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    plans: draft.plans,
+    selectedPlan: draft.selectedPlan,
+    bestPlan: draft.bestPlan,
+    reviewCriteria: draft.reviewCriteria,
+    carouselBuilderInput: draft.carouselBuilderInput,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -27090,6 +27559,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildCreativeAdAssemblyHtml,       'CreativeAdAssembly')
     + _oeSafe(buildCreativeAssetLibraryHtml,     'CreativeAssetLibrary')
     + _oeSafe(buildInstagramMarketingIntelligenceHtml, 'InstagramMarketingIntelligence')
+    + _oeSafe(buildInstagramContentPlanningHtml, 'InstagramContentPlanning')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
