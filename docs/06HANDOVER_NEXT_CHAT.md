@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-04（Phase49-5完了 / Creative Ad Assembly）
+更新日: 2026-07-04（Phase49-6完了 / Creative Asset Library / Creative Engineファミリー完結）
 
 ---
 
@@ -15,9 +15,9 @@
 
 ## 現在バージョン
 
-**v1.00-phase49-5**（Creative Ad Assembly・広告素材組み立て層のみ）
+**v1.00-phase49-6**（Creative Asset Library・既存Asset管理層のみ）
 
-最新Tag: `v1.00-phase49-5`
+最新Tag: `v1.00-phase49-6`
 
 補足: `v1.00-phase47-1.6` はPhase48-4完了後に発見された過去の未コミット差分（OpenAI費用トラッカーの累計対応）を正式化した**遡及タグ**。作成日時の順序と機能の進行フェーズ番号は一致しない（Phase47-1系の一部）。詳細はPHASE_PROGRESS.mdのPhase47-1.6セクション・Decision 025（04DECISIONS.md）を参照。
 
@@ -26,13 +26,13 @@
 ## 現在地
 
 Phase48-5（Publishing Engine）完了＝**Version1機能完成**。
-Phase49-0（Version2設計レビュー）・Phase49-0.1（Roadmap Formalization）・Phase49-1（AI Gateway Foundation）・Phase49-1.1（AI Registry Expansion）・Phase49-1.2（AI Registry Learning）・Phase49-2（Image Prompt Intelligence）・Phase49-3（Video Prompt Intelligence）・Phase49-4（Creative Execution）・**Phase49-5（Creative Ad Assembly）完了**。
+Phase49-0（Version2設計レビュー）〜**Phase49-6（Creative Asset Library）完了＝Creative Engineファミリー（Phase49-1〜49-6）完結**。
 
-Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1〜49-4でAI Gateway一式・Image/Video Prompt Intelligence・Creative Execution、Phase49-5でCreative Ad Assembly（広告素材の組み立てのみ。実行・投稿なし）を追加した（Decision 030〜036）。
+Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2）へ責務分離型で再構成済み（Decision 027）。Phase49-1〜49-5でAI Gateway一式・Image/Video Prompt Intelligence・Creative Execution・Creative Ad Assembly、Phase49-6でCreative Asset Library（既存6関数の呼び出しのみでAssetを管理・分類・コピー・Export。新規判断なし）を追加した（Decision 030〜037）。これでCreative Engineファミリーが完結。
 
-次工程: **Phase49-6 — Asset Library**（Creative Engineファミリー最終Phase。生成資産・既存成果物の保存・検索・再利用。Knowledge Libraryとは別物）
+次工程: **Phase50-1 — Marketing Intelligence Foundation**（Intelligenceファミリー開始。市場分析/競合分析/SEO分析/トレンド分析）
 
-AI Gateway・Image Prompt Intelligence・Video Prompt Intelligence・Creative Execution・Creative Ad Assembly（`createCreativeAdAssemblyDraft()`）は全て判断層/プロンプト生成層/実行計画層/組み立て層のみで、実際の画像/動画生成・投稿・API実行・PC操作・ブラウザ自動操作は一切行っていない。Creative Ad Assemblyは常時6つのSafetyバッジ（Assembly Only/No Auto Posting/No Image Generation/No Video Generation/No External AI Execution/Manual Use Only）を表示する。
+AI Gateway・Image Prompt Intelligence・Video Prompt Intelligence・Creative Execution・Creative Ad Assembly・Creative Asset Library（`createCreativeAssetLibraryDraft()`）は全て判断層/プロンプト生成層/実行計画層/組み立て層/管理層のみで、実際の画像/動画生成・投稿・API実行・PC操作・ブラウザ自動操作は一切行っていない。Creative Asset Libraryは常時5つのSafetyバッジ（Asset Library Only/No External Execution/No AI Generation/Manual Reuse Only/Read Only）を表示し、favorite/archiveは常にfalse（新規永続化なし）。
 
 画像生成・動画生成・外部AI操作（PCアプリ操作/ブラウザ操作含む）は引き続きユーザー承認後のみ実行可能。git pushは引き続き禁止。
 
@@ -89,6 +89,7 @@ AI Gateway・Image Prompt Intelligence・Video Prompt Intelligence・Creative Ex
 | Phase49-3 | Video Prompt Intelligence（Seedance/Flow/Veo/Kling/Runway/Luma/Pika/Hailuo/DOMOAI向けプロンプト自動生成。Output Type別最適化・AI Gateway/Image Prompt Intelligence連携。動画生成は未実行） | v1.00-phase49-3 |
 | Phase49-4 | Creative Execution（実行計画・コピー・チェックのみ。16ツール対応Tool Planner。autoExecute=false固定・Manual Only。既存判断ロジックは無変更で参照のみ） | v1.00-phase49-4 |
 | Phase49-5 | Creative Ad Assembly（広告素材セットの組み立てのみ。Headline/Caption/CTA/Visual Direction/Assets Plan。Assembly Only固定・既存Engine判断ロジックは無変更で参照のみ） | v1.00-phase49-5 |
+| Phase49-6 | Creative Asset Library（既存6関数の呼び出しのみでAsset管理・分類・コピー・Export。Read Only固定・新規判断なし。Creative Engineファミリー完結） | v1.00-phase49-6 |
 
 ---
 
@@ -237,12 +238,26 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Priority 0: Phase49-6 — Asset Library
+### Priority 0: Phase50-1 — Marketing Intelligence Foundation
 
 目的：
-生成資産・既存成果物を保存、検索、再利用する資産管理。画像/動画/LP/PDF/HTML/チラシ/Instagram/プロンプト/Quality/Compare結果を対象候補とする。Knowledge Libraryとは別物（Decision 029）。
+市場分析 / 競合分析 / SEO分析 / トレンド分析。Intelligenceファミリーの開始Phase。
 
 詳細は docs/04ROADMAP.md の「Version 2.0 Roadmap」を参照。
+
+### Phase49-6で完成した内容（次チャットが把握すべき実装・Creative Engineファミリー完結）
+
+- `CREATIVE_ASSET_LIBRARY_VERSION = '1.0.0'` / `CREATIVE_ASSET_LIBRARY_SAFETY_LABELS`（Asset Library Only/No External Execution/No AI Generation/Manual Reuse Only/Read Onlyの5ラベル、固定バッジとして常時表示）
+- `createCreativeAssetLibraryDraft(outputDraft)` — **既存6関数の呼び出しのみ**（`createCreativeAdAssemblyDraft()` / `createCreativeExecutionDraft()` / `createImagePromptIntelligenceDraft()` / `createVideoPromptIntelligenceDraft()` / `createPublishingDraft()` / `createAIGatewayDecision()`）でAssetを構成。新規判断・Output Type別分岐は一切行わない
+- `favorite`/`archive`は常に`false`固定（静的プレースホルダー、新規永続化・DB変更なし）
+- `assetTags`/`searchKeywords`は既存データ（outputType/Output Type定義ラベル/Publishingのhashtags等）からの機械的抽出のみ
+- `copyCreativeAssetLibraryField()` — Copy Asset Package/Copy Headline Assets/Copy Caption Assets/Copy Prompt Assets/Copy Tags/Copy Full Asset Libraryの6ケース
+- `buildCreativeAssetLibraryHtml()` — `renderOutputEnginePanel()`内、`buildCreativeAdAssemblyHtml`の直後に表示
+- Markdown Export（`## Creative Asset Library`）/ JSON Export（`creativeAssetLibrary`キー）に反映
+- 全13 OUTPUT_TYPEで動作確認済み
+- 既存Package/Preview/Publishing/AI Gateway/Image・Video Prompt Intelligence/Creative Execution/Creative Ad Assembly・Workflow・Knowledge Chainは無変更。実際の画像/動画生成・投稿・外部AI通信は一切なし
+- **これによりCreative Engineファミリー（Phase49-1〜49-6）が完結**。次工程はIntelligenceファミリー（Phase50-1〜）
+- 詳細は Decision 037（docs/04DECISIONS.md）を参照
 
 ### Phase49-5で完成した内容（次チャットが把握すべき実装）
 
@@ -371,15 +386,15 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 ```
 Phase49-1 AI Gateway Foundation ✅ 完了
   ↓
-Phase49-2 Image Prompt Intelligence
+Phase49-2 Image Prompt Intelligence ✅ 完了
   ↓
-Phase49-3 Video Prompt Intelligence
+Phase49-3 Video Prompt Intelligence ✅ 完了
   ↓
-Phase49-4 Creative Engine Execution
+Phase49-4 Creative Engine Execution ✅ 完了
   ↓
-Phase49-5 Creative Ad Assembly
+Phase49-5 Creative Ad Assembly ✅ 完了
   ↓
-Phase49-6 Asset Library
+Phase49-6 Asset Library ✅ 完了（Creative Engineファミリー完結）
   ↓
 Phase50-1 Marketing Intelligence Foundation
   ↓
@@ -492,4 +507,4 @@ git tag v1.00-phase46-4
 9. docs/08CLAUDE_PROMPT_TEMPLATE.md を読む
 10. docs/04DECISIONS.md を読む（設計判断の背景確認）
 11. 現在地を要約する
-12. Phase49-6（Asset Library）から開発再開
+12. Phase50-1（Marketing Intelligence Foundation）から開発再開

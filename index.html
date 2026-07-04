@@ -946,6 +946,18 @@
   .oe-caa-copybtn:hover { background: rgba(255,140,40,0.3); }
   .oe-caa-copymsg    { font-size: 10px; color: rgba(255,180,110,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-caa-copymsg.show { opacity: 1; }
+  /* Phase49-6: Creative Asset Library */
+  .oe-cal-section    { border-radius: 10px; border: 1px solid rgba(90,210,230,0.28); background: linear-gradient(135deg, rgba(6,28,32,0.92), rgba(3,14,16,0.96)); padding: 12px 14px; }
+  .oe-cal-title      { font-size: 11px; color: rgba(140,220,235,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-cal-item       { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.7; }
+  .oe-cal-tag-chip   { display: inline-block; font-size: 9px; color: rgba(140,220,235,0.8); background: rgba(255,255,255,0.05); border: 1px solid rgba(90,210,230,0.25); border-radius: 10px; padding: 2px 8px; margin: 2px 4px 2px 0; }
+  .oe-cal-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-cal-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(255,100,90,0.18); color: rgba(255,130,120,0.95); border: 1px solid rgba(255,100,90,0.4); }
+  .oe-cal-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-cal-copybtn    { background: rgba(90,210,230,0.15); border: 1px solid rgba(90,210,230,0.4); border-radius: 14px; color: rgba(140,220,235,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-cal-copybtn:hover { background: rgba(90,210,230,0.3); }
+  .oe-cal-copymsg    { font-size: 10px; color: rgba(140,220,235,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-cal-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22970,6 +22982,7 @@ function serializeOutputDraft(format) {
     appendVideoPromptIntelligenceToExportJson(jsonObj);
     appendCreativeExecutionToExportJson(jsonObj);
     appendCreativeAdAssemblyToExportJson(jsonObj);
+    appendCreativeAssetLibraryToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23203,6 +23216,7 @@ function serializeOutputDraft(format) {
   appendVideoPromptIntelligenceToExportMarkdown(mdLines);
   appendCreativeExecutionToExportMarkdown(mdLines);
   appendCreativeAdAssemblyToExportMarkdown(mdLines);
+  appendCreativeAssetLibraryToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -26233,6 +26247,294 @@ function appendCreativeAdAssemblyToExportJson(payload) {
   payload.creativeAdAssembly = draft;
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-6: Creative Asset Library（Creative Engineファミリー最終Phase）
+// Creative Ad Assembly / Creative Execution / Image・Video Prompt Intelligence / Publishing /
+// AI Gatewayが生成した既存Assetを整理・検索・再利用するための管理レイヤー。
+// 新規判断は一切行わない（既存6関数の呼び出しのみ）。画像/動画生成・SNS投稿・API実行はしない
+// Asset Library Only / No External Execution / No AI Generation / Manual Reuse Only / Read Only
+// ══════════════════════════════════════════════════
+
+const CREATIVE_ASSET_LIBRARY_VERSION = '1.0.0';
+
+const CREATIVE_ASSET_LIBRARY_SAFETY_LABELS = [
+  'Asset Library Only', 'No External Execution', 'No AI Generation', 'Manual Reuse Only', 'Read Only',
+];
+
+function _calBuildAssetTags(type, def, pub, caa) {
+  var tags = [];
+  tags.push(type);
+  if (def && def.label) tags.push(def.label);
+  if (caa && caa.targetPlatform) tags.push(caa.targetPlatform);
+  if (pub && Array.isArray(pub.hashtags)) tags = tags.concat(pub.hashtags.slice(0, 5));
+  var seen = {};
+  var out = [];
+  tags.forEach(function(t) { if (t && !seen[t]) { seen[t] = true; out.push(t); } });
+  return out;
+}
+
+function _calBuildReusableAssets(headlineAssets, captionAssets, ctaAssets, imagePromptAssets, videoPromptAssets) {
+  var list = [];
+  if (headlineAssets.length) list.push('Headline: ' + headlineAssets[0]);
+  if (captionAssets.length) list.push('Caption: ' + captionAssets[0]);
+  if (ctaAssets.length) list.push('CTA: ' + ctaAssets[0]);
+  if (imagePromptAssets.length) list.push('Image Prompt: ' + _pubTruncate(imagePromptAssets[0], 60));
+  if (videoPromptAssets.length) list.push('Video Prompt: ' + _pubTruncate(videoPromptAssets[0], 60));
+  return list;
+}
+
+function _calBuildSearchKeywords(assetTags, headlineAssets, campaign) {
+  var kws = [].concat(assetTags);
+  if (headlineAssets.length) kws.push(headlineAssets[0]);
+  if (campaign) kws.push(campaign);
+  var seen = {};
+  var out = [];
+  kws.forEach(function(k) { if (k && !seen[k]) { seen[k] = true; out.push(k); } });
+  return out;
+}
+
+function _calBuildWarnings(pub) {
+  var warnings = [];
+  var q = (pub && typeof pub.qualityScore === 'number') ? pub.qualityScore : null;
+  if (q !== null && q < 80) {
+    warnings.push('成果物の完成度（' + q + '点）が80点未満です。Asset登録前に内容を再確認してください。');
+  }
+  warnings.push('本Phaseは既存Assetの管理・分類・コピー・Exportのみです。実際の画像/動画生成・API実行・SNS投稿は一切行いません（Read Only / Manual Reuse Only）。');
+  return warnings;
+}
+
+function _calBuildCopyText(base) {
+  var lines = ['【Creative Asset Library】', ''];
+  lines.push('Asset Collection: ' + base.assetCollection);
+  lines.push('Campaign: ' + base.campaign);
+  lines.push('Output Type: ' + base.outputType);
+  lines.push('Created: ' + base.createdTime);
+  lines.push('');
+  lines.push('Headline Assets: ' + (base.headlineAssets.length ? base.headlineAssets.join(' / ') : '（なし）'));
+  lines.push('Caption Assets: ' + (base.captionAssets.length ? base.captionAssets.join(' / ') : '（なし）'));
+  lines.push('CTA Assets: ' + (base.ctaAssets.length ? base.ctaAssets.join(' / ') : '（なし）'));
+  lines.push('Image Prompt Assets: ' + (base.imagePromptAssets.length ? base.imagePromptAssets.join(' / ') : '（なし）'));
+  lines.push('Video Prompt Assets: ' + (base.videoPromptAssets.length ? base.videoPromptAssets.join(' / ') : '（なし）'));
+  lines.push('');
+  lines.push('Tags: ' + (base.assetTags.length ? base.assetTags.join(', ') : '（なし）'));
+  return lines.join('\n');
+}
+
+// Phase49-6: Creative Asset Library Draft生成
+// 既存6関数（createCreativeAdAssemblyDraft/createCreativeExecutionDraft/createImagePromptIntelligenceDraft/
+// createVideoPromptIntelligenceDraft/createPublishingDraft/createAIGatewayDecision）の呼び出しのみで構成し、
+// 新規判断は一切行わない（各Engineは読み取り専用で参照する）
+function createCreativeAssetLibraryDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+
+  var caa = outputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(outputDraft);
+  var ce = outputDraft.creativeExecution || createCreativeExecutionDraft(outputDraft);
+  var ipi = outputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(outputDraft);
+  var vpi = outputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(outputDraft);
+  var pub = outputDraft.publishing || createPublishingDraft(outputDraft);
+  var gw = outputDraft.aiGateway || createAIGatewayDecision(outputDraft);
+
+  var def = getOutputTypeDefinition(type);
+  var campaign = caa ? caa.campaignName : ((def ? def.label : type) + ' キャンペーン');
+
+  var headlineAssets = caa ? [caa.headlineSet.adHeadline, caa.headlineSet.subHeadline].filter(Boolean) : [];
+  var captionAssets = caa ? [caa.captionSet.mainCaption, caa.captionSet.shortCaption].filter(Boolean) : [];
+  var ctaAssets = caa ? caa.ctaSet.slice() : [];
+  var imagePromptAssets = ipi && ipi.mainPrompt ? [ipi.mainPrompt] : [];
+  var videoPromptAssets = vpi && vpi.mainPrompt ? [vpi.mainPrompt] : [];
+  var publishingAssets = pub ? { title: pub.title, description: pub.description, hashtags: pub.hashtags, cta: pub.cta } : null;
+  var creativeExecutionAssets = ce ? { targetTool: ce.targetTool, generatedPrompt: ce.generatedPrompt } : null;
+  var assemblyAssets = caa ? { visualDirection: caa.visualDirection, imageAssetsPlan: caa.imageAssetsPlan, videoAssetsPlan: caa.videoAssetsPlan, postingPlan: caa.postingPlan } : null;
+
+  var assetTags = _calBuildAssetTags(type, def, pub, caa);
+  var reusableAssets = _calBuildReusableAssets(headlineAssets, captionAssets, ctaAssets, imagePromptAssets, videoPromptAssets);
+  var searchKeywords = _calBuildSearchKeywords(assetTags, headlineAssets, campaign);
+
+  var base = {
+    version: CREATIVE_ASSET_LIBRARY_VERSION,
+    outputType: type,
+    assetCollection: campaign + '（' + (def ? def.label : type) + '）Asset Collection',
+    campaign: campaign,
+    createdTime: new Date().toISOString(),
+    headlineAssets: headlineAssets,
+    captionAssets: captionAssets,
+    ctaAssets: ctaAssets,
+    imagePromptAssets: imagePromptAssets,
+    videoPromptAssets: videoPromptAssets,
+    publishingAssets: publishingAssets,
+    creativeExecutionAssets: creativeExecutionAssets,
+    assemblyAssets: assemblyAssets,
+    assetTags: assetTags,
+    reusableAssets: reusableAssets,
+    favorite: false,
+    archive: false,
+    searchKeywords: searchKeywords,
+    warnings: _calBuildWarnings(pub),
+    copyText: '',
+    sourceCreativeAdAssembly: caa ? { campaignName: caa.campaignName, adGoal: caa.adGoal } : null,
+    sourceCreativeExecution: ce ? { targetTool: ce.targetTool } : null,
+    sourceImagePromptIntelligence: ipi ? { mainPrompt: ipi.mainPrompt } : null,
+    sourceVideoPromptIntelligence: vpi ? { mainPrompt: vpi.mainPrompt } : null,
+    sourcePublishing: pub ? { title: pub.title } : null,
+    sourceGatewayDecision: gw ? { recommendedTool: gw.recommendedTool } : null,
+  };
+  base.copyText = _calBuildCopyText(base);
+  return base;
+}
+
+function _calBuildAssetPackageText(draft) {
+  var lines = ['【Asset Package】', ''];
+  lines.push('Headline: ' + (draft.headlineAssets[0] || '（なし）'));
+  lines.push('Caption: ' + (draft.captionAssets[0] || '（なし）'));
+  lines.push('CTA: ' + (draft.ctaAssets.length ? draft.ctaAssets.join(' / ') : '（なし）'));
+  if (draft.imagePromptAssets.length) lines.push('Image Prompt: ' + draft.imagePromptAssets[0]);
+  if (draft.videoPromptAssets.length) lines.push('Video Prompt: ' + draft.videoPromptAssets[0]);
+  return lines.join('\n');
+}
+
+function _calBuildHeadlineAssetsText(draft) {
+  return ['【Headline Assets】', ''].concat(draft.headlineAssets.length ? draft.headlineAssets : ['（なし）']).join('\n');
+}
+
+function _calBuildCaptionAssetsText(draft) {
+  return ['【Caption Assets】', ''].concat(draft.captionAssets.length ? draft.captionAssets : ['（なし）']).join('\n');
+}
+
+function _calBuildPromptAssetsText(draft) {
+  var lines = ['【Prompt Assets】', ''];
+  if (draft.imagePromptAssets.length) { lines.push('Image:'); draft.imagePromptAssets.forEach(function(p) { lines.push('- ' + p); }); }
+  if (draft.videoPromptAssets.length) { lines.push('Video:'); draft.videoPromptAssets.forEach(function(p) { lines.push('- ' + p); }); }
+  if (!draft.imagePromptAssets.length && !draft.videoPromptAssets.length) lines.push('（なし）');
+  return lines.join('\n');
+}
+
+function _calBuildTagsText(draft) {
+  return ['【Asset Tags】', ''].concat(draft.assetTags.length ? draft.assetTags : ['（なし）']).join('\n');
+}
+
+// Phase49-6: クリップボードコピー（既存Copy Export/Publishing/Gateway/Image・Video Prompt/Creative Execution/Ad Assembly Copyとは独立）
+function copyCreativeAssetLibraryField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeAssetLibrary || createCreativeAssetLibraryDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (fieldKey === 'assetPackage') text = _calBuildAssetPackageText(draft);
+  else if (fieldKey === 'headlineAssets') text = _calBuildHeadlineAssetsText(draft);
+  else if (fieldKey === 'captionAssets') text = _calBuildCaptionAssetsText(draft);
+  else if (fieldKey === 'promptAssets') text = _calBuildPromptAssetsText(draft);
+  else if (fieldKey === 'tags') text = _calBuildTagsText(draft);
+  else if (fieldKey === 'fullLibrary') text = draft.copyText;
+  if (!text) return;
+
+  var msg = document.getElementById('oe-cal-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase49-6: Creative Asset Library HTML生成（Creative Ad Assemblyの直後に表示。データ不足でも安全に空文字を返す）
+function buildCreativeAssetLibraryHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var draft = _lastOutputDraft.creativeAssetLibrary || createCreativeAssetLibraryDraft(_lastOutputDraft);
+  if (!draft) return '';
+  _lastOutputDraft.creativeAssetLibrary = draft;
+  var esc = escapeHtml;
+
+  var safetyBadgesHtml = CREATIVE_ASSET_LIBRARY_SAFETY_LABELS.map(function(label) {
+    return '<span class="oe-cal-badge">' + esc(label) + '</span>';
+  }).join('');
+
+  function listHtml(arr, emptyLabel) {
+    return arr.length
+      ? arr.map(function(x) { return '<div class="oe-cal-item">・' + esc(_pubTruncate(String(x), 150)) + '</div>'; }).join('')
+      : '<span class="oe-empty-val">' + esc(emptyLabel) + '</span>';
+  }
+  var tagsHtml = draft.assetTags.length
+    ? draft.assetTags.map(function(t) { return '<span class="oe-cal-tag-chip">' + esc(t) + '</span>'; }).join('')
+    : '<span class="oe-empty-val">なし</span>';
+  var warningsHtml = draft.warnings.length ? draft.warnings.map(function(w) { return '<div class="oe-cal-warning">⚠ ' + esc(w) + '</div>'; }).join('') : '';
+
+  return '<div class="oe-cal-section">'
+    + '<div class="oe-cal-title">📚 Asset Library <span style="font-weight:400;opacity:.5;">v' + CREATIVE_ASSET_LIBRARY_VERSION + '</span></div>'
+    + '<div>' + safetyBadgesHtml + '</div>'
+    + '<div class="oe-pkg-label">Asset Collection</div><div class="oe-field-val">' + esc(draft.assetCollection) + '</div>'
+    + '<div class="oe-pkg-label">Campaign</div><div class="oe-field-val">' + esc(draft.campaign) + '</div>'
+    + '<div class="oe-pkg-label">Output Type</div><div class="oe-field-val">' + esc(draft.outputType) + '</div>'
+    + '<div class="oe-pkg-label">Created Time</div><div class="oe-field-val">' + esc(draft.createdTime) + '</div>'
+    + '<div class="oe-pkg-label">Headline Assets</div>' + listHtml(draft.headlineAssets, '未生成')
+    + '<div class="oe-pkg-label">Caption Assets</div>' + listHtml(draft.captionAssets, '未生成')
+    + '<div class="oe-pkg-label">CTA Assets</div>' + listHtml(draft.ctaAssets, '未生成')
+    + '<div class="oe-pkg-label">Image Prompt Assets</div>' + listHtml(draft.imagePromptAssets, '対象外')
+    + '<div class="oe-pkg-label">Video Prompt Assets</div>' + listHtml(draft.videoPromptAssets, '対象外')
+    + '<div class="oe-pkg-label">Publishing Assets</div><div class="oe-field-val">' + (draft.publishingAssets ? esc(draft.publishingAssets.title || '未生成') : '<span class="oe-empty-val">なし</span>') + '</div>'
+    + '<div class="oe-pkg-label">Creative Execution Assets</div><div class="oe-field-val">' + (draft.creativeExecutionAssets ? esc(draft.creativeExecutionAssets.targetTool || '未生成') : '<span class="oe-empty-val">なし</span>') + '</div>'
+    + '<div class="oe-pkg-label">Assembly Assets</div><div class="oe-field-val">' + (draft.assemblyAssets ? esc(_pubTruncate(draft.assemblyAssets.visualDirection || '未生成', 150)) : '<span class="oe-empty-val">なし</span>') + '</div>'
+    + '<div class="oe-pkg-label">Asset Tags</div><div>' + tagsHtml + '</div>'
+    + '<div class="oe-pkg-label">Reusable Assets</div>' + listHtml(draft.reusableAssets, 'なし')
+    + '<div class="oe-pkg-label">Favorite / Archive</div><div class="oe-field-val">Favorite: ' + (draft.favorite ? 'yes' : 'no') + ' ／ Archive: ' + (draft.archive ? 'yes' : 'no') + '</div>'
+    + '<div class="oe-pkg-label">Search Keywords</div><div class="oe-field-val">' + esc(draft.searchKeywords.length ? draft.searchKeywords.join(', ') : 'なし') + '</div>'
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-cal-copyrow">'
+    +   '<button class="oe-cal-copybtn" onclick="copyCreativeAssetLibraryField(\'assetPackage\')">Copy Asset Package</button>'
+    +   '<button class="oe-cal-copybtn" onclick="copyCreativeAssetLibraryField(\'headlineAssets\')">Copy Headline Assets</button>'
+    +   '<button class="oe-cal-copybtn" onclick="copyCreativeAssetLibraryField(\'captionAssets\')">Copy Caption Assets</button>'
+    +   '<button class="oe-cal-copybtn" onclick="copyCreativeAssetLibraryField(\'promptAssets\')">Copy Prompt Assets</button>'
+    +   '<button class="oe-cal-copybtn" onclick="copyCreativeAssetLibraryField(\'tags\')">Copy Tags</button>'
+    +   '<button class="oe-cal-copybtn" onclick="copyCreativeAssetLibraryField(\'fullLibrary\')">Copy Full Asset Library</button>'
+    +   '<span id="oe-cal-copy-msg" class="oe-cal-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase49-6: Export反映
+function appendCreativeAssetLibraryToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeAssetLibrary || createCreativeAssetLibraryDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Creative Asset Library (Phase49-6)');
+  lines.push('- Asset Collection: ' + draft.assetCollection);
+  lines.push('- Campaign: ' + draft.campaign);
+  lines.push('- Output Type: ' + draft.outputType);
+  lines.push('- Created Time: ' + draft.createdTime);
+  lines.push('- Headline Assets: ' + (draft.headlineAssets.length ? draft.headlineAssets.join(' / ') : '（なし）'));
+  lines.push('- Caption Assets: ' + (draft.captionAssets.length ? draft.captionAssets.join(' / ') : '（なし）'));
+  lines.push('- CTA Assets: ' + (draft.ctaAssets.length ? draft.ctaAssets.join(' / ') : '（なし）'));
+  lines.push('- Image Prompt Assets: ' + (draft.imagePromptAssets.length ? draft.imagePromptAssets.join(' / ') : '（対象外）'));
+  lines.push('- Video Prompt Assets: ' + (draft.videoPromptAssets.length ? draft.videoPromptAssets.join(' / ') : '（対象外）'));
+  lines.push('- Asset Tags: ' + (draft.assetTags.length ? draft.assetTags.join(', ') : '（なし）'));
+  lines.push('- Reusable Assets: ' + (draft.reusableAssets.length ? draft.reusableAssets.join(' / ') : '（なし）'));
+  lines.push('- Favorite: ' + (draft.favorite ? 'yes' : 'no'));
+  lines.push('- Archive: ' + (draft.archive ? 'yes' : 'no'));
+  lines.push('- Search Keywords: ' + (draft.searchKeywords.length ? draft.searchKeywords.join(', ') : '（なし）'));
+  lines.push('- Safety: ' + CREATIVE_ASSET_LIBRARY_SAFETY_LABELS.join(' / '));
+  if (draft.warnings.length) {
+    lines.push('- Warnings:');
+    draft.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+}
+
+function appendCreativeAssetLibraryToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeAssetLibrary || createCreativeAssetLibraryDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.creativeAssetLibrary = draft;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -26360,6 +26662,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildVideoPromptIntelligenceHtml,  'VideoPromptIntelligence')
     + _oeSafe(buildCreativeExecutionHtml,        'CreativeExecution')
     + _oeSafe(buildCreativeAdAssemblyHtml,       'CreativeAdAssembly')
+    + _oeSafe(buildCreativeAssetLibraryHtml,     'CreativeAssetLibrary')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')

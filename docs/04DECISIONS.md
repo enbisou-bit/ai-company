@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-04（Phase49-5 Creative Ad Assembly完了）
+更新日: 2026-07-04（Phase49-6 Creative Asset Library完了）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -673,4 +673,24 @@ Phase49-5において、Creative Ad Assemblyのスコープを「広告素材の
 - 「広告素材」という最終的にユーザー向けの成果物に近い概念でも、既存の安全設計（実行しない・参照のみ）を崩さないことで、Phase49系全体の回帰耐性と安全性を維持する
 
 追記日: 2026-07-04（Phase49-5完了）
+
+---
+
+# Decision 037
+## Creative Asset LibraryはCreative Engineファミリー最終Phaseとして既存Asset管理層のみを実装する
+
+Phase49-6において、Creative Asset Libraryのスコープを「既存Assetの管理・分類・コピー・Exportのみ」に限定し、新規判断を一切行わない方針を決定した。
+
+内容：
+- Creative Ad Assembly（Phase49-5）/ Creative Execution（Phase49-4）/ Image Prompt Intelligence（Phase49-2）/ Video Prompt Intelligence（Phase49-3）/ Publishing（Phase48-5）/ AI Gateway（Phase49-1）の**既存6関数の呼び出しのみ**でAssetを構成し、新規の判断・生成ロジックは一切追加しない
+- 画像生成・動画生成・SNS投稿・API実行は一切行わない（Asset Library Only / No External Execution / No AI Generation / Manual Reuse Only / Read Onlyを固定バッジとして常時表示）
+- Favorite/Archiveは静的なプレースホルダーフィールド（常にfalse）とし、DB変更・新規永続化は行わない
+- Asset Tags/Search Keywordsは既存データ（outputType/Output Type定義ラベル/Publishingのhashtags等）から機械的に抽出するのみで、AIによる新規タグ生成は行わない
+- Creative Engineファミリー（Phase49-1〜49-6）はこのPhaseで完結し、次はIntelligenceファミリー（Phase50-1〜）へ移行する
+
+理由：
+- Decision 030・033・034・035・036（AI Gateway/Image・Video Prompt Intelligence/Creative Execution/Creative Ad Assemblyは実行層ではなく判断層・プロンプト生成層・実行計画層・組み立て層から開始する）の方針を一貫して継承し、Creative Engineファミリーの最終Phaseも同じ安全設計で締めくくる
+- 「管理レイヤー」という性質上、新規のAI判断ロジックを追加する必要がないため、既存6関数の読み取りのみに限定することでAI Gateway等の既存判断ロジックへの影響を完全に排除できる
+
+追記日: 2026-07-04（Phase49-6完了）
 

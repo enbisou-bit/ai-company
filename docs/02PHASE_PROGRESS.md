@@ -1,12 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-04（Phase49-5 Creative Ad Assembly完了）
+> 更新日: 2026-07-04（Phase49-6 Creative Asset Library完了 / Creative Engineファミリー完結）
 
 ## 現在地
-- 現在フェーズ: **Phase49-5 完了（Creative Ad Assembly）**
-- 現在バージョン: **v1.00-phase49-5**
-- 次工程: **Phase49-6 Asset Library**
+- 現在フェーズ: **Phase49-6 完了（Creative Asset Library）＝Creative Engineファミリー（Phase49-1〜49-6）完結**
+- 現在バージョン: **v1.00-phase49-6**
+- 次工程: **Phase50-1 Marketing Intelligence Foundation（Intelligenceファミリー）**
 
 ---
 
@@ -656,6 +656,27 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49-6 Asset Library（Creative Engineファミリー最終Phase）
 - Git: Phase49-5 creative ad assembly / Tag: v1.00-phase49-5
+
+### Phase49-6: Creative Asset Library ✅（Creative Engineファミリー最終Phase）
+- `index.html`（Phase49-1〜49-5のAI Gateway/Image・Video Prompt Intelligence/Creative Execution/Creative Ad Assembly・Publishing/Preview Engineを一切変更せず、既存6関数の呼び出しのみで構成。新規判断・生成ロジックは追加していない）
+  - `CREATIVE_ASSET_LIBRARY_VERSION = '1.0.0'` / `CREATIVE_ASSET_LIBRARY_SAFETY_LABELS`（Asset Library Only/No External Execution/No AI Generation/Manual Reuse Only/Read Onlyの5ラベルを固定バッジとして常時表示）
+  - `createCreativeAssetLibraryDraft(outputDraft)` — `createCreativeAdAssemblyDraft()` / `createCreativeExecutionDraft()` / `createImagePromptIntelligenceDraft()` / `createVideoPromptIntelligenceDraft()` / `createPublishingDraft()` / `createAIGatewayDecision()`の**既存6関数の呼び出しのみ**でassetCollection/campaign/createdTime/headlineAssets/captionAssets/ctaAssets/imagePromptAssets/videoPromptAssets/publishingAssets/creativeExecutionAssets/assemblyAssets/assetTags/reusableAssets/favorite/archive/searchKeywords/warnings/copyTextを生成。Output Type別の分岐・新規判断は一切行わない（Decision 037）
+  - `favorite`/`archive`は常に`false`固定（静的プレースホルダー、新規永続化・DB変更なし）
+  - `_calBuildAssetTags()` / `_calBuildReusableAssets()` / `_calBuildSearchKeywords()` / `_calBuildWarnings()` / `_calBuildCopyText()` — 既存データからの機械的抽出のみ（AIによる新規タグ生成なし）
+  - `copyCreativeAssetLibraryField()` — Copy Asset Package/Copy Headline Assets/Copy Caption Assets/Copy Prompt Assets/Copy Tags/Copy Full Asset Libraryの6ケース
+  - `buildCreativeAssetLibraryHtml()` — `renderOutputEnginePanel()`内、`buildCreativeAdAssemblyHtml`の直後に表示。Asset Collection/Campaign/Output Type/Created Time/Headline・Caption・CTA・Image Prompt・Video Prompt Assets/Publishing・Creative Execution・Assembly Assets/Asset Tags/Reusable Assets/Favorite・Archive/Search Keywords/Warningsを表示
+  - `appendCreativeAssetLibraryToExportMarkdown()` / `appendCreativeAssetLibraryToExportJson()` — Export（Markdown`## Creative Asset Library`セクション/JSON`creativeAssetLibrary`キー）に反映
+  - CSS: `.oe-cal-*`（section/title/item/tag-chip/warning/badge/copyrow/copybtn/copymsg）を新規追加
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプでAsset Libraryパネル表示・favorite/archiveが常にfalseであることを確認
+  - Instagram（タグ8件、ハッシュタグ含む）等、Output Type別にAsset Tags/Search Keywordsの件数が既存データに応じて変動することを確認（新規判断ではなく既存データの機械的抽出であることを確認）
+  - Markdown/JSON Export双方への反映を確認
+  - Copy 6ボタンとも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・AI Gateway（Foundation/Expansion/Learning）・Image/Video Prompt Intelligence・Creative Execution・Creative Ad Assembly・Quality各パネルへの影響なし
+- AI Gateway/Image Prompt Intelligence/Video Prompt Intelligence/Creative Execution/Creative Ad Assemblyの判断ロジックは一切変更せず、読み取り専用（既存6関数の呼び出しのみ）で参照するのみ。新規API・外部通信・実際の画像/動画生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし（Asset管理・コピー・Exportのみ）
+- モデル変更・Provider構成変更は一切なし
+- Creative Engineファミリー（Phase49-1〜49-6）完結。次工程: Phase50-1 Marketing Intelligence Foundation（Intelligenceファミリー）
+- Git: Phase49-6 creative asset library / Tag: v1.00-phase49-6
 
 ---
 
