@@ -21,6 +21,39 @@
 
 ## Version2 予定
 
+### Version2 開発順（Phase53〜57・Affiliate Intelligence最優先・Decision 042）
+
+#### Phase53 Affiliate Intelligence（Version2最優先・中核機能）
+
+Instagram収益化AI会社の中核機能。複数ASPを比較し、以下をAI会社が分析する：
+- 利益率
+- Instagram適性
+- 競合
+- 季節性
+- 承認率
+- 投稿ネタ数
+- 収益期待値
+
+対象ASP: A8.net / もしもアフィリエイト / afb / アクセストレード / バリューコマース / 楽天アフィリエイト / Amazonアソシエイト。
+
+#### Phase54 Multi ASP Compare
+
+複数ASP横断比較（同一案件のASP間条件比較・最適ASP選定）。
+
+#### Phase55 Trend Intelligence
+
+トレンド・季節性・需要予測の高度化。
+
+#### Phase56 Revenue Optimization
+
+収益最適化（案件×投稿×時期の最適配分）。
+
+#### Phase57 AI Campaign Planner
+
+キャンペーン自動企画（月次/シーズン単位の投稿・案件計画）。
+
+### Version2 その他予定
+
 - Asset Library 実保存（表示のみ → 実DB保存へ移行）
 - Learning 永続化（メモリ → JSON/DB）
 - Instagram分析 高度化

@@ -14,7 +14,18 @@
 - **新機能追加前に実運用開始**。Version2（Asset Library実保存 / Learning永続化 / Instagram分析高度化 / TikTok / YouTube Shorts / LP連携 / AI自動改善）はVersion1運用が回り始めてから着手する
 - Version1の正式仕様（Decision 041）: Instagram APIは使用しない / 手動投稿が正式仕様 / Learningは投稿後に手入力 / Asset Libraryは表示のみ（実保存はVersion2）
 - 完成9機能: Instagram Marketing Intelligence / Instagram Content Planning / Instagram Carousel Builder / Instagram Design System / Mobile Review Center / Mobile Approval / Publishing Ready Center / Instagram Learning Center / Creative Asset Library Save Center（すべてindex.htmlへ追加のみ・既存無変更）
-- 最新Tag: **v1.00-phase52-2**（Phase50-2〜52-1の各Tag: v1.00-phase50-2 〜 v1.00-phase52-1）
+- 最新Tag: **v1.00-phase52-3**（Phase50-2〜52-1の各Tag: v1.00-phase50-2 〜 v1.00-phase52-1 / Phase52-2 docs記録 / Phase52-3 運用開始記録）
+
+### Version1 実運用フェーズ（Phase52-3記録・最重要）
+
+- **Version1は完成済み**（運用開始日 2026-07-04・Decision 042）。現在Version **v1.00-phase52-3** / Current **Version1 Operational**
+- 現在は次を最優先とする：
+  1. **Instagram実運用**（実際の投稿）
+  2. **Learningデータ蓄積**（投稿後に実績を手入力）
+  3. **Asset Library候補蓄積**
+- **Claude Code停止中（クレジット不足等）は開発を停止し、Instagram運営 / A8登録 / 市場分析 / アカウント育成 を進める**
+- **Version2開始時は Affiliate Intelligence（Phase53）を最優先で実装する**（複数ASP比較: 利益率/Instagram適性/競合/季節性/承認率/投稿ネタ数/収益期待値。対象ASP: A8.net / もしもアフィリエイト / afb / アクセストレード / バリューコマース / 楽天アフィリエイト / Amazonアソシエイト）
+- 新機能追加より先に、まず実運用を開始する
 
 ---
 

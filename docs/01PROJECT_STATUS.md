@@ -2,7 +2,24 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-05（Phase52-2 Version1 Documentation Complete・Instagram収益化パイプライン完成記録・Decision 041）
+更新日: 2026-07-05（Phase52-3 Version1 Operational・Instagram収益化運用開始・Decision 042）
+
+---
+
+## Version1 運用開始（Phase52-3 / Instagram収益化運用開始）
+
+- 現在Version: **v1.00-phase52-3**
+- Current: **Version1 Operational**
+- Status: **Instagram収益化運用開始**（運用開始日 2026-07-04）
+- 開発フェーズ → Instagram実運用フェーズ へ移行（Version1は実運用しながら改善する・Decision 042）
+
+現在の優先順位:
+1. **Instagram運用**（実際の投稿・アカウント育成）
+2. **A8登録**（A8.net等ASPへの登録・案件確保）
+3. **Learningデータ蓄積**（投稿後の実績を手入力しInstagram Learning Centerへ）
+4. **Version2設計**（Affiliate Intelligenceを最優先・Decision 042）
+
+Claude Code停止中（クレジット不足等）は開発を停止し、Instagram運営 / A8案件調査 / 市場分析 / アカウント育成を優先する（Decision 042）。
 
 ---
 
