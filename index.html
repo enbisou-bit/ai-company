@@ -1059,6 +1059,59 @@
   .oe-ids-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
   .oe-ids-copymsg    { font-size: 10px; color: rgba(245,210,140,0.9); opacity: 0; transition: opacity 0.3s; }
   .oe-ids-copymsg.show { opacity: 1; }
+  /* Phase50-5: Mobile Review Center (mobile-first) */
+  .oe-mrc-section    { border-radius: 10px; border: 1px solid rgba(80,210,140,0.32); background: linear-gradient(135deg, rgba(6,34,22,0.92), rgba(3,18,12,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-mrc-title      { font-size: 11px; color: rgba(130,235,180,0.92); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-mrc-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(80,210,140,0.16); color: rgba(150,240,190,0.95); border: 1px solid rgba(80,210,140,0.4); }
+  .oe-mrc-statusrow  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .oe-mrc-statuschip { font-size: 11px; font-weight: 800; padding: 3px 12px; border-radius: 12px; }
+  .oe-mrc-st-unconfirmed     { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); }
+  .oe-mrc-st-reviewing       { color: rgba(255,210,120,0.95); background: rgba(255,180,60,0.15); }
+  .oe-mrc-st-revision        { color: rgba(255,150,110,0.95); background: rgba(255,110,70,0.16); }
+  .oe-mrc-st-pending_approval{ color: rgba(120,200,255,0.95); background: rgba(60,150,255,0.15); }
+  .oe-mrc-st-approved        { color: rgba(150,240,190,0.98); background: rgba(80,210,140,0.18); }
+  .oe-mrc-progress   { font-size: 11px; color: rgba(255,255,255,0.65); }
+  .oe-mrc-phone-wrap { display: flex; justify-content: center; margin: 10px 0; }
+  .oe-mrc-phone      { width: 100%; max-width: 300px; aspect-ratio: 4/5; border-radius: 20px; border: 3px solid rgba(255,255,255,0.14); box-shadow: 0 8px 30px rgba(0,0,0,0.45); padding: 22px 20px; display: flex; flex-direction: column; position: relative; overflow: hidden; box-sizing: border-box; }
+  .oe-mrc-phone-num  { position: absolute; top: 12px; left: 12px; font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 10px; }
+  .oe-mrc-phone-role { position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; opacity: 0.85; }
+  .oe-mrc-accentbar  { height: 5px; width: 46px; border-radius: 3px; margin: 26px 0 14px; }
+  .oe-mrc-phone-headline { font-size: 21px; font-weight: 800; line-height: 1.35; }
+  .oe-mrc-phone-body { font-size: 14px; line-height: 1.6; margin-top: 10px; opacity: 0.92; }
+  .oe-mrc-phone-cta  { margin-top: auto; align-self: flex-start; font-size: 13px; font-weight: 700; padding: 9px 16px; border-radius: 999px; }
+  .oe-mrc-nav        { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
+  .oe-mrc-navbtn     { flex: 1; min-height: 44px; background: rgba(80,210,140,0.12); border: 1px solid rgba(80,210,140,0.35); border-radius: 12px; color: rgba(150,240,190,0.95); font-size: 15px; font-weight: 700; cursor: pointer; }
+  .oe-mrc-navbtn:hover { background: rgba(80,210,140,0.24); }
+  .oe-mrc-thumbs     { display: flex; gap: 6px; overflow-x: auto; padding: 6px 2px; -webkit-overflow-scrolling: touch; }
+  .oe-mrc-thumb      { flex: 0 0 auto; width: 40px; height: 50px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.15); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
+  .oe-mrc-thumb.active   { border-color: rgba(130,235,180,0.9); box-shadow: 0 0 0 2px rgba(80,210,140,0.3); }
+  .oe-mrc-thumb.ok       { border-color: rgba(80,210,140,0.75); }
+  .oe-mrc-thumb.revision { border-color: rgba(255,120,80,0.8); }
+  .oe-mrc-thumb-mark { position: absolute; bottom: -2px; right: -2px; font-size: 10px; }
+  .oe-mrc-actions    { display: flex; gap: 8px; margin: 8px 0; }
+  .oe-mrc-actionbtn  { flex: 1; min-height: 46px; border-radius: 12px; font-size: 15px; font-weight: 800; cursor: pointer; border: 1px solid transparent; }
+  .oe-mrc-ok         { background: rgba(80,210,140,0.16); border-color: rgba(80,210,140,0.45); color: rgba(150,240,190,0.98); }
+  .oe-mrc-ok.active  { background: rgba(80,210,140,0.4); color: #fff; }
+  .oe-mrc-rev        { background: rgba(255,120,80,0.14); border-color: rgba(255,120,80,0.45); color: rgba(255,170,130,0.98); }
+  .oe-mrc-rev.active { background: rgba(255,120,80,0.4); color: #fff; }
+  .oe-mrc-comment    { width: 100%; min-height: 54px; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(80,210,140,0.3); border-radius: 10px; color: rgba(255,255,255,0.9); font-size: 14px; padding: 9px 11px; resize: vertical; margin: 4px 0; }
+  .oe-mrc-select     { width: 100%; min-height: 44px; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(80,210,140,0.3); border-radius: 10px; color: rgba(255,255,255,0.9); font-size: 14px; padding: 6px 10px; margin: 4px 0; }
+  .oe-mrc-approvebtn { width: 100%; min-height: 50px; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; margin-top: 8px; background: rgba(60,150,255,0.18); border: 1px solid rgba(60,150,255,0.5); color: rgba(150,200,255,0.98); }
+  .oe-mrc-approvebtn.approved { background: rgba(80,210,140,0.3); border-color: rgba(80,210,140,0.6); color: #eafff3; cursor: default; }
+  .oe-mrc-meta       { font-size: 11px; color: rgba(255,255,255,0.62); line-height: 1.6; }
+  .oe-mrc-review     { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.7; margin-bottom: 3px; }
+  .oe-mrc-warning    { font-size: 11px; color: rgba(255,180,80,0.92); line-height: 1.6; }
+  .oe-mrc-btn        { background: rgba(80,210,140,0.15); border: 1px solid rgba(80,210,140,0.4); border-radius: 14px; color: rgba(150,240,190,0.95); font-size: 12px; font-weight: 600; min-height: 40px; padding: 6px 14px; cursor: pointer; }
+  .oe-mrc-btn:hover  { background: rgba(80,210,140,0.3); }
+  .oe-mrc-copyrow    { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-mrc-copymsg    { font-size: 11px; color: rgba(150,240,190,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-mrc-copymsg.show { opacity: 1; }
+  @media (max-width: 480px) {
+    .oe-mrc-phone { max-width: 100%; padding: 18px 16px; }
+    .oe-mrc-phone-headline { font-size: 19px; }
+    .oe-mrc-title { font-size: 12px; }
+    .oe-mrc-review, .oe-mrc-meta { font-size: 12px; }
+  }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23088,6 +23141,7 @@ function serializeOutputDraft(format) {
     appendInstagramContentPlanningToExportJson(jsonObj);
     appendInstagramCarouselBuilderToExportJson(jsonObj);
     appendInstagramDesignSystemToExportJson(jsonObj);
+    appendMobileReviewCenterToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23326,6 +23380,7 @@ function serializeOutputDraft(format) {
   appendInstagramContentPlanningToExportMarkdown(mdLines);
   appendInstagramCarouselBuilderToExportMarkdown(mdLines);
   appendInstagramDesignSystemToExportMarkdown(mdLines);
+  appendMobileReviewCenterToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -28389,6 +28444,386 @@ function appendInstagramDesignSystemToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase50-5: Mobile Review Center（Decision 039・Version1完成条件「スマホだけで成果物確認が完結する」工程）
+// 目的: Phase50-4 Instagram Design System の mobileReviewInput をもとに、iPhone/Androidブラウザから
+//   カルーセル確認/スライド確認/修正依頼/担当差し戻し/承認を行えるレビュー画面を構築し、
+//   次工程 Phase50-6 Mobile Approval へ渡せる mobileApprovalInput を作る。
+// レビュー状態・コメントはメモリ保持のみ（localStorage/DB/Learningへは書き込まない）。
+// 実際の再生成・画像生成・投稿・Instagram API接続・外部AI実行は一切行わない（Review Only）。
+// ============================================================
+
+const MOBILE_REVIEW_CENTER_VERSION = '1.0.0';
+
+const MRC_SAFETY_LABELS = [
+  'Review Only', 'No Image Generation', 'No Instagram API',
+  'No Auto Posting', 'No External AI', 'User Approval Required',
+];
+
+const MRC_REVISION_TARGETS = ['Designer', 'Writer', 'Leader'];
+
+var MRC_OVERALL_LABELS = {
+  unconfirmed: '未確認', reviewing: '確認中', revision: '修正依頼', pending_approval: '承認待ち', approved: '承認済',
+};
+var MRC_SLIDE_STATUS_LABELS = { pending: '未確認', ok: 'OK', revision: '修正' };
+
+// レビュー状態はメモリ保持のみ（DB/localStorage/Learningへは書き込まない）
+let _mobileReviewState = {
+  statusBySlide: {}, commentsBySlide: {}, revisionTargetBySlide: {},
+  currentSlideId: null, defaultTarget: 'Designer', approved: false, approveBlocked: false,
+};
+var _mrcTouchX = 0;
+
+// Phase50-5: レビュー対象スライドをDesign SystemのmobileReviewInputから生成し、状態(OK/修正/コメント)を付与
+function buildMobileReviewSlides(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return [];
+  var design = outputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(outputDraft);
+  if (!design || !design.mobileReviewInput || !Array.isArray(design.mobileReviewInput.slides)) return [];
+  return design.mobileReviewInput.slides.map(function(s) {
+    return {
+      slideId: s.slideId, slideNumber: s.slideNumber, role: s.role, roleLabel: s.roleLabel,
+      headline: s.headline, bodyText: s.bodyText, subtitle: s.subtitle,
+      backgroundColor: s.backgroundColor, textColor: s.textColor, accentColor: s.accentColor,
+      titleSize: s.titleSize, bodySize: s.bodySize,
+      textPosition: s.textPosition, photoPosition: s.photoPosition, ctaPosition: s.ctaPosition,
+      imagePromptSeed: s.imagePromptSeed, visualBalance: s.visualBalance,
+      reviewStatus: _mobileReviewState.statusBySlide[s.slideId] || 'pending',
+      comment: _mobileReviewState.commentsBySlide[s.slideId] || '',
+      revisionTarget: _mobileReviewState.revisionTargetBySlide[s.slideId] || _mobileReviewState.defaultTarget,
+    };
+  });
+}
+
+function _mrcOverallStatus(slides) {
+  if (_mobileReviewState.approved) return 'approved';
+  if (!slides.length) return 'unconfirmed';
+  var anyRevision = slides.some(function(s) { return s.reviewStatus === 'revision'; });
+  var allOk = slides.every(function(s) { return s.reviewStatus === 'ok'; });
+  var someReviewed = slides.some(function(s) { return s.reviewStatus === 'ok' || s.reviewStatus === 'revision'; });
+  if (anyRevision) return 'revision';
+  if (allOk) return 'pending_approval';
+  if (someReviewed) return 'reviewing';
+  return 'unconfirmed';
+}
+
+// Phase50-5: Mobile Review Center Draft生成（Design SystemのmobileReviewInputを参照。null draftでも例外なし）
+function createMobileReviewCenterDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var design = outputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(outputDraft);
+  if (!design || !design.mobileReviewInput) return null;
+  var mri = design.mobileReviewInput;
+  var slides = buildMobileReviewSlides(outputDraft);
+  if (!slides.length) return null;
+
+  var overall = _mrcOverallStatus(slides);
+  var approvedSlides = slides.filter(function(s) { return s.reviewStatus === 'ok'; }).map(function(s) { return s.slideNumber; });
+  var revisionRequests = slides.filter(function(s) { return s.reviewStatus === 'revision'; }).map(function(s) {
+    return { slideNumber: s.slideNumber, slideId: s.slideId, target: s.revisionTarget, comment: s.comment };
+  });
+  var comments = {};
+  slides.forEach(function(s) { if (s.comment) comments['slide' + s.slideNumber] = s.comment; });
+
+  var carouselScore = (typeof design.sourceCarouselScore === 'number') ? design.sourceCarouselScore
+    : ((outputDraft.instagramCarouselBuilder && outputDraft.instagramCarouselBuilder.carouselScore) || 0);
+
+  var mobileApprovalInput = {
+    reviewStatus: overall,
+    approvedSlides: approvedSlides,
+    revisionRequests: revisionRequests,
+    comments: comments,
+    designScore: design.designScore,
+    carouselScore: carouselScore,
+    template: mri.template,
+    hashtags: (mri.hashtags || []).slice(),
+  };
+
+  var currentSlideId = _mobileReviewState.currentSlideId;
+  if (!currentSlideId || !slides.filter(function(s) { return s.slideId === currentSlideId; }).length) {
+    currentSlideId = slides[0].slideId;
+  }
+
+  var version1Review = [
+    { label: 'Instagram収益化へ直接つながるか', note: '承認済みカルーセルのみを投稿工程へ渡す品質ゲート。mobileApprovalInputで収益導線付き完成物をPhase50-6へ接続' },
+    { label: 'Version1完成条件へ近づいたか', note: 'スマホだけで確認→修正依頼→承認まで完結。Version1完成条件「iPhone成果物確認・修正依頼・承認」を実装' },
+    { label: 'iPhone運用へ近づいたか', note: 'モバイル最適化UI（大きめボタン・スワイプ・サムネイル）でiPhoneブラウザから運用可能。実投稿はPhase50-6承認後の手動' },
+  ];
+
+  var warnings = ['本Phaseはレビュー画面のみです。修正依頼を出しても実際の再生成・画像生成・投稿・外部AI実行は行いません（担当への差し戻しメモのみ）。'];
+  if (_mobileReviewState.approveBlocked) warnings.push('全スライドがOKになっていないため承認できません。未確認/修正のスライドを確認してください。');
+
+  return {
+    version: MOBILE_REVIEW_CENTER_VERSION,
+    safetyLabels: MRC_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    template: mri.template,
+    designScore: design.designScore,
+    carouselScore: carouselScore,
+    slides: slides,
+    currentSlideId: currentSlideId,
+    overallStatus: overall,
+    approved: _mobileReviewState.approved,
+    approveBlocked: _mobileReviewState.approveBlocked,
+    mobileApprovalInput: mobileApprovalInput,
+    version1Review: version1Review,
+    warnings: warnings,
+  };
+}
+
+function _mrcRerender() {
+  if (_lastOutputDraft) _lastOutputDraft.mobileReviewCenter = createMobileReviewCenterDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function selectMobileReviewSlide(slideId) {
+  _mobileReviewState.currentSlideId = slideId;
+  _mrcRerender();
+}
+
+function mobileReviewNav(dir) {
+  var slides = buildMobileReviewSlides(_lastOutputDraft);
+  if (!slides.length) return;
+  var cur = _mobileReviewState.currentSlideId || slides[0].slideId;
+  var idx = 0;
+  slides.forEach(function(s, i) { if (s.slideId === cur) idx = i; });
+  idx = dir === 'next' ? Math.min(slides.length - 1, idx + 1) : Math.max(0, idx - 1);
+  _mobileReviewState.currentSlideId = slides[idx].slideId;
+  _mrcRerender();
+}
+
+function setMobileReviewSlideOk(slideId) {
+  _mobileReviewState.statusBySlide[slideId] = 'ok';
+  _mobileReviewState.approveBlocked = false;
+  _mrcRerender();
+}
+
+function requestSlideRevision(slideId) {
+  _mobileReviewState.statusBySlide[slideId] = 'revision';
+  _mobileReviewState.approved = false;
+  _mrcRerender();
+}
+
+function _mrcSetTarget(slideId, target) { _mobileReviewState.revisionTargetBySlide[slideId] = target; }
+function _mrcOnComment(slideId, val) { _mobileReviewState.commentsBySlide[slideId] = val; }
+
+function approveMobileReview() {
+  var slides = buildMobileReviewSlides(_lastOutputDraft);
+  var allOk = slides.length > 0 && slides.every(function(s) { return s.reviewStatus === 'ok'; });
+  if (allOk) { _mobileReviewState.approved = true; _mobileReviewState.approveBlocked = false; }
+  else { _mobileReviewState.approved = false; _mobileReviewState.approveBlocked = true; }
+  _mrcRerender();
+}
+
+function _mrcTouchStart(e) { try { _mrcTouchX = (e.touches && e.touches[0]) ? e.touches[0].clientX : 0; } catch (x) {} }
+function _mrcTouchEnd(e) {
+  try {
+    var x = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : 0;
+    var dx = x - _mrcTouchX;
+    if (Math.abs(dx) > 40) mobileReviewNav(dx < 0 ? 'next' : 'prev');
+  } catch (x) {}
+}
+
+function _mrcBuildReviewSummaryText(draft) {
+  var L = ['【Mobile Review Summary】', ''];
+  L.push('全体ステータス: ' + MRC_OVERALL_LABELS[draft.overallStatus]);
+  L.push('Template: ' + draft.template.name + ' / Design Score: ' + draft.designScore + ' / Carousel Score: ' + draft.carouselScore);
+  L.push('');
+  draft.slides.forEach(function(s) {
+    L.push('#' + s.slideNumber + ' [' + s.roleLabel + '] ' + MRC_SLIDE_STATUS_LABELS[s.reviewStatus] + (s.comment ? ' | コメント: ' + s.comment : ''));
+  });
+  return L.join('\n');
+}
+
+function _mrcBuildRevisionNotesText(draft) {
+  var reqs = draft.mobileApprovalInput.revisionRequests;
+  if (!reqs.length) return '【Revision Notes】\n（修正依頼はありません）';
+  var L = ['【Revision Notes】', ''];
+  reqs.forEach(function(r) { L.push('#' + r.slideNumber + ' → ' + r.target + '差し戻し: ' + (r.comment || '（コメントなし）')); });
+  return L.join('\n');
+}
+
+function _mrcBuildApprovalSummaryText(draft) {
+  var mai = draft.mobileApprovalInput;
+  var L = ['【Approval Summary】', ''];
+  L.push('reviewStatus: ' + MRC_OVERALL_LABELS[mai.reviewStatus] + '（' + mai.reviewStatus + '）');
+  L.push('承認済スライド: ' + (mai.approvedSlides.length ? mai.approvedSlides.map(function(n) { return '#' + n; }).join(' ') : 'なし'));
+  L.push('修正依頼: ' + mai.revisionRequests.length + '件');
+  L.push('Design Score: ' + mai.designScore + ' / Carousel Score: ' + mai.carouselScore);
+  return L.join('\n');
+}
+
+function _mrcBuildPublishingInputText(draft) {
+  var mai = draft.mobileApprovalInput;
+  var L = ['【Mobile Approval Input (Phase50-6 / Publishing Input)】', ''];
+  L.push('reviewStatus: ' + mai.reviewStatus);
+  L.push('template: ' + mai.template.name + '（' + mai.template.recommendedGenre + '）');
+  L.push('designScore: ' + mai.designScore + ' / carouselScore: ' + mai.carouselScore);
+  L.push('approvedSlides: ' + (mai.approvedSlides.join(', ') || 'なし'));
+  L.push('revisionRequests: ' + mai.revisionRequests.length + '件');
+  mai.revisionRequests.forEach(function(r) { L.push('  #' + r.slideNumber + ' → ' + r.target + ': ' + (r.comment || '-')); });
+  L.push('hashtags: ' + mai.hashtags.join(' '));
+  return L.join('\n');
+}
+
+function _mrcCopyToClipboard(text) {
+  var msg = document.getElementById('oe-mrc-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-5: コピー（Review Summary / Revision Notes / Approval Summary / Publishing Input）
+function copyMobileReviewField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.mobileReviewCenter || createMobileReviewCenterDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'summary') text = _mrcBuildReviewSummaryText(draft);
+  else if (type === 'revision') text = _mrcBuildRevisionNotesText(draft);
+  else if (type === 'approval') text = _mrcBuildApprovalSummaryText(draft);
+  else if (type === 'publishing') text = _mrcBuildPublishingInputText(draft);
+  if (!text) return;
+  _mrcCopyToClipboard(text);
+}
+
+// Phase50-5: Mobile Review Center HTML生成（Instagram Design Systemの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
+function buildMobileReviewHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.mobileReviewCenter || createMobileReviewCenterDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.mobileReviewCenter = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-mrc-badge">' + esc(l) + '</span>'; }).join('');
+
+  var okCount = draft.slides.filter(function(s) { return s.reviewStatus === 'ok'; }).length;
+  var statusHtml = '<div class="oe-mrc-statusrow">'
+    + '<span class="oe-mrc-statuschip oe-mrc-st-' + draft.overallStatus + '">' + esc(MRC_OVERALL_LABELS[draft.overallStatus]) + '</span>'
+    + '<span class="oe-mrc-progress">OK ' + okCount + ' / ' + draft.slides.length + '　修正 ' + draft.mobileApprovalInput.revisionRequests.length + '件</span>'
+    + '</div>';
+
+  var current = draft.slides.filter(function(s) { return s.slideId === draft.currentSlideId; })[0] || draft.slides[0];
+
+  var ctaHtml = (current.role === 'cta' || current.ctaPosition && current.ctaPosition !== 'なし')
+    ? '<div class="oe-mrc-phone-cta" style="background:' + esc(current.accentColor) + ';color:#fff;">' + esc(current.role === 'cta' ? current.headline : 'CTA: ' + current.ctaPosition) + '</div>'
+    : '';
+  var phoneBody = (current.role === 'cta') ? '' : '<div class="oe-mrc-phone-body">' + esc(current.subtitle || current.bodyText || '') + '</div>';
+  var phone = '<div class="oe-mrc-phone-wrap">'
+    + '<div class="oe-mrc-phone" style="background:' + esc(current.backgroundColor) + ';color:' + esc(current.textColor) + ';" ontouchstart="_mrcTouchStart(event)" ontouchend="_mrcTouchEnd(event)">'
+    +   '<span class="oe-mrc-phone-num" style="background:' + esc(current.accentColor) + ';color:#fff;">' + current.slideNumber + '/' + draft.slides.length + '</span>'
+    +   '<span class="oe-mrc-phone-role">' + esc(current.roleLabel) + '</span>'
+    +   '<div class="oe-mrc-accentbar" style="background:' + esc(current.accentColor) + ';"></div>'
+    +   '<div class="oe-mrc-phone-headline">' + esc(current.headline) + '</div>'
+    +   phoneBody
+    +   ctaHtml
+    + '</div>'
+    + '</div>';
+
+  var nav = '<div class="oe-mrc-nav">'
+    + '<button class="oe-mrc-navbtn" onclick="mobileReviewNav(\'prev\')">‹ 前へ</button>'
+    + '<button class="oe-mrc-navbtn" onclick="mobileReviewNav(\'next\')">次へ ›</button>'
+    + '</div>';
+
+  var thumbs = '<div class="oe-mrc-thumbs">' + draft.slides.map(function(s) {
+    var cls = 'oe-mrc-thumb' + (s.slideId === draft.currentSlideId ? ' active' : '') + (s.reviewStatus === 'ok' ? ' ok' : (s.reviewStatus === 'revision' ? ' revision' : ''));
+    var mark = s.reviewStatus === 'ok' ? '<span class="oe-mrc-thumb-mark">✅</span>' : (s.reviewStatus === 'revision' ? '<span class="oe-mrc-thumb-mark">✏️</span>' : '');
+    return '<div class="' + cls + '" style="background:' + esc(s.backgroundColor) + ';color:' + esc(s.textColor) + ';" onclick="selectMobileReviewSlide(\'' + esc(s.slideId) + '\')">' + s.slideNumber + mark + '</div>';
+  }).join('') + '</div>';
+
+  var targetOptions = MRC_REVISION_TARGETS.map(function(t) {
+    return '<option value="' + esc(t) + '"' + (current.revisionTarget === t ? ' selected' : '') + '>' + esc(t) + 'へ差し戻し</option>';
+  }).join('');
+
+  var actions = '<div class="oe-mrc-meta">Slide ' + current.slideNumber + '「' + esc(current.headline) + '」のレビュー</div>'
+    + '<div class="oe-mrc-actions">'
+    +   '<button class="oe-mrc-actionbtn oe-mrc-ok' + (current.reviewStatus === 'ok' ? ' active' : '') + '" onclick="setMobileReviewSlideOk(\'' + esc(current.slideId) + '\')">✅ OK</button>'
+    +   '<button class="oe-mrc-actionbtn oe-mrc-rev' + (current.reviewStatus === 'revision' ? ' active' : '') + '" onclick="requestSlideRevision(\'' + esc(current.slideId) + '\')">✏️ 修正依頼</button>'
+    + '</div>'
+    + '<textarea class="oe-mrc-comment" placeholder="コメント（メモリ保持のみ）" oninput="_mrcOnComment(\'' + esc(current.slideId) + '\', this.value)">' + esc(current.comment) + '</textarea>'
+    + '<select class="oe-mrc-select" onchange="_mrcSetTarget(\'' + esc(current.slideId) + '\', this.value)">' + targetOptions + '</select>';
+
+  var approveBtn = (draft.overallStatus === 'approved')
+    ? '<button class="oe-mrc-approvebtn approved">✅ 承認済み</button>'
+    : '<button class="oe-mrc-approvebtn" onclick="approveMobileReview()">この内容で承認する（全スライドOKが必要）</button>';
+
+  var reviewHtml = draft.version1Review.map(function(c) {
+    return '<div class="oe-mrc-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-mrc-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-mrc-section">'
+    + '<div class="oe-mrc-title">📱 Mobile Review Center <span style="font-weight:400;opacity:.5;">v' + MOBILE_REVIEW_CENTER_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + statusHtml
+    + phone
+    + nav
+    + thumbs
+    + actions
+    + approveBtn
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-mrc-copyrow">'
+    +   '<button class="oe-mrc-btn" onclick="copyMobileReviewField(\'summary\')">Copy Review Summary</button>'
+    +   '<button class="oe-mrc-btn" onclick="copyMobileReviewField(\'revision\')">Copy Revision Notes</button>'
+    +   '<button class="oe-mrc-btn" onclick="copyMobileReviewField(\'approval\')">Copy Approval Summary</button>'
+    +   '<button class="oe-mrc-btn" onclick="copyMobileReviewField(\'publishing\')">Copy Publishing Input</button>'
+    +   '<span id="oe-mrc-copy-msg" class="oe-mrc-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-5: Export反映
+function appendMobileReviewCenterToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.mobileReviewCenter || createMobileReviewCenterDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Mobile Review Center (Phase50-5)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  lines.push('- Overall Status: ' + MRC_OVERALL_LABELS[draft.overallStatus] + '（' + draft.overallStatus + '）');
+  lines.push('- Template: ' + draft.template.name + ' / Design Score: ' + draft.designScore + ' / Carousel Score: ' + draft.carouselScore);
+  lines.push('- Slides Review (' + draft.slides.length + '):');
+  draft.slides.forEach(function(s) { lines.push('  - #' + s.slideNumber + ' [' + s.roleLabel + '] ' + MRC_SLIDE_STATUS_LABELS[s.reviewStatus] + (s.comment ? ' | ' + s.comment : '')); });
+  if (draft.mobileApprovalInput.revisionRequests.length) {
+    lines.push('- Revision Requests:');
+    draft.mobileApprovalInput.revisionRequests.forEach(function(r) { lines.push('  - #' + r.slideNumber + ' → ' + r.target + ': ' + (r.comment || '-')); });
+  }
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+  lines.push('- Mobile Approval Input (Phase50-6): reviewStatus=' + draft.mobileApprovalInput.reviewStatus + ' / approvedSlides=' + draft.mobileApprovalInput.approvedSlides.length + ' / revisions=' + draft.mobileApprovalInput.revisionRequests.length);
+}
+
+function appendMobileReviewCenterToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.mobileReviewCenter || createMobileReviewCenterDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.mobileReviewCenter = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    overallStatus: draft.overallStatus,
+    template: draft.template,
+    designScore: draft.designScore,
+    carouselScore: draft.carouselScore,
+    slides: draft.slides,
+    mobileApprovalInput: draft.mobileApprovalInput,
+    version1Review: draft.version1Review,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -28521,6 +28956,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildInstagramContentPlanningHtml, 'InstagramContentPlanning')
     + _oeSafe(buildInstagramCarouselBuilderHtml, 'InstagramCarouselBuilder')
     + _oeSafe(buildInstagramDesignHtml,          'InstagramDesignSystem')
+    + _oeSafe(buildMobileReviewHtml,             'MobileReviewCenter')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
