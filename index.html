@@ -1236,6 +1236,45 @@
     .oe-ilc-title { font-size: 12px; }
     .oe-ilc-review, .oe-ilc-meta { font-size: 12px; }
   }
+  /* Phase52-1: Asset Library Save Center (mobile-first) */
+  .oe-als-section    { border-radius: 10px; border: 1px solid rgba(235,200,110,0.34); background: linear-gradient(135deg, rgba(34,26,6,0.92), rgba(18,14,4,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-als-title      { font-size: 11px; color: rgba(245,215,130,0.92); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-als-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(235,200,110,0.16); color: rgba(248,224,150,0.95); border: 1px solid rgba(235,200,110,0.4); }
+  .oe-als-statusrow  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .oe-als-statuschip { font-size: 12px; font-weight: 800; padding: 4px 14px; border-radius: 12px; }
+  .oe-als-st-not_saved { color: rgba(255,255,255,0.72); background: rgba(255,255,255,0.08); }
+  .oe-als-st-ready     { color: rgba(150,200,255,0.98); background: rgba(60,150,255,0.16); }
+  .oe-als-st-saved     { color: rgba(150,240,190,0.98); background: rgba(80,210,140,0.2); }
+  .oe-als-st-archived  { color: rgba(200,180,255,0.98); background: rgba(150,120,255,0.18); }
+  .oe-als-scorebar   { display: flex; align-items: center; gap: 10px; background: rgba(235,200,110,0.08); border: 1px solid rgba(235,200,110,0.25); border-radius: 8px; padding: 8px 12px; margin: 6px 0; flex-wrap: wrap; }
+  .oe-als-scorebig   { font-size: 22px; font-weight: 800; color: rgba(248,224,150,0.98); }
+  .oe-als-scorelabel { font-size: 10px; color: rgba(255,255,255,0.6); }
+  .oe-als-chips      { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .oe-als-chip       { font-size: 9px; color: rgba(248,228,165,0.85); background: rgba(235,200,110,0.1); border: 1px solid rgba(235,200,110,0.22); border-radius: 8px; padding: 1px 7px; }
+  .oe-als-grid       { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+  .oe-als-cell       { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 9px; }
+  .oe-als-ck         { font-size: 9px; color: rgba(255,255,255,0.5); }
+  .oe-als-cv         { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.85); word-break: break-word; }
+  .oe-als-block      { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 11px; margin: 5px 0; }
+  .oe-als-blockt     { font-size: 10px; font-weight: 800; color: rgba(245,215,130,0.9); margin-bottom: 3px; }
+  .oe-als-meta       { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.6; word-break: break-word; }
+  .oe-als-tag        { display: inline-block; font-size: 9px; color: rgba(248,228,165,0.85); background: rgba(235,200,110,0.1); border: 1px solid rgba(235,200,110,0.2); border-radius: 6px; padding: 1px 6px; margin: 2px 4px 0 0; }
+  .oe-als-savebtn    { width: 100%; min-height: 50px; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; margin-top: 8px; background: rgba(235,200,110,0.2); border: 1px solid rgba(235,200,110,0.5); color: rgba(248,224,150,0.98); }
+  .oe-als-savebtn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .oe-als-savebtn.done { background: rgba(80,210,140,0.3); border-color: rgba(80,210,140,0.6); color: #eafff3; cursor: default; }
+  .oe-als-subbtn     { min-height: 44px; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); padding: 0 16px; margin-top: 8px; }
+  .oe-als-review     { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.7; margin-bottom: 3px; }
+  .oe-als-warning    { font-size: 11px; color: rgba(255,180,80,0.92); line-height: 1.6; }
+  .oe-als-btn        { background: rgba(235,200,110,0.15); border: 1px solid rgba(235,200,110,0.4); border-radius: 14px; color: rgba(248,224,150,0.95); font-size: 12px; font-weight: 600; min-height: 40px; padding: 6px 14px; cursor: pointer; }
+  .oe-als-btn:hover  { background: rgba(235,200,110,0.3); }
+  .oe-als-copyrow    { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-als-copymsg    { font-size: 11px; color: rgba(248,224,150,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-als-copymsg.show { opacity: 1; }
+  @media (max-width: 480px) {
+    .oe-als-grid { grid-template-columns: 1fr; }
+    .oe-als-title { font-size: 12px; }
+    .oe-als-review, .oe-als-meta { font-size: 12px; }
+  }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23269,6 +23308,7 @@ function serializeOutputDraft(format) {
     appendMobileApprovalToExportJson(jsonObj);
     appendPublishingReadyToExportJson(jsonObj);
     appendInstagramLearningToExportJson(jsonObj);
+    appendAssetLibrarySaveToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23511,6 +23551,7 @@ function serializeOutputDraft(format) {
   appendMobileApprovalToExportMarkdown(mdLines);
   appendPublishingReadyToExportMarkdown(mdLines);
   appendInstagramLearningToExportMarkdown(mdLines);
+  appendAssetLibrarySaveToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -30185,6 +30226,359 @@ function appendInstagramLearningToExportJson(payload) {
   if (_instagramLearningHistory.length) payload._instagramLearningHistory = _instagramLearningHistory.slice(0, 10);
 }
 
+// ============================================================
+// Phase52-1: Asset Library Save Center / Creative Asset Library Save Integration v1（Decision 039・Version1「資産として蓄積」工程）
+// 目的: Instagram Learning Center の bestPattern/successPattern と Publishing Ready の成果物を、
+//   Creative Asset Libraryへの「保存候補」として生成・表示する（良かった投稿を会社資産として蓄積し再利用）。
+// 保存対象は表示のみ。実際のDB保存・Creative Asset Libraryへの書き込みは行わない（Display Only / No DB Write）。
+// 既存Creative Asset Library・Learning Engine・Publishing Engineは無変更で読み取り専用参照のみ。
+// Instagram API接続・自動投稿・画像/動画生成・外部AI実行・課金は一切行わない。
+// ============================================================
+
+const ASSET_LIBRARY_SAVE_VERSION = '1.0.0';
+
+const ALS_SAFETY_LABELS = [
+  'Save Candidate Only', 'No DB Write', 'No Instagram API',
+  'No Auto Posting', 'No External AI', 'Display Only',
+];
+
+var ALS_STATUS_LABELS = { not_saved: 'Not Saved', ready: 'Ready', saved: 'Saved', archived: 'Archived' };
+var ALS_SUMMARY_LABELS = { assetQuality: 'Asset Quality', learningValue: 'Learning Value', reuseScore: 'Reuse Score', instagramScore: 'Instagram Score', versionScore: 'Version Score' };
+
+// 保存状態はメモリ保持のみ（実際のDB保存・Asset Libraryへの書き込みは行わない）
+let _assetLibrarySaveState = { saved: false, savedAt: null, archived: false };
+
+function _alsHasLearning(outputDraft) {
+  var l = outputDraft ? (outputDraft.instagramLearning || createInstagramLearningDraft(outputDraft)) : null;
+  return !!(l && l.hasEntry);
+}
+
+function _alsStatus(hasLearning) {
+  if (_assetLibrarySaveState.archived) return 'archived';
+  if (_assetLibrarySaveState.saved) return 'saved';
+  if (hasLearning) return 'ready';
+  return 'not_saved';
+}
+
+// Phase52-1: 保存候補の資産価値を5軸で評価（Asset Quality / Learning Value / Reuse Score / Instagram Score / Version Score）
+function scoreAssetLibrarySave(d) {
+  function clamp(n) { return Math.max(0, Math.min(100, Math.round(typeof n === 'number' ? n : 0))); }
+  d = d || {};
+  var design = d.designScore || 0, carousel = d.carouselScore || 0, publishing = d.publishingScore || 0;
+  var perf = d.performanceScore || 0, saveRate = d.saveRate || 0;
+  var hasEntry = !!d.hasEntry, savedOrArchived = !!(d.saved || d.archived);
+
+  var assetQuality = clamp((design + carousel + publishing) / 3);
+  var learningValue = clamp(hasEntry ? (perf * 0.7 + 30) : 40);
+  var reuseScore = clamp(hasEntry ? (perf * 0.5 + assetQuality * 0.5) : assetQuality * 0.6);
+  var instagramScore = clamp(hasEntry ? (Math.min(100, saveRate * 3) * 0.3 + perf * 0.4 + carousel * 0.3) : carousel * 0.5);
+  var versionScore = clamp(40 + (hasEntry ? 30 : 0) + (publishing ? 15 : 0) + (savedOrArchived ? 15 : 0));
+
+  return { assetQuality: assetQuality, learningValue: learningValue, reuseScore: reuseScore, instagramScore: instagramScore, versionScore: versionScore };
+}
+
+// Phase52-1: Asset Library Save Center Draft生成（Learning Center/Publishing Readyを参照。null draftでも例外なし）
+function createAssetLibrarySaveDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var learning = outputDraft.instagramLearning || createInstagramLearningDraft(outputDraft);
+  var pr = outputDraft.publishingReady || (typeof createPublishingReadyDraft === 'function' ? createPublishingReadyDraft(outputDraft) : null);
+  var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
+  if (!learning && !pr) return null;
+
+  var hasEntry = !!(learning && learning.hasEntry);
+  var m = (learning && learning.metrics) ? learning.metrics : null;
+  var lo = (learning && learning.learningOutput) ? learning.learningOutput : null;
+
+  var theme = (builder && builder.planningInput) ? builder.planningInput.theme : (learning && learning.context ? learning.context.postTitle : '');
+  var title = (learning && learning.latestEntry && learning.latestEntry.postTitle) || (pr ? pr.title : '') || theme || 'Instagram資産';
+  var template = pr && pr.package && pr.package.template ? pr.package.template.name : (learning && learning.context ? learning.context.template : '');
+  var designScore = pr && pr.package ? pr.package.scores.designScore : (learning && learning.context ? learning.context.designScore : 0);
+  var carouselScore = pr && pr.package ? pr.package.scores.carouselScore : (learning && learning.context ? learning.context.carouselScore : 0);
+  var publishingScore = pr ? pr.publishingScore : (learning && learning.context ? learning.context.publishingScore : 0);
+
+  var status = _alsStatus(hasEntry);
+
+  var candidate = {
+    title: title,
+    theme: theme,
+    template: template,
+    designScore: designScore,
+    carouselScore: carouselScore,
+    performanceScore: m ? m.performanceScore : null,
+    saveRate: m ? m.saveRate : null,
+    engagement: m ? m.engagement : null,
+    ctr: m ? m.ctr : null,
+    conversion: m ? m.conversion : null,
+    revenue: m ? m.revenue : null,
+    bestPattern: lo ? lo.bestPattern : '（実績入力後に生成）',
+    successPattern: lo ? lo.successPattern : '（実績入力後に生成）',
+    improvementPriority: lo ? lo.improvementPriority : '-',
+    savedAt: _assetLibrarySaveState.savedAt,
+  };
+
+  var saveTargets = {
+    caption: pr ? pr.caption : '',
+    hashtags: pr ? pr.hashtags : [],
+    cta: pr ? pr.cta : '',
+    slides: pr ? pr.slides : [],
+    template: template,
+    design: designScore,
+    performance: m ? m.performanceScore : null,
+    learningSummary: lo ? lo.learningSummary : '',
+    bestPattern: lo ? lo.bestPattern : '',
+    successPattern: lo ? lo.successPattern : '',
+    mistakePattern: lo ? lo.mistakePattern : '',
+  };
+
+  var assetSummary = scoreAssetLibrarySave({
+    designScore: designScore, carouselScore: carouselScore, publishingScore: publishingScore,
+    performanceScore: m ? m.performanceScore : 0, saveRate: m ? m.saveRate : 0,
+    hasEntry: hasEntry, saved: _assetLibrarySaveState.saved, archived: _assetLibrarySaveState.archived,
+  });
+
+  var version1Review = [
+    { label: 'Instagram収益化へ近づいたか', note: '売上/保存率が高い勝ち投稿を資産候補として蓄積し、次回制作の再利用で収益効率を高める' },
+    { label: 'Learningへ反映できるか', note: 'bestPattern/successPattern/mistakePatternを保存候補に含め、学習成果を資産化（表示のみ・既存Learning無変更）' },
+    { label: 'Asset Libraryへ反映できるか', note: 'Creative Asset Libraryへの保存候補を生成（Version1は表示のみ・実DB保存は行わない）' },
+    { label: 'Version1完成条件へ近づいたか', note: '市場分析→…→投稿→学習→資産蓄積のループを完成。次回Instagram制作へ再利用できる会社資産を形成' },
+  ];
+
+  var warnings = ['本Phaseは保存候補の表示のみです。実際のDB保存・Creative Asset Libraryへの書き込み・Instagram API接続・自動投稿・AI実行・課金は一切行いません。'];
+  if (!hasEntry) warnings.push('Instagram Learning Centerで実績を入力すると、bestPattern/successPatternを含む完全な保存候補になります。');
+
+  return {
+    version: ASSET_LIBRARY_SAVE_VERSION,
+    safetyLabels: ALS_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    saveStatus: status,
+    canSave: hasEntry,
+    saved: _assetLibrarySaveState.saved,
+    savedAt: _assetLibrarySaveState.savedAt,
+    archived: _assetLibrarySaveState.archived,
+    candidate: candidate,
+    saveTargets: saveTargets,
+    assetSummary: assetSummary,
+    version1Review: version1Review,
+    warnings: warnings,
+  };
+}
+
+function _alsRerender() {
+  if (_lastOutputDraft) _lastOutputDraft.assetLibrarySave = createAssetLibrarySaveDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+// 「Asset Libraryへ保存（候補確定）」— 表示上の保存状態のみ変更。実DB保存は行わない
+function markAssetSaved() {
+  if (!_lastOutputDraft || !_alsHasLearning(_lastOutputDraft)) return;
+  _assetLibrarySaveState.saved = true;
+  _assetLibrarySaveState.savedAt = new Date().toISOString();
+  _alsRerender();
+}
+
+function archiveAssetSave() {
+  if (_assetLibrarySaveState.saved) { _assetLibrarySaveState.archived = true; _alsRerender(); }
+}
+
+function resetAssetSave() {
+  _assetLibrarySaveState.saved = false;
+  _assetLibrarySaveState.savedAt = null;
+  _assetLibrarySaveState.archived = false;
+  _alsRerender();
+}
+
+function _alsBuildSummaryText(draft) {
+  var c = draft.candidate, a = draft.assetSummary;
+  var L = ['【Asset Library Save Candidate】', ''];
+  L.push('Status: ' + (ALS_STATUS_LABELS[draft.saveStatus] || draft.saveStatus));
+  L.push('タイトル: ' + c.title + ' / テーマ: ' + c.theme + ' / テンプレート: ' + c.template);
+  L.push('Design ' + c.designScore + ' / Carousel ' + c.carouselScore + ' / Performance ' + (c.performanceScore !== null ? c.performanceScore : '-'));
+  L.push('Save Rate ' + (c.saveRate !== null ? c.saveRate + '%' : '-') + ' / Engagement ' + (c.engagement !== null ? c.engagement : '-') + ' / CTR ' + (c.ctr !== null ? c.ctr + '%' : '-') + ' / CV ' + (c.conversion !== null ? c.conversion + '%' : '-') + ' / Revenue ' + (c.revenue !== null ? c.revenue + '円' : '-'));
+  L.push('保存日時: ' + (c.savedAt || '（未保存）'));
+  L.push('');
+  L.push('Asset Summary:');
+  Object.keys(ALS_SUMMARY_LABELS).forEach(function(k) { L.push('  ' + ALS_SUMMARY_LABELS[k] + ': ' + a[k]); });
+  return L.join('\n');
+}
+
+function _alsBuildTargetsText(draft) {
+  var t = draft.saveTargets;
+  var L = ['【Save Targets】', ''];
+  L.push('Caption: ' + (t.caption || '-'));
+  L.push('Hashtags: ' + (t.hashtags || []).join(' '));
+  L.push('CTA: ' + (t.cta || '-'));
+  L.push('Slides: ' + (t.slides || []).length + '枚');
+  L.push('Template: ' + (t.template || '-'));
+  L.push('Design: ' + t.design + ' / Performance: ' + (t.performance !== null ? t.performance : '-'));
+  L.push('Learning Summary: ' + (t.learningSummary || '-'));
+  L.push('Best Pattern: ' + (t.bestPattern || '-'));
+  L.push('Success Pattern: ' + (t.successPattern || '-'));
+  L.push('Mistake Pattern: ' + (t.mistakePattern || '-'));
+  return L.join('\n');
+}
+
+function _alsBuildPatternsText(draft) {
+  var t = draft.saveTargets;
+  return ['【Learning Patterns】', '', 'Best Pattern: ' + (t.bestPattern || '-'), 'Success Pattern: ' + (t.successPattern || '-'), 'Mistake Pattern: ' + (t.mistakePattern || '-'), 'Improvement Priority: ' + draft.candidate.improvementPriority].join('\n');
+}
+
+function _alsCopyToClipboard(text) {
+  var msg = document.getElementById('oe-als-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase52-1: コピー（Asset Summary / Save Targets / Patterns / Full）
+function copyAssetLibrarySaveField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.assetLibrarySave || createAssetLibrarySaveDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'summary') text = _alsBuildSummaryText(draft);
+  else if (type === 'targets') text = _alsBuildTargetsText(draft);
+  else if (type === 'patterns') text = _alsBuildPatternsText(draft);
+  else if (type === 'full') text = _alsBuildSummaryText(draft) + '\n\n' + _alsBuildTargetsText(draft);
+  if (!text) return;
+  _alsCopyToClipboard(text);
+}
+
+// Phase52-1: Asset Library Save Center HTML生成（Instagram Learning Centerの直後に表示。データ不足でも安全に空文字を返す）
+function buildAssetLibrarySaveHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.assetLibrarySave || createAssetLibrarySaveDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.assetLibrarySave = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-als-badge">' + esc(l) + '</span>'; }).join('');
+
+  var statusHtml = '<div class="oe-als-statusrow"><span class="oe-als-statuschip oe-als-st-' + draft.saveStatus + '">' + esc(ALS_STATUS_LABELS[draft.saveStatus] || draft.saveStatus) + '</span>'
+    + (draft.savedAt ? '<span class="oe-als-meta">保存記録: ' + esc(draft.savedAt) + '</span>' : '') + '</div>';
+
+  var a = draft.assetSummary;
+  var summaryChips = Object.keys(ALS_SUMMARY_LABELS).map(function(k) { return '<span class="oe-als-chip">' + esc(ALS_SUMMARY_LABELS[k]) + ' ' + a[k] + '</span>'; }).join('');
+  var overall = Math.round((a.assetQuality + a.learningValue + a.reuseScore + a.instagramScore + a.versionScore) / 5);
+  var scoreBar = '<div class="oe-als-scorebar"><span class="oe-als-scorebig">' + overall + '</span>'
+    + '<div><div class="oe-als-scorelabel">Asset Summary（資産価値・平均）</div><div class="oe-als-chips">' + summaryChips + '</div></div></div>';
+
+  var c = draft.candidate;
+  function cell(k, v) { return '<div class="oe-als-cell"><div class="oe-als-ck">' + esc(k) + '</div><div class="oe-als-cv">' + esc(v) + '</div></div>'; }
+  function nv(v, suf) { return v === null || v === undefined ? '-' : (v + (suf || '')); }
+  var gridHtml = '<div class="oe-als-grid">'
+    + cell('保存候補タイトル', c.title)
+    + cell('投稿テーマ', c.theme || '-')
+    + cell('テンプレート', c.template || '-')
+    + cell('Design Score', c.designScore)
+    + cell('Carousel Score', c.carouselScore)
+    + cell('Performance Score', nv(c.performanceScore))
+    + cell('Save Rate', nv(c.saveRate, '%'))
+    + cell('Engagement', nv(c.engagement))
+    + cell('CTR', nv(c.ctr, '%'))
+    + cell('Conversion', nv(c.conversion, '%'))
+    + cell('Revenue', nv(c.revenue, '円'))
+    + cell('Improvement Priority', c.improvementPriority)
+    + cell('保存日時', c.savedAt || '（未保存）')
+    + '</div>'
+    + '<div class="oe-als-block"><div class="oe-als-blockt">Best Pattern</div><div class="oe-als-meta">' + esc(c.bestPattern) + '</div></div>'
+    + '<div class="oe-als-block"><div class="oe-als-blockt">Success Pattern</div><div class="oe-als-meta">' + esc(c.successPattern) + '</div></div>';
+
+  var t = draft.saveTargets;
+  var targetTags = ['Caption', 'Hashtags', 'CTA', 'Slides', 'Template', 'Design', 'Performance', 'Learning Summary', 'Best Pattern', 'Success Pattern', 'Mistake Pattern'].map(function(name) { return '<span class="oe-als-tag">' + esc(name) + '</span>'; }).join('');
+  var targetsHtml = '<div class="oe-als-block"><div class="oe-als-blockt">保存対象（11項目・表示のみ）</div><div>' + targetTags + '</div>'
+    + '<div class="oe-als-meta" style="margin-top:4px;">Caption: ' + esc((t.caption || '-')) + ' / Hashtags: ' + (t.hashtags || []).length + '件 / Slides: ' + (t.slides || []).length + '枚</div></div>';
+
+  var saveBtn;
+  if (draft.saveStatus === 'saved' || draft.saveStatus === 'archived') {
+    saveBtn = '<button class="oe-als-savebtn done">✅ Asset Libraryへ保存（候補確定）</button>'
+      + (draft.saveStatus === 'saved' ? '<button class="oe-als-subbtn" onclick="archiveAssetSave()">アーカイブ（Archived）</button>' : '')
+      + '<button class="oe-als-subbtn" onclick="resetAssetSave()">状態をリセット</button>';
+  } else if (draft.canSave) {
+    saveBtn = '<button class="oe-als-savebtn" onclick="markAssetSaved()">Asset Libraryへ保存（候補確定・表示のみ）</button>';
+  } else {
+    saveBtn = '<button class="oe-als-savebtn" disabled>Asset Libraryへ保存（実績入力後に有効）</button>';
+  }
+
+  var reviewHtml = draft.version1Review.map(function(r) {
+    return '<div class="oe-als-review">☐ ' + esc(r.label) + '<br><span style="opacity:.7;">　' + esc(r.note) + '</span></div>';
+  }).join('');
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-als-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-als-section">'
+    + '<div class="oe-als-title">🗄 Asset Library Save Center <span style="font-weight:400;opacity:.5;">v' + ASSET_LIBRARY_SAVE_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + statusHtml
+    + scoreBar
+    + '<div class="oe-pkg-label">保存候補</div>'
+    + gridHtml
+    + targetsHtml
+    + '<div class="oe-pkg-label">保存操作（表示のみ・実DB保存なし）</div>'
+    + saveBtn
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-als-copyrow">'
+    +   '<button class="oe-als-btn" onclick="copyAssetLibrarySaveField(\'summary\')">Copy Asset Summary</button>'
+    +   '<button class="oe-als-btn" onclick="copyAssetLibrarySaveField(\'targets\')">Copy Save Targets</button>'
+    +   '<button class="oe-als-btn" onclick="copyAssetLibrarySaveField(\'patterns\')">Copy Patterns</button>'
+    +   '<button class="oe-als-btn" onclick="copyAssetLibrarySaveField(\'full\')">Copy Full</button>'
+    +   '<span id="oe-als-copy-msg" class="oe-als-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase52-1: Export反映
+function appendAssetLibrarySaveToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.assetLibrarySave || createAssetLibrarySaveDraft(_lastOutputDraft);
+  if (!draft) return;
+  var c = draft.candidate, a = draft.assetSummary;
+  lines.push('');
+  lines.push('## Asset Library Save Center (Phase52-1)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  lines.push('- Save Status: ' + (ALS_STATUS_LABELS[draft.saveStatus] || draft.saveStatus));
+  lines.push('- 保存候補: ' + c.title + ' / テーマ: ' + (c.theme || '-') + ' / テンプレート: ' + (c.template || '-'));
+  lines.push('- Scores: Design ' + c.designScore + ' / Carousel ' + c.carouselScore + ' / Performance ' + (c.performanceScore !== null ? c.performanceScore : '-'));
+  lines.push('- Metrics: Save Rate ' + (c.saveRate !== null ? c.saveRate + '%' : '-') + ' / Engagement ' + (c.engagement !== null ? c.engagement : '-') + ' / CTR ' + (c.ctr !== null ? c.ctr + '%' : '-') + ' / CV ' + (c.conversion !== null ? c.conversion + '%' : '-') + ' / Revenue ' + (c.revenue !== null ? c.revenue + '円' : '-'));
+  lines.push('- Best Pattern: ' + c.bestPattern);
+  lines.push('- Success Pattern: ' + c.successPattern);
+  lines.push('- Improvement Priority: ' + c.improvementPriority);
+  lines.push('- Asset Summary: ' + Object.keys(ALS_SUMMARY_LABELS).map(function(k) { return ALS_SUMMARY_LABELS[k] + ' ' + a[k]; }).join(' / '));
+  lines.push('- 保存日時: ' + (c.savedAt || '（未保存）'));
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(r) { lines.push('  - ' + r.label + ': ' + r.note); });
+}
+
+function appendAssetLibrarySaveToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.assetLibrarySave || createAssetLibrarySaveDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.assetLibrarySave = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    saveStatus: draft.saveStatus,
+    saved: draft.saved,
+    savedAt: draft.savedAt,
+    archived: draft.archived,
+    candidate: draft.candidate,
+    saveTargets: draft.saveTargets,
+    assetSummary: draft.assetSummary,
+    version1Review: draft.version1Review,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -30321,6 +30715,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
     + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
     + _oeSafe(buildInstagramLearningHtml,        'InstagramLearningCenter')
+    + _oeSafe(buildAssetLibrarySaveHtml,         'AssetLibrarySaveCenter')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
