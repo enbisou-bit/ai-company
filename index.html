@@ -1112,6 +1112,48 @@
     .oe-mrc-title { font-size: 12px; }
     .oe-mrc-review, .oe-mrc-meta { font-size: 12px; }
   }
+  /* Phase50-6: Mobile Approval (mobile-first) */
+  .oe-map-section    { border-radius: 10px; border: 1px solid rgba(90,160,255,0.32); background: linear-gradient(135deg, rgba(8,18,40,0.92), rgba(4,9,22,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-map-title      { font-size: 11px; color: rgba(150,190,255,0.92); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-map-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(90,160,255,0.16); color: rgba(170,205,255,0.95); border: 1px solid rgba(90,160,255,0.4); }
+  .oe-map-statusrow  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .oe-map-statuschip { font-size: 12px; font-weight: 800; padding: 4px 14px; border-radius: 12px; }
+  .oe-map-st-draft    { color: rgba(255,255,255,0.72); background: rgba(255,255,255,0.08); }
+  .oe-map-st-ready    { color: rgba(150,200,255,0.98); background: rgba(60,150,255,0.16); }
+  .oe-map-st-approved { color: rgba(150,240,190,0.98); background: rgba(80,210,140,0.2); }
+  .oe-map-st-rejected { color: rgba(255,150,120,0.98); background: rgba(255,110,70,0.18); }
+  .oe-map-summary    { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; }
+  .oe-map-sumcell    { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 7px 10px; }
+  .oe-map-sumk       { font-size: 9px; color: rgba(255,255,255,0.5); }
+  .oe-map-sumv       { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.85); }
+  .oe-map-checkrow   { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 10px; margin: 4px 0; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; cursor: pointer; }
+  .oe-map-checkrow.checked { border-color: rgba(80,210,140,0.5); background: rgba(80,210,140,0.08); }
+  .oe-map-checkbox   { width: 24px; height: 24px; border-radius: 6px; border: 2px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; font-size: 15px; flex: 0 0 auto; }
+  .oe-map-checkrow.checked .oe-map-checkbox { border-color: rgba(80,210,140,0.7); color: rgba(150,240,190,0.98); }
+  .oe-map-checklabel { font-size: 14px; color: rgba(255,255,255,0.82); font-weight: 600; }
+  .oe-map-checkhint  { font-size: 10px; color: rgba(255,255,255,0.45); margin-left: auto; }
+  .oe-map-actions    { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .oe-map-approvebtn { flex: 1; min-width: 140px; min-height: 50px; border-radius: 14px; font-size: 16px; font-weight: 800; cursor: pointer; background: rgba(80,210,140,0.2); border: 1px solid rgba(80,210,140,0.5); color: rgba(150,240,190,0.98); }
+  .oe-map-approvebtn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .oe-map-approvebtn.done { background: rgba(80,210,140,0.4); color: #eafff3; cursor: default; }
+  .oe-map-rejectbtn  { min-height: 50px; min-width: 90px; border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer; background: rgba(255,110,70,0.15); border: 1px solid rgba(255,110,70,0.45); color: rgba(255,170,130,0.98); padding: 0 16px; }
+  .oe-map-cancelbtn  { min-height: 50px; min-width: 90px; border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); padding: 0 16px; }
+  .oe-map-ready      { background: rgba(80,210,140,0.08); border: 1px solid rgba(80,210,140,0.3); border-radius: 10px; padding: 9px 12px; margin: 8px 0; }
+  .oe-map-ready-title{ font-size: 11px; font-weight: 800; color: rgba(150,240,190,0.95); margin-bottom: 4px; }
+  .oe-map-meta       { font-size: 11px; color: rgba(255,255,255,0.62); line-height: 1.6; }
+  .oe-map-review     { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.7; margin-bottom: 3px; }
+  .oe-map-warning    { font-size: 11px; color: rgba(255,180,80,0.92); line-height: 1.6; }
+  .oe-map-btn        { background: rgba(90,160,255,0.15); border: 1px solid rgba(90,160,255,0.4); border-radius: 14px; color: rgba(170,205,255,0.95); font-size: 12px; font-weight: 600; min-height: 40px; padding: 6px 14px; cursor: pointer; }
+  .oe-map-btn:hover  { background: rgba(90,160,255,0.3); }
+  .oe-map-copyrow    { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-map-copymsg    { font-size: 11px; color: rgba(170,205,255,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-map-copymsg.show { opacity: 1; }
+  @media (max-width: 480px) {
+    .oe-map-summary { grid-template-columns: 1fr; }
+    .oe-map-title { font-size: 12px; }
+    .oe-map-review, .oe-map-meta { font-size: 12px; }
+    .oe-map-approvebtn { min-width: 100%; }
+  }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23142,6 +23184,7 @@ function serializeOutputDraft(format) {
     appendInstagramCarouselBuilderToExportJson(jsonObj);
     appendInstagramDesignSystemToExportJson(jsonObj);
     appendMobileReviewCenterToExportJson(jsonObj);
+    appendMobileApprovalToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23381,6 +23424,7 @@ function serializeOutputDraft(format) {
   appendInstagramCarouselBuilderToExportMarkdown(mdLines);
   appendInstagramDesignSystemToExportMarkdown(mdLines);
   appendMobileReviewCenterToExportMarkdown(mdLines);
+  appendMobileApprovalToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -28824,6 +28868,395 @@ function appendMobileReviewCenterToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase50-6: Mobile Approval（Decision 039・Version1完成条件「スマホだけで承認まで完結する」工程）
+// 目的: Phase50-5 Mobile Review Center の mobileApprovalInput をもとに、iPhone/Androidブラウザから
+//   最終確認/承認/投稿準備完了/Publishing Readyへの引き渡し（publishingReadyInput生成）を行う。
+// 承認状態・チェック状態はメモリ保持のみ。実際の投稿・画像生成・Instagram API接続・外部AI実行は一切行わない（Approval Only）。
+// 既存関数（Mobile Review Center / Publishing / Carousel Builder等）は読み取り専用で参照する（中身は変更しない）。
+// ============================================================
+
+const MOBILE_APPROVAL_VERSION = '1.0.0';
+
+const MAP_SAFETY_LABELS = [
+  'Approval Only', 'No Instagram API', 'No Auto Posting',
+  'No Image Generation', 'No External AI', 'Manual Publishing Required',
+];
+
+var MAP_STATUS_LABELS = { draft: 'Draft（下書き）', ready: 'Ready For Approval（承認待ち）', approved: 'Approved（承認済）', rejected: 'Rejected（差し戻し）' };
+
+var MAP_CHECKLIST = [
+  { key: 'caption', label: '投稿文' },
+  { key: 'cta', label: 'CTA' },
+  { key: 'hashtags', label: 'ハッシュタグ' },
+  { key: 'design', label: 'デザイン' },
+  { key: 'slides', label: 'スライド' },
+  { key: 'noRevision', label: '修正依頼なし' },
+  { key: 'ready', label: '投稿準備完了' },
+];
+
+// 承認状態はメモリ保持のみ（DB/localStorage/Learningへは書き込まない）
+let _mobileApprovalState = { checklist: {}, decision: null, approvedAt: null, approveBlocked: false };
+
+function _mapReviewApproved(mai) { return !!(mai && mai.reviewStatus === 'approved'); }
+function _mapAllChecked() { return MAP_CHECKLIST.every(function(c) { return !!_mobileApprovalState.checklist[c.key]; }); }
+
+function _mapDerivedStatus(mai) {
+  if (_mobileApprovalState.decision === 'approved') return 'approved';
+  if (_mobileApprovalState.decision === 'rejected') return 'rejected';
+  if (_mapAllChecked() && _mapReviewApproved(mai)) return 'ready';
+  return 'draft';
+}
+
+// Phase50-6: Mobile Approval Draft生成（Mobile Review CenterのmobileApprovalInputを参照。null draftでも例外なし）
+function createMobileApprovalDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var review = outputDraft.mobileReviewCenter || createMobileReviewCenterDraft(outputDraft);
+  if (!review || !review.mobileApprovalInput) return null;
+  var mai = review.mobileApprovalInput;
+
+  var pub = outputDraft.publishing || createPublishingDraft(outputDraft);
+  var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
+  var pi = (builder && builder.planningInput) ? builder.planningInput : null;
+
+  var caption = (pub && (pub.description || pub.caption)) || (pi ? pi.benefit : '') || '';
+  var cta = (pub && pub.cta) || (pi ? pi.suggestedCTA : '') || '';
+  var hashtags = (mai.hashtags && mai.hashtags.length) ? mai.hashtags.slice() : ((pub && pub.hashtags) || []).slice();
+
+  var theme = pi ? pi.theme : (mai.template ? mai.template.name : 'テーマ');
+  var targetAudience = pi ? pi.targetAudience : '';
+
+  var compactSlides = review.slides.map(function(s) {
+    return { slideNumber: s.slideNumber, role: s.role, roleLabel: s.roleLabel, headline: s.headline, backgroundColor: s.backgroundColor, accentColor: s.accentColor, reviewStatus: s.reviewStatus };
+  });
+
+  var revisionCount = mai.revisionRequests.length;
+  var checklist = MAP_CHECKLIST.map(function(c) {
+    var hint = '';
+    if (c.key === 'caption') hint = caption ? '生成済み' : '未設定';
+    else if (c.key === 'cta') hint = cta ? '生成済み' : '未設定';
+    else if (c.key === 'hashtags') hint = hashtags.length + '件';
+    else if (c.key === 'design') hint = 'Design ' + mai.designScore;
+    else if (c.key === 'slides') hint = compactSlides.length + '枚';
+    else if (c.key === 'noRevision') hint = revisionCount === 0 ? '修正なし' : '修正 ' + revisionCount + '件あり';
+    else if (c.key === 'ready') hint = mai.reviewStatus === 'approved' ? 'レビュー承認済' : 'レビュー未承認';
+    return { key: c.key, label: c.label, checked: !!_mobileApprovalState.checklist[c.key], hint: hint };
+  });
+
+  var approvalStatus = _mapDerivedStatus(mai);
+  var canApprove = _mapAllChecked() && _mapReviewApproved(mai);
+
+  var reviewSummary = {
+    overallStatus: mai.reviewStatus,
+    approvedSlides: mai.approvedSlides.slice(),
+    revisionRequests: revisionCount,
+  };
+
+  var publishingReadyInput = {
+    approvalStatus: approvalStatus,
+    approvedAt: _mobileApprovalState.approvedAt,
+    designScore: mai.designScore,
+    carouselScore: mai.carouselScore,
+    slides: compactSlides,
+    caption: caption,
+    hashtags: hashtags,
+    cta: cta,
+    template: mai.template,
+    reviewSummary: reviewSummary,
+  };
+
+  var approvalPackage = (approvalStatus === 'approved') ? {
+    approvalStatus: 'approved',
+    approvedAt: _mobileApprovalState.approvedAt,
+    theme: theme,
+    template: mai.template,
+    designScore: mai.designScore,
+    carouselScore: mai.carouselScore,
+    checklist: checklist,
+    publishingReadyInput: publishingReadyInput,
+  } : null;
+
+  var version1Review = [
+    { label: 'Instagram収益化へ直接つながるか', note: '承認済みパッケージのみをPublishing Readyへ渡す最終ゲート。収益導線付き完成物を手動投稿工程へ確実に接続' },
+    { label: 'Version1完成条件へ近づいたか', note: 'スマホだけで最終確認→承認→投稿準備完了まで完結。Version1完成条件「iPhone承認」を実装' },
+    { label: 'iPhone運用へ近づいたか', note: 'モバイル最適化UI（44px以上ボタン・レスポンシブ）でiPhoneから承認可能。実投稿は承認後の手動を維持' },
+  ];
+
+  var warnings = ['本Phaseは承認とPublishing Readyへの引き渡しのみです。実際の投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行いません（承認後の投稿は手動）。'];
+  if (_mobileApprovalState.approveBlocked) warnings.push('承認できません。全チェック項目の完了とMobile Review Centerでの承認（reviewStatus=承認済）が必要です。');
+  if (approvalStatus !== 'approved' && revisionCount > 0) warnings.push('Mobile Review Centerに未対応の修正依頼が' + revisionCount + '件あります。');
+
+  return {
+    version: MOBILE_APPROVAL_VERSION,
+    safetyLabels: MAP_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    summary: {
+      theme: theme, targetAudience: targetAudience, template: mai.template ? mai.template.name : '',
+      carouselCount: compactSlides.length, designScore: mai.designScore, carouselScore: mai.carouselScore,
+      reviewStatus: mai.reviewStatus, approvedSlidesCount: mai.approvedSlides.length,
+    },
+    checklist: checklist,
+    approvalStatus: approvalStatus,
+    canApprove: canApprove,
+    approvedAt: _mobileApprovalState.approvedAt,
+    caption: caption,
+    cta: cta,
+    hashtags: hashtags,
+    slides: compactSlides,
+    reviewSummary: reviewSummary,
+    publishingReadyInput: publishingReadyInput,
+    approvalPackage: approvalPackage,
+    version1Review: version1Review,
+    warnings: warnings,
+  };
+}
+
+function _mapRerender() {
+  if (_lastOutputDraft) _lastOutputDraft.mobileApproval = createMobileApprovalDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function toggleApprovalCheck(key) {
+  _mobileApprovalState.checklist[key] = !_mobileApprovalState.checklist[key];
+  _mobileApprovalState.approveBlocked = false;
+  _mapRerender();
+}
+
+function approveInstagramPackage() {
+  var review = _lastOutputDraft ? (_lastOutputDraft.mobileReviewCenter || createMobileReviewCenterDraft(_lastOutputDraft)) : null;
+  var mai = review ? review.mobileApprovalInput : null;
+  if (_mapAllChecked() && _mapReviewApproved(mai)) {
+    _mobileApprovalState.decision = 'approved';
+    _mobileApprovalState.approvedAt = new Date().toISOString();
+    _mobileApprovalState.approveBlocked = false;
+  } else {
+    _mobileApprovalState.approveBlocked = true;
+  }
+  _mapRerender();
+}
+
+function rejectMobileApproval() {
+  _mobileApprovalState.decision = 'rejected';
+  _mobileApprovalState.approvedAt = null;
+  _mobileApprovalState.approveBlocked = false;
+  _mapRerender();
+}
+
+function cancelApproval() {
+  _mobileApprovalState.decision = null;
+  _mobileApprovalState.approvedAt = null;
+  _mobileApprovalState.approveBlocked = false;
+  _mapRerender();
+}
+
+function _mapBuildApprovalSummaryText(draft) {
+  var s = draft.summary;
+  var L = ['【Approval Summary】', ''];
+  L.push('承認ステータス: ' + MAP_STATUS_LABELS[draft.approvalStatus]);
+  L.push('テーマ: ' + s.theme);
+  L.push('ターゲット: ' + s.targetAudience);
+  L.push('テンプレート: ' + s.template);
+  L.push('カルーセル枚数: ' + s.carouselCount);
+  L.push('Design Score: ' + s.designScore + ' / Carousel Score: ' + s.carouselScore);
+  L.push('Review Status: ' + (MRC_OVERALL_LABELS[s.reviewStatus] || s.reviewStatus));
+  L.push('Approved Slides: ' + s.approvedSlidesCount + ' / ' + s.carouselCount);
+  return L.join('\n');
+}
+
+function _mapBuildPublishingPackageText(draft) {
+  var L = ['【Publishing Package】', ''];
+  L.push('■ 投稿文（Caption）');
+  L.push(draft.caption || '（未設定）');
+  L.push('');
+  L.push('■ CTA');
+  L.push(draft.cta || '（未設定）');
+  L.push('');
+  L.push('■ ハッシュタグ（' + draft.hashtags.length + '件）');
+  L.push(draft.hashtags.join(' '));
+  L.push('');
+  L.push('■ スライド（' + draft.slides.length + '枚）');
+  draft.slides.forEach(function(s) { L.push('#' + s.slideNumber + ' [' + s.roleLabel + '] ' + s.headline); });
+  return L.join('\n');
+}
+
+function _mapBuildApprovalReportText(draft) {
+  var L = ['【Approval Report】', ''];
+  L.push('承認ステータス: ' + MAP_STATUS_LABELS[draft.approvalStatus]);
+  if (draft.approvedAt) L.push('承認日時: ' + draft.approvedAt);
+  L.push('');
+  L.push('最終確認チェックリスト:');
+  draft.checklist.forEach(function(c) { L.push('  ' + (c.checked ? '☑' : '☐') + ' ' + c.label + '（' + c.hint + '）'); });
+  L.push('');
+  L.push('レビュー: ' + (MRC_OVERALL_LABELS[draft.reviewSummary.overallStatus] || draft.reviewSummary.overallStatus)
+    + ' / 承認スライド ' + draft.reviewSummary.approvedSlides.length + ' / 修正依頼 ' + draft.reviewSummary.revisionRequests + '件');
+  return L.join('\n');
+}
+
+function _mapBuildPublishingReadyInputText(draft) {
+  var p = draft.publishingReadyInput;
+  var L = ['【Publishing Ready Input (次工程 / Publishing Ready)】', ''];
+  L.push('approvalStatus: ' + p.approvalStatus);
+  L.push('approvedAt: ' + (p.approvedAt || '（未承認）'));
+  L.push('template: ' + (p.template ? p.template.name : '') + '（' + (p.template ? p.template.recommendedGenre : '') + '）');
+  L.push('designScore: ' + p.designScore + ' / carouselScore: ' + p.carouselScore);
+  L.push('slides: ' + p.slides.length + '枚');
+  L.push('caption: ' + (p.caption || '（未設定）'));
+  L.push('cta: ' + (p.cta || '（未設定）'));
+  L.push('hashtags: ' + p.hashtags.join(' '));
+  L.push('reviewSummary: ' + (MRC_OVERALL_LABELS[p.reviewSummary.overallStatus] || p.reviewSummary.overallStatus)
+    + ' / approvedSlides ' + p.reviewSummary.approvedSlides.length + ' / revisions ' + p.reviewSummary.revisionRequests);
+  return L.join('\n');
+}
+
+function _mapCopyToClipboard(text) {
+  var msg = document.getElementById('oe-map-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-6: コピー（Approval Summary / Publishing Package / Approval Report / Publishing Ready Input）
+function copyMobileApprovalField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.mobileApproval || createMobileApprovalDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'summary') text = _mapBuildApprovalSummaryText(draft);
+  else if (type === 'package') text = _mapBuildPublishingPackageText(draft);
+  else if (type === 'report') text = _mapBuildApprovalReportText(draft);
+  else if (type === 'ready') text = _mapBuildPublishingReadyInputText(draft);
+  if (!text) return;
+  _mapCopyToClipboard(text);
+}
+
+// Phase50-6: Mobile Approval HTML生成（Mobile Review Centerの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
+function buildMobileApprovalHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.mobileApproval || createMobileApprovalDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.mobileApproval = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-map-badge">' + esc(l) + '</span>'; }).join('');
+
+  var statusHtml = '<div class="oe-map-statusrow"><span class="oe-map-statuschip oe-map-st-' + draft.approvalStatus + '">' + esc(MAP_STATUS_LABELS[draft.approvalStatus]) + '</span>'
+    + (draft.approvedAt ? '<span class="oe-map-meta">承認: ' + esc(draft.approvedAt) + '</span>' : '') + '</div>';
+
+  var s = draft.summary;
+  function cell(k, v) { return '<div class="oe-map-sumcell"><div class="oe-map-sumk">' + esc(k) + '</div><div class="oe-map-sumv">' + esc(v) + '</div></div>'; }
+  var summaryHtml = '<div class="oe-map-summary">'
+    + cell('テーマ', s.theme)
+    + cell('ターゲット', s.targetAudience || '-')
+    + cell('テンプレート', s.template)
+    + cell('カルーセル枚数', s.carouselCount + '枚')
+    + cell('Design Score', s.designScore)
+    + cell('Carousel Score', s.carouselScore)
+    + cell('Review Status', MRC_OVERALL_LABELS[s.reviewStatus] || s.reviewStatus)
+    + cell('Approved Slides', s.approvedSlidesCount + ' / ' + s.carouselCount)
+    + '</div>';
+
+  var checklistHtml = draft.checklist.map(function(c) {
+    return '<div class="oe-map-checkrow' + (c.checked ? ' checked' : '') + '" onclick="toggleApprovalCheck(\'' + esc(c.key) + '\')">'
+      + '<span class="oe-map-checkbox">' + (c.checked ? '✓' : '') + '</span>'
+      + '<span class="oe-map-checklabel">' + esc(c.label) + '</span>'
+      + '<span class="oe-map-checkhint">' + esc(c.hint) + '</span>'
+      + '</div>';
+  }).join('');
+
+  var approveBtn = (draft.approvalStatus === 'approved')
+    ? '<button class="oe-map-approvebtn done">✅ 承認済み（Publishing Ready）</button>'
+    : '<button class="oe-map-approvebtn" onclick="approveInstagramPackage()"' + (draft.canApprove ? '' : ' disabled') + '>この内容で承認する</button>';
+  var actionsHtml = '<div class="oe-map-actions">' + approveBtn
+    + (draft.approvalStatus === 'approved'
+        ? '<button class="oe-map-cancelbtn" onclick="cancelApproval()">承認を取消</button>'
+        : '<button class="oe-map-rejectbtn" onclick="rejectMobileApproval()">差し戻し</button>'
+          + (draft.approvalStatus === 'rejected' ? '<button class="oe-map-cancelbtn" onclick="cancelApproval()">下書きに戻す</button>' : ''))
+    + '</div>';
+
+  var readyHtml = (draft.approvalStatus === 'approved')
+    ? '<div class="oe-map-ready"><div class="oe-map-ready-title">🚀 Publishing Ready — 投稿準備完了</div>'
+      + '<div class="oe-map-meta">投稿文・CTA・ハッシュタグ・' + draft.slides.length + '枚のスライド設計が承認されました。実際の投稿はユーザーが手動で行ってください（自動投稿なし）。</div></div>'
+    : '';
+
+  var reviewHtml = draft.version1Review.map(function(c) {
+    return '<div class="oe-map-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-map-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-map-section">'
+    + '<div class="oe-map-title">✅ Mobile Approval <span style="font-weight:400;opacity:.5;">v' + MOBILE_APPROVAL_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + statusHtml
+    + '<div class="oe-pkg-label">承認サマリー</div>'
+    + summaryHtml
+    + '<div class="oe-pkg-label">最終確認チェック（タップで切替）</div>'
+    + checklistHtml
+    + actionsHtml
+    + readyHtml
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-map-copyrow">'
+    +   '<button class="oe-map-btn" onclick="copyMobileApprovalField(\'summary\')">Copy Approval Summary</button>'
+    +   '<button class="oe-map-btn" onclick="copyMobileApprovalField(\'package\')">Copy Publishing Package</button>'
+    +   '<button class="oe-map-btn" onclick="copyMobileApprovalField(\'report\')">Copy Approval Report</button>'
+    +   '<button class="oe-map-btn" onclick="copyMobileApprovalField(\'ready\')">Copy Publishing Ready Input</button>'
+    +   '<span id="oe-map-copy-msg" class="oe-map-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-6: Export反映
+function appendMobileApprovalToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.mobileApproval || createMobileApprovalDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Mobile Approval (Phase50-6)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  lines.push('- Approval Status: ' + MAP_STATUS_LABELS[draft.approvalStatus]);
+  if (draft.approvedAt) lines.push('- Approved At: ' + draft.approvedAt);
+  lines.push('- Theme: ' + draft.summary.theme + ' / Template: ' + draft.summary.template);
+  lines.push('- Design Score: ' + draft.summary.designScore + ' / Carousel Score: ' + draft.summary.carouselScore);
+  lines.push('- Review Status: ' + (MRC_OVERALL_LABELS[draft.summary.reviewStatus] || draft.summary.reviewStatus) + ' / Approved Slides: ' + draft.summary.approvedSlidesCount + '/' + draft.summary.carouselCount);
+  lines.push('- Checklist:');
+  draft.checklist.forEach(function(c) { lines.push('  - ' + (c.checked ? '[x]' : '[ ]') + ' ' + c.label + '（' + c.hint + '）'); });
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+  lines.push('- Publishing Ready Input: approvalStatus=' + draft.publishingReadyInput.approvalStatus + ' / slides=' + draft.publishingReadyInput.slides.length + ' / hashtags=' + draft.publishingReadyInput.hashtags.length);
+}
+
+function appendMobileApprovalToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.mobileApproval || createMobileApprovalDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.mobileApproval = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    approvalStatus: draft.approvalStatus,
+    approvedAt: draft.approvedAt,
+    summary: draft.summary,
+    checklist: draft.checklist,
+    reviewSummary: draft.reviewSummary,
+    publishingReadyInput: draft.publishingReadyInput,
+    approvalPackage: draft.approvalPackage,
+    version1Review: draft.version1Review,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -28957,6 +29390,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildInstagramCarouselBuilderHtml, 'InstagramCarouselBuilder')
     + _oeSafe(buildInstagramDesignHtml,          'InstagramDesignSystem')
     + _oeSafe(buildMobileReviewHtml,             'MobileReviewCenter')
+    + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
