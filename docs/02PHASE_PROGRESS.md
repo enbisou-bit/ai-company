@@ -1,12 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-04（Phase49-4 Creative Execution完了）
+> 更新日: 2026-07-04（Phase49-5 Creative Ad Assembly完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-4 完了（Creative Execution）**
-- 現在バージョン: **v1.00-phase49-4**
-- 次工程: **Phase49-5 Creative Ad Assembly**
+- 現在フェーズ: **Phase49-5 完了（Creative Ad Assembly）**
+- 現在バージョン: **v1.00-phase49-5**
+- 次工程: **Phase49-6 Asset Library**
 
 ---
 
@@ -634,6 +634,28 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49-5 Creative Ad Assembly
 - Git: Phase49-4 creative engine execution / Tag: v1.00-phase49-4
+
+### Phase49-5: Creative Ad Assembly ✅
+- `index.html`（Phase49-1〜49-4のAI Gateway/Image・Video Prompt Intelligence/Creative Execution・Publishing/Preview Engineを一切変更せず参照のみで拡張。広告素材を「組み立てる」層であり実行・投稿はしない）
+  - `CREATIVE_AD_ASSEMBLY_VERSION = '1.0.0'` / `CREATIVE_AD_ASSEMBLY_SAFETY_LABELS`（Assembly Only/No Auto Posting/No Image Generation/No Video Generation/No External AI Execution/Manual Use Onlyの6ラベルを固定バッジとして常時表示）
+  - `createCreativeAdAssemblyDraft(outputDraft)` — version/outputType/campaignName/adGoal/targetPlatform/creativeSet/headlineSet/captionSet/ctaSet/visualDirection/imageAssetsPlan/videoAssetsPlan/lpDirection/postingPlan/manualAssemblySteps/qualityChecklist/copyText/warnings/sourcePublishing/sourceGatewayDecision/sourceImagePromptIntelligence/sourceVideoPromptIntelligence/sourceCreativeExecutionを生成
+  - Output Type別最適化（1責務1関数）: `_caaFillInstagram()`（カルーセル広告/Reels広告） / `_caaFillTikTok()`（縦型動画広告/冒頭フック） / `_caaFillYouTubeShorts()`（Shorts広告/サムネ方針） / `_caaFillFlyer()`（チラシ広告セット/QR誘導） / `_caaFillLp()`（広告→LP誘導/ヒーローコピー） / `_caaFillHtml()`（Web広告素材） / `_caaFillDocument()`（営業資料広告、pdf/document共用） / `_caaFillImagePrompt()`（画像広告素材セット） / `_caaFillVideoPrompt()`（動画広告素材セット） / `_caaFillGeneric()`（それ以外の全タイプへの安全な汎用fallback）
+  - Publishing（`createPublishingDraft`）/ AI Gateway（`createAIGatewayDecision`）/ Image Prompt Intelligence（`createImagePromptIntelligenceDraft`）/ Video Prompt Intelligence（`createVideoPromptIntelligenceDraft`）/ Creative Execution（`createCreativeExecutionDraft`）の**既存関数を呼び出すのみ**で必要項目を抽出（各判断ロジックは無変更）
+  - `_caaBuildCreativeSet()` / `_caaBuildQualityChecklist()` / `_caaBuildWarnings()` / `_caaBuildCopyText()` — 共通ヘルパー
+  - `copyCreativeAdAssemblyField()` — Copy Ad Set/Copy Headlines/Copy Captions/Copy CTA Set/Copy Assembly Checklistの5ケース
+  - `buildCreativeAdAssemblyHtml()` — `renderOutputEnginePanel()`内、`buildCreativeExecutionHtml`の直後に表示。Safetyバッジ6種・Campaign Name/Ad Goal/Target Platform/Headline Set/Caption Set/CTA Set/Visual Direction/Image・Video Assets Plan/LP Direction/Posting Plan/Quality Checklist/Warningsを表示
+  - `appendCreativeAdAssemblyToExportMarkdown()` / `appendCreativeAdAssemblyToExportJson()` — Export（Markdown`## Creative Ad Assembly`セクション/JSON`creativeAdAssembly`キー）に反映
+  - CSS: `.oe-caa-*`（section/title/item/check-item/warning/badge/copyrow/copybtn/copymsg）を新規追加
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプでCreative Ad Assemblyパネル表示・Output Type別のadGoal/targetPlatform/headline/CTA件数が正しく生成されることを確認
+  - Instagram（保存・シェア促進/CTA2件）/ TikTok（視聴維持/CTA1件）/ YouTube Shorts（登録・視聴維持）/ Flyer（来店促進/QR誘導CTA含む）/ LP（CV獲得）/ HTML（サイト誘導）/ PDF・Document（商談化）/ Image・Video Prompt（広告訴求力向上）/ powerpoint・excel（汎用fallback）を確認
+  - Markdown/JSON Export双方への反映を確認
+  - Copy 5ボタンとも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・AI Gateway（Foundation/Expansion/Learning）・Image/Video Prompt Intelligence・Creative Execution・Quality各パネルへの影響なし
+- AI Gateway/Image Prompt Intelligence/Video Prompt Intelligence/Creative Executionの判断ロジックは一切変更せず、読み取り専用で参照するのみ。新規API・外部通信・実際の画像/動画生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし（広告素材の組み立て・コピー・チェックのみ）
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49-6 Asset Library（Creative Engineファミリー最終Phase）
+- Git: Phase49-5 creative ad assembly / Tag: v1.00-phase49-5
 
 ---
 

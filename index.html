@@ -934,6 +934,18 @@
   .oe-ce-copybtn:hover { background: rgba(170,230,90,0.3); }
   .oe-ce-copymsg     { font-size: 10px; color: rgba(200,240,130,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-ce-copymsg.show { opacity: 1; }
+  /* Phase49-5: Creative Ad Assembly */
+  .oe-caa-section    { border-radius: 10px; border: 1px solid rgba(255,140,40,0.28); background: linear-gradient(135deg, rgba(40,22,6,0.92), rgba(20,11,3,0.96)); padding: 12px 14px; }
+  .oe-caa-title      { font-size: 11px; color: rgba(255,180,110,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-caa-item       { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.7; }
+  .oe-caa-check-item { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .oe-caa-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-caa-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(255,100,90,0.18); color: rgba(255,130,120,0.95); border: 1px solid rgba(255,100,90,0.4); }
+  .oe-caa-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-caa-copybtn    { background: rgba(255,140,40,0.15); border: 1px solid rgba(255,140,40,0.4); border-radius: 14px; color: rgba(255,180,110,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-caa-copybtn:hover { background: rgba(255,140,40,0.3); }
+  .oe-caa-copymsg    { font-size: 10px; color: rgba(255,180,110,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-caa-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22957,6 +22969,7 @@ function serializeOutputDraft(format) {
     appendImagePromptIntelligenceToExportJson(jsonObj);
     appendVideoPromptIntelligenceToExportJson(jsonObj);
     appendCreativeExecutionToExportJson(jsonObj);
+    appendCreativeAdAssemblyToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23189,6 +23202,7 @@ function serializeOutputDraft(format) {
   appendImagePromptIntelligenceToExportMarkdown(mdLines);
   appendVideoPromptIntelligenceToExportMarkdown(mdLines);
   appendCreativeExecutionToExportMarkdown(mdLines);
+  appendCreativeAdAssemblyToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -25776,6 +25790,449 @@ function appendCreativeExecutionToExportJson(payload) {
   payload.creativeExecution = draft;
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-5: Creative Ad Assembly
+// Publishing Engine / AI Gateway / Image Prompt Intelligence / Video Prompt Intelligence /
+// Creative Executionの情報を利用し、広告素材セットを「組み立てる」層。
+// 実行はしない：Assembly Only / No Auto Posting / No Image Generation / No Video Generation /
+// No External AI Execution / Manual Use Only（すべて固定・変更不可）
+// AI Gateway / Image・Video Prompt Intelligence / Creative Executionの判断ロジックは変更しない（参照のみ）
+// ══════════════════════════════════════════════════
+
+const CREATIVE_AD_ASSEMBLY_VERSION = '1.0.0';
+
+// Phase49-5: Safety明示（固定値。UIで常にバッジ表示する）
+const CREATIVE_AD_ASSEMBLY_SAFETY_LABELS = [
+  'Assembly Only', 'No Auto Posting', 'No Image Generation',
+  'No Video Generation', 'No External AI Execution', 'Manual Use Only',
+];
+
+function _caaBuildWarnings(qualityScore) {
+  var warnings = [];
+  if (qualityScore !== null && qualityScore < 80) {
+    warnings.push('成果物の完成度（' + qualityScore + '点）が80点未満です。広告素材として使用する前に内容を再確認してください。');
+  }
+  warnings.push('本Phaseは広告素材の組み立て（Assembly Only）です。実際の画像生成・動画生成・投稿・外部AI実行は一切行いません（Manual Use Only）。');
+  return warnings;
+}
+
+function _caaBuildQualityChecklist(ipi, vpi, ce) {
+  var list = [
+    'Publishing Engineの投稿直前データを確認したか',
+    'AI Gatewayの推奨ツール・警告を確認したか',
+  ];
+  if (ipi) list.push('Image Prompt Intelligenceの安全チェックリストを確認したか');
+  if (vpi) list.push('Video Prompt Intelligenceの安全チェックリストを確認したか');
+  if (ce) list.push('Creative Executionの手順・チェックリストを確認したか');
+  list.push('広告素材に実在しない事実・誇大表現が含まれていないか確認したか');
+  list.push('承認後にのみ実際の生成・投稿を行っているか');
+  return list;
+}
+
+function _caaBuildCreativeSet(base) {
+  var set = [];
+  if (base.headlineSet.adHeadline) set.push({ label: 'Ad Headline', value: base.headlineSet.adHeadline });
+  if (base.headlineSet.subHeadline) set.push({ label: 'Sub Headline', value: base.headlineSet.subHeadline });
+  if (base.captionSet.mainCaption) set.push({ label: 'Main Caption', value: base.captionSet.mainCaption });
+  if (base.captionSet.shortCaption) set.push({ label: 'Short Caption', value: base.captionSet.shortCaption });
+  base.ctaSet.forEach(function(c, i) {
+    set.push({ label: 'CTA' + (base.ctaSet.length > 1 ? ' ' + (i + 1) : ''), value: c });
+  });
+  return set;
+}
+
+function _caaBuildCopyText(base) {
+  var lines = ['【Creative Ad Assembly】', ''];
+  lines.push('Campaign: ' + base.campaignName);
+  lines.push('Goal: ' + base.adGoal);
+  lines.push('Platform: ' + base.targetPlatform);
+  lines.push('');
+  lines.push('Ad Headline: ' + (base.headlineSet.adHeadline || '（未生成）'));
+  lines.push('Sub Headline: ' + (base.headlineSet.subHeadline || '（未生成）'));
+  lines.push('Main Caption: ' + (base.captionSet.mainCaption || '（未生成）'));
+  lines.push('Short Caption: ' + (base.captionSet.shortCaption || '（未生成）'));
+  lines.push('CTA: ' + (base.ctaSet.length ? base.ctaSet.join(' / ') : '（未生成）'));
+  lines.push('');
+  lines.push('Visual Direction: ' + base.visualDirection);
+  if (base.lpDirection) lines.push('LP Direction: ' + base.lpDirection);
+  if (base.postingPlan) lines.push('Posting Plan: ' + base.postingPlan);
+  return lines.join('\n');
+}
+
+// Phase49-5: Instagram（カルーセル広告/Reels広告/投稿素材セット）
+function _caaFillInstagram(base, f, pub, ipi) {
+  var subject = (Array.isArray(f.slides) && f.slides.length) ? String(f.slides[0]) : (f.caption || '');
+  base.adGoal = '保存・シェア促進による認知拡大';
+  base.targetPlatform = 'Instagram（カルーセル広告/Reels広告）';
+  base.headlineSet = { adHeadline: _pubTruncate(subject, 40), subHeadline: (pub && pub.title) ? _pubTruncate(pub.title, 40) : '' };
+  base.captionSet = { mainCaption: (pub && pub.description) ? pub.description : (f.caption || ''), shortCaption: _pubTruncate(f.caption || subject, 60) };
+  base.ctaSet = [f.cta, pub && pub.cta].filter(Boolean);
+  if (!base.ctaSet.length) base.ctaSet = ['プロフィールのリンクから詳細をチェック'];
+  base.visualDirection = (ipi && ipi.mainPrompt) ? ipi.mainPrompt : 'カルーセル/Reels向けの統一感あるビジュアル。';
+  base.imageAssetsPlan = ['カルーセルスライド用画像（複数枚）', 'サムネイル用縦長画像(4:5)'];
+  base.videoAssetsPlan = ['Reels広告用の短尺動画（7〜15秒）'];
+  base.postingPlan = (pub && pub.publishTimeSuggestion) ? pub.publishTimeSuggestion : '平日12:00-13:00 / 20:00-21:00を目安に投稿。';
+}
+
+// Phase49-5: TikTok（縦型動画広告/冒頭フック/CTA）
+function _caaFillTikTok(base, f, pub, vpi) {
+  var scriptLines = (f.script || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var hook = scriptLines.length ? scriptLines[0] : '';
+  base.adGoal = '視聴維持・エンゲージメント獲得';
+  base.targetPlatform = 'TikTok（縦型動画広告）';
+  base.headlineSet = { adHeadline: hook ? _pubTruncate(hook, 40) : 'TikTok動画広告', subHeadline: '' };
+  base.captionSet = { mainCaption: (pub && pub.description) ? pub.description : (f.script || ''), shortCaption: _pubTruncate(hook, 60) };
+  base.ctaSet = [f.cta, pub && pub.cta].filter(Boolean);
+  if (!base.ctaSet.length) base.ctaSet = ['プロフィールから詳細をチェック'];
+  base.visualDirection = (vpi && vpi.mainPrompt) ? vpi.mainPrompt : '冒頭2〜3秒のフックを効かせた縦型動画。';
+  base.imageAssetsPlan = ['サムネイル用静止画'];
+  base.videoAssetsPlan = ['縦型ショート動画広告（15〜30秒）'];
+  base.postingPlan = (pub && pub.publishTimeSuggestion) ? pub.publishTimeSuggestion : '18:00-24:00を目安に投稿。';
+}
+
+// Phase49-5: YouTube Shorts（Shorts広告/タイトル/サムネ方針/CTA）
+function _caaFillYouTubeShorts(base, f, pub, vpi) {
+  var scriptLines = (f.script || '').split('\n').map(function(l) { return l.trim(); }).filter(Boolean);
+  var hook = scriptLines.length ? scriptLines[0] : (f.title || '');
+  base.adGoal = '登録・視聴維持';
+  base.targetPlatform = 'YouTube Shorts';
+  base.headlineSet = { adHeadline: f.title ? _pubTruncate(f.title, 40) : _pubTruncate(hook, 40), subHeadline: '' };
+  base.captionSet = { mainCaption: (pub && pub.description) ? pub.description : (f.description || f.script || ''), shortCaption: _pubTruncate(hook, 60) };
+  base.ctaSet = [f.cta, pub && pub.cta].filter(Boolean);
+  if (!base.ctaSet.length) base.ctaSet = ['チャンネル登録・高評価をお願いします'];
+  base.visualDirection = (vpi && vpi.mainPrompt) ? vpi.mainPrompt + '（サムネ方針: タイトルを大きく配置し視認性を優先）' : 'サムネ方針を意識した縦型動画（タイトルを大きく配置）。';
+  base.imageAssetsPlan = ['サムネイル候補（複数パターン）'];
+  base.videoAssetsPlan = ['Shorts広告用動画（〜60秒）'];
+  base.postingPlan = (pub && pub.publishTimeSuggestion) ? pub.publishTimeSuggestion : '視聴が伸びやすい時間帯を目安に投稿。';
+}
+
+// Phase49-5: チラシ（チラシ広告セット/配布文/QR誘導）
+function _caaFillFlyer(base, f, pub, ipi) {
+  base.adGoal = '来店・問い合わせ促進';
+  base.targetPlatform = '印刷物・チラシ配布';
+  base.headlineSet = { adHeadline: f.catchcopy || '', subHeadline: f.subheadline || '' };
+  base.captionSet = { mainCaption: f.body || f.offer || '', shortCaption: _pubTruncate(f.offer || f.catchcopy || '', 60) };
+  base.ctaSet = [f.cta, 'QRコードから詳細・お問い合わせはこちら'].filter(Boolean);
+  base.visualDirection = (ipi && ipi.mainPrompt) ? ipi.mainPrompt : 'A4チラシ向けの視認性の高いビジュアル。';
+  base.imageAssetsPlan = ['チラシ表面画像', 'QRコード画像'];
+  base.videoAssetsPlan = [];
+  base.lpDirection = 'QRコード読み取り先のLPを用意する場合は、チラシのオファーと一貫した簡潔な誘導文を検討。';
+  base.postingPlan = '配布エリア・タイミングを計画（Publishing Engineのチェックリスト参照）。';
+}
+
+// Phase49-5: LP（広告→LP誘導セット/ヒーローコピー/CTA）
+function _caaFillLp(base, f, pub) {
+  base.adGoal = 'CV獲得（問い合わせ・申込）';
+  base.targetPlatform = 'Web/LP';
+  base.headlineSet = { adHeadline: f.headline || f.firstView || '', subHeadline: f.problem || '' };
+  base.captionSet = { mainCaption: f.solution || f.benefits || '', shortCaption: _pubTruncate(f.headline || '', 60) };
+  base.ctaSet = [f.cta, pub && pub.cta].filter(Boolean);
+  if (!base.ctaSet.length) base.ctaSet = ['無料相談・お問い合わせはこちら'];
+  base.visualDirection = 'ヒーロー画像はブランドの世界観を伝えるビジュアルを推奨（Image Prompt Intelligence参照）。';
+  base.imageAssetsPlan = ['LPヒーロー画像'];
+  base.videoAssetsPlan = ['LPヒーロー動画（任意）'];
+  base.lpDirection = 'ヒーローコピー: ' + (f.headline || f.firstView || '（未生成）') + ' → CTA: ' + (f.cta || '（未生成）');
+  base.postingPlan = '広告出稿タイミングはLP公開・Publishing Engineのチェックリスト完了後に検討。';
+}
+
+// Phase49-5: HTML（Web広告素材/meta文/CTA）
+function _caaFillHtml(base, f, pub) {
+  base.adGoal = 'サイト誘導・CV';
+  base.targetPlatform = 'Web';
+  base.headlineSet = { adHeadline: f.title || '', subHeadline: '' };
+  base.captionSet = { mainCaption: f.copy || '', shortCaption: _pubTruncate(f.copy || f.title || '', 60) };
+  base.ctaSet = [f.cta, pub && pub.cta].filter(Boolean);
+  if (!base.ctaSet.length) base.ctaSet = ['詳細はこちら'];
+  base.visualDirection = f.visualInstruction || 'Web広告用のシンプルで訴求力のあるビジュアル。';
+  base.imageAssetsPlan = ['Web広告用バナー画像'];
+  base.videoAssetsPlan = [];
+  base.postingPlan = '配信面（SNS広告/ディスプレイ広告等）を検討。';
+}
+
+// Phase49-5: PDF/文書（営業資料広告/配布用紹介文）
+function _caaFillDocument(base, f, pub) {
+  base.adGoal = '商談化・資料請求';
+  base.targetPlatform = '営業資料/PDF配布';
+  base.headlineSet = { adHeadline: f.title || '', subHeadline: '' };
+  base.captionSet = { mainCaption: f.summary || '', shortCaption: _pubTruncate(f.summary || f.title || '', 60) };
+  base.ctaSet = [f.cta, f.nextAction].filter(Boolean);
+  base.visualDirection = f.visualInstruction || '資料用の清潔感あるビジュアル。';
+  base.imageAssetsPlan = ['資料表紙画像', '説明図'];
+  base.videoAssetsPlan = [];
+  base.postingPlan = '配布方法（メール添付/商談時配布等）を検討。';
+}
+
+// Phase49-5: Image Prompt（画像広告素材セット）
+function _caaFillImagePrompt(base, f, ipi) {
+  base.adGoal = '画像広告としての訴求力向上';
+  base.targetPlatform = '画像広告全般';
+  base.headlineSet = { adHeadline: f.subject || f.usage || '画像広告', subHeadline: '' };
+  base.captionSet = { mainCaption: (ipi && ipi.mainPrompt) ? ipi.mainPrompt : (f.prompt || ''), shortCaption: '' };
+  base.ctaSet = [];
+  base.visualDirection = (ipi && ipi.mainPrompt) ? ipi.mainPrompt : (f.prompt || '');
+  base.imageAssetsPlan = ['メイン広告画像', 'バリエーション画像（A/Bテスト用）'];
+  base.videoAssetsPlan = [];
+  base.postingPlan = '';
+}
+
+// Phase49-5: Video Prompt（動画広告素材セット）
+function _caaFillVideoPrompt(base, f, vpi) {
+  base.adGoal = '動画広告としての訴求力向上';
+  base.targetPlatform = '動画広告全般';
+  base.headlineSet = { adHeadline: f.scene || '動画広告', subHeadline: '' };
+  base.captionSet = { mainCaption: (vpi && vpi.mainPrompt) ? vpi.mainPrompt : (f.prompt || ''), shortCaption: '' };
+  base.ctaSet = [];
+  base.visualDirection = (vpi && vpi.mainPrompt) ? vpi.mainPrompt : (f.prompt || '');
+  base.imageAssetsPlan = [];
+  base.videoAssetsPlan = ['メイン広告動画', 'バリエーション動画（A/Bテスト用）'];
+  base.postingPlan = '';
+}
+
+// Phase49-5: Generic fallback（安全な汎用広告セット）
+function _caaFillGeneric(base, f) {
+  base.adGoal = '汎用的な認知・訴求';
+  base.targetPlatform = '汎用';
+  base.headlineSet = { adHeadline: f.title || f.caption || f.headline || '成果物広告', subHeadline: '' };
+  base.captionSet = { mainCaption: '', shortCaption: '' };
+  base.ctaSet = [];
+  base.visualDirection = '安全な汎用ビジュアル。特定の業種・人物に依存しない一般的な表現。';
+  base.imageAssetsPlan = [];
+  base.videoAssetsPlan = [];
+  base.postingPlan = '';
+}
+
+// Phase49-5: Creative Ad Assembly Draft生成（実行はしない。既存Output Draft/各Engineは破壊しない）
+function createCreativeAdAssemblyDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+  var f = outputDraft.fields;
+
+  // 既存のPublishing / AI Gateway / Image・Video Prompt Intelligence / Creative Executionを参照するのみ（判断ロジックは変更しない）
+  var pub = outputDraft.publishing || createPublishingDraft(outputDraft);
+  var gw = outputDraft.aiGateway || createAIGatewayDecision(outputDraft);
+  var ipi = outputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(outputDraft);
+  var vpi = outputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(outputDraft);
+  var ce = outputDraft.creativeExecution || createCreativeExecutionDraft(outputDraft);
+
+  var def = getOutputTypeDefinition(type);
+
+  var base = {
+    version: CREATIVE_AD_ASSEMBLY_VERSION,
+    outputType: type,
+    campaignName: (def ? def.label : type) + ' 広告キャンペーン',
+    adGoal: '',
+    targetPlatform: '',
+    creativeSet: [],
+    headlineSet: { adHeadline: '', subHeadline: '' },
+    captionSet: { mainCaption: '', shortCaption: '' },
+    ctaSet: [],
+    visualDirection: '',
+    imageAssetsPlan: [],
+    videoAssetsPlan: [],
+    lpDirection: '',
+    postingPlan: '',
+    manualAssemblySteps: [
+      '1. Publishing Engine / AI Gateway / Image・Video Prompt Intelligence / Creative Executionの内容を確認する',
+      '2. 本パネルのHeadline/Caption/CTA/Visual Directionを組み合わせて広告素材を手動で作成する',
+      '3. Creative Executionの手順に従い、各生成ツールへ手動で貼り付けて素材を用意する（実行はしない）',
+      '4. 承認後、広告配信・投稿を手動で行う（本AI会社は自動投稿しない）',
+    ],
+    qualityChecklist: [],
+    copyText: '',
+    warnings: [],
+    sourcePublishing: pub ? { title: pub.title, description: pub.description, hashtags: pub.hashtags, cta: pub.cta, publishTimeSuggestion: pub.publishTimeSuggestion } : null,
+    sourceGatewayDecision: gw ? { recommendedTool: gw.recommendedTool, recommendedRoute: gw.recommendedRoute } : null,
+    sourceImagePromptIntelligence: ipi ? { mainPrompt: ipi.mainPrompt, stylePrompt: ipi.stylePrompt } : null,
+    sourceVideoPromptIntelligence: vpi ? { mainPrompt: vpi.mainPrompt, scenePrompt: vpi.scenePrompt } : null,
+    sourceCreativeExecution: ce ? { targetTool: ce.targetTool, executionType: ce.executionType } : null,
+  };
+
+  switch (type) {
+    case OUTPUT_TYPES.INSTAGRAM_CAROUSEL:
+    case OUTPUT_TYPES.INSTAGRAM_POST:
+      _caaFillInstagram(base, f, pub, ipi); break;
+    case OUTPUT_TYPES.TIKTOK_VIDEO:
+      _caaFillTikTok(base, f, pub, vpi); break;
+    case OUTPUT_TYPES.YOUTUBE_SHORTS:
+      _caaFillYouTubeShorts(base, f, pub, vpi); break;
+    case OUTPUT_TYPES.FLYER:
+      _caaFillFlyer(base, f, pub, ipi); break;
+    case OUTPUT_TYPES.LP:
+      _caaFillLp(base, f, pub); break;
+    case OUTPUT_TYPES.HTML:
+      _caaFillHtml(base, f, pub); break;
+    case OUTPUT_TYPES.PDF:
+    case OUTPUT_TYPES.DOCUMENT:
+      _caaFillDocument(base, f, pub); break;
+    case OUTPUT_TYPES.IMAGE_PROMPT:
+      _caaFillImagePrompt(base, f, ipi); break;
+    case OUTPUT_TYPES.VIDEO_PROMPT:
+      _caaFillVideoPrompt(base, f, vpi); break;
+    default:
+      _caaFillGeneric(base, f); break;
+  }
+
+  base.creativeSet = _caaBuildCreativeSet(base);
+
+  var q = (pub && typeof pub.qualityScore === 'number') ? pub.qualityScore
+    : ((outputDraft.packageQuality && typeof outputDraft.packageQuality.score === 'number') ? outputDraft.packageQuality.score : null);
+  base.warnings = _caaBuildWarnings(q);
+  base.qualityChecklist = _caaBuildQualityChecklist(ipi, vpi, ce);
+  base.copyText = _caaBuildCopyText(base);
+  return base;
+}
+
+function _caaBuildAdSetText(draft) {
+  var lines = ['【Creative Ad Set】', ''];
+  if (draft.creativeSet.length) {
+    draft.creativeSet.forEach(function(item) { lines.push(item.label + ': ' + item.value); });
+  } else {
+    lines.push('（未生成）');
+  }
+  return lines.join('\n');
+}
+
+function _caaBuildHeadlinesText(draft) {
+  var lines = ['【Headlines】', ''];
+  lines.push('Ad Headline: ' + (draft.headlineSet.adHeadline || '（未生成）'));
+  lines.push('Sub Headline: ' + (draft.headlineSet.subHeadline || '（未生成）'));
+  return lines.join('\n');
+}
+
+function _caaBuildCaptionsText(draft) {
+  var lines = ['【Captions】', ''];
+  lines.push('Main Caption: ' + (draft.captionSet.mainCaption || '（未生成）'));
+  lines.push('Short Caption: ' + (draft.captionSet.shortCaption || '（未生成）'));
+  return lines.join('\n');
+}
+
+function _caaBuildCtaSetText(draft) {
+  return ['【CTA Set】', ''].concat(draft.ctaSet.length ? draft.ctaSet : ['（未生成）']).join('\n');
+}
+
+function _caaBuildChecklistText(draft) {
+  return ['【Assembly Checklist】', ''].concat(draft.qualityChecklist.map(function(c) { return '- ' + c; })).join('\n');
+}
+
+// Phase49-5: クリップボードコピー（既存Copy Export/Publishing/Gateway/Image・Video Prompt/Creative Execution Copyとは独立）
+function copyCreativeAdAssemblyField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (fieldKey === 'adSet') text = _caaBuildAdSetText(draft);
+  else if (fieldKey === 'headlines') text = _caaBuildHeadlinesText(draft);
+  else if (fieldKey === 'captions') text = _caaBuildCaptionsText(draft);
+  else if (fieldKey === 'ctaSet') text = _caaBuildCtaSetText(draft);
+  else if (fieldKey === 'checklist') text = _caaBuildChecklistText(draft);
+  if (!text) return;
+
+  var msg = document.getElementById('oe-caa-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase49-5: Creative Ad Assembly HTML生成（Creative Executionの直後に表示。データ不足でも安全に空文字を返す）
+function buildCreativeAdAssemblyHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var draft = _lastOutputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(_lastOutputDraft);
+  if (!draft) return '';
+  _lastOutputDraft.creativeAdAssembly = draft;
+  var esc = escapeHtml;
+
+  var safetyBadgesHtml = CREATIVE_AD_ASSEMBLY_SAFETY_LABELS.map(function(label) {
+    return '<span class="oe-caa-badge">' + esc(label) + '</span>';
+  }).join('');
+
+  var ctaHtml = draft.ctaSet.length
+    ? draft.ctaSet.map(function(c, i) { return '<div class="oe-caa-item">' + (i + 1) + '. ' + esc(c) + '</div>'; }).join('')
+    : '<span class="oe-empty-val">未生成</span>';
+  var imgPlanHtml = draft.imageAssetsPlan.length
+    ? draft.imageAssetsPlan.map(function(a) { return '<div class="oe-caa-item">・' + esc(a) + '</div>'; }).join('')
+    : '<span class="oe-empty-val">対象外</span>';
+  var vidPlanHtml = draft.videoAssetsPlan.length
+    ? draft.videoAssetsPlan.map(function(a) { return '<div class="oe-caa-item">・' + esc(a) + '</div>'; }).join('')
+    : '<span class="oe-empty-val">対象外</span>';
+  var checklistHtml = draft.qualityChecklist.map(function(c) { return '<div class="oe-caa-check-item">☐ ' + esc(c) + '</div>'; }).join('');
+  var warningsHtml = draft.warnings.length ? draft.warnings.map(function(w) { return '<div class="oe-caa-warning">⚠ ' + esc(w) + '</div>'; }).join('') : '';
+
+  return '<div class="oe-caa-section">'
+    + '<div class="oe-caa-title">📣 Creative Ad Assembly <span style="font-weight:400;opacity:.5;">v' + CREATIVE_AD_ASSEMBLY_VERSION + '</span></div>'
+    + '<div>' + safetyBadgesHtml + '</div>'
+    + '<div class="oe-pkg-label">Campaign Name</div><div class="oe-field-val">' + esc(draft.campaignName) + '</div>'
+    + '<div class="oe-pkg-label">Ad Goal</div><div class="oe-field-val">' + esc(draft.adGoal) + '</div>'
+    + '<div class="oe-pkg-label">Target Platform</div><div class="oe-field-val">' + esc(draft.targetPlatform) + '</div>'
+    + '<div class="oe-pkg-label">Headline Set</div><div class="oe-field-val">Ad: ' + esc(draft.headlineSet.adHeadline || '未生成') + '<br>Sub: ' + esc(draft.headlineSet.subHeadline || '未生成') + '</div>'
+    + '<div class="oe-pkg-label">Caption Set</div><div class="oe-field-val">Main: ' + esc(_pubTruncate(draft.captionSet.mainCaption || '未生成', 150)) + '<br>Short: ' + esc(draft.captionSet.shortCaption || '未生成') + '</div>'
+    + '<div class="oe-pkg-label">CTA Set</div>' + ctaHtml
+    + '<div class="oe-pkg-label">Visual Direction</div><div class="oe-field-val">' + esc(_pubTruncate(draft.visualDirection, 200)) + '</div>'
+    + '<div class="oe-pkg-label">Image Assets Plan</div>' + imgPlanHtml
+    + '<div class="oe-pkg-label">Video Assets Plan</div>' + vidPlanHtml
+    + (draft.lpDirection ? '<div class="oe-pkg-label">LP Direction</div><div class="oe-field-val">' + esc(draft.lpDirection) + '</div>' : '')
+    + (draft.postingPlan ? '<div class="oe-pkg-label">Posting Plan</div><div class="oe-field-val">' + esc(draft.postingPlan) + '</div>' : '')
+    + '<div class="oe-pkg-label">Quality Checklist</div>' + checklistHtml
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-caa-copyrow">'
+    +   '<button class="oe-caa-copybtn" onclick="copyCreativeAdAssemblyField(\'adSet\')">Copy Ad Set</button>'
+    +   '<button class="oe-caa-copybtn" onclick="copyCreativeAdAssemblyField(\'headlines\')">Copy Headlines</button>'
+    +   '<button class="oe-caa-copybtn" onclick="copyCreativeAdAssemblyField(\'captions\')">Copy Captions</button>'
+    +   '<button class="oe-caa-copybtn" onclick="copyCreativeAdAssemblyField(\'ctaSet\')">Copy CTA Set</button>'
+    +   '<button class="oe-caa-copybtn" onclick="copyCreativeAdAssemblyField(\'checklist\')">Copy Assembly Checklist</button>'
+    +   '<span id="oe-caa-copy-msg" class="oe-caa-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase49-5: Export反映
+function appendCreativeAdAssemblyToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Creative Ad Assembly (Phase49-5)');
+  lines.push('- Campaign Name: ' + draft.campaignName);
+  lines.push('- Ad Goal: ' + draft.adGoal);
+  lines.push('- Target Platform: ' + draft.targetPlatform);
+  lines.push('- Ad Headline: ' + draft.headlineSet.adHeadline);
+  lines.push('- Sub Headline: ' + draft.headlineSet.subHeadline);
+  lines.push('- Main Caption: ' + draft.captionSet.mainCaption);
+  lines.push('- Short Caption: ' + draft.captionSet.shortCaption);
+  lines.push('- CTA Set: ' + (draft.ctaSet.length ? draft.ctaSet.join(' / ') : '（なし）'));
+  lines.push('- Visual Direction: ' + draft.visualDirection);
+  lines.push('- Image Assets Plan: ' + (draft.imageAssetsPlan.length ? draft.imageAssetsPlan.join(' / ') : '（対象外）'));
+  lines.push('- Video Assets Plan: ' + (draft.videoAssetsPlan.length ? draft.videoAssetsPlan.join(' / ') : '（対象外）'));
+  if (draft.lpDirection) lines.push('- LP Direction: ' + draft.lpDirection);
+  if (draft.postingPlan) lines.push('- Posting Plan: ' + draft.postingPlan);
+  lines.push('- Safety: ' + CREATIVE_AD_ASSEMBLY_SAFETY_LABELS.join(' / '));
+  lines.push('- Quality Checklist:');
+  draft.qualityChecklist.forEach(function(c) { lines.push('  - [ ] ' + c); });
+  if (draft.warnings.length) {
+    lines.push('- Warnings:');
+    draft.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+}
+
+function appendCreativeAdAssemblyToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.creativeAdAssembly = draft;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -25902,6 +26359,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildImagePromptIntelligenceHtml,  'ImagePromptIntelligence')
     + _oeSafe(buildVideoPromptIntelligenceHtml,  'VideoPromptIntelligence')
     + _oeSafe(buildCreativeExecutionHtml,        'CreativeExecution')
+    + _oeSafe(buildCreativeAdAssemblyHtml,       'CreativeAdAssembly')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
