@@ -1,12 +1,12 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-04（Phase49-3 Video Prompt Intelligence完了）
+> 更新日: 2026-07-04（Phase49-4 Creative Execution完了）
 
 ## 現在地
-- 現在フェーズ: **Phase49-3 完了（Video Prompt Intelligence）**
-- 現在バージョン: **v1.00-phase49-3**
-- 次工程: **Phase49-4 Creative Engine Execution**
+- 現在フェーズ: **Phase49-4 完了（Creative Execution）**
+- 現在バージョン: **v1.00-phase49-4**
+- 次工程: **Phase49-5 Creative Ad Assembly**
 
 ---
 
@@ -608,6 +608,32 @@ Phase47-2A〜Phase47-4で完成したClaude APIコスト最適化・品質監視
 - モデル変更・Provider構成変更は一切なし
 - 次工程: Phase49-4 Creative Engine Execution
 - Git: Phase49-3 video prompt intelligence / Tag: v1.00-phase49-3
+
+### Phase49-4: Creative Execution ✅
+- `index.html`（Phase49-1〜49-3のAI Gateway/Image・Video Prompt Intelligence・Publishing/Preview Engineを一切変更せず参照のみで拡張。名称は「Execution」だが自動実行は行わない）
+  - `CREATIVE_EXECUTION_VERSION = '1.0.0'` / `CREATIVE_TOOL_PLANNER`（ChatGPT/Claude/GPT Image/Seedance/Flow/Veo/Runway/Kling/Pika/Luma/DOMOAI/Hailuo/Ideogram/Flux/Midjourney/Recraftの16ツール。貼り付け先の案内のみ、実行しない）
+  - `createCreativeExecutionDraft(outputDraft)` — executionName/executionType/targetTool/targetRoute/requiredInputs/generatedPrompt/copyTarget/executionSteps/manualSteps/estimatedTime/estimatedCost/difficulty/approvalRequired/warnings/checklist/fallback/notes/autoExecute/executionMode/toolPlanner/sourceGatewayDecision/copyTextを生成
+  - `autoExecute` は常に`false`、`executionMode`は常に`'manual_only'`にハード固定（Decision 035）
+  - `_ceExecutionTypeFor()` — OutputTypeをimage_generation/video_generation/text_generationへ分類
+  - `_ceSelectGeneratedPrompt()` — Image Prompt Intelligence（`_ipiToolKeyForGatewayTool()`）/ Video Prompt Intelligence（`_vpiToolKeyForGatewayTool()`）の既存関数を呼び出すのみで再利用し、AI Gateway推奨ツールに応じたプロンプトを選択。text系はPublishing Engineの`copyText`を流用
+  - `_ceBuildExecutionSteps()` — STEP1（Output Preview確認）〜STEP7（成果物保存）の7段階を生成
+  - `_ceBuildManualSteps()` / `_ceBuildChecklist()` — ツール別の手動貼り付け手順・チェック項目を生成（Image/Video Prompt Intelligenceの安全チェックリスト有無に応じて項目を追加）
+  - `copyCreativeExecutionField()` — Copy Execution Plan/Copy Manual Steps/Copy Full Workflow/Copy Checklistの4ケース
+  - `buildCreativeExecutionHtml()` — `renderOutputEnginePanel()`内、`buildVideoPromptIntelligenceHtml`の直後に表示。「MANUAL ONLY」バッジ・Execution Summary/Generated Prompt/Execution Steps/Manual Workflow/Tool Planner（16種、推奨ツールをハイライト）/Execution Checklist/Warningsを表示
+  - `appendCreativeExecutionToExportMarkdown()` / `appendCreativeExecutionToExportJson()` — Export（Markdown`## Creative Execution`セクション/JSON`creativeExecution`キー）に反映
+  - CSS: `.oe-ce-*`（section/title/step-item/tool-chip/check-item/warning/badge/copyrow/copybtn/copymsg）を新規追加
+- ブラウザ実機確認（Chrome Preview、`_lastOutputDraft`にサンプルデータを注入する方式）
+  - OUTPUT_TYPE_DEFINITIONS全13タイプでCreative Executionパネル表示・`autoExecute===false`・`executionMode==='manual_only'`・Tool Planner16種を確認
+  - executionType判定: instagram/flyer/image_prompt→image_generation（targetTool=GPT Image）、tiktok/youtube/video_prompt→video_generation（targetTool=Seedance）、その他→text_generation（targetTool=ChatGPT）を確認
+  - Generated PromptがImage/Video Prompt Intelligenceの該当ツール向けプロンプトを正しく再利用していることを確認
+  - Tool Plannerの推奨ツールチップ（`recommended`クラス）がAI Gateway推奨ツールと一致することを確認
+  - Markdown/JSON Export双方への反映を確認（JSON: `autoExecute: false`・`toolPlanner`16件を確認）
+  - Copy 4ボタンとも例外なく実行されることを確認
+  - console.errorなし。既存Package表示・Preview Engine・Publishing Engine・AI Gateway（Foundation/Expansion/Learning）・Image/Video Prompt Intelligence・Quality各パネルへの影響なし
+- AI Gateway判断ロジック（`createAIGatewayDecision`）・Image Prompt Intelligence（`createImagePromptIntelligenceDraft`）・Video Prompt Intelligence（`createVideoPromptIntelligenceDraft`）は一切変更せず、読み取り専用で参照するのみ。新規API・外部通信・実際の画像/動画生成・PCアプリ操作・ブラウザ自動操作・SNS投稿・課金は一切なし（実行計画・コピー・チェックのみ）
+- モデル変更・Provider構成変更は一切なし
+- 次工程: Phase49-5 Creative Ad Assembly
+- Git: Phase49-4 creative engine execution / Tag: v1.00-phase49-4
 
 ---
 

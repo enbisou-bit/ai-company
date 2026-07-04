@@ -920,6 +920,20 @@
   .oe-vpi-copybtn:hover { background: rgba(255,90,110,0.3); }
   .oe-vpi-copymsg    { font-size: 10px; color: rgba(255,140,150,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-vpi-copymsg.show { opacity: 1; }
+  /* Phase49-4: Creative Execution */
+  .oe-ce-section     { border-radius: 10px; border: 1px solid rgba(170,230,90,0.28); background: linear-gradient(135deg, rgba(20,30,8,0.92), rgba(10,16,4,0.96)); padding: 12px 14px; }
+  .oe-ce-title       { font-size: 11px; color: rgba(200,240,130,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-ce-step-item   { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.7; }
+  .oe-ce-tool-chip   { display: inline-block; font-size: 9px; color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 2px 8px; margin: 2px 4px 2px 0; }
+  .oe-ce-tool-chip.recommended { color: rgba(200,240,130,0.9); border-color: rgba(170,230,90,0.4); }
+  .oe-ce-check-item  { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .oe-ce-warning     { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-ce-badge       { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 6px; background: rgba(255,100,90,0.18); color: rgba(255,130,120,0.95); border: 1px solid rgba(255,100,90,0.4); }
+  .oe-ce-copyrow     { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-ce-copybtn     { background: rgba(170,230,90,0.15); border: 1px solid rgba(170,230,90,0.4); border-radius: 14px; color: rgba(200,240,130,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-ce-copybtn:hover { background: rgba(170,230,90,0.3); }
+  .oe-ce-copymsg     { font-size: 10px; color: rgba(200,240,130,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-ce-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22942,6 +22956,7 @@ function serializeOutputDraft(format) {
     appendAIGatewayToExportJson(jsonObj);
     appendImagePromptIntelligenceToExportJson(jsonObj);
     appendVideoPromptIntelligenceToExportJson(jsonObj);
+    appendCreativeExecutionToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23173,6 +23188,7 @@ function serializeOutputDraft(format) {
   appendAIGatewayToExportMarkdown(mdLines);
   appendImagePromptIntelligenceToExportMarkdown(mdLines);
   appendVideoPromptIntelligenceToExportMarkdown(mdLines);
+  appendCreativeExecutionToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -25441,6 +25457,325 @@ function appendVideoPromptIntelligenceToExportJson(payload) {
   payload.videoPromptIntelligence = draft;
 }
 
+// ══════════════════════════════════════════════════
+// Phase49-4: Creative Execution
+// Publishing Engine / AI Gateway / Image Prompt Intelligence / Video Prompt Intelligenceを
+// 利用し、実行計画・コピー・チェック機能のみを提供する（AIによる自動実行は一切行わない）
+// Auto Execute = false 固定・Manual Only。外部AI実行・画像/動画生成・PC操作・ブラウザ自動操作なし
+// AI Gateway / Image Prompt Intelligence / Video Prompt Intelligenceの判断ロジックは変更しない（参照のみ）
+// ══════════════════════════════════════════════════
+
+const CREATIVE_EXECUTION_VERSION = '1.0.0';
+
+// Phase49-4: Tool別 Planner（貼り付け先の案内のみ。実行はしない）
+const CREATIVE_TOOL_PLANNER = {
+  chatgpt:    { name: 'ChatGPT',    category: 'text' },
+  claude:     { name: 'Claude',     category: 'text' },
+  gpt_image:  { name: 'GPT Image',  category: 'image' },
+  seedance:   { name: 'Seedance',   category: 'video' },
+  flow:       { name: 'Flow',       category: 'video' },
+  veo:        { name: 'Veo',        category: 'video' },
+  runway:     { name: 'Runway',     category: 'video' },
+  kling:      { name: 'Kling',      category: 'video' },
+  pika:       { name: 'Pika',       category: 'video' },
+  luma:       { name: 'Luma',       category: 'video' },
+  domoai:     { name: 'DOMOAI',     category: 'video' },
+  hailuo:     { name: 'Hailuo',     category: 'video' },
+  ideogram:   { name: 'Ideogram',   category: 'image' },
+  flux:       { name: 'Flux',       category: 'image' },
+  midjourney: { name: 'Midjourney', category: 'image' },
+  recraft:    { name: 'Recraft',    category: 'image' },
+};
+
+// Phase49-4: OutputTypeからExecution Typeを判定（image_generation/video_generation/text_generation）
+function _ceExecutionTypeFor(type) {
+  var IMAGE_TYPES = ['instagram_carousel', 'instagram_post', 'flyer', 'image_prompt'];
+  var VIDEO_TYPES = ['tiktok_video', 'youtube_shorts', 'video_prompt'];
+  if (IMAGE_TYPES.indexOf(type) !== -1) return 'image_generation';
+  if (VIDEO_TYPES.indexOf(type) !== -1) return 'video_generation';
+  return 'text_generation';
+}
+
+function _ceRequiredInputsFor(executionType) {
+  if (executionType === 'image_generation') return ['画像プロンプト（Main Prompt）', 'ネガティブプロンプト', '生成ツールのアカウント'];
+  if (executionType === 'video_generation') return ['動画プロンプト', 'シーン・尺の指定', '生成ツールのアカウント'];
+  return ['生成したいテキストの要件', 'コピー用テキスト'];
+}
+
+function _ceEstimatedTimeFor(executionType) {
+  if (executionType === 'image_generation') return '3〜5分程度（生成ツールにより異なる）';
+  if (executionType === 'video_generation') return '5〜15分程度（生成ツールにより異なる）';
+  return '1〜3分程度';
+}
+
+function _ceDifficultyFor(executionType) {
+  if (executionType === 'image_generation' || executionType === 'video_generation') return 'medium';
+  return 'easy';
+}
+
+// Phase49-4: Image/Video Prompt Intelligenceの推奨ツール別プロンプトを流用（既存関数の呼び出しのみ・変更なし）
+function _ceSelectGeneratedPrompt(outputDraft, executionType, gw, ipi, vpi) {
+  if (executionType === 'image_generation' && ipi) {
+    var ikey = (typeof _ipiToolKeyForGatewayTool === 'function') ? _ipiToolKeyForGatewayTool(gw ? gw.recommendedTool : null) : 'gptImage';
+    return (ipi.platformPrompts && ipi.platformPrompts[ikey]) || ipi.mainPrompt || '';
+  }
+  if (executionType === 'video_generation' && vpi) {
+    var vkey = (typeof _vpiToolKeyForGatewayTool === 'function') ? _vpiToolKeyForGatewayTool(gw ? gw.recommendedTool : null) : 'seedance';
+    return (vpi.platformPrompts && vpi.platformPrompts[vkey]) || vpi.mainPrompt || '';
+  }
+  var pub = outputDraft.publishing;
+  return (pub && pub.copyText) ? pub.copyText : '（コピー可能なプロンプト/テキストが見つかりません）';
+}
+
+function _ceBuildExecutionSteps(targetTool) {
+  return [
+    'STEP1: Output Previewで完成イメージを確認する',
+    'STEP2: Publishing Engineで投稿直前データを確認する',
+    'STEP3: AI Gatewayで推奨ツール・ルートを確認する',
+    'STEP4: Generated Promptをコピーする',
+    'STEP5: ' + targetTool + 'へ貼り付ける',
+    'STEP6: 生成結果を確認する',
+    'STEP7: 承認後、成果物を保存する',
+  ];
+}
+
+function _ceBuildManualSteps(targetTool) {
+  return [
+    '1. ' + targetTool + '（ブラウザまたはアプリ）を開く',
+    '2. 「Copy Execution Plan」または「Copy Full Workflow」でコピーしたプロンプトを貼り付ける',
+    '3. 生成結果を確認し、品質・内容に問題がないか確認する',
+    '4. 社内承認（ユーザー承認）を得てから利用する',
+    '5. 承認後、成果物を保存する（本AI会社はこの手順を自動実行しません）',
+  ];
+}
+
+function _ceBuildChecklist(ipi, vpi) {
+  var list = [
+    'Output Previewで完成イメージを確認したか',
+    'Publishing Engineの投稿直前データを確認したか',
+    'AI Gatewayの推奨ツール・警告を確認したか',
+  ];
+  if (ipi) list.push('Image Prompt Intelligenceの安全チェックリストを確認したか');
+  if (vpi) list.push('Video Prompt Intelligenceの安全チェックリストを確認したか');
+  list.push('生成後、承認を得てから使用しているか');
+  return list;
+}
+
+function _ceBuildCopyText(base) {
+  var lines = ['【Creative Execution Plan】', ''];
+  lines.push('Execution Name: ' + base.executionName);
+  lines.push('Execution Type: ' + base.executionType);
+  lines.push('Target Tool: ' + base.targetTool);
+  lines.push('Target Route: ' + base.targetRoute);
+  lines.push('Estimated Time: ' + base.estimatedTime);
+  lines.push('Estimated Cost: ' + base.estimatedCost);
+  lines.push('Difficulty: ' + base.difficulty);
+  lines.push('Approval Required: yes（Manual Only / Auto Execute = false）');
+  lines.push('');
+  lines.push('Generated Prompt:');
+  lines.push(base.generatedPrompt);
+  lines.push('');
+  lines.push('Execution Steps:');
+  base.executionSteps.forEach(function(s) { lines.push('- ' + s); });
+  lines.push('');
+  lines.push('Manual Steps:');
+  base.manualSteps.forEach(function(s) { lines.push('- ' + s); });
+  return lines.join('\n');
+}
+
+// Phase49-4: Creative Execution Draft生成（実行はしない。既存Output Draft/Gateway/Prompt Intelligenceは破壊しない）
+function createCreativeExecutionDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+
+  // 既存のAI Gateway / Image Prompt Intelligence / Video Prompt Intelligenceを参照するのみ（判断ロジックは変更しない）
+  var gw = outputDraft.aiGateway || createAIGatewayDecision(outputDraft);
+  var ipi = outputDraft.imagePromptIntelligence || createImagePromptIntelligenceDraft(outputDraft);
+  var vpi = outputDraft.videoPromptIntelligence || createVideoPromptIntelligenceDraft(outputDraft);
+
+  var executionType = _ceExecutionTypeFor(type);
+  var targetTool = (gw && gw.recommendedTool) ? gw.recommendedTool : 'ChatGPT';
+  var targetRoute = (gw && gw.recommendedRoute) ? gw.recommendedRoute : 'manual_copy';
+  var generatedPrompt = _ceSelectGeneratedPrompt(outputDraft, executionType, gw, ipi, vpi);
+
+  var q = (outputDraft.publishing && typeof outputDraft.publishing.qualityScore === 'number') ? outputDraft.publishing.qualityScore
+    : ((outputDraft.packageQuality && typeof outputDraft.packageQuality.score === 'number') ? outputDraft.packageQuality.score : null);
+
+  var warnings = [];
+  if (q !== null && q < 80) {
+    warnings.push('成果物の完成度（' + q + '点）が80点未満です。実行前に内容を再確認してください。');
+  }
+  warnings.push('本Phaseは実行計画・コピー・チェック機能のみです。実際の生成・投稿・API実行は一切行いません（Manual Only / Auto Execute = false）。');
+
+  var def = getOutputTypeDefinition(type);
+  var executionName = (def ? def.label : type) + ' 実行計画';
+
+  var toolPlanner = Object.keys(CREATIVE_TOOL_PLANNER).map(function(id) {
+    var t = CREATIVE_TOOL_PLANNER[id];
+    return { id: id, name: t.name, category: t.category, recommended: (t.name === targetTool) };
+  });
+
+  var base = {
+    version: CREATIVE_EXECUTION_VERSION,
+    outputType: type,
+    executionName: executionName,
+    executionType: executionType,
+    targetTool: targetTool,
+    targetRoute: targetRoute,
+    requiredInputs: _ceRequiredInputsFor(executionType),
+    generatedPrompt: generatedPrompt,
+    copyTarget: targetTool,
+    executionSteps: _ceBuildExecutionSteps(targetTool),
+    manualSteps: _ceBuildManualSteps(targetTool),
+    estimatedTime: _ceEstimatedTimeFor(executionType),
+    estimatedCost: 'unknown（ツールの料金体系は導入時に要確認。本Phaseでは課金・API実行を一切行いません）',
+    difficulty: _ceDifficultyFor(executionType),
+    approvalRequired: true,
+    warnings: warnings,
+    checklist: _ceBuildChecklist(ipi, vpi),
+    fallback: 'ツールが利用できない場合は、Generated Promptを手動でコピーし、Tool Planner記載の代替ツールへ貼り付けてください。',
+    notes: '本Phaseは実行計画・コピー・チェックのみを提供します。実際の生成・投稿・API実行はPhase49-5以降、ユーザー承認後にのみ行われます。',
+    autoExecute: false,
+    executionMode: 'manual_only',
+    toolPlanner: toolPlanner,
+    sourceGatewayDecision: gw ? { recommendedTool: gw.recommendedTool, recommendedRoute: gw.recommendedRoute } : null,
+    copyText: '',
+  };
+  base.copyText = _ceBuildCopyText(base);
+  return base;
+}
+
+function _ceBuildExecutionPlanText(draft) {
+  var lines = ['【Execution Plan】', ''];
+  lines.push('Execution Name: ' + draft.executionName);
+  lines.push('Execution Type: ' + draft.executionType);
+  lines.push('Target Tool: ' + draft.targetTool);
+  lines.push('Target Route: ' + draft.targetRoute);
+  lines.push('Estimated Time: ' + draft.estimatedTime);
+  lines.push('Estimated Cost: ' + draft.estimatedCost);
+  lines.push('Difficulty: ' + draft.difficulty);
+  lines.push('Approval Required: yes（Manual Only）');
+  lines.push('');
+  lines.push('Generated Prompt:');
+  lines.push(draft.generatedPrompt);
+  return lines.join('\n');
+}
+
+function _ceBuildManualStepsText(draft) {
+  return ['【Manual Steps】', ''].concat(draft.manualSteps).join('\n');
+}
+
+function _ceBuildChecklistText(draft) {
+  return ['【Execution Checklist】', ''].concat(draft.checklist.map(function(c) { return '- ' + c; })).join('\n');
+}
+
+// Phase49-4: クリップボードコピー（既存Copy Export/Publishing/Gateway/Image・Video Prompt Copyとは独立）
+function copyCreativeExecutionField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeExecution || createCreativeExecutionDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (fieldKey === 'executionPlan') text = _ceBuildExecutionPlanText(draft);
+  else if (fieldKey === 'manualSteps') text = _ceBuildManualStepsText(draft);
+  else if (fieldKey === 'fullWorkflow') text = draft.copyText;
+  else if (fieldKey === 'checklist') text = _ceBuildChecklistText(draft);
+  if (!text) return;
+
+  var msg = document.getElementById('oe-ce-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase49-4: Creative Execution HTML生成（Video Prompt Intelligenceの直後に表示。データ不足でも安全に空文字を返す）
+function buildCreativeExecutionHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var draft = _lastOutputDraft.creativeExecution || createCreativeExecutionDraft(_lastOutputDraft);
+  if (!draft) return '';
+  _lastOutputDraft.creativeExecution = draft;
+  var esc = escapeHtml;
+
+  var stepsHtml = draft.executionSteps.map(function(s) { return '<div class="oe-ce-step-item">' + esc(s) + '</div>'; }).join('');
+  var manualHtml = draft.manualSteps.map(function(s) { return '<div class="oe-ce-step-item">' + esc(s) + '</div>'; }).join('');
+  var checklistHtml = draft.checklist.map(function(c) { return '<div class="oe-ce-check-item">☐ ' + esc(c) + '</div>'; }).join('');
+  var warningsHtml = draft.warnings.length ? draft.warnings.map(function(w) { return '<div class="oe-ce-warning">⚠ ' + esc(w) + '</div>'; }).join('') : '';
+  var toolPlannerHtml = draft.toolPlanner.map(function(t) {
+    return '<span class="oe-ce-tool-chip' + (t.recommended ? ' recommended' : '') + '">' + esc(t.name) + '</span>';
+  }).join('');
+
+  return '<div class="oe-ce-section">'
+    + '<div class="oe-ce-title">🚀 Creative Execution <span style="font-weight:400;opacity:.5;">v' + CREATIVE_EXECUTION_VERSION + '</span><span class="oe-ce-badge">MANUAL ONLY</span></div>'
+    + '<div class="oe-pkg-label">Execution Summary</div>'
+    + '<div class="oe-field-val">' + esc(draft.executionName) + ' ／ Type: ' + esc(draft.executionType) + '</div>'
+    + '<div class="oe-field-val">Target Tool: ' + esc(draft.targetTool) + '（' + esc(draft.targetRoute) + '）</div>'
+    + '<div class="oe-field-val">Estimated Time: ' + esc(draft.estimatedTime) + ' ／ Cost: ' + esc(draft.estimatedCost) + '</div>'
+    + '<div class="oe-field-val">Difficulty: ' + esc(draft.difficulty) + ' ／ Approval Required: yes（Manual Only）</div>'
+    + '<div class="oe-pkg-label">Generated Prompt</div><div class="oe-field-val">' + esc(_pubTruncate(draft.generatedPrompt, 300)) + '</div>'
+    + '<div class="oe-pkg-label">Execution Steps</div>' + stepsHtml
+    + '<div class="oe-pkg-label">Manual Workflow</div>' + manualHtml
+    + '<div class="oe-pkg-label">Tool Planner（' + draft.toolPlanner.length + '種）</div><div>' + toolPlannerHtml + '</div>'
+    + '<div class="oe-pkg-label">Execution Checklist</div>' + checklistHtml
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-ce-copyrow">'
+    +   '<button class="oe-ce-copybtn" onclick="copyCreativeExecutionField(\'executionPlan\')">Copy Execution Plan</button>'
+    +   '<button class="oe-ce-copybtn" onclick="copyCreativeExecutionField(\'manualSteps\')">Copy Manual Steps</button>'
+    +   '<button class="oe-ce-copybtn" onclick="copyCreativeExecutionField(\'fullWorkflow\')">Copy Full Workflow</button>'
+    +   '<button class="oe-ce-copybtn" onclick="copyCreativeExecutionField(\'checklist\')">Copy Checklist</button>'
+    +   '<span id="oe-ce-copy-msg" class="oe-ce-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase49-4: Export反映
+function appendCreativeExecutionToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeExecution || createCreativeExecutionDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Creative Execution (Phase49-4)');
+  lines.push('- Execution Name: ' + draft.executionName);
+  lines.push('- Execution Type: ' + draft.executionType);
+  lines.push('- Target Tool: ' + draft.targetTool);
+  lines.push('- Target Route: ' + draft.targetRoute);
+  lines.push('- Estimated Time: ' + draft.estimatedTime);
+  lines.push('- Estimated Cost: ' + draft.estimatedCost);
+  lines.push('- Difficulty: ' + draft.difficulty);
+  lines.push('- Approval Required: yes（Manual Only / Auto Execute = false）');
+  lines.push('- Generated Prompt: ' + draft.generatedPrompt);
+  lines.push('- Execution Steps:');
+  draft.executionSteps.forEach(function(s) { lines.push('  - ' + s); });
+  lines.push('- Manual Steps:');
+  draft.manualSteps.forEach(function(s) { lines.push('  - ' + s); });
+  lines.push('- Checklist:');
+  draft.checklist.forEach(function(c) { lines.push('  - [ ] ' + c); });
+  if (draft.warnings.length) {
+    lines.push('- Warnings:');
+    draft.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+  lines.push('- Fallback: ' + draft.fallback);
+  lines.push('- Notes: ' + draft.notes);
+}
+
+function appendCreativeExecutionToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.creativeExecution || createCreativeExecutionDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.creativeExecution = draft;
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -25566,6 +25901,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildAIGatewayHtml,                'AIGateway')
     + _oeSafe(buildImagePromptIntelligenceHtml,  'ImagePromptIntelligence')
     + _oeSafe(buildVideoPromptIntelligenceHtml,  'VideoPromptIntelligence')
+    + _oeSafe(buildCreativeExecutionHtml,        'CreativeExecution')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
