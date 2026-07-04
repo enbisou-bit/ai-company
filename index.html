@@ -1198,6 +1198,44 @@
     .oe-prc-title { font-size: 12px; }
     .oe-prc-review, .oe-prc-meta { font-size: 12px; }
   }
+  /* Phase51-1: Instagram Learning Center (mobile-first) */
+  .oe-ilc-section    { border-radius: 10px; border: 1px solid rgba(170,215,80,0.32); background: linear-gradient(135deg, rgba(22,30,6,0.92), rgba(12,16,4,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-ilc-title      { font-size: 11px; color: rgba(200,235,120,0.92); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-ilc-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(170,215,80,0.16); color: rgba(210,240,140,0.95); border: 1px solid rgba(170,215,80,0.4); }
+  .oe-ilc-form       { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
+  .oe-ilc-field      { display: flex; flex-direction: column; gap: 2px; }
+  .oe-ilc-flabel     { font-size: 10px; color: rgba(255,255,255,0.55); }
+  .oe-ilc-input      { min-height: 44px; box-sizing: border-box; background: rgba(255,255,255,0.05); border: 1px solid rgba(170,215,80,0.3); border-radius: 10px; color: rgba(255,255,255,0.9); font-size: 14px; padding: 6px 10px; width: 100%; }
+  .oe-ilc-input.full { grid-column: 1 / -1; }
+  .oe-ilc-recbtn     { grid-column: 1 / -1; min-height: 48px; border-radius: 12px; font-size: 15px; font-weight: 800; cursor: pointer; background: rgba(170,215,80,0.2); border: 1px solid rgba(170,215,80,0.5); color: rgba(210,240,140,0.98); }
+  .oe-ilc-gradechip  { font-size: 13px; font-weight: 800; padding: 4px 14px; border-radius: 12px; }
+  .oe-ilc-g-excellent { color: rgba(150,240,190,0.98); background: rgba(80,210,140,0.2); }
+  .oe-ilc-g-good      { color: rgba(150,200,255,0.98); background: rgba(60,150,255,0.16); }
+  .oe-ilc-g-average   { color: rgba(255,210,120,0.95); background: rgba(255,180,60,0.15); }
+  .oe-ilc-g-needs     { color: rgba(255,170,110,0.95); background: rgba(255,130,70,0.16); }
+  .oe-ilc-g-fail      { color: rgba(255,140,120,0.98); background: rgba(255,90,70,0.18); }
+  .oe-ilc-scorebar   { display: flex; align-items: center; gap: 10px; background: rgba(170,215,80,0.08); border: 1px solid rgba(170,215,80,0.25); border-radius: 8px; padding: 8px 12px; margin: 6px 0; flex-wrap: wrap; }
+  .oe-ilc-scorebig   { font-size: 22px; font-weight: 800; color: rgba(210,240,140,0.98); }
+  .oe-ilc-metrics    { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 6px 0; }
+  .oe-ilc-mcell      { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 8px; }
+  .oe-ilc-mk         { font-size: 9px; color: rgba(255,255,255,0.5); }
+  .oe-ilc-mv         { font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.85); }
+  .oe-ilc-block      { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 11px; margin: 5px 0; }
+  .oe-ilc-blockt     { font-size: 10px; font-weight: 800; color: rgba(200,235,120,0.9); margin-bottom: 3px; }
+  .oe-ilc-meta       { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.6; word-break: break-word; }
+  .oe-ilc-review     { font-size: 11px; color: rgba(255,255,255,0.66); line-height: 1.7; margin-bottom: 3px; }
+  .oe-ilc-warning    { font-size: 11px; color: rgba(255,180,80,0.92); line-height: 1.6; }
+  .oe-ilc-btn        { background: rgba(170,215,80,0.15); border: 1px solid rgba(170,215,80,0.4); border-radius: 14px; color: rgba(210,240,140,0.95); font-size: 12px; font-weight: 600; min-height: 40px; padding: 6px 14px; cursor: pointer; }
+  .oe-ilc-btn:hover  { background: rgba(170,215,80,0.3); }
+  .oe-ilc-copyrow    { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-ilc-copymsg    { font-size: 11px; color: rgba(210,240,140,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-ilc-copymsg.show { opacity: 1; }
+  @media (max-width: 480px) {
+    .oe-ilc-form { grid-template-columns: 1fr; }
+    .oe-ilc-metrics { grid-template-columns: 1fr 1fr; }
+    .oe-ilc-title { font-size: 12px; }
+    .oe-ilc-review, .oe-ilc-meta { font-size: 12px; }
+  }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23230,6 +23268,7 @@ function serializeOutputDraft(format) {
     appendMobileReviewCenterToExportJson(jsonObj);
     appendMobileApprovalToExportJson(jsonObj);
     appendPublishingReadyToExportJson(jsonObj);
+    appendInstagramLearningToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23471,6 +23510,7 @@ function serializeOutputDraft(format) {
   appendMobileReviewCenterToExportMarkdown(mdLines);
   appendMobileApprovalToExportMarkdown(mdLines);
   appendPublishingReadyToExportMarkdown(mdLines);
+  appendInstagramLearningToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -29735,6 +29775,416 @@ function appendPublishingReadyToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase51-1: Instagram Learning Center / Learning Engine v1（Decision 039・Version1「改善し続けるAI」工程）
+// 目的: Publishing Readyで「投稿しました」を押した後、Instagram実績をユーザーが手入力すると、
+//   保存率/エンゲージメント/CTR/コンバージョン/売上/Performance Scoreを自動算出し、5段階評価と
+//   ヒューリスティックAI分析（保存率高低の理由・CTA/タイトル/カルーセル/デザイン/投稿時間/ターゲット/
+//   ハッシュタグ改善案）＋Learning Output（勝ち/負けパターン等）を生成する。
+// 実績は手入力のみ（Instagram API接続・自動取得なし）。AI実行・自動投稿・画像生成・課金は一切行わない（分析のみ）。
+// 既存Learning Engine（extractLearningItems等）・Publishing Engine・Creative Asset Libraryは無変更で、
+// 本Phaseは独立した _instagramLearningHistory（メモリのみ）に記録する（既存Learning処理へは書き込まない）。
+// ============================================================
+
+const INSTAGRAM_LEARNING_VERSION = '1.0.0';
+
+const ILC_SAFETY_LABELS = [
+  'Manual Input Only', 'No Instagram API', 'No Auto Posting',
+  'No External AI', 'Analysis Only', 'No Auto Learning Write',
+];
+
+const ILC_HISTORY_MAX = 30;
+// 実績学習はメモリ保持のみ（既存Learning Engine/DB/localStorageへは書き込まない）
+let _instagramLearningHistory = [];
+
+var ILC_GRADES = [
+  { key: 'excellent', label: 'Excellent', min: 85 },
+  { key: 'good', label: 'Good', min: 70 },
+  { key: 'average', label: 'Average', min: 55 },
+  { key: 'needs', label: 'Needs Improvement', min: 35 },
+  { key: 'fail', label: 'Fail', min: 0 },
+];
+
+var ILC_AREA_LABELS = {
+  save: '保存率', eng: 'エンゲージメント', profile: 'プロフィール遷移', follow: 'フォロー転換',
+  ctr: 'リンククリック', conv: 'コンバージョン', rev: '売上',
+};
+
+function _ilcNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+// Phase51-1: 実績エントリから各指標＋Performance Score＋5段階評価を自動算出
+function scoreInstagramLearning(entry) {
+  function clamp(n) { return Math.max(0, Math.min(100, Math.round(typeof n === 'number' ? n : 0))); }
+  entry = entry || {};
+  var saves = _ilcNum(entry.saves), likes = _ilcNum(entry.likes), comments = _ilcNum(entry.comments), shares = _ilcNum(entry.shares);
+  var profileVisits = _ilcNum(entry.profileVisits), follows = _ilcNum(entry.follows), linkClicks = _ilcNum(entry.linkClicks);
+  var inquiries = _ilcNum(entry.inquiries), salesCount = _ilcNum(entry.salesCount), revenue = _ilcNum(entry.revenue);
+
+  var engagement = likes + comments + shares + saves;
+  var saveRate = engagement > 0 ? Math.round((saves / engagement) * 1000) / 10 : 0;
+  var ctr = profileVisits > 0 ? Math.round((linkClicks / profileVisits) * 1000) / 10 : 0;
+  var conversion = linkClicks > 0 ? Math.round((salesCount / linkClicks) * 1000) / 10 : (inquiries > 0 ? Math.round((salesCount / inquiries) * 1000) / 10 : 0);
+
+  var sub = {
+    save: clamp(saveRate >= 30 ? 100 : saveRate >= 20 ? 85 : saveRate >= 12 ? 70 : saveRate >= 6 ? 50 : saveRate > 0 ? 30 : 0),
+    eng: clamp(engagement >= 300 ? 100 : engagement >= 150 ? 85 : engagement >= 60 ? 70 : engagement >= 20 ? 50 : engagement > 0 ? 30 : 0),
+    profile: clamp(profileVisits >= 200 ? 100 : profileVisits >= 80 ? 80 : profileVisits >= 30 ? 60 : profileVisits > 0 ? 40 : 0),
+    follow: clamp(follows >= 30 ? 100 : follows >= 10 ? 80 : follows >= 3 ? 60 : follows > 0 ? 40 : 0),
+    ctr: clamp(ctr >= 10 ? 100 : ctr >= 5 ? 85 : ctr >= 2 ? 65 : ctr > 0 ? 45 : 0),
+    conv: clamp(conversion >= 5 ? 100 : conversion >= 2 ? 85 : conversion > 0 ? 60 : salesCount > 0 ? 70 : 0),
+    rev: clamp(revenue >= 50000 ? 100 : revenue >= 10000 ? 85 : revenue >= 3000 ? 65 : revenue > 0 ? 45 : 0),
+  };
+  var w = { save: 0.22, eng: 0.16, profile: 0.12, follow: 0.12, ctr: 0.12, conv: 0.14, rev: 0.12 };
+  var performanceScore = clamp(sub.save * w.save + sub.eng * w.eng + sub.profile * w.profile + sub.follow * w.follow
+    + sub.ctr * w.ctr + sub.conv * w.conv + sub.rev * w.rev);
+  var grade = ILC_GRADES.filter(function(g) { return performanceScore >= g.min; })[0] || ILC_GRADES[ILC_GRADES.length - 1];
+
+  return {
+    saveRate: saveRate, engagement: engagement, ctr: ctr, conversion: conversion, revenue: revenue,
+    performanceScore: performanceScore, gradeKey: grade.key, gradeLabel: grade.label, subScores: sub,
+  };
+}
+
+// Phase51-1: ヒューリスティックAI分析（分析のみ・AI実行なし）
+function buildInstagramLearningAnalysis(metrics, entry, context) {
+  var sr = metrics.saveRate, sub = metrics.subScores;
+  var hashtagCount = context ? context.hashtagCount : 0;
+  var designScore = context ? context.designScore : 0;
+  return {
+    saveHighReason: sr >= 15
+      ? '保存率が高い: 1枚目フックと情報の保存価値が高く、カルーセル構成が刺さっている可能性。この構成を勝ちパターンとして再利用。'
+      : '保存率は基準以下。保存されるだけの「後で見返したい情報量」を強化する余地あり。',
+    saveLowReason: sr < 12
+      ? '保存率が低い: 1枚目フックが弱い/情報量不足/保存メリットが不明確な可能性。タイトルとまとめスライドを改善。'
+      : '保存率は一定水準。さらに伸ばすには実用チェックリスト化が有効。',
+    ctaAdvice: sub.ctr < 65
+      ? 'CTAを具体化（「プロフィールのリンクから」を明示）し、10枚目とプロフィール導線を強化。'
+      : 'CTA導線は機能。訴求文言をA/Bテストしてクリック率をさらに改善。',
+    titleAdvice: sub.save < 70
+      ? 'タイトルに数字/ベネフィット/「保存版」を入れ、3秒で保存価値を伝える。'
+      : 'タイトルは有効。別フック（NG系・比較系）でA/Bテスト。',
+    carouselAdvice: sub.save < 70
+      ? '解決策スライドを具体化し、NG例スライドで保存を促進。9枚目で保存を明示的にCTA。'
+      : 'カルーセル構成は良好。勝ち構成を次回テンプレとして固定。',
+    designAdvice: designScore < 80
+      ? 'コントラスト・余白・1枚あたり文字量をモバイル最適化し可読性を上げる。'
+      : 'デザインは高水準。テンプレ統一を維持しブランド一貫性を強化。',
+    postTimeAdvice: '投稿時間帯別に実績を比較。平日夜(19-21時)・昼(12-13時)を検証し最適枠を特定。',
+    targetAdvice: sub.follow < 60
+      ? 'ターゲットの悩みをより具体化し、フォローする理由（継続価値）を明示。'
+      : 'ターゲット設定は有効。近接セグメントへ横展開を検討。',
+    hashtagAdvice: hashtagCount < 15
+      ? 'ハッシュタグを15〜30件に増やしリーチを拡大。'
+      : 'ハッシュタグ件数は適正。ビッグ/ミドル/スモールの配分を検証しリーチ効率を最適化。',
+  };
+}
+
+function _ilcBuildLearningOutput(metrics, entry, context) {
+  var sub = metrics.subScores;
+  var keys = Object.keys(sub);
+  var maxKey = keys.reduce(function(a, b) { return sub[b] > sub[a] ? b : a; }, keys[0]);
+  var minKey = keys.reduce(function(a, b) { return sub[b] < sub[a] ? b : a; }, keys[0]);
+  var tplName = context && context.template ? context.template : '';
+
+  return {
+    learningSummary: '評価: ' + metrics.gradeLabel + '（Performance ' + metrics.performanceScore + '点） / 保存率 ' + metrics.saveRate + '% / エンゲージ ' + metrics.engagement + ' / 売上 ' + metrics.revenue + '円。',
+    learningAdvice: '最優先改善は「' + ILC_AREA_LABELS[minKey] + '」。' + (minKey === 'save' ? 'フックとまとめスライドを強化。' : minKey === 'conv' || minKey === 'ctr' ? 'CTA導線を強化。' : minKey === 'follow' ? 'フォロー動機を明確化。' : 'データを蓄積し次回改善。'),
+    nextRecommendation: metrics.performanceScore >= 70
+      ? '勝ち構成（' + tplName + 'テンプレ / このカルーセル構成）を維持し、タイトルとCTAのみA/Bテスト。'
+      : 'テーマとフックを見直し、保存価値の高い構成へ改善して再投稿。',
+    improvementPriority: ILC_AREA_LABELS[minKey],
+    bestPattern: metrics.performanceScore >= 70
+      ? '勝ちパターン: ' + (tplName ? tplName + 'テンプレ + ' : '') + '「' + ILC_AREA_LABELS[maxKey] + '」が強い構成。Asset Libraryへ保存対象。'
+      : 'まだ勝ちパターン確立前。データ蓄積を継続。',
+    mistakePattern: metrics.subScores[minKey] < 50 ? '弱点パターン: ' + ILC_AREA_LABELS[minKey] + 'が基準未満。次回はここを重点改善。' : '大きな失敗パターンなし。',
+    successPattern: '成功要因: ' + ILC_AREA_LABELS[maxKey] + '（' + metrics.subScores[maxKey] + '点）が最も高い。この要素を次回も再現。',
+  };
+}
+
+// 実績を記録（手入力のみ。既存Learning Engineへは書き込まない）
+function recordInstagramLearning(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  var record = {
+    id: 'ilc-' + Date.now(),
+    recordedAt: new Date().toISOString(),
+    postDate: entry.postDate || '',
+    postTitle: entry.postTitle || '',
+    saves: _ilcNum(entry.saves), likes: _ilcNum(entry.likes), comments: _ilcNum(entry.comments), shares: _ilcNum(entry.shares),
+    profileVisits: _ilcNum(entry.profileVisits), follows: _ilcNum(entry.follows), linkClicks: _ilcNum(entry.linkClicks),
+    dms: _ilcNum(entry.dms), inquiries: _ilcNum(entry.inquiries), salesCount: _ilcNum(entry.salesCount), revenue: _ilcNum(entry.revenue),
+    memo: entry.memo || '',
+  };
+  _instagramLearningHistory = [record].concat(_instagramLearningHistory).slice(0, ILC_HISTORY_MAX);
+  return record;
+}
+
+// 入力フォームから登録（Instagram Insights等をユーザーが目視確認して手入力する想定・自動取得なし）
+function submitInstagramLearningEntry() {
+  function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+  var ctxTitle = '';
+  if (_lastOutputDraft && _lastOutputDraft.publishingReady) ctxTitle = _lastOutputDraft.publishingReady.title || '';
+  recordInstagramLearning({
+    postDate: val('ilc-in-postDate') || new Date().toISOString().slice(0, 10),
+    postTitle: val('ilc-in-postTitle') || ctxTitle,
+    saves: val('ilc-in-saves'), likes: val('ilc-in-likes'), comments: val('ilc-in-comments'), shares: val('ilc-in-shares'),
+    profileVisits: val('ilc-in-profileVisits'), follows: val('ilc-in-follows'), linkClicks: val('ilc-in-linkClicks'),
+    dms: val('ilc-in-dms'), inquiries: val('ilc-in-inquiries'), salesCount: val('ilc-in-salesCount'), revenue: val('ilc-in-revenue'),
+    memo: val('ilc-in-memo'),
+  });
+  if (_lastOutputDraft) _lastOutputDraft.instagramLearning = createInstagramLearningDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function _ilcBuildHistorySummary() {
+  var h = _instagramLearningHistory;
+  if (!h.length) return { count: 0, avgPerformance: null, avgSaveRate: null, avgRevenue: null, best: null };
+  var perfs = [], srs = [], revs = [], best = null, bestScore = -1;
+  h.forEach(function(e) {
+    var m = scoreInstagramLearning(e);
+    perfs.push(m.performanceScore); srs.push(m.saveRate); revs.push(e.revenue);
+    if (m.performanceScore > bestScore) { bestScore = m.performanceScore; best = { title: e.postTitle, performance: m.performanceScore, grade: m.gradeLabel }; }
+  });
+  function avg(a) { return a.length ? Math.round((a.reduce(function(x, y) { return x + y; }, 0) / a.length) * 10) / 10 : 0; }
+  return { count: h.length, avgPerformance: avg(perfs), avgSaveRate: avg(srs), avgRevenue: avg(revs), best: best };
+}
+
+// Phase51-1: Instagram Learning Center Draft生成（Publishing Readyを参照。実績未入力でも入力フォームを返す。null draftでも例外なし）
+function createInstagramLearningDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var pr = outputDraft.publishingReady || (typeof createPublishingReadyDraft === 'function' ? createPublishingReadyDraft(outputDraft) : null);
+  var context = pr ? {
+    postTitle: pr.title, template: pr.package && pr.package.template ? pr.package.template.name : (pr.assetLibraryReady && pr.assetLibraryReady.template ? pr.assetLibraryReady.template.name : ''),
+    designScore: pr.scoreDetail ? (pr.package ? pr.package.scores.designScore : 0) : 0,
+    carouselScore: pr.package ? pr.package.scores.carouselScore : 0,
+    publishingScore: pr.publishingScore, hashtagCount: pr.hashtags ? pr.hashtags.length : 0,
+    slideCount: pr.slides ? pr.slides.length : 0, published: pr.published,
+  } : { postTitle: '', template: '', designScore: 0, carouselScore: 0, publishingScore: 0, hashtagCount: 0, slideCount: 0, published: false };
+
+  var latest = _instagramLearningHistory.length ? _instagramLearningHistory[0] : null;
+  var metrics = null, analysis = null, learningOutput = null;
+  if (latest) {
+    metrics = scoreInstagramLearning(latest);
+    analysis = buildInstagramLearningAnalysis(metrics, latest, context);
+    learningOutput = _ilcBuildLearningOutput(metrics, latest, context);
+  }
+
+  var version1Review = [
+    { label: 'Instagram収益化へ近づいたか', note: '売上件数/金額/CTR/コンバージョンを指標化し、収益に直結する改善優先度を自動提示' },
+    { label: 'Version1完成条件へ近づいたか', note: '投稿→実績入力→学習→次回改善のループを実装。Version1の「改善し続けるAI」を完成' },
+    { label: 'Learningへ反映できるか', note: '勝ち/負け/成功パターンをlearningOutputとして生成（Version1は保存のみ・既存Learning Engineは無変更）' },
+    { label: 'Asset Libraryへ反映できるか', note: '勝ちパターンをbestPatternとして表示（Asset Library実保存はPhase51以降で連携）' },
+  ];
+
+  var warnings = ['本Phaseは手入力実績の分析のみです。Instagram API接続・自動取得・自動投稿・AI実行・画像生成・課金は一切行いません。既存Learning Engineへは書き込みません（独立記録・メモリのみ）。'];
+  if (!context.published) warnings.push('Publishing Readyで「投稿しました」を押した後に実績を入力すると、より正確なLearningになります。');
+
+  return {
+    version: INSTAGRAM_LEARNING_VERSION,
+    safetyLabels: ILC_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    context: context,
+    hasEntry: !!latest,
+    latestEntry: latest,
+    metrics: metrics,
+    analysis: analysis,
+    learningOutput: learningOutput,
+    history: _instagramLearningHistory.slice(0, 10),
+    historySummary: _ilcBuildHistorySummary(),
+    version1Review: version1Review,
+    warnings: warnings,
+  };
+}
+
+function _ilcBuildFullText(draft) {
+  var L = ['【Instagram Learning Center (Phase51-1)】', ''];
+  L.push('投稿: ' + (draft.latestEntry ? (draft.latestEntry.postTitle || '-') + '（' + (draft.latestEntry.postDate || '-') + '）' : '（実績未入力）'));
+  if (draft.metrics) {
+    var m = draft.metrics;
+    L.push('評価: ' + m.gradeLabel + ' / Performance ' + m.performanceScore);
+    L.push('保存率 ' + m.saveRate + '% / エンゲージ ' + m.engagement + ' / CTR ' + m.ctr + '% / CV ' + m.conversion + '% / 売上 ' + m.revenue + '円');
+    L.push('');
+    L.push('■ AI分析');
+    var a = draft.analysis;
+    ['saveHighReason', 'saveLowReason', 'ctaAdvice', 'titleAdvice', 'carouselAdvice', 'designAdvice', 'postTimeAdvice', 'targetAdvice', 'hashtagAdvice'].forEach(function(k) { L.push('・' + a[k]); });
+    L.push('');
+    L.push('■ Learning Output');
+    var o = draft.learningOutput;
+    L.push('Summary: ' + o.learningSummary);
+    L.push('Advice: ' + o.learningAdvice);
+    L.push('Next: ' + o.nextRecommendation);
+    L.push('Priority: ' + o.improvementPriority);
+    L.push('BestPattern: ' + o.bestPattern);
+    L.push('MistakePattern: ' + o.mistakePattern);
+    L.push('SuccessPattern: ' + o.successPattern);
+  } else {
+    L.push('（実績を入力すると分析が表示されます）');
+  }
+  return L.join('\n');
+}
+
+function _ilcCopyToClipboard(text) {
+  var msg = document.getElementById('oe-ilc-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase51-1: コピー（Metrics / Analysis / Learning Output / Full）
+function copyInstagramLearningField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramLearning || createInstagramLearningDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'metrics') {
+    if (draft.metrics) { var m = draft.metrics; text = '評価:' + m.gradeLabel + ' Performance:' + m.performanceScore + ' 保存率:' + m.saveRate + '% エンゲージ:' + m.engagement + ' CTR:' + m.ctr + '% CV:' + m.conversion + '% 売上:' + m.revenue + '円'; }
+  } else if (type === 'analysis') {
+    if (draft.analysis) { var a = draft.analysis; text = ['saveHighReason', 'saveLowReason', 'ctaAdvice', 'titleAdvice', 'carouselAdvice', 'designAdvice', 'postTimeAdvice', 'targetAdvice', 'hashtagAdvice'].map(function(k) { return '・' + a[k]; }).join('\n'); }
+  } else if (type === 'learning') {
+    if (draft.learningOutput) { var o = draft.learningOutput; text = Object.keys(o).map(function(k) { return k + ': ' + o[k]; }).join('\n'); }
+  } else if (type === 'full') text = _ilcBuildFullText(draft);
+  if (!text) return;
+  _ilcCopyToClipboard(text);
+}
+
+// Phase51-1: Instagram Learning Center HTML生成（Publishing Readyの直後に表示。実績未入力でも入力フォームを表示。データ不足でも安全に空文字を返す）
+function buildInstagramLearningHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.instagramLearning || createInstagramLearningDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.instagramLearning = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-ilc-badge">' + esc(l) + '</span>'; }).join('');
+
+  function numField(id, label) {
+    return '<div class="oe-ilc-field"><span class="oe-ilc-flabel">' + esc(label) + '</span><input type="number" id="' + id + '" class="oe-ilc-input" placeholder="0"></div>';
+  }
+  var formHtml = '<div class="oe-ilc-form">'
+    + '<div class="oe-ilc-field"><span class="oe-ilc-flabel">投稿日</span><input type="date" id="ilc-in-postDate" class="oe-ilc-input"></div>'
+    + '<div class="oe-ilc-field"><span class="oe-ilc-flabel">投稿タイトル</span><input type="text" id="ilc-in-postTitle" class="oe-ilc-input" placeholder="' + esc(draft.context.postTitle || '投稿タイトル') + '"></div>'
+    + numField('ilc-in-saves', '保存数') + numField('ilc-in-likes', 'いいね') + numField('ilc-in-comments', 'コメント')
+    + numField('ilc-in-shares', 'シェア') + numField('ilc-in-profileVisits', 'プロフィールアクセス') + numField('ilc-in-follows', 'フォロー数増加')
+    + numField('ilc-in-linkClicks', 'リンククリック') + numField('ilc-in-dms', 'DM数') + numField('ilc-in-inquiries', '問い合わせ数')
+    + numField('ilc-in-salesCount', '売上件数') + numField('ilc-in-revenue', '売上金額(円)')
+    + '<div class="oe-ilc-field oe-ilc-input" style="grid-column:1/-1;padding:0;border:none;background:none;min-height:auto;"><span class="oe-ilc-flabel">メモ</span><input type="text" id="ilc-in-memo" class="oe-ilc-input" placeholder="気づき・仮説など"></div>'
+    + '<button class="oe-ilc-recbtn" onclick="submitInstagramLearningEntry()">実績を記録して学習する</button>'
+    + '</div>';
+
+  var resultHtml = '';
+  if (draft.hasEntry && draft.metrics) {
+    var m = draft.metrics;
+    var gradeChip = '<span class="oe-ilc-gradechip oe-ilc-g-' + m.gradeKey + '">' + esc(m.gradeLabel) + '</span>';
+    var scoreBar = '<div class="oe-ilc-scorebar"><span class="oe-ilc-scorebig">' + m.performanceScore + '</span><div><div class="oe-ilc-mk">Performance Score（0〜100）</div>' + gradeChip + '</div></div>';
+    function mcell(k, v) { return '<div class="oe-ilc-mcell"><div class="oe-ilc-mk">' + esc(k) + '</div><div class="oe-ilc-mv">' + esc(v) + '</div></div>'; }
+    var metricsHtml = '<div class="oe-ilc-metrics">'
+      + mcell('Save Rate', m.saveRate + '%') + mcell('Engagement', m.engagement) + mcell('CTR', m.ctr + '%')
+      + mcell('Conversion', m.conversion + '%') + mcell('Revenue', m.revenue + '円') + mcell('Performance', m.performanceScore)
+      + '</div>';
+    var a = draft.analysis;
+    var analysisRows = [
+      ['保存率が高い理由', a.saveHighReason], ['保存率が低い理由', a.saveLowReason], ['CTA改善案', a.ctaAdvice],
+      ['タイトル改善案', a.titleAdvice], ['カルーセル改善案', a.carouselAdvice], ['デザイン改善案', a.designAdvice],
+      ['投稿時間改善案', a.postTimeAdvice], ['ターゲット改善案', a.targetAdvice], ['ハッシュタグ改善案', a.hashtagAdvice],
+    ].map(function(r) { return '<div class="oe-ilc-meta"><b style="color:rgba(200,235,120,0.85);">' + esc(r[0]) + ':</b> ' + esc(r[1]) + '</div>'; }).join('');
+    var o = draft.learningOutput;
+    var outputRows = [
+      ['learningSummary', o.learningSummary], ['learningAdvice', o.learningAdvice], ['nextRecommendation', o.nextRecommendation],
+      ['improvementPriority', o.improvementPriority], ['bestPattern', o.bestPattern], ['mistakePattern', o.mistakePattern], ['successPattern', o.successPattern],
+    ].map(function(r) { return '<div class="oe-ilc-meta"><b style="color:rgba(200,235,120,0.85);">' + esc(r[0]) + ':</b> ' + esc(r[1]) + '</div>'; }).join('');
+    var hs = draft.historySummary;
+    var histHtml = hs.count > 0 ? '<div class="oe-ilc-block"><div class="oe-ilc-blockt">学習履歴（' + hs.count + '件・メモリ）</div><div class="oe-ilc-meta">平均Performance ' + hs.avgPerformance + ' / 平均保存率 ' + hs.avgSaveRate + '% / 平均売上 ' + hs.avgRevenue + '円' + (hs.best ? '<br>ベスト投稿: ' + esc(hs.best.title || '-') + '（' + hs.best.performance + '点 ' + esc(hs.best.grade) + '）' : '') + '</div></div>' : '';
+
+    resultHtml = scoreBar + metricsHtml
+      + '<div class="oe-ilc-block"><div class="oe-ilc-blockt">AI分析（分析のみ・AI実行なし）</div>' + analysisRows + '</div>'
+      + '<div class="oe-ilc-block"><div class="oe-ilc-blockt">Learning Output</div>' + outputRows + '</div>'
+      + histHtml;
+  } else {
+    resultHtml = '<div class="oe-ilc-meta" style="opacity:.7;">実績を入力して「実績を記録して学習する」を押すと、指標算出・5段階評価・AI分析・Learning Outputが表示されます。</div>';
+  }
+
+  var reviewHtml = draft.version1Review.map(function(c) {
+    return '<div class="oe-ilc-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-ilc-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-ilc-section">'
+    + '<div class="oe-ilc-title">🎓 Instagram Learning Center <span style="font-weight:400;opacity:.5;">v' + INSTAGRAM_LEARNING_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + '<div class="oe-pkg-label">実績入力（手入力のみ・Instagram Insightsを目視して入力）</div>'
+    + formHtml
+    + '<div class="oe-pkg-label">学習結果</div>'
+    + resultHtml
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-ilc-copyrow">'
+    +   '<button class="oe-ilc-btn" onclick="copyInstagramLearningField(\'metrics\')">Copy Metrics</button>'
+    +   '<button class="oe-ilc-btn" onclick="copyInstagramLearningField(\'analysis\')">Copy Analysis</button>'
+    +   '<button class="oe-ilc-btn" onclick="copyInstagramLearningField(\'learning\')">Copy Learning Output</button>'
+    +   '<button class="oe-ilc-btn" onclick="copyInstagramLearningField(\'full\')">Copy Full</button>'
+    +   '<span id="oe-ilc-copy-msg" class="oe-ilc-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase51-1: Export反映
+function appendInstagramLearningToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramLearning || createInstagramLearningDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Instagram Learning Center (Phase51-1)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  if (draft.hasEntry && draft.metrics) {
+    var m = draft.metrics;
+    lines.push('- 投稿: ' + (draft.latestEntry.postTitle || '-') + '（' + (draft.latestEntry.postDate || '-') + '）');
+    lines.push('- 評価: ' + m.gradeLabel + ' / Performance Score: ' + m.performanceScore);
+    lines.push('- Save Rate: ' + m.saveRate + '% / Engagement: ' + m.engagement + ' / CTR: ' + m.ctr + '% / Conversion: ' + m.conversion + '% / Revenue: ' + m.revenue + '円');
+    lines.push('- AI分析:');
+    var a = draft.analysis;
+    [['保存率高', a.saveHighReason], ['保存率低', a.saveLowReason], ['CTA', a.ctaAdvice], ['タイトル', a.titleAdvice], ['カルーセル', a.carouselAdvice], ['デザイン', a.designAdvice], ['投稿時間', a.postTimeAdvice], ['ターゲット', a.targetAdvice], ['ハッシュタグ', a.hashtagAdvice]].forEach(function(r) { lines.push('  - ' + r[0] + ': ' + r[1]); });
+    lines.push('- Learning Output:');
+    var o = draft.learningOutput;
+    Object.keys(o).forEach(function(k) { lines.push('  - ' + k + ': ' + o[k]); });
+    lines.push('- 学習履歴: ' + draft.historySummary.count + '件 / 平均Performance ' + draft.historySummary.avgPerformance);
+  } else {
+    lines.push('- 実績未入力（入力フォームのみ表示）');
+  }
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+}
+
+function appendInstagramLearningToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramLearning || createInstagramLearningDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.instagramLearning = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    context: draft.context,
+    hasEntry: draft.hasEntry,
+    latestEntry: draft.latestEntry,
+    metrics: draft.metrics,
+    analysis: draft.analysis,
+    learningOutput: draft.learningOutput,
+    historySummary: draft.historySummary,
+    version1Review: draft.version1Review,
+  };
+  if (_instagramLearningHistory.length) payload._instagramLearningHistory = _instagramLearningHistory.slice(0, 10);
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -29870,6 +30320,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildMobileReviewHtml,             'MobileReviewCenter')
     + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
     + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
+    + _oeSafe(buildInstagramLearningHtml,        'InstagramLearningCenter')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
