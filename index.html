@@ -958,6 +958,27 @@
   .oe-cal-copybtn:hover { background: rgba(90,210,230,0.3); }
   .oe-cal-copymsg    { font-size: 10px; color: rgba(140,220,235,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-cal-copymsg.show { opacity: 1; }
+  /* Phase50-1: Instagram Marketing Intelligence */
+  .oe-imi-section    { border-radius: 10px; border: 1px solid rgba(255,80,150,0.28); background: linear-gradient(135deg, rgba(40,6,26,0.92), rgba(20,3,14,0.96)); padding: 12px 14px; }
+  .oe-imi-title       { font-size: 11px; color: rgba(255,140,190,0.85); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-imi-badge       { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(255,80,150,0.18); color: rgba(255,140,190,0.95); border: 1px solid rgba(255,80,150,0.4); }
+  .oe-imi-analysis-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 7px 10px; margin-bottom: 5px; }
+  .oe-imi-analysis-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: rgba(255,255,255,0.75); font-weight: 600; margin-bottom: 3px; }
+  .oe-imi-score       { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+  .oe-imi-status-good         { color: rgba(150,230,150,0.95); background: rgba(80,200,90,0.15); }
+  .oe-imi-status-watch        { color: rgba(255,210,120,0.95); background: rgba(255,180,60,0.15); }
+  .oe-imi-status-insufficient { color: rgba(255,150,150,0.9); background: rgba(255,90,90,0.13); }
+  .oe-imi-note        { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.7; }
+  .oe-imi-warning     { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-imi-checklist-title { font-size: 10px; color: rgba(255,140,190,0.8); font-weight: 700; margin: 6px 0 3px; }
+  .oe-imi-checklist-item  { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.8; }
+  .oe-imi-input-row   { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  .oe-imi-input       { width: 110px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,80,150,0.3); border-radius: 6px; color: rgba(255,255,255,0.85); font-size: 10px; padding: 4px 8px; }
+  .oe-imi-copyrow     { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-imi-copybtn     { background: rgba(255,80,150,0.15); border: 1px solid rgba(255,80,150,0.4); border-radius: 14px; color: rgba(255,140,190,0.9); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-imi-copybtn:hover { background: rgba(255,80,150,0.3); }
+  .oe-imi-copymsg     { font-size: 10px; color: rgba(255,140,190,0.85); opacity: 0; transition: opacity 0.3s; }
+  .oe-imi-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -22983,6 +23004,7 @@ function serializeOutputDraft(format) {
     appendCreativeExecutionToExportJson(jsonObj);
     appendCreativeAdAssemblyToExportJson(jsonObj);
     appendCreativeAssetLibraryToExportJson(jsonObj);
+    appendInstagramMarketingIntelligenceToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23217,6 +23239,7 @@ function serializeOutputDraft(format) {
   appendCreativeExecutionToExportMarkdown(mdLines);
   appendCreativeAdAssemblyToExportMarkdown(mdLines);
   appendCreativeAssetLibraryToExportMarkdown(mdLines);
+  appendInstagramMarketingIntelligenceToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -26535,6 +26558,409 @@ function appendCreativeAssetLibraryToExportJson(payload) {
   payload.creativeAssetLibrary = draft;
 }
 
+// ============================================================
+// Phase50-1: Instagram Marketing Intelligence（Decision 039・Version1最優先ゴール = Instagram収益化支援）
+// 目的: 投稿前の予測分析（既存Publishing/Creative Ad Assembly/Asset Libraryデータからのヒューリスティック）と
+//   投稿後の実績分析（ユーザーによる手動入力のみ）を提供する。
+//   保存率/リーチ/プロフィール遷移/フォロー率/CTA/ハッシュタグ/投稿時間/カルーセル/リール/競合/トレンド分析が対象。
+// 実際のInstagram Graph API接続・自動データ取得・自動投稿・自動課金は一切行わない（Manual Only固定）
+// ============================================================
+
+const INSTAGRAM_MARKETING_INTELLIGENCE_VERSION = '1.0.0';
+
+const IMI_SAFETY_LABELS = [
+  'No Real API Connection', 'Manual Input Only', 'Prediction Heuristic Only', 'Read Only Analysis',
+];
+
+const IMI_RESULT_HISTORY_MAX = 30;
+let _instagramResultHistory = [];
+
+function _imiStatusFromScore(score) {
+  if (score >= 80) return 'good';
+  if (score >= 55) return 'watch';
+  return 'insufficient';
+}
+
+function _imiAnalyzeSaveRate(caa, pub) {
+  var score = 30;
+  var notes = [];
+  if (caa && caa.visualDirection) { score += 20; notes.push('ビジュアル方向性が設定済み'); } else { notes.push('ビジュアル方向性が未設定'); }
+  if (caa && caa.headlineSet && caa.headlineSet.adHeadline) { score += 20; notes.push('保存を促すフック見出しが存在'); } else { notes.push('フック見出しが未設定'); }
+  if (pub && pub.cta) { score += 15; notes.push('CTAで保存を訴求可能'); } else { notes.push('CTA未設定のため保存訴求が弱い可能性'); }
+  if (caa && caa.captionSet && caa.captionSet.mainCaption && caa.captionSet.mainCaption.length > 60) { score += 15; notes.push('キャプションに十分な情報量あり'); } else { notes.push('キャプションが短く保存動機が弱い可能性'); }
+  score = Math.min(100, score);
+  return { score: score, status: _imiStatusFromScore(score), label: '保存率分析（投稿前予測・ヒューリスティック）', notes: notes };
+}
+
+function _imiAnalyzeHashtags(pub) {
+  var count = (pub && Array.isArray(pub.hashtags)) ? pub.hashtags.length : 0;
+  var inRange = count >= 15 && count <= 30;
+  var score = inRange ? 85 : (count > 0 ? 50 : 20);
+  return {
+    score: score, status: _imiStatusFromScore(score), label: 'ハッシュタグ分析',
+    notes: [count + '件のハッシュタグ（Instagram推奨は15〜30件）', inRange ? '推奨範囲内' : '推奨範囲外のため見直しを推奨'],
+  };
+}
+
+function _imiAnalyzeCta(caa, pub) {
+  var hasCta = !!(pub && pub.cta) || !!(caa && caa.ctaSet && caa.ctaSet.length);
+  var score = hasCta ? 80 : 25;
+  return {
+    score: score, status: _imiStatusFromScore(score), label: 'CTA分析',
+    notes: hasCta ? ['CTAが設定済み'] : ['CTAが未設定。行動喚起を追加すると保存/フォロー率向上が期待できます'],
+  };
+}
+
+function _imiAnalyzeCarousel(outputDraft, caa) {
+  var isCarousel = outputDraft.type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL;
+  if (!isCarousel) return { score: null, status: 'insufficient', label: 'カルーセル分析', notes: ['本Output TypeはInstagram Carousel以外のため対象外'] };
+  var slideCount = (outputDraft.fields && Array.isArray(outputDraft.fields.slides)) ? outputDraft.fields.slides.length : 0;
+  var score = (slideCount >= 6 && slideCount <= 10) ? 85 : (slideCount > 0 ? 55 : 20);
+  return { score: score, status: _imiStatusFromScore(score), label: 'カルーセル分析', notes: [slideCount + '枚のスライド（保存率が高い傾向は6〜10枚とされる・一般論）'] };
+}
+
+function _imiAnalyzePostingTime(pub) {
+  var suggestion = (pub && pub.publishTimeSuggestion) ? pub.publishTimeSuggestion : null;
+  return {
+    score: suggestion ? 70 : 40, status: suggestion ? 'watch' : 'insufficient', label: '投稿時間分析',
+    notes: suggestion
+      ? ['Publishing Engineの推奨投稿時間: ' + suggestion, '一般的にInstagramは平日昼12-13時・夜19-21時にエンゲージメントが高い傾向（一般論。実アカウントのInsightsで要検証）']
+      : ['Publishing Engine未生成のため一般論のみ表示: 平日昼12-13時・夜19-21時が目安（実アカウントのInsightsで要検証）'],
+  };
+}
+
+function _imiAnalyzeReelSuitability(type) {
+  var isVideoType = type === OUTPUT_TYPES.TIKTOK_VIDEO || type === OUTPUT_TYPES.YOUTUBE_SHORTS || type === OUTPUT_TYPES.VIDEO_PROMPT;
+  return {
+    score: null, status: 'insufficient', label: 'リール分析',
+    notes: isVideoType
+      ? ['縦型動画素材のためInstagramリールへの転用に適性あり（実際のリール投稿・分析は未実装）']
+      : ['現Output Typeは静止画/カルーセル中心のためリール分析は対象外。動画プロンプト生成（Phase49-3）を経由すると転用検討可能'],
+  };
+}
+
+function _imiAnalyzeReach(hashtagAnalysis, ctaAnalysis) {
+  var base = 40;
+  if (hashtagAnalysis && typeof hashtagAnalysis.score === 'number') base += Math.round(hashtagAnalysis.score * 0.3);
+  if (ctaAnalysis && typeof ctaAnalysis.score === 'number') base += Math.round(ctaAnalysis.score * 0.2);
+  var score = Math.min(100, base);
+  return { score: score, status: _imiStatusFromScore(score), label: 'リーチ分析（予測）',
+    notes: ['ハッシュタグ・CTAの充実度から推定したリーチ拡大ポテンシャル（実際のリーチ数値ではありません）'] };
+}
+
+function _imiAnalyzeProfileVisit(caa) {
+  var hasCta = !!(caa && caa.ctaSet && caa.ctaSet.length);
+  var score = hasCta ? 55 : 25;
+  return { score: score, status: _imiStatusFromScore(score), label: 'プロフィール遷移分析',
+    notes: hasCta
+      ? ['CTAでプロフィール誘導を促せる可能性あり（実測は手動入力の実績データで確認してください）']
+      : ['CTA未設定のためプロフィール遷移を促す導線が弱い可能性'] };
+}
+
+function _imiAnalyzeFollowRate(ctaAnalysis) {
+  var score = (ctaAnalysis && typeof ctaAnalysis.score === 'number') ? Math.round(ctaAnalysis.score * 0.7) : 30;
+  return { score: score, status: _imiStatusFromScore(score), label: 'フォロー率分析（予測）',
+    notes: ['CTA・保存訴求の強さから推定したフォロー転換ポテンシャル（実際のフォロー率ではありません）'] };
+}
+
+function _imiBuildCompetitorChecklist() {
+  return [
+    '同ジャンルの上位アカウント3〜5件を選定し、投稿頻度・フォーマットを記録する',
+    '保存数/いいね数が多い投稿の共通パターン（フック・構成・CTA）を分析する',
+    'ハッシュタグの使用傾向（件数・種類）を比較する',
+    '投稿時間帯の傾向を記録する',
+  ];
+}
+
+function _imiBuildTrendChecklist() {
+  return [
+    'Instagram内の「発見」タブで直近のバズ投稿を確認する',
+    '関連ハッシュタグの投稿数推移を確認する',
+    '季節性・イベント性のあるテーマ（季節/記念日等）を確認する',
+    '競合分析で見つけた勝ちパターンとの共通点を確認する',
+  ];
+}
+
+// 実績データはユーザーの手動入力のみで記録する（Instagram API等の自動取得は一切行わない）
+function recordInstagramResult(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  var record = {
+    id: 'imi-' + Date.now(),
+    recordedAt: new Date().toISOString(),
+    outputType: entry.outputType || (_lastOutputDraft ? _lastOutputDraft.type : 'unknown'),
+    saveRate: typeof entry.saveRate === 'number' ? entry.saveRate : null,
+    reach: typeof entry.reach === 'number' ? entry.reach : null,
+    profileVisits: typeof entry.profileVisits === 'number' ? entry.profileVisits : null,
+    followRate: typeof entry.followRate === 'number' ? entry.followRate : null,
+    cv: typeof entry.cv === 'number' ? entry.cv : null,
+  };
+  _instagramResultHistory = [record].concat(_instagramResultHistory).slice(0, IMI_RESULT_HISTORY_MAX);
+  return record;
+}
+
+function _imiBuildRealResultSummary(type) {
+  var relevant = _instagramResultHistory.filter(function(e) { return e.outputType === type; });
+  var target = relevant.length >= 3 ? relevant : _instagramResultHistory;
+  if (target.length < 3) {
+    return { status: 'insufficient', count: target.length, averages: null, history: target.slice(0, 10) };
+  }
+  function avg(key) {
+    var vals = target.map(function(e) { return e[key]; }).filter(function(v) { return typeof v === 'number'; });
+    if (!vals.length) return null;
+    return Math.round((vals.reduce(function(a, b) { return a + b; }, 0) / vals.length) * 100) / 100;
+  }
+  return {
+    status: 'ready', count: target.length,
+    averages: { saveRate: avg('saveRate'), reach: avg('reach'), profileVisits: avg('profileVisits'), followRate: avg('followRate'), cv: avg('cv') },
+    history: target.slice(0, 10),
+  };
+}
+
+function _imiBuildRecommendations(analyses) {
+  var recs = [];
+  analyses.forEach(function(a) {
+    if (a && a.score !== null && a.status === 'insufficient') {
+      recs.push(a.label + 'の改善: ' + (a.notes && a.notes.length ? a.notes[a.notes.length - 1] : '内容を見直してください'));
+    }
+  });
+  if (!recs.length) recs.push('主要項目は一定水準に達しています。実際の投稿結果を記録し、Learningへ反映してください。');
+  return recs;
+}
+
+function _imiBuildCopyText(draft) {
+  var lines = ['【Instagram Marketing Intelligence】', ''];
+  lines.push('Output Type: ' + draft.outputType);
+  lines.push('');
+  Object.keys(draft.predictive).forEach(function(key) {
+    var a = draft.predictive[key];
+    if (!a) return;
+    lines.push(a.label + ': ' + (typeof a.score === 'number' ? a.score + '点' : '対象外'));
+  });
+  lines.push('');
+  lines.push('Recommendations:');
+  draft.recommendations.forEach(function(r) { lines.push('- ' + r); });
+  return lines.join('\n');
+}
+
+// Phase50-1: Instagram Marketing Intelligence Draft生成
+// 既存3関数（createPublishingDraft/createCreativeAdAssemblyDraft/createCreativeAssetLibraryDraft）を読み取り専用で参照する
+function createInstagramMarketingIntelligenceDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var type = outputDraft.type;
+
+  var pub = outputDraft.publishing || createPublishingDraft(outputDraft);
+  var caa = outputDraft.creativeAdAssembly || createCreativeAdAssemblyDraft(outputDraft);
+
+  var saveRate = _imiAnalyzeSaveRate(caa, pub);
+  var hashtag = _imiAnalyzeHashtags(pub);
+  var cta = _imiAnalyzeCta(caa, pub);
+  var carousel = _imiAnalyzeCarousel(outputDraft, caa);
+  var postingTime = _imiAnalyzePostingTime(pub);
+  var reel = _imiAnalyzeReelSuitability(type);
+  var reach = _imiAnalyzeReach(hashtag, cta);
+  var profileVisit = _imiAnalyzeProfileVisit(caa);
+  var followRate = _imiAnalyzeFollowRate(cta);
+
+  var predictive = {
+    saveRate: saveRate, hashtag: hashtag, cta: cta, carousel: carousel, postingTime: postingTime,
+    reel: reel, reach: reach, profileVisit: profileVisit, followRate: followRate,
+  };
+
+  var warnings = ['本Phaseは予測ヒューリスティック分析と手動入力による実績分析のみです。Instagram Graph API等への実際の接続・自動データ取得は一切行っていません。'];
+  if (!pub) warnings.push('Publishing Engineのデータが存在しないため、一部の分析は簡易フォールバック値です。');
+
+  var base = {
+    version: INSTAGRAM_MARKETING_INTELLIGENCE_VERSION,
+    outputType: type,
+    createdTime: new Date().toISOString(),
+    predictive: predictive,
+    manualResearch: { competitor: _imiBuildCompetitorChecklist(), trend: _imiBuildTrendChecklist() },
+    realResults: _imiBuildRealResultSummary(type),
+    recommendations: _imiBuildRecommendations([saveRate, hashtag, cta, carousel, postingTime, reach, profileVisit, followRate]),
+    warnings: warnings,
+    copyText: '',
+    sourcePublishing: pub ? { title: pub.title, hashtagCount: (pub.hashtags || []).length } : null,
+    sourceCreativeAdAssembly: caa ? { campaignName: caa.campaignName } : null,
+  };
+  base.copyText = _imiBuildCopyText(base);
+  return base;
+}
+
+// 手動実績入力フォームからの登録（Instagram Insights等をユーザーが目視確認し手入力する想定。自動取得は一切なし）
+function submitInstagramResultEntry() {
+  function num(id) {
+    var el = document.getElementById(id);
+    if (!el || el.value === '') return null;
+    var v = parseFloat(el.value);
+    return isNaN(v) ? null : v;
+  }
+  recordInstagramResult({
+    outputType: _lastOutputDraft ? _lastOutputDraft.type : 'unknown',
+    saveRate: num('imi-input-saveRate'),
+    reach: num('imi-input-reach'),
+    profileVisits: num('imi-input-profileVisits'),
+    followRate: num('imi-input-followRate'),
+    cv: num('imi-input-cv'),
+  });
+  if (_lastOutputDraft) _lastOutputDraft.instagramMarketingIntelligence = createInstagramMarketingIntelligenceDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function _imiBuildPredictiveText(draft) {
+  var lines = ['【Predictive Analysis】', ''];
+  Object.keys(draft.predictive).forEach(function(key) {
+    var a = draft.predictive[key];
+    if (!a) return;
+    lines.push(a.label + ': ' + (typeof a.score === 'number' ? a.score + '点' : '対象外'));
+    (a.notes || []).forEach(function(n) { lines.push('  - ' + n); });
+  });
+  return lines.join('\n');
+}
+
+function _imiBuildChecklistText(draft) {
+  var lines = ['【競合分析チェックリスト】', ''];
+  draft.manualResearch.competitor.forEach(function(i) { lines.push('☐ ' + i); });
+  lines.push('');
+  lines.push('【トレンド分析チェックリスト】');
+  draft.manualResearch.trend.forEach(function(i) { lines.push('☐ ' + i); });
+  return lines.join('\n');
+}
+
+// Phase50-1: クリップボードコピー（既存Copy Export/Publishing/Gateway/各Intelligence/Executionの各Copyとは独立）
+function copyInstagramMarketingIntelligenceField(fieldKey) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramMarketingIntelligence || createInstagramMarketingIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (fieldKey === 'predictive') text = _imiBuildPredictiveText(draft);
+  else if (fieldKey === 'checklist') text = _imiBuildChecklistText(draft);
+  else if (fieldKey === 'full') text = draft.copyText;
+  if (!text) return;
+
+  var msg = document.getElementById('oe-imi-copy-msg');
+  function showMsg() {
+    if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-1: Instagram Marketing Intelligence HTML生成（Creative Asset Libraryの直後に表示。データ不足でも安全に空文字を返す）
+function buildInstagramMarketingIntelligenceHtml() {
+  if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
+  var draft = _lastOutputDraft.instagramMarketingIntelligence || createInstagramMarketingIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return '';
+  _lastOutputDraft.instagramMarketingIntelligence = draft;
+  var esc = escapeHtml;
+
+  var safetyBadgesHtml = IMI_SAFETY_LABELS.map(function(label) {
+    return '<span class="oe-imi-badge">' + esc(label) + '</span>';
+  }).join('');
+
+  function scoreRow(a) {
+    if (!a) return '';
+    var scoreLabel = typeof a.score === 'number' ? a.score + '点' : '対象外';
+    var statusClass = 'oe-imi-status-' + (a.status || 'insufficient');
+    var notesHtml = (a.notes || []).map(function(n) { return '<div class="oe-imi-note">・' + esc(n) + '</div>'; }).join('');
+    return '<div class="oe-imi-analysis-card">'
+      + '<div class="oe-imi-analysis-head"><span>' + esc(a.label) + '</span><span class="oe-imi-score ' + statusClass + '">' + esc(scoreLabel) + '</span></div>'
+      + notesHtml
+      + '</div>';
+  }
+
+  var p = draft.predictive;
+  var predictiveHtml = [p.saveRate, p.hashtag, p.cta, p.carousel, p.postingTime, p.reel, p.reach, p.profileVisit, p.followRate].map(scoreRow).join('');
+
+  function checklistHtml(title, items) {
+    return '<div class="oe-imi-checklist-title">' + esc(title) + '</div>'
+      + items.map(function(i) { return '<div class="oe-imi-checklist-item">☐ ' + esc(i) + '</div>'; }).join('');
+  }
+  var researchHtml = checklistHtml('競合分析チェックリスト（手動リサーチ用）', draft.manualResearch.competitor)
+    + checklistHtml('トレンド分析チェックリスト（手動リサーチ用）', draft.manualResearch.trend);
+
+  var rr = draft.realResults;
+  var realResultsHtml = (rr.status === 'insufficient')
+    ? '<div class="oe-imi-note">実績データ ' + rr.count + '/3件（3件以上でトレンド集計を開始します。手動入力してください）</div>'
+    : ('<div class="oe-imi-note">実績データ ' + rr.count + '件の平均値</div>'
+      + '<div class="oe-imi-note">・保存率: ' + (rr.averages.saveRate !== null ? rr.averages.saveRate : '-') + '</div>'
+      + '<div class="oe-imi-note">・リーチ: ' + (rr.averages.reach !== null ? rr.averages.reach : '-') + '</div>'
+      + '<div class="oe-imi-note">・プロフィール遷移: ' + (rr.averages.profileVisits !== null ? rr.averages.profileVisits : '-') + '</div>'
+      + '<div class="oe-imi-note">・フォロー率: ' + (rr.averages.followRate !== null ? rr.averages.followRate : '-') + '</div>'
+      + '<div class="oe-imi-note">・CV: ' + (rr.averages.cv !== null ? rr.averages.cv : '-') + '</div>');
+
+  var recsHtml = draft.recommendations.map(function(r) { return '<div class="oe-imi-note">💡 ' + esc(r) + '</div>'; }).join('');
+  var warningsHtml = draft.warnings.map(function(w) { return '<div class="oe-imi-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-imi-section">'
+    + '<div class="oe-imi-title">📈 Instagram Marketing Intelligence <span style="font-weight:400;opacity:.5;">v' + INSTAGRAM_MARKETING_INTELLIGENCE_VERSION + '</span></div>'
+    + '<div>' + safetyBadgesHtml + '</div>'
+    + '<div class="oe-pkg-label">予測分析（投稿前・ヒューリスティック）</div>'
+    + predictiveHtml
+    + '<div class="oe-pkg-label">手動リサーチ支援</div>'
+    + researchHtml
+    + '<div class="oe-pkg-label">実績分析（手動入力のみ）</div>'
+    + realResultsHtml
+    + '<div class="oe-imi-input-row">'
+    +   '<input type="number" id="imi-input-saveRate" class="oe-imi-input" placeholder="保存率(%)">'
+    +   '<input type="number" id="imi-input-reach" class="oe-imi-input" placeholder="リーチ数">'
+    +   '<input type="number" id="imi-input-profileVisits" class="oe-imi-input" placeholder="プロフィール遷移数">'
+    +   '<input type="number" id="imi-input-followRate" class="oe-imi-input" placeholder="フォロー率(%)">'
+    +   '<input type="number" id="imi-input-cv" class="oe-imi-input" placeholder="CV数">'
+    +   '<button class="oe-imi-copybtn" onclick="submitInstagramResultEntry()">Record Result</button>'
+    + '</div>'
+    + '<div class="oe-pkg-label">改善提案</div>'
+    + recsHtml
+    + (warningsHtml ? '<div class="oe-pkg-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-imi-copyrow">'
+    +   '<button class="oe-imi-copybtn" onclick="copyInstagramMarketingIntelligenceField(\'predictive\')">Copy Predictive Analysis</button>'
+    +   '<button class="oe-imi-copybtn" onclick="copyInstagramMarketingIntelligenceField(\'checklist\')">Copy Research Checklist</button>'
+    +   '<button class="oe-imi-copybtn" onclick="copyInstagramMarketingIntelligenceField(\'full\')">Copy Full Report</button>'
+    +   '<span id="oe-imi-copy-msg" class="oe-imi-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-1: Export反映
+function appendInstagramMarketingIntelligenceToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramMarketingIntelligence || createInstagramMarketingIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Instagram Marketing Intelligence (Phase50-1)');
+  Object.keys(draft.predictive).forEach(function(key) {
+    var a = draft.predictive[key];
+    if (!a) return;
+    lines.push('- ' + a.label + ': ' + (typeof a.score === 'number' ? a.score + '点' : '対象外'));
+  });
+  lines.push('- Recommendations:');
+  draft.recommendations.forEach(function(r) { lines.push('  - ' + r); });
+  lines.push('- Real Result Records: ' + draft.realResults.count + '件');
+  lines.push('- Safety: ' + IMI_SAFETY_LABELS.join(' / '));
+  if (draft.warnings.length) {
+    lines.push('- Warnings:');
+    draft.warnings.forEach(function(w) { lines.push('  - ' + w); });
+  }
+}
+
+function appendInstagramMarketingIntelligenceToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramMarketingIntelligence || createInstagramMarketingIntelligenceDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.instagramMarketingIntelligence = draft;
+  if (_instagramResultHistory.length) payload._instagramResultHistory = _instagramResultHistory.slice(0, 10);
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -26663,6 +27089,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildCreativeExecutionHtml,        'CreativeExecution')
     + _oeSafe(buildCreativeAdAssemblyHtml,       'CreativeAdAssembly')
     + _oeSafe(buildCreativeAssetLibraryHtml,     'CreativeAssetLibrary')
+    + _oeSafe(buildInstagramMarketingIntelligenceHtml, 'InstagramMarketingIntelligence')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
