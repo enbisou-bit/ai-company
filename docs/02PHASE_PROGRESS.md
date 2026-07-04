@@ -1,14 +1,15 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-04（Phase49-6 Creative Asset Library完了 / Creative Engineファミリー完結）
+> 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
 
 ## 現在地
 - 現在フェーズ: **Phase49-6 完了（Creative Asset Library）＝Creative Engineファミリー（Phase49-1〜49-6）完結**
 - **Phase49: 100%完了**（AI Gateway Foundation〜Creative Asset Libraryの全8サブフェーズ完了）
 - **Creative Engine Family: Complete**
 - 現在バージョン: **v1.00-phase49-6**
-- 次フェーズ: **Phase50 Intelligence Family 開始予定**（次工程: Phase50-1 Marketing Intelligence Foundation）
+- **Version1 Roadmap方針変更（Decision 039）**: Version1の最優先目的をInstagram収益化支援へ変更。AI会社はInstagram運用を最初の実運用対象とする。Manual Only方針は維持（詳細は docs/04ROADMAP.md「Version1 最優先ゴール」参照）
+- 次フェーズ: **Phase50 Intelligence Family 開始予定**（次工程: Phase50-1 Instagram Marketing Intelligence。旧Marketing Intelligence Foundationから優先順位を入れ替え、Instagram特化分析へ改称・格上げ）
 
 ---
 

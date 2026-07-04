@@ -1,17 +1,21 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
-> ENBISOU AI COMPANY 開発マスター（Version 2.1）
-> 更新日: 2026-07-02（Phase49-0.1完了 / v1.00 Phase48-5 Complete・Version2 Roadmap正式化済み）
+> ENBISOU AI COMPANY 開発マスター（Version 2.2）
+> 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
 
 ## 1. AI会社の最終目的（最重要）
 
 ENBISOU AI COMPANY は「AIチャット」ではない。
 
-**完成した成果物を大量生産し、会社全体が学習し、品質が毎回向上していくAI会社**を作る。
+**AI会社自身が収益を生みながら成長すること**が最終目的である（Decision 039）。「AI会社を作ること」自体がゴールではない。
+
+そのための第一歩として、**完成した成果物を大量生産し、会社全体が学習し、品質が毎回向上していくAI会社**を作る。
 
 回答を返すことではなく、そのまま使える完成品を納品する。
 
 ENBISOU AI COMPANYは「回答するAI」ではなく、「完成成果物を納品するAI会社」である。
+
+Version1の最優先目的は**Instagram収益化支援**である。AI会社はInstagram運用を最初の実運用対象とする（詳細は docs/04ROADMAP.md「Version1 最優先ゴール」参照）。画像生成・動画生成・実際の投稿はManual Only（ユーザー承認後の手動実行のみ）を維持する。
 
 例：
 - Instagram：スライド10枚・画像プロンプト・キャプション・CTA・ハッシュタグまで
@@ -79,27 +83,30 @@ User
 - 動画生成もユーザー承認後
 - 外部API・有料サービス・SNS投稿連携は必ずユーザー承認制
 
-## 5.1 現在の最優先（Phase49-0.1完了時点 / Version2 Roadmapを責務分離型へ正式再構成済み）
+## 5.1 現在の最優先（Phase49-6完了時点 / Version1最優先目的をInstagram収益化支援へ変更・Decision 039）
 
-Version2はCreative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2 の6ファミリーへ再編済み（Decision 027）。詳細は [docs/04ROADMAP.md](04ROADMAP.md) を参照。
+Version2はCreative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2 の6ファミリーへ再編済み（Decision 027）。Creative Engineファミリー（Phase49-1〜49-6）は完結済み。Creative Engine完了後はCompany Brainより先にInstagram Marketing Intelligenceを優先する（Decision 039）。詳細は [docs/04ROADMAP.md](04ROADMAP.md) を参照。
 
-### Priority 0: AI Gateway / Creative Prompt Intelligence / Asset Library
-- AI Gateway Foundation（Phase49-1）— API / PCアプリ操作 / ブラウザ操作を選択する中継層の設計・骨格。**既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）は一切変更しない**
-- Image Prompt Intelligence（Phase49-2）/ Video Prompt Intelligence（Phase49-3）— 各生成AI専用のプロンプト最適化。生成実行はしない
-- Asset Library（Phase49-6）— 生成資産・既存成果物（画像/動画/LP/PDF/HTML/チラシ等）の保存・検索・再利用。Knowledge Libraryとは別物（Decision 029）
+### Priority 0: Instagram Marketing Intelligence（Phase50-1・最優先へ格上げ）
+- 保存率分析・リーチ分析・プロフィール遷移分析・フォロー率分析・CTA分析・ハッシュタグ分析・投稿時間分析・カルーセル分析・リール分析・競合分析・トレンド分析
+- Instagram実運用を開始し、Learningを蓄積しながらVersion1（Instagramを毎日運用できること）を完成させる
+- 汎用マーケティング/SEO分析（旧Phase50-1）はInstagram完成後に拡張する（Phase50-3へ後回し）
 
-### Priority 1: Creative Engine Execution / Ad Assembly
-- 画像生成・動画生成・広告組み立て（Phase49-4・49-5、AI Gateway経由・ユーザー承認後のみ実行）
+### Priority 1: AB Test & Buzz Analysis（Phase50-2）
+- LP分析・広告分析・ABテスト提案・バズ要因分析。Instagram運用データを主対象とする
 
-### Priority 2: Marketing / Platform Intelligence
-- 市場分析・競合分析・SEO分析・プラットフォーム別アルゴリズム分析（Phase50-1〜50-3）
-
-### Priority 3: Automation Engine
+### Priority 2: Automation Engine
 - Publishing Engine出力を利用した投稿・予約投稿の自動化（Phase52、ユーザー承認後のみ）
+
+### Priority 3: Company Brain v2
+- Instagram Marketing Intelligenceの後に着手する（Phase54、Decision 039）
+
+完成済み（Creative Engineファミリー）:
+- AI Gateway Foundation（Phase49-1）/ Image・Video Prompt Intelligence（Phase49-2・49-3）/ Creative Execution（Phase49-4）/ Creative Ad Assembly（Phase49-5）/ Creative Asset Library（Phase49-6）— いずれも判断層・プロンプト生成層・実行計画層・組み立て層・管理層のみ。画像生成・動画生成・SNS投稿はユーザー承認後のみ
 
 詳細ロードマップは [docs/04ROADMAP.md](04ROADMAP.md) を参照。
 
-## 6. 現状（Phase49-0.1完了 / v1.00 Phase48-5 Complete・Version2 Roadmap正式化済み）
+## 6. 現状（Phase49-6完了 / Creative Engineファミリー完結・Version1最優先目的をInstagram収益化支援へ変更）
 
 完成：
 - Company Brain
@@ -161,7 +168,7 @@ Version2はCreative Engine / Intelligence / Sales / Automation / Business Intell
 - Version2 Roadmap Formalization（Phase49-0.1） — 上記レビュー内容をdocsへ正式反映（コード変更なし）
 
 次工程（Priority 0）：
-- AI Gateway Foundation（Phase49-1） — API/PCアプリ操作/ブラウザ操作の中継層設計・骨格構築。既存Provider構成は変更しない
+- Instagram Marketing Intelligence（Phase50-1） — 保存率/リーチ/プロフィール遷移/フォロー率/CTA/ハッシュタグ/投稿時間/カルーセル/リール/競合/トレンド分析。Instagram実運用を開始しVersion1（Instagramを毎日運用できること）を完成させる（Decision 039）
 
 ## 7. v1.0完成像
 

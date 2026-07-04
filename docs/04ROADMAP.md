@@ -1,14 +1,15 @@
 # ENBISOU AI COMPANY Roadmap
 
-> 作成日: 2026-07-02（Phase48-3.1） / 更新日: 2026-07-02（Phase49-0.1 Version2 Roadmap正式化）
-> 現在Version: v1.00 Phase48-5 Complete（Version1完成）
+> 作成日: 2026-07-02（Phase48-3.1） / 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
+> 現在Version: v1.00-phase49-6 Complete（Creative Engineファミリー完結）
 > Version2は責務分離型（Creative Engine / Intelligence / Sales / Automation / Business Intelligence / Company Brain v2 の6ファミリー）へ正式再構成（Decision 027〜029参照）
+> Version1の最優先目的をInstagram収益化支援へ変更（Decision 039）。詳細は下記「Version1 最優先ゴール」参照
 
 ---
 
 ## Version 1.0
 
-完成目標
+完成目標（旧・Phase48-5完了時点で達成済み）
 
 AI会社として
 
@@ -21,6 +22,70 @@ AI会社として
 - Output Engine
 
 を完成させる。
+
+---
+
+## Version1 最優先ゴール（Instagram収益化支援・Decision 039）
+
+AI会社の最終目的は「AI会社を作ること」ではなく、**AI会社自身が収益を生みながら成長すること**である。
+
+Version1の最優先目的をInstagram収益化支援へ変更する。AI会社はInstagram運用を最初の実運用対象とする。
+
+### 5分パイプライン（Version1完成条件）
+
+以下を5分以内で完了できることをVersion1の完成条件とする。
+
+```
+市場調査
+  ↓
+テーマ決定
+  ↓
+保存率が高い構成提案
+  ↓
+スライド構成
+  ↓
+画像プロンプト
+  ↓
+動画プロンプト
+  ↓
+投稿文
+  ↓
+CTA
+  ↓
+ハッシュタグ
+  ↓
+Creative Assembly
+  ↓
+Asset Library保存
+```
+
+画像生成・動画生成・実際の投稿はVersion1では**Manual Only**（ユーザー承認後の手動実行のみ）を維持する。
+
+### 毎日の運用ループ（Version1完成後に開始）
+
+```
+毎朝: 「今日バズりそうなテーマ」をAI会社が複数提案
+  ↓
+ユーザーが1つ選択
+  ↓
+Instagram投稿一式が完成（構成/画像プロンプト/動画プロンプト/投稿文/CTA/ハッシュタグ）
+  ↓
+画像生成（手動）
+  ↓
+投稿（手動）
+  ↓
+結果分析
+  ↓
+Learning
+  ↓
+Asset Library保存
+  ↓
+次回改善
+```
+
+### Version1完成基準（変更後）
+
+Version1完成 = **Instagramを毎日運用できること**。AI会社が短時間でInstagram投稿一式を毎日生成でき、実際の運用を開始できる状態を正式なVersion1リリース条件とする。
 
 ---
 
@@ -132,31 +197,50 @@ Asset Library
 
 ---
 
-### Intelligence ファミリー
+### Intelligence ファミリー（Instagram Marketing Intelligenceを最優先へ格上げ・Decision 039）
+
+Creative Engine完了後はCompany Brainより先にInstagram Marketing Intelligenceを優先する。Instagram実運用を開始し、Learningを蓄積しながらVersion1を完成させる。
+
+旧Phase50-1「Marketing Intelligence Foundation」（汎用市場分析/SEO分析）と旧Phase50-2「Platform Intelligence」（Instagram中心のプラットフォーム分析）の優先順位を入れ替え、Instagram特化の分析をPhase50-1へ格上げする。
 
 #### Phase50-1
 
-Marketing Intelligence Foundation
+Instagram Marketing Intelligence（旧Phase50-2 Platform Intelligenceを改称・最優先へ格上げ）
 
-市場分析 / 競合分析 / SEO分析 / トレンド分析。
+Instagram運用に直結する分析を最優先で実装する：
+- 保存率分析
+- リーチ分析
+- プロフィール遷移分析
+- フォロー率分析
+- CTA分析
+- ハッシュタグ分析
+- 投稿時間分析
+- カルーセル分析
+- リール分析
+- 競合分析
+- トレンド分析
+
+旧Instagram Intelligence（旧Phase49-1）・旧Platform Intelligence（旧Phase50-2）はここへ統合。TikTok / YouTubeの分析は本Phase完了後に拡張する。
+
+本Phase完了後、Creative Asset Library（Phase49-6）を拡張し、投稿/スライド/画像プロンプト/動画プロンプト/CTA/Headline/Caption/Assetに加え、保存率/クリック率/フォロー率/CVなどの実運用結果を蓄積する「勝ちパターン学習」機能を追加する（新規Phase番号は今後決定）。
 
 ---
 
 #### Phase50-2
 
-Platform Intelligence
+AB Test & Buzz Analysis（旧Phase50-3・順序維持）
 
-Instagram / TikTok / YouTube のアルゴリズム分析、保存率、シェア率、視聴維持率、バズ分析。
-
-旧Instagram Intelligence（旧Phase49-1）はここへ統合。
+LP分析 / 広告分析 / ABテスト提案 / バズ要因分析。Instagram運用データを主対象とする。
 
 ---
 
 #### Phase50-3
 
-AB Test & Buzz Analysis
+Marketing Intelligence Foundation（旧Phase50-1・汎用マーケティングへ後回し）
 
-LP分析 / 広告分析 / ABテスト提案 / バズ要因分析。
+市場分析 / 競合分析 / SEO分析 / トレンド分析（汎用・プラットフォーム非依存）。
+
+Instagram Marketing Intelligence（Phase50-1）完成後に拡張する。
 
 ---
 
@@ -224,7 +308,9 @@ Business KPI Intelligence
 
 ---
 
-### Company Brain v2 ファミリー
+### Company Brain v2 ファミリー（Decision 039によりInstagram Marketing Intelligenceより後回し）
+
+Creative Engine完了後はCompany BrainよりInstagram Marketing Intelligence（Phase50-1）を優先する。Instagram実運用開始・Learning蓄積・Version1完成を優先し、Company Brain v2は引き続きPhase54で着手する。
 
 #### Phase54-1
 
