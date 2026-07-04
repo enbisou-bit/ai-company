@@ -1032,6 +1032,33 @@
   .oe-icb-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
   .oe-icb-copymsg    { font-size: 10px; color: rgba(200,180,255,0.9); opacity: 0; transition: opacity 0.3s; }
   .oe-icb-copymsg.show { opacity: 1; }
+  /* Phase50-4: Instagram Design System */
+  .oe-ids-section    { border-radius: 10px; border: 1px solid rgba(230,180,90,0.32); background: linear-gradient(135deg, rgba(38,28,8,0.92), rgba(20,14,4,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-ids-title      { font-size: 11px; color: rgba(240,200,120,0.92); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-ids-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(230,180,90,0.16); color: rgba(245,210,140,0.95); border: 1px solid rgba(230,180,90,0.4); }
+  .oe-ids-tpls       { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+  .oe-ids-tpl        { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 4px 9px; cursor: pointer; font-size: 10px; color: rgba(255,255,255,0.75); }
+  .oe-ids-tpl.selected { border-color: rgba(230,180,90,0.7); background: rgba(230,180,90,0.1); color: rgba(245,210,140,0.95); }
+  .oe-ids-swatch     { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.25); display: inline-block; }
+  .oe-ids-scorebar   { display: flex; align-items: center; gap: 10px; background: rgba(230,180,90,0.08); border: 1px solid rgba(230,180,90,0.25); border-radius: 8px; padding: 8px 12px; margin: 6px 0; }
+  .oe-ids-scorebig   { font-size: 22px; font-weight: 800; color: rgba(245,210,140,0.98); }
+  .oe-ids-scorelabel { font-size: 10px; color: rgba(255,255,255,0.6); }
+  .oe-ids-chips      { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .oe-ids-chip       { font-size: 9px; color: rgba(240,215,160,0.85); background: rgba(230,180,90,0.1); border: 1px solid rgba(230,180,90,0.22); border-radius: 8px; padding: 1px 7px; }
+  .oe-ids-card       { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px 11px; margin-bottom: 6px; }
+  .oe-ids-card-head  { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .oe-ids-slidenum   { font-size: 9px; font-weight: 800; color: rgba(245,210,140,0.95); background: rgba(230,180,90,0.16); border-radius: 8px; padding: 2px 8px; white-space: nowrap; }
+  .oe-ids-role       { font-size: 9px; color: rgba(240,200,120,0.8); font-weight: 700; }
+  .oe-ids-headline   { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.88); margin: 2px 0; }
+  .oe-ids-meta       { font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.6; }
+  .oe-ids-tag        { display: inline-block; font-size: 8px; color: rgba(240,215,160,0.85); background: rgba(230,180,90,0.1); border: 1px solid rgba(230,180,90,0.2); border-radius: 6px; padding: 1px 6px; margin: 2px 4px 0 0; }
+  .oe-ids-review     { font-size: 10px; color: rgba(255,255,255,0.65); line-height: 1.7; margin-bottom: 3px; }
+  .oe-ids-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-ids-btn        { background: rgba(230,180,90,0.15); border: 1px solid rgba(230,180,90,0.4); border-radius: 14px; color: rgba(245,210,140,0.95); font-size: 10px; font-weight: 600; padding: 4px 12px; cursor: pointer; transition: background 0.15s; }
+  .oe-ids-btn:hover  { background: rgba(230,180,90,0.3); }
+  .oe-ids-copyrow    { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-ids-copymsg    { font-size: 10px; color: rgba(245,210,140,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-ids-copymsg.show { opacity: 1; }
   /* Phase44-7 Export UI */
   .oe-export-section { margin-top: 14px; background: rgba(20,10,40,0.7); border: 1px solid rgba(124,77,255,0.25); border-radius: 10px; padding: 12px 14px; }
   .oe-export-title   { font-size: 11px; font-weight: 700; color: rgba(200,158,242,0.9); letter-spacing: 0.06em; margin-bottom: 8px; }
@@ -23060,6 +23087,7 @@ function serializeOutputDraft(format) {
     appendInstagramMarketingIntelligenceToExportJson(jsonObj);
     appendInstagramContentPlanningToExportJson(jsonObj);
     appendInstagramCarouselBuilderToExportJson(jsonObj);
+    appendInstagramDesignSystemToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -23297,6 +23325,7 @@ function serializeOutputDraft(format) {
   appendInstagramMarketingIntelligenceToExportMarkdown(mdLines);
   appendInstagramContentPlanningToExportMarkdown(mdLines);
   appendInstagramCarouselBuilderToExportMarkdown(mdLines);
+  appendInstagramDesignSystemToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -27931,6 +27960,435 @@ function appendInstagramCarouselBuilderToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase50-4: Instagram Design System / Image Layout Engine（Decision 039・Version1完成条件の「完成設計図」工程）
+// 目的: Phase50-3 Carousel Builder の imageLayoutEngineInput をもとに、背景/文字配置/カラー/余白/
+//   フォント/アイコン/CTA位置まで決定した「完成設計図（Design Blueprint）」を生成し、
+//   次工程 Phase50-5 Mobile Review Center へ渡せる mobileReviewInput を作る。
+// 実際の画像生成・背景生成・文字入れ画像生成・投稿・Instagram API接続・外部AI実行は一切行わない（Design Blueprint Only）。
+// 既存関数（Carousel Builder等）は読み取り専用で参照する（中身は変更しない）。
+// ============================================================
+
+const INSTAGRAM_DESIGN_SYSTEM_VERSION = '1.0.0';
+
+const IDS_SAFETY_LABELS = [
+  'Design Blueprint Only', 'No Image Generation', 'No Instagram API',
+  'No Auto Posting', 'No External AI', 'User Approval Required',
+];
+
+// 選択中テンプレートIDはメモリ保持のみ（localStorage/DB/Asset Library/Learningへは書き込まない）
+let _instagramDesignTemplateSelectedId = null;
+
+// 今後テンプレートを追加できる構造（配列へエントリ追加のみで拡張可能）
+const IDS_DESIGN_TEMPLATES = [
+  { templateId: 'beauty', name: 'Beauty', backgroundColor: '#FDF2F4', accentColor: '#E8749A', textColor: '#3A2A30', fontFamily: "'Noto Serif JP', serif", titleSize: '44px', bodySize: '22px', iconStyle: 'line-rounded', imageRatio: '4:5', margin: '48px', padding: '32px', cornerRadius: '20px', ctaStyle: 'pill-gradient', recommendedGenre: '美容・コスメ・サロン' },
+  { templateId: 'business', name: 'Business', backgroundColor: '#F4F7FB', accentColor: '#2563EB', textColor: '#1E293B', fontFamily: "'Noto Sans JP', sans-serif", titleSize: '42px', bodySize: '22px', iconStyle: 'solid', imageRatio: '4:5', margin: '40px', padding: '28px', cornerRadius: '12px', ctaStyle: 'solid-rect', recommendedGenre: 'ビジネス・副業・マーケ' },
+  { templateId: 'education', name: 'Education', backgroundColor: '#FFFDF5', accentColor: '#F59E0B', textColor: '#3A2E12', fontFamily: "'Noto Sans JP', sans-serif", titleSize: '40px', bodySize: '23px', iconStyle: 'line', imageRatio: '1:1', margin: '40px', padding: '30px', cornerRadius: '16px', ctaStyle: 'outline', recommendedGenre: '教育・学習・ノウハウ' },
+  { templateId: 'luxury', name: 'Luxury', backgroundColor: '#0E0E10', accentColor: '#C8A96A', textColor: '#EDE6D6', fontFamily: "'Noto Serif JP', serif", titleSize: '46px', bodySize: '20px', iconStyle: 'thin-line', imageRatio: '4:5', margin: '52px', padding: '36px', cornerRadius: '4px', ctaStyle: 'thin-outline', recommendedGenre: '高級・ジュエリー・ハイブランド' },
+  { templateId: 'minimal', name: 'Minimal', backgroundColor: '#FFFFFF', accentColor: '#111111', textColor: '#111111', fontFamily: "'Noto Sans JP', sans-serif", titleSize: '40px', bodySize: '22px', iconStyle: 'line', imageRatio: '1:1', margin: '44px', padding: '28px', cornerRadius: '8px', ctaStyle: 'underline', recommendedGenre: '汎用・ミニマル・ライフスタイル' },
+  { templateId: 'casual', name: 'Casual', backgroundColor: '#FFF7ED', accentColor: '#FB7185', textColor: '#4A2E2A', fontFamily: "'Noto Sans JP', sans-serif", titleSize: '42px', bodySize: '24px', iconStyle: 'filled-rounded', imageRatio: '4:5', margin: '36px', padding: '26px', cornerRadius: '24px', ctaStyle: 'pill-solid', recommendedGenre: 'カジュアル・日常・エンタメ' },
+  { templateId: 'corporate', name: 'Corporate', backgroundColor: '#F5F6F8', accentColor: '#0F766E', textColor: '#1F2937', fontFamily: "'Noto Sans JP', sans-serif", titleSize: '38px', bodySize: '21px', iconStyle: 'solid', imageRatio: '1:1', margin: '40px', padding: '30px', cornerRadius: '10px', ctaStyle: 'solid-rect', recommendedGenre: '企業・BtoB・コーポレート' },
+  { templateId: 'premium', name: 'Premium', backgroundColor: '#1A1524', accentColor: '#A78BFA', textColor: '#EDE7FA', fontFamily: "'Noto Serif JP', serif", titleSize: '44px', bodySize: '21px', iconStyle: 'thin-line', imageRatio: '4:5', margin: '48px', padding: '34px', cornerRadius: '14px', ctaStyle: 'gradient-outline', recommendedGenre: 'プレミアム・サブスク・高単価' },
+];
+
+var IDS_DESIGN_AXIS_LABELS = {
+  readability: '可読性', visualBalance: 'ビジュアルバランス', savePotential: '保存ポテンシャル', brandConsistency: 'ブランド統一感',
+  mobileReadability: 'モバイル可読性', ctaVisibility: 'CTA視認性', imageBalance: '画像バランス', layoutQuality: 'レイアウト品質',
+};
+
+function _idsFindTemplate(id) {
+  if (!id) return null;
+  return IDS_DESIGN_TEMPLATES.filter(function(t) { return t.templateId === id; })[0] || null;
+}
+
+// テーマ/ターゲットのキーワードから初期テンプレートを推定（該当なしはminimal。外部取得・捏造なし）
+function _idsPickDefaultTemplate(layoutInput) {
+  var text = ((layoutInput && layoutInput.theme) || '') + ' ' + ((layoutInput && layoutInput.targetAudience) || '');
+  var rules = [
+    { id: 'beauty', re: /美容|コスメ|肌|メイク|サロン|ネイル|ヘア/ },
+    { id: 'business', re: /副業|ビジネス|稼|マーケ|投資|営業|集客/ },
+    { id: 'education', re: /学|勉強|ノウハウ|初心者|ガイド|講座|入門/ },
+    { id: 'luxury', re: /高級|ジュエリー|ブランド|ラグジュアリー|富裕/ },
+    { id: 'casual', re: /カジュアル|日常|エンタメ|趣味|ゆる/ },
+    { id: 'corporate', re: /企業|BtoB|コーポレート|法人|会社/ },
+    { id: 'premium', re: /プレミアム|サブスク|高単価|VIP/ },
+  ];
+  for (var i = 0; i < rules.length; i++) { if (rules[i].re.test(text)) return rules[i].id; }
+  return 'minimal';
+}
+
+// Phase50-4: 各スライドの完成設計（背景/文字位置/写真位置/アイコン位置/余白/文字量/CTA位置/フォント/タイトル/サブタイトル/ビジュアルバランス）を決定
+function buildInstagramDesignLayouts(layoutInput) {
+  layoutInput = layoutInput || {};
+  var tpl = layoutInput.template || IDS_DESIGN_TEMPLATES[4];
+  var slides = Array.isArray(layoutInput.slides) ? layoutInput.slides : [];
+  var roleMap = {
+    hook:       { text: '中央(センター寄せ大見出し)', photo: '全面背景(フルブリード)', icon: 'なし', cta: 'なし', balance: 'テキスト90% / ビジュアル10%' },
+    empathy:    { text: '上部', photo: '下部', icon: '左上', cta: 'なし', balance: 'テキスト55% / ビジュアル45%' },
+    cause:      { text: '上部', photo: '下部', icon: '左上', cta: 'なし', balance: 'テキスト55% / ビジュアル45%' },
+    solution_1: { text: '左', photo: '右', icon: '左上(番号バッジ①)', cta: 'なし', balance: 'テキスト50% / ビジュアル50%' },
+    solution_2: { text: '左', photo: '右', icon: '左上(番号バッジ②)', cta: 'なし', balance: 'テキスト50% / ビジュアル50%' },
+    solution_3: { text: '左', photo: '右', icon: '左上(番号バッジ③)', cta: 'なし', balance: 'テキスト50% / ビジュアル50%' },
+    caution:    { text: '左右2分割', photo: '左右2分割(NG/OK)', icon: '中央', cta: 'なし', balance: 'テキスト50% / ビジュアル50%' },
+    howto:      { text: '上部', photo: 'なし', icon: 'インラインリスト', cta: 'なし', balance: 'テキスト75% / ビジュアル25%' },
+    summary:    { text: '中央', photo: 'なし', icon: '上部', cta: 'インライン(保存促進)', balance: 'テキスト70% / ビジュアル30%' },
+    cta:        { text: '中央', photo: 'なし', icon: '上矢印', cta: '下部中央(強調・大・prominent)', balance: 'テキスト80% / CTA20%' },
+  };
+  return slides.map(function(s) {
+    var m = roleMap[s.role] || { text: '上部', photo: '下部', icon: '左上', cta: 'なし', balance: 'テキスト60% / ビジュアル40%' };
+    var isEmph = (s.role === 'hook' || s.role === 'cta');
+    return {
+      slideId: s.slideId, slideNumber: s.slideNumber, role: s.role, roleLabel: s.roleLabel,
+      headline: s.headline, bodyText: s.bodyText,
+      backgroundColor: isEmph ? tpl.accentColor : tpl.backgroundColor,
+      textColor: isEmph ? '#FFFFFF' : tpl.textColor,
+      accentColor: tpl.accentColor, fontFamily: tpl.fontFamily,
+      titleSize: tpl.titleSize, bodySize: tpl.bodySize,
+      textPosition: m.text, photoPosition: m.photo, iconPosition: m.icon, ctaPosition: m.cta,
+      margin: tpl.margin, padding: tpl.padding, cornerRadius: tpl.cornerRadius,
+      imageRatio: tpl.imageRatio, iconStyle: tpl.iconStyle, ctaStyle: tpl.ctaStyle,
+      textAmount: s.textDensity || 'medium',
+      subtitle: (s.role === 'hook') ? (s.bodyText || '') : '',
+      visualBalance: m.balance,
+      imagePromptSeed: (s.imagePromptSeed || '') + ', ' + tpl.name.toLowerCase() + ' style, ' + tpl.accentColor + ' accent, ' + tpl.imageRatio + ' ratio',
+      notes: '背景' + (isEmph ? 'アクセント' : 'ベース') + '色・文字' + (s.textDensity === 'high' ? '多め注意' : '適量') + '。実画像生成はユーザー承認後(Phase50-5以降)',
+    };
+  });
+}
+
+// Phase50-4: 完成設計図を8軸で評価し、総合designScoreを算出する
+function scoreInstagramDesign(layout) {
+  function clamp(n) { return Math.max(0, Math.min(100, Math.round(typeof n === 'number' ? n : 0))); }
+  if (!layout || !Array.isArray(layout.slides) || !layout.slides.length) {
+    return { readability: 0, visualBalance: 0, savePotential: 0, brandConsistency: 0, mobileReadability: 0, ctaVisibility: 0, imageBalance: 0, layoutQuality: 0, designScore: 0 };
+  }
+  var slides = layout.slides, total = slides.length, tpl = layout.template;
+  var densMap = { low: 100, medium: 75, high: 45 };
+  var readAvg = slides.reduce(function(a, s) { return a + (densMap[s.textAmount] || 75); }, 0) / total;
+  var withPhoto = slides.filter(function(s) { return s.photoPosition && s.photoPosition !== 'なし'; }).length;
+  var positioned = slides.filter(function(s) { return s.textPosition && s.photoPosition && s.iconPosition && s.margin && s.padding; }).length;
+  var ctaSlide = slides.filter(function(s) { return s.role === 'cta'; })[0] || null;
+
+  var readability = clamp(readAvg);
+  var visualBalance = clamp((positioned / total) * 100);
+  var savePotential = clamp((typeof layout.carouselScore === 'number' ? layout.carouselScore : 70) * 0.85 + 15);
+  var brandConsistency = clamp(tpl ? 92 : 40);
+  var mobileReadability = clamp(readAvg * 0.7 + 30);
+  var ctaVisibility = clamp(ctaSlide && ctaSlide.ctaPosition && /prominent|下部/.test(ctaSlide.ctaPosition) ? 92 : 45);
+  var imageBalance = clamp((withPhoto / total) * 140);
+  var layoutQuality = clamp((positioned / total) * 100);
+
+  var w = { read: 0.14, vb: 0.13, save: 0.18, brand: 0.12, mobile: 0.12, cta: 0.12, image: 0.09, layout: 0.10 };
+  var designScore = clamp(readability * w.read + visualBalance * w.vb + savePotential * w.save + brandConsistency * w.brand
+    + mobileReadability * w.mobile + ctaVisibility * w.cta + imageBalance * w.image + layoutQuality * w.layout);
+
+  return {
+    readability: readability, visualBalance: visualBalance, savePotential: savePotential, brandConsistency: brandConsistency,
+    mobileReadability: mobileReadability, ctaVisibility: ctaVisibility, imageBalance: imageBalance, layoutQuality: layoutQuality,
+    designScore: designScore,
+  };
+}
+
+function _idsBuildReview(score) {
+  var keys = ['readability', 'visualBalance', 'savePotential', 'brandConsistency', 'mobileReadability', 'ctaVisibility', 'imageBalance', 'layoutQuality'];
+  var strengths = [], improvements = [];
+  keys.forEach(function(k) {
+    if (score[k] >= 80) strengths.push(IDS_DESIGN_AXIS_LABELS[k] + '（' + score[k] + '点）');
+    else if (score[k] < 60) improvements.push(IDS_DESIGN_AXIS_LABELS[k] + '（' + score[k] + '点）を強化推奨');
+  });
+  var review = { designScore: score.designScore, strengths: strengths, improvements: improvements };
+  keys.forEach(function(k) { review[k] = score[k]; });
+  return review;
+}
+
+// Phase50-4: Instagram Design System Draft生成（Carousel BuilderのimageLayoutEngineInputを参照。null draftでも例外なし）
+function createInstagramDesignSystemDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
+  if (!builder || !builder.imageLayoutEngineInput) return null;
+  var layoutInput = builder.imageLayoutEngineInput;
+
+  var template = _idsFindTemplate(_instagramDesignTemplateSelectedId)
+    || _idsFindTemplate(_idsPickDefaultTemplate(layoutInput))
+    || IDS_DESIGN_TEMPLATES[4];
+
+  var combinedInput = {
+    template: template, slides: layoutInput.slides, theme: layoutInput.theme, targetAudience: layoutInput.targetAudience,
+    visualDirection: layoutInput.visualDirection, ctaSlide: layoutInput.ctaSlide, suggestedHashtags: layoutInput.suggestedHashtags,
+    carouselScore: layoutInput.carouselScore,
+  };
+  var slides = buildInstagramDesignLayouts(combinedInput);
+  var score = scoreInstagramDesign({ template: template, slides: slides, carouselScore: layoutInput.carouselScore });
+  var designScore = score.designScore;
+  var designReview = _idsBuildReview(score);
+
+  var ctaDesign = slides.filter(function(s) { return s.role === 'cta'; })[0] || null;
+  var layoutGuide = slides.map(function(s) {
+    return { slideNumber: s.slideNumber, role: s.role, guide: '文字:' + s.textPosition + ' / 写真:' + s.photoPosition + ' / アイコン:' + s.iconPosition + ' / CTA:' + s.ctaPosition + ' / 余白:' + s.margin + '(padding ' + s.padding + ')' };
+  });
+
+  var mobileReviewInput = {
+    template: { id: template.templateId, name: template.name, recommendedGenre: template.recommendedGenre },
+    designScore: designScore,
+    slides: slides,
+    layoutGuide: layoutGuide,
+    colors: { backgroundColor: template.backgroundColor, accentColor: template.accentColor, textColor: template.textColor },
+    fonts: { fontFamily: template.fontFamily, titleSize: template.titleSize, bodySize: template.bodySize },
+    cta: ctaDesign,
+    hashtags: (layoutInput.suggestedHashtags || []).slice(),
+  };
+
+  var version1Review = [
+    { label: 'Instagram収益化へ直接つながるか', note: 'テンプレートのCTAスタイルと10枚目CTA配置で収益導線を視覚的に強調。designScoreにctaVisibility/savePotentialを反映' },
+    { label: 'Version1完成条件へ近づいたか', note: '背景/文字配置/カラー/余白/フォント/アイコン/CTA位置まで決定した完成設計図を生成。Version1完成条件の中核工程' },
+    { label: 'iPhone運用へ近づいたか', note: 'mobileReviewInputでPhase50-5 Mobile Review Centerへ接続。iPhone確認・承認はPhase50-5/50-6で対応' },
+  ];
+
+  var warnings = ['本Phaseは完成設計図（Design Blueprint）のみです。実際の画像生成・背景生成・文字入れ・投稿・Instagram API接続・外部AI実行は一切行っていません。'];
+
+  return {
+    version: INSTAGRAM_DESIGN_SYSTEM_VERSION,
+    safetyLabels: IDS_SAFETY_LABELS.slice(),
+    outputType: outputDraft.type,
+    selectedTemplateId: template.templateId,
+    template: template,
+    slides: slides,
+    designScore: designScore,
+    designReview: designReview,
+    mobileReviewInput: mobileReviewInput,
+    version1Review: version1Review,
+    sourceCarouselScore: layoutInput.carouselScore,
+    warnings: warnings,
+  };
+}
+
+// テンプレート選択（メモリ保持のみ・DB/localStorage/Asset Library/Learningへは書き込まない）
+function selectInstagramDesignTemplate(templateId) {
+  _instagramDesignTemplateSelectedId = templateId;
+  if (_lastOutputDraft) _lastOutputDraft.instagramDesignSystem = createInstagramDesignSystemDraft(_lastOutputDraft);
+  renderOutputEnginePanel();
+}
+
+function _idsBuildTemplateSummaryText(t) {
+  if (!t) return '';
+  var keys = ['name', 'recommendedGenre', 'backgroundColor', 'accentColor', 'textColor', 'fontFamily', 'titleSize', 'bodySize', 'iconStyle', 'imageRatio', 'margin', 'padding', 'cornerRadius', 'ctaStyle'];
+  return ['【Design Template】'].concat(keys.map(function(k) { return '  ' + k + ': ' + t[k]; })).join('\n');
+}
+
+function _idsBuildDesignSlideText(s) {
+  var L = [];
+  L.push('Slide ' + s.slideNumber + ' [' + s.roleLabel + ']');
+  L.push('  Headline: ' + s.headline);
+  L.push('  背景色: ' + s.backgroundColor + ' / 文字色: ' + s.textColor + ' / アクセント: ' + s.accentColor);
+  L.push('  文字位置: ' + s.textPosition + ' / 写真位置: ' + s.photoPosition + ' / アイコン位置: ' + s.iconPosition + ' / CTA位置: ' + s.ctaPosition);
+  L.push('  余白: ' + s.margin + ' / padding: ' + s.padding + ' / cornerRadius: ' + s.cornerRadius + ' / 画像比率: ' + s.imageRatio);
+  L.push('  タイトルサイズ: ' + s.titleSize + ' / 本文サイズ: ' + s.bodySize + ' / フォント: ' + s.fontFamily);
+  L.push('  文字量: ' + s.textAmount + ' / ビジュアルバランス: ' + s.visualBalance + (s.subtitle ? ' / サブタイトル: ' + s.subtitle : ''));
+  L.push('  ImagePromptSeed: ' + s.imagePromptSeed);
+  return L.join('\n');
+}
+
+function _idsBuildLayoutGuideText(draft) {
+  return ['【Layout Guide】'].concat(draft.mobileReviewInput.layoutGuide.map(function(g) { return '  #' + g.slideNumber + ' [' + g.role + '] ' + g.guide; })).join('\n');
+}
+
+function _idsBuildImagePromptBundleText(draft) {
+  return ['【Image Prompt Bundle】'].concat(draft.slides.map(function(s) { return '#' + s.slideNumber + ' ' + s.imagePromptSeed; })).join('\n');
+}
+
+function _idsBuildMobileReviewInputText(mri) {
+  if (!mri) return '';
+  var L = ['【Mobile Review Input (Phase50-5)】', ''];
+  L.push('template: ' + mri.template.name + '（' + mri.template.id + ' / ' + mri.template.recommendedGenre + '）');
+  L.push('designScore: ' + mri.designScore);
+  L.push('colors: bg ' + mri.colors.backgroundColor + ' / accent ' + mri.colors.accentColor + ' / text ' + mri.colors.textColor);
+  L.push('fonts: ' + mri.fonts.fontFamily + ' / title ' + mri.fonts.titleSize + ' / body ' + mri.fonts.bodySize);
+  L.push('hashtags: ' + mri.hashtags.join(' '));
+  if (mri.cta) L.push('cta: #' + mri.cta.slideNumber + ' ' + mri.cta.headline + '（' + mri.cta.ctaPosition + '）');
+  L.push('');
+  L.push('layoutGuide:');
+  mri.layoutGuide.forEach(function(g) { L.push('  #' + g.slideNumber + ' [' + g.role + '] ' + g.guide); });
+  return L.join('\n');
+}
+
+function _idsBuildBlueprintText(draft) {
+  var L = ['【Instagram Design System (Phase50-4) — Final Design Blueprint】', ''];
+  L.push('Template: ' + draft.template.name + '（' + draft.template.recommendedGenre + '）');
+  L.push('Design Score: ' + draft.designScore);
+  L.push('Safety: ' + draft.safetyLabels.join(' / '));
+  L.push('');
+  L.push(_idsBuildTemplateSummaryText(draft.template));
+  L.push('');
+  L.push('== Slides Design ==');
+  L.push(draft.slides.map(_idsBuildDesignSlideText).join('\n\n'));
+  L.push('');
+  L.push(_idsBuildMobileReviewInputText(draft.mobileReviewInput));
+  return L.join('\n');
+}
+
+function _idsBuildDesignBriefText(draft) {
+  var t = draft.template;
+  var L = ['【Design Brief】', ''];
+  L.push('Template: ' + t.name + '（' + t.recommendedGenre + '）');
+  L.push('Design Score: ' + draft.designScore);
+  L.push('Colors: bg ' + t.backgroundColor + ' / accent ' + t.accentColor + ' / text ' + t.textColor);
+  L.push('Fonts: ' + t.fontFamily + ' / title ' + t.titleSize + ' / body ' + t.bodySize);
+  L.push('Layout: margin ' + t.margin + ' / padding ' + t.padding + ' / radius ' + t.cornerRadius + ' / ratio ' + t.imageRatio);
+  L.push('CTA Style: ' + t.ctaStyle + ' / Icon: ' + t.iconStyle);
+  return L.join('\n');
+}
+
+function _idsCopyToClipboard(text) {
+  var msg = document.getElementById('oe-ids-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase50-4: コピー（Design Brief / Layout Guide / Template Summary / Image Prompt Bundle / Final Design Blueprint / Mobile Review Input）
+function copyInstagramDesignField(type) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(_lastOutputDraft);
+  if (!draft) return;
+  var text = '';
+  if (type === 'brief') text = _idsBuildDesignBriefText(draft);
+  else if (type === 'layout') text = _idsBuildLayoutGuideText(draft);
+  else if (type === 'template') text = _idsBuildTemplateSummaryText(draft.template);
+  else if (type === 'prompts') text = _idsBuildImagePromptBundleText(draft);
+  else if (type === 'blueprint') text = _idsBuildBlueprintText(draft);
+  else if (type === 'mobile') text = _idsBuildMobileReviewInputText(draft.mobileReviewInput);
+  if (!text) return;
+  _idsCopyToClipboard(text);
+}
+
+// Phase50-4: Instagram Design System HTML生成（Instagram Carousel Builderの直後に表示。データ不足でも安全に空文字を返す）
+function buildInstagramDesignHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  var draft = outputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(outputDraft);
+  if (!draft) return '';
+  outputDraft.instagramDesignSystem = draft;
+  var esc = escapeHtml;
+
+  var badges = draft.safetyLabels.map(function(l) { return '<span class="oe-ids-badge">' + esc(l) + '</span>'; }).join('');
+
+  var tplsHtml = IDS_DESIGN_TEMPLATES.map(function(t) {
+    var sel = t.templateId === draft.selectedTemplateId;
+    return '<div class="oe-ids-tpl' + (sel ? ' selected' : '') + '" onclick="selectInstagramDesignTemplate(\'' + esc(t.templateId) + '\')">'
+      + '<span class="oe-ids-swatch" style="background:' + esc(t.backgroundColor) + ';"></span>'
+      + '<span class="oe-ids-swatch" style="background:' + esc(t.accentColor) + ';"></span>'
+      + esc(t.name) + '</div>';
+  }).join('');
+
+  var dr = draft.designReview;
+  var axisKeys = ['readability', 'visualBalance', 'savePotential', 'brandConsistency', 'mobileReadability', 'ctaVisibility', 'imageBalance', 'layoutQuality'];
+  var axisChips = axisKeys.map(function(k) { return '<span class="oe-ids-chip">' + esc(IDS_DESIGN_AXIS_LABELS[k]) + ' ' + dr[k] + '</span>'; }).join('');
+  var scoreBar = '<div class="oe-ids-scorebar"><span class="oe-ids-scorebig">' + draft.designScore + '</span>'
+    + '<div><div class="oe-ids-scorelabel">Design Score（完成設計図・0〜100）</div><div class="oe-ids-chips">' + axisChips + '</div></div></div>';
+
+  var slidesHtml = draft.slides.map(function(s) {
+    var tags = '<span class="oe-ids-tag">文字:' + esc(s.textPosition) + '</span>'
+      + '<span class="oe-ids-tag">写真:' + esc(s.photoPosition) + '</span>'
+      + '<span class="oe-ids-tag">アイコン:' + esc(s.iconPosition) + '</span>'
+      + '<span class="oe-ids-tag">CTA:' + esc(s.ctaPosition) + '</span>'
+      + '<span class="oe-ids-tag">余白:' + esc(s.margin) + '</span>'
+      + '<span class="oe-ids-tag">タイトル:' + esc(s.titleSize) + '</span>'
+      + '<span class="oe-ids-tag">本文:' + esc(s.bodySize) + '</span>'
+      + '<span class="oe-ids-tag">文字量:' + esc(s.textAmount) + '</span>';
+    return '<div class="oe-ids-card">'
+      + '<div class="oe-ids-card-head"><span class="oe-ids-slidenum">Slide ' + s.slideNumber + '</span><span class="oe-ids-role">' + esc(s.roleLabel) + '</span></div>'
+      + '<div class="oe-ids-headline">' + esc(s.headline) + '</div>'
+      + '<div class="oe-ids-meta"><span class="oe-ids-swatch" style="background:' + esc(s.backgroundColor) + ';"></span> 背景 '
+      + '<span class="oe-ids-swatch" style="background:' + esc(s.accentColor) + ';"></span> アクセント / バランス: ' + esc(s.visualBalance) + '</div>'
+      + '<div>' + tags + '</div>'
+      + (s.subtitle ? '<div class="oe-ids-meta">サブタイトル: ' + esc(s.subtitle) + '</div>' : '')
+      + '<div class="oe-ids-meta" style="opacity:.7;">🌱 ' + esc(s.imagePromptSeed) + '</div>'
+      + '</div>';
+  }).join('');
+
+  var reviewHtml = draft.version1Review.map(function(c) {
+    return '<div class="oe-ids-review">☐ ' + esc(c.label) + '<br><span style="opacity:.7;">　' + esc(c.note) + '</span></div>';
+  }).join('');
+
+  var improveHtml = (dr.improvements && dr.improvements.length)
+    ? '<div class="oe-pkg-label">改善推奨</div>' + dr.improvements.map(function(i) { return '<div class="oe-ids-meta">💡 ' + esc(i) + '</div>'; }).join('')
+    : '';
+
+  var warnHtml = draft.warnings.map(function(w) { return '<div class="oe-ids-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  return '<div class="oe-ids-section">'
+    + '<div class="oe-ids-title">🎨 Instagram Design System <span style="font-weight:400;opacity:.5;">v' + INSTAGRAM_DESIGN_SYSTEM_VERSION + '</span></div>'
+    + '<div>' + badges + '</div>'
+    + '<div class="oe-pkg-label">Design Template（クリックで切替・8種）</div>'
+    + '<div class="oe-ids-tpls">' + tplsHtml + '</div>'
+    + '<div class="oe-ids-meta">選択中: ' + esc(draft.template.name) + '（推奨: ' + esc(draft.template.recommendedGenre) + '）</div>'
+    + scoreBar
+    + '<div class="oe-pkg-label">スライド別 完成設計図（10枚）</div>'
+    + slidesHtml
+    + improveHtml
+    + '<div class="oe-pkg-label">Version1レビュー基準</div>'
+    + reviewHtml
+    + (warnHtml ? '<div class="oe-pkg-label">Warnings</div>' + warnHtml : '')
+    + '<div class="oe-pkg-label">Copy</div>'
+    + '<div class="oe-ids-copyrow">'
+    +   '<button class="oe-ids-btn" onclick="copyInstagramDesignField(\'brief\')">Copy Design Brief</button>'
+    +   '<button class="oe-ids-btn" onclick="copyInstagramDesignField(\'layout\')">Copy Layout Guide</button>'
+    +   '<button class="oe-ids-btn" onclick="copyInstagramDesignField(\'template\')">Copy Template Summary</button>'
+    +   '<button class="oe-ids-btn" onclick="copyInstagramDesignField(\'prompts\')">Copy Image Prompt Bundle</button>'
+    +   '<button class="oe-ids-btn" onclick="copyInstagramDesignField(\'blueprint\')">Copy Final Design Blueprint</button>'
+    +   '<button class="oe-ids-btn" onclick="copyInstagramDesignField(\'mobile\')">Copy Mobile Review Input</button>'
+    +   '<span id="oe-ids-copy-msg" class="oe-ids-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase50-4: Export反映
+function appendInstagramDesignSystemToExportMarkdown(lines) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(_lastOutputDraft);
+  if (!draft) return;
+  lines.push('');
+  lines.push('## Instagram Design System (Phase50-4)');
+  lines.push('- Safety: ' + draft.safetyLabels.join(' / '));
+  lines.push('- Template: ' + draft.template.name + '（' + draft.template.recommendedGenre + '）');
+  lines.push('- Design Score: ' + draft.designScore);
+  lines.push('- Design Review: ' + ['readability', 'visualBalance', 'savePotential', 'brandConsistency', 'mobileReadability', 'ctaVisibility', 'imageBalance', 'layoutQuality'].map(function(k) { return IDS_DESIGN_AXIS_LABELS[k] + ' ' + draft.designReview[k]; }).join(' / '));
+  lines.push('- Colors: bg ' + draft.template.backgroundColor + ' / accent ' + draft.template.accentColor + ' / text ' + draft.template.textColor);
+  lines.push('- Fonts: ' + draft.template.fontFamily + ' / title ' + draft.template.titleSize + ' / body ' + draft.template.bodySize);
+  lines.push('- Slides Design (' + draft.slides.length + '):');
+  draft.slides.forEach(function(s) { lines.push('  - #' + s.slideNumber + ' [' + s.roleLabel + '] 文字:' + s.textPosition + ' / 写真:' + s.photoPosition + ' / CTA:' + s.ctaPosition); });
+  lines.push('- Version1 Review:');
+  draft.version1Review.forEach(function(c) { lines.push('  - ' + c.label + ': ' + c.note); });
+  lines.push('- Mobile Review Input (Phase50-5): template=' + draft.mobileReviewInput.template.name + ' / designScore=' + draft.mobileReviewInput.designScore + ' / slides=' + draft.mobileReviewInput.slides.length);
+}
+
+function appendInstagramDesignSystemToExportJson(payload) {
+  if (!_lastOutputDraft) return;
+  var draft = _lastOutputDraft.instagramDesignSystem || createInstagramDesignSystemDraft(_lastOutputDraft);
+  if (!draft) return;
+  payload.instagramDesignSystem = {
+    version: draft.version,
+    safetyLabels: draft.safetyLabels,
+    selectedTemplateId: draft.selectedTemplateId,
+    template: draft.template,
+    slides: draft.slides,
+    designScore: draft.designScore,
+    designReview: draft.designReview,
+    mobileReviewInput: draft.mobileReviewInput,
+    version1Review: draft.version1Review,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -28062,6 +28520,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildInstagramMarketingIntelligenceHtml, 'InstagramMarketingIntelligence')
     + _oeSafe(buildInstagramContentPlanningHtml, 'InstagramContentPlanning')
     + _oeSafe(buildInstagramCarouselBuilderHtml, 'InstagramCarouselBuilder')
+    + _oeSafe(buildInstagramDesignHtml,          'InstagramDesignSystem')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
