@@ -737,3 +737,24 @@ Creative Engineファミリー完了（Decision 038）を受け、Version1のRoa
 
 注記: ユーザー指示では本Decisionは「Decision038」と記載されていたが、直前のPhase49-6.1で既にDecision 038（Creative Engineファミリー完了範囲の正式確定）を採番済みのため、番号重複を避けて**Decision 039**として採番した。
 
+---
+
+# Decision 040
+## Instagram Marketing Intelligence（Phase50-1）は予測ヒューリスティック＋手動実績入力のみで実装する
+
+Version1最優先ゴール（Instagram収益化支援・Decision 039）の第一歩として、Phase50-1でInstagram Marketing Intelligenceを実装した。実装スコープを以下に限定した。
+
+内容：
+- 分析対象は保存率/リーチ/プロフィール遷移/フォロー率/CTA/ハッシュタグ/投稿時間/カルーセル/リール/競合/トレンドの11種
+- 投稿前分析は既存の`createPublishingDraft()`/`createCreativeAdAssemblyDraft()`の出力を読み取り専用で参照する**予測ヒューリスティック**（0〜100点）のみとする。実際のInstagram Graph API接続・自動データ取得は一切行わない
+- 投稿後の実績分析（保存率/リーチ/プロフィール遷移/フォロー率/CV）は**ユーザーの手動入力のみ**で記録する（`recordInstagramResult()` / `submitInstagramResultEntry()`）。3件以上で平均集計を開始（`_instagramResultHistory` max30件・メモリ内）
+- 競合分析・トレンド分析は自動収集せず、手動リサーチ用チェックリストの提示のみとする
+- 固定Safetyバッジ4種（No Real API Connection / Manual Input Only / Prediction Heuristic Only / Read Only Analysis）を常時表示
+- `index.html`のみ変更。既存Provider構成・Workflow・Knowledge Chain・Creative Engine各関数は無変更で参照のみ。画像/動画生成・SNS投稿・API実行・自動課金は一切なし
+
+理由：
+- Instagram Graph API等の実接続は外部API契約・課金を伴うため、Manual Only方針（Decision 039）に従い予測分析と手動入力に限定することで、承認なしに実運用支援を開始できる
+- 既存Creative Engineファミリーの成果物（Publishing/Creative Ad Assembly）を読み取り専用で再利用することで、既存判断ロジックへの影響を完全に排除できる
+
+追記日: 2026-07-04（Phase50-1 Instagram Marketing Intelligence完了）
+

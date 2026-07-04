@@ -35,7 +35,9 @@ Version2は6ファミリー（Creative Engine / Intelligence / Sales / Automatio
 
 **Version1 Roadmap方針変更（Decision 039）**: Version1の最優先目的をInstagram収益化支援へ変更した。AI会社はInstagram運用を最初の実運用対象とする。Manual Only方針は維持する（画像生成・動画生成・投稿はユーザー承認後の手動実行のみ）。Version1完成基準は「Instagramを毎日運用できること」（市場調査→テーマ決定→保存率が高い構成提案→スライド構成→画像プロンプト→動画プロンプト→投稿文→CTA→ハッシュタグ→Creative Assembly→Asset Library保存を5分以内で完了）へ変更した。詳細は docs/04ROADMAP.md「Version1 最優先ゴール」を参照。
 
-次工程: **Phase50-1 — Instagram Marketing Intelligence**（旧Platform Intelligenceを改称・最優先へ格上げ。保存率分析/リーチ分析/プロフィール遷移分析/フォロー率分析/CTA分析/ハッシュタグ分析/投稿時間分析/カルーセル分析/リール分析/競合分析/トレンド分析。汎用Marketing Intelligence Foundation（旧Phase50-1）はPhase50-3へ後回し）**未着手・実装待機**
+**Phase50-1 — Instagram Marketing Intelligence 完了**（Decision 040）: `createInstagramMarketingIntelligenceDraft()`で保存率/リーチ/プロフィール遷移/フォロー率/CTA/ハッシュタグ/投稿時間/カルーセル/リールの予測ヒューリスティック分析（0〜100点、既存Publishing/Creative Ad Assemblyを読み取り参照）、競合/トレンドの手動リサーチ用チェックリスト、`recordInstagramResult()`/`submitInstagramResultEntry()`による手動実績入力（保存率/リーチ/プロフィール遷移/フォロー率/CV、`_instagramResultHistory` max30・3件以上で平均集計）を実装。`renderOutputEnginePanel()`内`buildCreativeAssetLibraryHtml`直後に表示。Markdown/JSON Export反映済み。実Instagram API接続・自動投稿・自動課金なし（4 Safetyバッジ固定）。dev-check 200/200/200・ブラウザ実機確認済み。Tag: `v1.00-phase50-1`
+
+次工程: **Instagramマネタイズシステムの残り7ステップ**（ユーザー最優先方針・2026-07-04）: ① Content Planning ② Carousel Builder ③ Image Layout Engine（背景画像＋文字レイアウト済みのカルーセル品質を目指す）④ iPhone成果物確認画面 ⑤ iPhone承認機能 ⑥ 投稿予約 ⑦ Instagram運用開始。画像生成・投稿はユーザー承認後のみ・無断投稿禁止・自動課金禁止・既存機能削除禁止・追加のみ。
 
 AI Gateway・Image Prompt Intelligence・Video Prompt Intelligence・Creative Execution・Creative Ad Assembly・Creative Asset Library（`createCreativeAssetLibraryDraft()`）は全て判断層/プロンプト生成層/実行計画層/組み立て層/管理層のみで、実際の画像/動画生成・投稿・API実行・PC操作・ブラウザ自動操作は一切行っていない。Creative Asset Libraryは常時5つのSafetyバッジ（Asset Library Only/No External Execution/No AI Generation/Manual Reuse Only/Read Only）を表示し、favorite/archiveは常にfalse（新規永続化なし）。
 

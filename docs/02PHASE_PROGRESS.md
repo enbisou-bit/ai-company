@@ -9,7 +9,23 @@
 - **Creative Engine Family: Complete**
 - 現在バージョン: **v1.00-phase49-6**
 - **Version1 Roadmap方針変更（Decision 039）**: Version1の最優先目的をInstagram収益化支援へ変更。AI会社はInstagram運用を最初の実運用対象とする。Manual Only方針は維持（詳細は docs/04ROADMAP.md「Version1 最優先ゴール」参照）
-- 次フェーズ: **Phase50 Intelligence Family 開始予定**（次工程: Phase50-1 Instagram Marketing Intelligence。旧Marketing Intelligence Foundationから優先順位を入れ替え、Instagram特化分析へ改称・格上げ）
+- **Phase50-1 完了（Instagram Marketing Intelligence）**: 予測ヒューリスティック11分析＋手動実績入力。dev-check 200/200/200・ブラウザ実機確認済み（Decision 040）
+- 次フェーズ: **Phase50-2以降**（Content Planning / Carousel Builder / Image Layout Engine / iPhone成果物確認・承認 / 投稿予約 の順にInstagramマネタイズシステムを構築）
+
+---
+
+### Phase50-1: Instagram Marketing Intelligence ✅
+- `index.html`（追加のみ・427行insert / 0 delete）
+  - `INSTAGRAM_MARKETING_INTELLIGENCE_VERSION = '1.0.0'` / `IMI_SAFETY_LABELS`（No Real API Connection / Manual Input Only / Prediction Heuristic Only / Read Only Analysis の4固定バッジ）
+  - `createInstagramMarketingIntelligenceDraft(outputDraft)` — 既存`createPublishingDraft()`/`createCreativeAdAssemblyDraft()`を読み取り専用参照。保存率/リーチ/プロフィール遷移/フォロー率/CTA/ハッシュタグ/投稿時間/カルーセル/リールの予測分析（0〜100点）を生成
+  - 実績分析: `recordInstagramResult()` / `submitInstagramResultEntry()`（手動入力のみ・`_instagramResultHistory` max30件メモリ内・3件以上で平均集計）
+  - 競合/トレンド分析は手動リサーチ用チェックリスト提示のみ
+  - `buildInstagramMarketingIntelligenceHtml()` — `renderOutputEnginePanel()`内、`buildCreativeAssetLibraryHtml`の直後に表示。9分析カード＋5手動入力欄＋Copy 3ボタン＋Record Resultボタン
+  - `copyInstagramMarketingIntelligenceField()`（Predictive/Checklist/Full の3ケース）
+  - Markdown Export（`## Instagram Marketing Intelligence (Phase50-1)`）/ JSON Export（`instagramMarketingIntelligence`キー・`_instagramResultHistory`）に反映
+- ブラウザ実機確認（Chrome Preview・mock draft注入方式）: instagram_carousel（保存率85/ハッシュタグ85/カルーセル85点）で9分析カード・4バッジ・5入力欄表示、手動実績3件入力→平均集計（saveRate 5.37/reach 1200）、Export markdown/json反映、powerpointでカルーセル/リールが対象外(null)へ正しくfallback、null draftで例外なし、console.errorなしを確認
+- 実際のInstagram API接続・自動データ取得・自動投稿・自動課金は一切なし。既存Provider構成・Workflow・Knowledge Chain・Creative Engine各関数は無変更
+- Git: Phase50-1 instagram marketing intelligence / Tag: v1.00-phase50-1
 
 ---
 

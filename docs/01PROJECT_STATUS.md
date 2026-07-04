@@ -11,9 +11,10 @@
 - **Phase49-6 Complete**（Creative Asset Library）＝Creative Engineファミリー完結
 - 現在Version: **v1.00-phase49-6**（Version1機能はPhase48-5で完成。Phase49-1〜49-6でCreative Engineファミリー完結）
 - 開発状況: Creative Ad Assembly等の既存6関数（Publishing/AI Gateway/Image・Video Prompt Intelligence/Creative Execution/Creative Ad Assembly）を読み取り専用で参照し、Assetを管理・分類・コピー・ExportするCreative Asset Library（Phase49-6）を追加。新規判断・画像/動画生成・投稿は一切なし（Read Only固定）。dev-check 200/200/200
-- **現在ステータス: Creative Engine Family Complete**
+- **現在ステータス: Creative Engine Family Complete + Phase50-1 Instagram Marketing Intelligence Complete**
 - **Version1 Roadmap方針変更（Decision 039）**: Version1の最優先目的をInstagram収益化支援へ変更。AI会社はInstagram運用を最初の実運用対象とする。Manual Only方針は維持。詳細は [docs/04ROADMAP.md](04ROADMAP.md) の「Version1 最優先ゴール」参照
-- 次工程: **Phase50-1 Instagram Marketing Intelligence**（旧Marketing Intelligence Foundationから優先順位を入れ替え、Instagram特化分析へ改称・格上げ。詳細は04ROADMAP.md参照）
+- **Phase50-1 完了（Instagram Marketing Intelligence）**: 保存率/リーチ/プロフィール遷移/フォロー率/CTA/ハッシュタグ/投稿時間/カルーセル/リールの予測ヒューリスティック分析＋競合/トレンドの手動リサーチ支援＋手動実績入力（保存率/リーチ/プロフィール遷移/フォロー率/CV）。実API接続・自動投稿・自動課金なし（Decision 040）。現Version: **v1.00-phase50-1**
+- 次工程: **Instagramマネタイズシステム構築の残り7ステップ**（Content Planning → Carousel Builder → Image Layout Engine → iPhone成果物確認画面 → iPhone承認機能 → 投稿予約 → Instagram運用開始）
 
 ### Creative Engine Family（全8 Phase・Completed）
 
