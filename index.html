@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>縁美創 AI COMPANY</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -5721,6 +5721,79 @@
     /* 振り分けカード */
     .dispatch-members { flex-wrap: wrap; }
     .leader-dispatch-card { margin-left: 8px; max-width: calc(100% - 8px); }
+  }
+
+  /* ============================================================
+     Phase52-5: Mobile UI Final Polish（スマホのみ・PC不変・追加のみ）
+     既存ルールは変更せず、この最終ブロックで上書き補強する。
+     ============================================================ */
+  @media (max-width: 768px) {
+    /* ④ セーフエリア対応: ノッチ/ホームバー/丸角で隠れないよう余白を確保
+       （viewport-fit=cover と併用。非ノッチ端末では env()=0 で無害） */
+    #topbar {
+      padding-top: max(6px, env(safe-area-inset-top));
+      padding-left: max(10px, env(safe-area-inset-left));
+      padding-right: max(10px, env(safe-area-inset-right));
+    }
+    #mega-menu-nav {
+      padding-left: max(10px, env(safe-area-inset-left));
+      padding-right: max(10px, env(safe-area-inset-right));
+    }
+    #input-area {
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      padding-left: max(8px, env(safe-area-inset-left));
+      padding-right: max(8px, env(safe-area-inset-right));
+    }
+
+    /* ①② 上部メニュー / ステータスの見切れ解消:
+       1行を維持したまま横スクロール可能にする（クリップさせない）。
+       #main の overflow:hidden で見えなくなっていた右側を、内部スクロールで到達可能にする。 */
+    #current-info { flex: 0 1 auto; }
+    #topbar-quick {
+      flex: 1 1 0;
+      min-width: 0;
+      margin-left: 8px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    #topbar-quick::-webkit-scrollbar { display: none; }
+    #topbar-quick button { flex-shrink: 0; }
+    /* 右側ステータス群(💰円 等)は既存の内部横スクロールを維持しつつ上限を画面比で緩和 */
+    #topbar-right { max-width: 46vw; }
+
+    /* ⑤ 不要な横スクロール抑制（保険。sticky/入力欄は #chat-area 基準のため不影響） */
+    html { overflow-x: hidden; }
+  }
+
+  /* ============================================================
+     Phase52-6: Mobile Touch Hotfix（スマホのみ・PC不変・追加のみ）
+     原因: Phase52-5で追加した html{overflow-x:hidden} が iOS Safari で
+     タッチ/横スクロール/入力欄タップを阻害していた。
+     body{overflow:hidden}(既存) が既に横スクロールを抑制しているため、
+     html 側の overflow-x 指定は不要かつ有害だった。
+     Phase52-5 の safe-area / 横スクロール化の意図は維持し、阻害要因のみ補正する。
+     ============================================================ */
+  @media (max-width: 768px) {
+    /* 1) html全体のタッチ阻害を解除（横スクロール抑制は body/#main の overflow:hidden が担う） */
+    html { overflow-x: visible; }
+
+    /* 2)(3) 上部タブ・メガメニューを iPhone Safari で確実に横スワイプ可能に */
+    #topbar-quick,
+    #mega-menu-nav {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+    }
+
+    /* 4)(5)(6) 入力欄・入力フィールド・送信ボタンのタップ復旧
+       （被り対策の z-index 整理／pointer-events を明示的に有効化。既存の position:sticky は維持） */
+    #input-area { z-index: 30; pointer-events: auto; }
+    #msg-input,
+    #send-btn {
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
   }
 </style>
 </head>
