@@ -527,6 +527,10 @@
     transition: opacity 0.4s;
   }
 
+  /* Phase52-9: 上部2段目統合ラッパ。PCは display:contents で箱を透過し、
+     #topbar-quick / #topbar-right を従来どおり #topbar の直接フレックス子として扱う（PCレイアウト不変）。
+     スマホ(@media 768px)でのみ実体化して1本の横スクロールにする。 */
+  #tb-scroll { display: contents; }
   /* ── クイックアクセス（左側：毎日使う機能） ── */
   #topbar-quick {
     display: flex;
@@ -5795,6 +5799,188 @@
       touch-action: manipulation;
     }
   }
+
+  /* ============================================================
+     Phase52-8: Mobile Topbar Structure Fix（スマホのみ・PC不変・追加のみ）
+     iPhone縦向き（及び幅の狭い横向き）で上部バーを段組みにし、窮屈さ/見切れを解消。
+       1段目: ハンバーガー + 現在担当（右側は最小限=空）
+       2段目: クイック（タスク/通知/Timeline/Brain/社長室）を "1本の横スクロール列" に統一
+       3段目: ステータス（Auto Task/自律相談/課金ロック/コスト）を横スクロール
+     ・分断しない / 途中で半端に固定しない / scroll-snapは完全解除
+     ・safe-area(52-5) と タッチ復旧(52-6) は維持
+     ・幅に余裕のある横向き(>768px)は従来のPCレイアウト(1段・ゆとりあり)を使用
+     ・すべて @media (max-width:768px) 内。PC表示には一切影響しない。
+     ============================================================ */
+  @media (max-width: 768px) {
+    /* topbar を段組みに（1段内で3分割しない） */
+    #topbar {
+      flex-wrap: wrap;
+      row-gap: 4px;
+      align-items: center;
+    }
+    /* 1段目: 現在担当が残り幅を占有（右側の可視ボタンは無し=最小限） */
+    #current-info { flex: 1 1 0; min-width: 0; }
+
+    /* 2段目: クイックボタンを全幅・1本の横スクロールコンテナに統一（分断禁止） */
+    #topbar-quick {
+      flex: 1 1 100%;
+      width: 100%;
+      min-width: 0;
+      margin-left: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+      scroll-snap-type: none;   /* 半端停止の原因になるsnapを解除 */
+      scrollbar-width: none;
+      gap: 6px;
+      padding-bottom: 1px;
+    }
+    #topbar-quick::-webkit-scrollbar { display: none; }
+
+    /* 3段目: ステータス群も全幅・横スクロール（1画面に無理に詰め込まない） */
+    #topbar-right {
+      flex: 1 1 100%;
+      width: 100%;
+      min-width: 0;
+      max-width: none;          /* 52-5の46vw上限を解除 */
+      margin-left: 0;
+      padding-left: 0;
+      border-left: none;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+      scroll-snap-type: none;
+      scrollbar-width: none;
+      gap: 6px;
+    }
+    #topbar-right::-webkit-scrollbar { display: none; }
+
+    /* 各ボタン: 切れず・半端に固定されず・高さ統一・スマホ向けpadding */
+    #topbar-quick button,
+    #topbar-right button {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      min-width: max-content;
+      height: 32px;
+      padding: 5px 10px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      scroll-snap-align: none;
+    }
+  }
+
+  /* ============================================================
+     Phase52-9: Mobile Topbar Unified Scroll（スマホのみ・PC不変・追加のみ）
+     2段目のクイック(#topbar-quick)とステータス(#topbar-right)を、ラッパ #tb-scroll で
+     "1本の横スクロール" に統合（分割しない／途中でスクロール領域を切らない）。
+     縦・横とも同一UI。scroll-snap完全解除。safe-area(52-5)/タッチ(52-6)は維持。
+     すべて @media 768px 内。PC は #tb-scroll:display:contents のため一切不変。
+     ============================================================ */
+  @media (max-width: 768px) {
+    /* ラッパを実体化 → 全幅・1本の横スクロールコンテナに（2段目） */
+    #tb-scroll {
+      display: flex;
+      flex: 1 1 100%;
+      width: 100%;
+      min-width: 0;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+      scroll-snap-type: none;
+      scrollbar-width: none;
+      padding-bottom: 1px;
+    }
+    #tb-scroll::-webkit-scrollbar { display: none; }
+
+    /* 内側の quick / right は独立スクロールを解除し、連続した並びにする（#tb-scrollが唯一のスクロール） */
+    #topbar-quick,
+    #topbar-right {
+      display: flex;
+      flex: 0 0 auto;
+      width: auto;
+      max-width: none;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: none;
+      overflow: visible;
+      gap: 6px;
+    }
+
+    /* 各ボタン: 分割・半端固定させない・高さ統一 */
+    #tb-scroll button {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      min-width: max-content;
+      height: 32px;
+      padding: 5px 10px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      scroll-snap-align: none;
+    }
+  }
+
+  /* ============================================================
+     Phase52-9b: Mobile Topbar Rebuild（HTML構造をJSで再設計）
+     JS(buildMobileTopbar)がモバイル時に9ボタンを実体ごと #mobile-quickbar へ移動し、
+     "1本の横スクロール" に物理統合する。ここではその見た目を定義。
+     ・(pointer:coarse) で iPhone縦・横 両方に適用（幅768超の横向きも網羅）
+     ・PCは (pointer:fine) のため未適用＋JSも未発火 → PC完全不変
+     ============================================================ */
+  @media (max-width: 768px), (pointer: coarse) {
+    /* topbarを段組みに（1段目=識別 / 2段目=#mobile-quickbar / 3段目=カテゴリ#mega-menu-nav） */
+    #topbar {
+      flex-wrap: wrap;
+      row-gap: 4px;
+      align-items: center;
+      padding-top: max(6px, env(safe-area-inset-top));
+      padding-left: max(10px, env(safe-area-inset-left));
+      padding-right: max(10px, env(safe-area-inset-right));
+    }
+    #current-info { flex: 1 1 0; min-width: 0; }
+
+    /* 2段目: 全ボタンを1本の横スクロールに統合 */
+    #mobile-quickbar {
+      display: flex;
+      flex: 1 1 100%;
+      width: 100%;
+      min-width: 0;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+      scroll-snap-type: none;
+      scrollbar-width: none;
+      padding: 2px 0 1px;
+    }
+    #mobile-quickbar::-webkit-scrollbar { display: none; }
+    #mobile-quickbar button {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      min-width: max-content;
+      height: 32px;
+      padding: 5px 10px;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      scroll-snap-align: none;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 7px;
+      color: #c8cfe0;
+      font-size: 11.5px;
+      font-family: inherit;
+    }
+    #mobile-quickbar #status-dot { display: none; }
+    #mobile-quickbar .tq-sep { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -6634,6 +6820,8 @@
     <button id="cost-db-btn" onclick="toggleCostDb()" style="display:none">📊 コスト</button>
     <button id="reload-btn" onclick="location.reload()" style="display:none">🔄</button>
 
+    <!-- Phase52-9: 2段目(クイック+ステータス)を1本の横スクロールに統合するラッパ / PCは display:contents で透過(レイアウト不変) -->
+    <div id="tb-scroll">
     <!-- 左側クイックアクセス：毎日使う機能 -->
     <div id="topbar-quick">
       <button id="task-open-btn" onclick="toggleTaskPanel()" title="タスク管理" style="position:relative;">📋 タスク <span id="task-badge"></span></button>
@@ -6651,6 +6839,7 @@
       <button id="cost-meter-btn" onclick="toggleCostPanel()" title="API料金メーター">💰 <span id="cost-today">--</span>円</button>
       <div id="status-dot">オンライン</div>
     </div>
+    </div><!-- /#tb-scroll (Phase52-9) -->
   </div>
 
   <!-- Phase36-3: Mega Menu Navigation Bar -->
@@ -30839,6 +31028,49 @@ function renderOutputEnginePanel() {
   } catch(_clqE) { console.log('[OE-CLQ-DOM] error:', _clqE && _clqE.message); }
 }
 
+</script>
+<script>
+/* Phase52-9b: Mobile Topbar Rebuild
+   モバイル(タッチ端末 or 幅768以下)のとき、#topbar-quick と #topbar-right の
+   全ボタンを1つの #mobile-quickbar へ実体ごと移動し、1本の横スクロールへ物理統合する。
+   ノードごと移動するため onclick 等のハンドラ・id・バッジは保持される。
+   PC(pointer:fine かつ幅>768)では何もしない → PC完全不変。追加のみ・既存無変更。 */
+(function () {
+  function isMobileTopbar() {
+    try {
+      if (window.matchMedia) {
+        if (window.matchMedia('(pointer: coarse)').matches) return true;
+        if (window.matchMedia('(max-width: 768px)').matches) return true;
+      }
+      return (window.innerWidth || 9999) <= 768;
+    } catch (e) { return (window.innerWidth || 9999) <= 768; }
+  }
+  function buildMobileTopbar() {
+    try {
+      if (!isMobileTopbar()) return;
+      if (document.getElementById('mobile-quickbar')) return; // 二重実行防止
+      var topbar = document.getElementById('topbar');
+      var quick = document.getElementById('topbar-quick');
+      var right = document.getElementById('topbar-right');
+      if (!topbar || !quick || !right) return;
+      var bar = document.createElement('div');
+      bar.id = 'mobile-quickbar';
+      while (quick.firstChild) bar.appendChild(quick.firstChild); // 実体ごと移動（順序・handler保持）
+      while (right.firstChild) bar.appendChild(right.firstChild);
+      var wrap = document.getElementById('tb-scroll');
+      if (wrap) wrap.style.display = 'none'; // 空になった旧コンテナを隠す
+      quick.style.display = 'none';
+      right.style.display = 'none';
+      topbar.appendChild(bar); // #topbar の flex-wrap で2段目に回る
+    } catch (e) { /* 失敗しても既存UIは維持 */ }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', buildMobileTopbar);
+  } else {
+    buildMobileTopbar();
+  }
+  window.addEventListener('load', buildMobileTopbar);
+})();
 </script>
 </body>
 </html>
