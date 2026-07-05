@@ -8121,9 +8121,9 @@ async function restoreHistoryFromServer() {
         content: msg.content,
         timestamp: msg.created_at,
       }));
-      // タイムスタンプ比較：Supabaseの最新メッセージがローカルより新しければ上書き
-      const srvLatest = serverHistory[serverHistory.length - 1].timestamp || '';
-      const localLatest = ((chatHistory[memberId] || []).filter(h => h.timestamp).pop() || {}).timestamp || '';
+      // タイムスタンプ比較：数値化して比較（+00:00 と Z の形式差を吸収・Phase52-11.1）
+      const srvLatest = normalizeMessageTime(serverHistory[serverHistory.length - 1].timestamp);
+      const localLatest = normalizeMessageTime(((chatHistory[memberId] || []).filter(h => h.timestamp).pop() || {}).timestamp);
       console.log(`[restore] ${memberId} srvLatest=${srvLatest} localLatest=${localLatest}`);
       if (srvLatest > localLatest) {
         chatHistory[memberId] = serverHistory;
@@ -8142,6 +8142,108 @@ async function restoreHistoryFromServer() {
 }
 // restoreHistoryFromServer はこの時点では ALL_MEMBERS 未設定のため呼ばない
 // → ALL_MEMBERS 確定後（下方 5946行付近）で呼ぶ
+
+// ============================================================
+// Phase52-11: Conversation Sync（PC/iPhone 会話一致・追加のみ）
+//   既存 GET /api/messages を再利用（Supabase Realtime不使用）。
+//   localStorage はオフラインキャッシュとして維持（削除しない）。
+//   既存 sendMessage / restoreHistoryFromServer / selectMember は無変更、
+//   送信中判定は既存 isTyping を再利用（新規フラグ追加なし）。
+// ============================================================
+const CONVERSATION_SYNC_INTERVAL_MS = 15000; // 現在メンバーのみ15秒間隔
+
+// timestamp / created_at を数値(ms)へ正規化（Supabaseの +00:00 と Client の Z の差異を吸収）。不正値は0。
+function normalizeMessageTime(value) {
+  if (!value) return 0;
+  const t = Date.parse(value);
+  return isNaN(t) ? 0 : t;
+}
+
+// サーバー履歴を chatHistory[memberId] へ安全に統合（丸ごと置換しない・Phase52-11.1）。
+//   重複判定 = 同一sender + 同一(簡易正規化)content + 時刻差3秒以内（timestamp形式差を吸収）。
+//   assistantは local safeReply と server raw reply の空白差を trim+空白圧縮で吸収して比較。
+//   timestampの無いローカル旧履歴は同一扱いでサーバー時刻を吸収。新規追加時のみ true を返す。
+function mergeServerHistory(memberId, serverHistory) {
+  if (!memberId || !Array.isArray(serverHistory) || serverHistory.length === 0) return false;
+  const local = Array.isArray(chatHistory[memberId]) ? chatHistory[memberId].slice() : [];
+  const localBefore = local.length;
+  const CONV_DEDUP_TOLERANCE_MS = 3000; // 同一sender・同一contentで時刻差がこの範囲内なら同一メッセージ
+  const senderOf = h => (h && (h.role || h.sender)) || '';
+  // 比較専用の簡易正規化（trim + 連続空白を1つに）。保存内容は変更しない。
+  const normContent = h => String((h && h.content) != null ? h.content : '').trim().replace(/\s+/g, ' ');
+  let added = 0, upgraded = 0;
+  serverHistory.forEach(sh => {
+    const norm = {
+      role: sh.role || sh.sender,
+      content: sh.content,
+      timestamp: sh.timestamp || sh.created_at || null,
+    };
+    const nSender = senderOf(norm);
+    const nContent = normContent(norm);
+    const nTime = normalizeMessageTime(norm.timestamp);
+    // 既存ローカルに「同一sender・同一content・時刻差3秒以内 or ローカルtimestamp無し」があれば重複
+    const dupIdx = local.findIndex(h => {
+      if (senderOf(h) !== nSender) return false;
+      if (normContent(h) !== nContent) return false;
+      const ht = normalizeMessageTime(h.timestamp || h.created_at);
+      if (ht === 0) return true;                    // timestamp無しローカル旧履歴 → 同一扱い
+      return Math.abs(ht - nTime) <= CONV_DEDUP_TOLERANCE_MS;
+    });
+    if (dupIdx >= 0) {
+      const h = local[dupIdx];
+      if (!(h.timestamp || h.created_at) && norm.timestamp) { h.timestamp = norm.timestamp; upgraded++; } // 旧履歴へ時刻を吸収
+      return;
+    }
+    local.push(norm);
+    added++;
+  });
+  if (added === 0 && upgraded === 0) return false;
+  // 数値時刻で安定ソート（timestamp無しは直前メッセージの時刻を継承して順序を保つ）
+  let carry = 0;
+  const decorated = local.map((h, i) => {
+    let t = normalizeMessageTime(h.timestamp || h.created_at);
+    if (t === 0) t = carry; else carry = t;
+    return { h, t, i };
+  });
+  decorated.sort((a, b) => (a.t - b.t) || (a.i - b.i));
+  chatHistory[memberId] = decorated.map(d => d.h);
+  saveToStorage();
+  console.log(`[conv-sync] merge member=${memberId} local=${localBefore} server=${serverHistory.length} added=${added}`);
+  return added > 0; // 新規メッセージ追加時のみ再描画対象（時刻吸収のみなら表示不変）
+}
+
+// 現在選択中メンバーのサーバー履歴をpullしてmerge。差分がある時のみ再描画。
+async function syncCurrentMemberFromServer() {
+  try {
+    if (!currentMember) return;              // 担当未選択なら何もしない
+    if (isTyping) return;                    // 送信中（AI応答待ち含む）はスキップ
+    const memberId = currentMember.id;
+    const res = await fetch(`/api/messages?userId=web-user&memberId=${encodeURIComponent(memberId)}&channel=web`);
+    const data = await res.json();
+    if (!data || !data.ok || !Array.isArray(data.messages) || data.messages.length === 0) return;
+    const serverHistory = data.messages.map(msg => ({
+      role: msg.sender, content: msg.content, timestamp: msg.created_at,
+    }));
+    console.log(`[conv-sync] pull member=${memberId} count=${serverHistory.length}`);
+    const changed = mergeServerHistory(memberId, serverHistory);
+    if (!changed) return;
+    // 入力中 or 送信中は再描画を抑制（データはmerge済みで、次回同期/切替で反映）
+    const inp = document.getElementById('msg-input');
+    const composing = inp && document.activeElement === inp && (inp.value || '').trim().length > 0;
+    if (composing || isTyping) return;
+    if (currentMember && currentMember.id === memberId) reRenderChatArea(currentMember);
+  } catch (e) {
+    // 取得失敗は無視（既存UIを壊さない・alertを出さない）
+  }
+}
+
+// 定期ポーリング（現在メンバーのみ・15秒）。全メンバー同期は今回は行わない。
+setInterval(() => { syncCurrentMemberFromServer(); }, CONVERSATION_SYNC_INTERVAL_MS);
+
+// タブ/Safari 復帰時にpull（visible時のみ）
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') syncCurrentMemberFromServer();
+});
 
 // ── 旧塗装専門発言を含む会話履歴を起動時に自動クリア ──
 // openaiClient.js のプロンプトを刷新しても localStorage の古いAI返答が
@@ -8339,15 +8441,18 @@ async function selectMember(m) {
       if (!d.ok || !Array.isArray(d.messages) || d.messages.length === 0) return;
       const srv = d.messages.map(msg => ({ role: msg.sender, content: msg.content, timestamp: msg.created_at }));
       if (srv.length === 0) return;
-      // タイムスタンプで比較：サーバーの最新メッセージがローカルより新しい場合のみ上書き
-      const srvLatest = srv[srv.length - 1].timestamp || '';
-      const localLatest = ((chatHistory[m.id] || []).filter(h => h.timestamp).pop() || {}).timestamp || '';
+      // タイムスタンプで比較：数値化して比較（+00:00 と Z の形式差を吸収・Phase52-11.1）
+      const srvLatest = normalizeMessageTime(srv[srv.length - 1].timestamp);
+      const localLatest = normalizeMessageTime(((chatHistory[m.id] || []).filter(h => h.timestamp).pop() || {}).timestamp);
       if (srvLatest <= localLatest) return;
       chatHistory[m.id] = srv;
       saveToStorage();
       reRenderChatArea(m);
     })
     .catch(() => {});
+
+  // Phase52-11: 切替後にサーバー履歴を統合pull（既存fetchは残す・呼び出し追加のみ）
+  syncCurrentMemberFromServer();
 }
 
 // ── バブル追加 ──
