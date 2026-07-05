@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
-> ENBISOU AI COMPANY 開発マスター（Version 2.2）
-> 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
+> ENBISOU AI COMPANY 開発マスター（Version 2.3）
+> 更新日: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
 
 ---
 
@@ -95,6 +95,59 @@ Instagram実運用フェーズ
 へ移行。
 
 Version1は実運用しながら改善する（作って終わりではなく、投稿→実績手入力→Learning→Asset Library候補蓄積のループを実際に回す）。
+
+---
+
+## 【Version1 Final Complete】（Phase52-10記録・正式完成・Decision 044）
+
+正式Version: **v1.00-phase52-10 / Version1 Final Complete**（最新コミット f177fd2）
+
+Version1は「機能完成」だけではなく、**運用可能な完成版**として正式に完成した。以下をすべて完了として記録する。
+
+- ☑ Instagram収益化パイプライン完成（Phase50-1〜52-1）
+- ☑ Mobile UI完成（Phase52-5）
+- ☑ Mobile Touch Hotfix完成（Phase52-6）
+- ☑ Mobile Topbar完成（Phase52-8/52-9/52-9b）
+- ☑ Render本番反映完了（ai-company-l45x.onrender.com = f177fd2）
+- ☑ iPhone Safari実機確認完了（縦向き・横向きともTopbar 1本横スクロール・全ボタン操作可能・入力/送信可能・横はみ出しなし）
+- ☑ PC表示正常（PC不変）
+- ☑ Manual Only維持（Instagram API/自動投稿/画像生成/課金なし）
+
+次工程は **Version1.01 Realtime Sync Edition**（PC/iPhoneで同一状態のAI会社）。Version2（Affiliate Intelligence）は Version1.01 完成後に開始する（Decision 045）。
+
+## 【Version1.01 ビジョン】Realtime Sync Edition（Version2着手前に優先・Decision 045）
+
+目的は **PC / iPhone どちらから利用しても同じAI会社になること**。すべてSupabaseを利用し、PCとスマホが同一状態になることを目的とする。
+
+実装予定: Task同期 / Conversation同期 / Timeline同期 / Notification同期 / Workflow Live同期 / Cost同期 / Learning同期 / Approval同期 / Auto Task同期 / Status同期。
+
+Version2（Affiliate Intelligence）着手前にRealtime同期を優先する。詳細は [docs/04ROADMAP.md](04ROADMAP.md)「Version1.01 Realtime Sync Edition」および Decision 045 を参照。
+
+---
+
+## 【Version2 ビジョン】Instagram Affiliate Intelligence Company（Decision 043）
+
+Version2のテーマは **Instagram Affiliate Intelligence Company** ＝「Instagramで何を売れば利益が最大になるかをAI会社全体が判断できる会社」。
+Affiliate Intelligence / ASP分析 / 案件分析で止まらず、AI会社全体が **利益を最大化する経営判断** まで行う。
+
+Version2 Core = **Affiliate Intelligence Core**（7層Intelligence）:
+
+```
+Affiliate Intelligence Core
+  → ① Market Opportunity Intelligence（今どの市場を狙うべきか）
+  → ② Product Intelligence（何を売るべきか）
+  → ③ ASP Intelligence（どのASPを使うべきか）
+  → ④ Competition Intelligence（競合分析）
+  → ⑤ Revenue Intelligence（利益・将来性分析）
+  → ⑥ Content Intelligence（Instagramで勝てる投稿企画）
+  → ⑦ Self Improvement Intelligence（実績から自動改善）
+```
+
+AI Gateway 正式構成: `Leader → Affiliate Intelligence → AI Gateway → { OpenAI / Claude / Browser Automation / PC Automation / 将来API }`。
+AI Gatewayは「最も低コストで最適な実行方法を自動選択するレイヤー」。実行系（Browser/PC Automation/API）はユーザー承認 + 安全ゲートを維持する（Decision 028・030を継承）。
+
+最終形: Leaderへ「今一番利益が出る案件は？」と聞くだけで、市場分析→案件分析→ASP分析→利益分析→競合分析→Instagram企画→Learning→改善まで一気通貫で判断できる会社。
+到達目標16項目・実装配分・安全設計の詳細は [docs/04ROADMAP.md](04ROADMAP.md)「Version2 Core 全体設計」および [docs/04DECISIONS.md](04DECISIONS.md) Decision 043 を参照。実装はすべて追加のみ・既存無変更・Manual Only。
 
 ---
 

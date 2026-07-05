@@ -805,3 +805,74 @@ Phase52-3において、Version1を正式完成とし、実運用フェーズへ
 
 追記日: 2026-07-05（Phase52-3 Version1 Operational）
 
+---
+
+# Decision 043
+## Version2はAffiliate Intelligence Core（7層Intelligence）＋AI Gatewayで「経営判断まで行うAI会社」を目指す
+
+Version1完成（Decision 041・042）を受け、Version2の全体設計を正式に確定する。Version2のテーマは **Instagram Affiliate Intelligence Company**（Instagramで何を売れば利益が最大になるかをAI会社全体が判断できる会社）とし、「Affiliate Intelligence → ASP分析 → 案件分析」で止まらず、AI会社全体が **利益を最大化する経営判断** まで行う会社へ進化させる。
+
+内容：
+- Version2の中核を **Affiliate Intelligence Core** とし、7層のIntelligenceを上から下へ連鎖させる:
+  ① Market Opportunity Intelligence（今どの市場を狙うべきか）→ ② Product Intelligence（何を売るべきか）→ ③ ASP Intelligence（どのASPを使うべきか）→ ④ Competition Intelligence（競合分析）→ ⑤ Revenue Intelligence（利益・将来性分析）→ ⑥ Content Intelligence（Instagramで勝てる投稿企画）→ ⑦ Self Improvement Intelligence（実績から自動改善）
+- AI会社が最終的に判断できる16項目を到達目標とする: 今売るべき市場 / 今売るべき商品 / どのASPを使うべきか / 利益率 / 承認率 / EPC / CVR / Instagramとの相性 / 競合数 / 案件寿命 / 季節性 / 保存率予測 / クリック率予測 / 想定売上 / 想定利益 / おすすめ順位。これらを統合し「おすすめ順位付きの利益ランキング」として出力できることを到達目標とする
+- 最終形は、Leaderへ「今一番利益が出る案件は？」と聞くだけで、市場分析→案件分析→ASP分析→利益分析→競合分析→Instagram企画→Learning→改善まで一気通貫で判断できる会社とする
+- AI Gatewayを正式な実行選択レイヤーとして構成へ組み込む: `Leader → Affiliate Intelligence → AI Gateway → { OpenAI / Claude / Browser Automation / PC Automation / 将来API }`。AI Gatewayは「最も低コストで最適な実行方法を自動選択するレイヤー」と定義する
+- 実装配分（推奨・Phase53起点を維持）: Phase53 Affiliate Intelligence Core → Phase54 Market Opportunity → Phase55 Product → Phase56 ASP → Phase57 Competition → Phase58 Revenue → Phase59 Content → Phase60 Self Improvement → Phase61 AI Gateway v2 → Phase62 Leader Integration。既存の Multi ASP Compare / Trend Intelligence / Revenue Optimization / AI Campaign Planner は各Intelligence層へ統合・再配置する
+
+安全設計（既存Decisionを継承・変更しない）：
+- 実装はすべて `index.html` 追加のみ・既存関数は読み取り専用参照・予測ヒューリスティック＋手動入力・Safetyバッジ固定・実API/課金なし（Phase50-1 Decision 040の設計思想を踏襲）
+- AI Gatewayは引き続き判断・ルーティング層とし、Browser Automation / PC Automation / API等の実行系はユーザー承認 + 安全ゲート（`isAIGatewayExecutionAllowed()`）を通過して初めて実行される（Decision 028・030・031を継承）
+- 既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）・Workflow・Knowledge Chain・Instagram収益化パイプライン（Version1完成9機能）は一切変更しない
+- 課金・外部API契約・自動投稿・Instagram API接続・server.js変更・DB変更は引き続き禁止（ユーザー承認制）
+
+理由：
+- ユーザーより、Version2は「Affiliate Intelligence / ASP分析 / 案件分析」だけでなく、AI会社全体が「利益を最大化する経営判断」まで行う会社にしたいという方針が示されたため
+- 7層Intelligenceに責務分離することで、Phase48-5以降で一貫している「1責務1関数・追加のみ・既存無変更」の設計思想をVersion2でも維持し、肥大化と後戻りを防ぐ
+- AI Gatewayを実行選択レイヤーとして明文化しつつ、実行系は承認ゲートを維持することで、Manual Only方針（Decision 039）と収益最大化の自律判断を両立させる
+
+追記日: 2026-07-05（Version2全体設計の正式反映）
+
+---
+
+# Decision 044
+## Version1 Final Complete（運用可能な完成版として正式完成）
+
+Phase52-10において、Version1を「機能完成」だけでなく「運用可能な完成版」として正式に完成と記録する。
+
+内容:
+- 正式Version: **v1.00-phase52-10 / Version1 Final Complete**（最新コミット f177fd2）
+- 以下をすべて完了として記録する:
+  - Instagram収益化パイプライン完成（Phase50-1〜52-1）
+  - Mobile UI完成（Phase52-5）／ Mobile Touch Hotfix完成（Phase52-6）／ Mobile Topbar完成（Phase52-8/52-9/52-9b）
+  - Render本番反映完了（ai-company-l45x.onrender.com = f177fd2）
+  - iPhone Safari実機確認完了（縦向き・横向きともTopbar 1本横スクロール・全ボタン操作可能・入力/送信可能・横はみ出しなし）
+  - PC表示正常（PC不変）
+  - Manual Only維持（Instagram API/自動投稿/画像生成/課金なし）
+- Phase52-10はdocsのみ更新（コード変更なし・index.html/server.js/DB/Workflow/Provider無変更）
+
+理由:
+- Version1のパイプラインはPhase52-2で機能完成（Decision 041）、Phase52-3で運用開始（Decision 042）していたが、スマホ（iPhone Safari）でのUI/タッチ/上部バーの実機課題が残っていた。Mobile UI（52-5/52-6）とMobile Topbar（52-8/52-9/52-9b）を本番反映し実機確認まで完了したことで、PC・スマホ双方から実際に運用できる状態になった
+- 「作って終わり」ではなく「実運用できる完成版」であることを明確な節目として記録し、次のVersion1.01（Realtime Sync）・Version2（Affiliate Intelligence）への起点を確定する
+
+追記日: 2026-07-05（Phase52-10 Version1 Final Complete）
+
+---
+
+# Decision 045
+## Version2着手前にVersion1.01 Realtime Sync Editionを優先する
+
+Version1 Final Complete（Decision 044）を受け、Version2（Affiliate Intelligence）着手前に、Version1.01「Realtime Sync Edition」を優先実装する方針を決定する。
+
+内容:
+- **Version1.01 = Realtime Sync Edition**。目的は「PCとiPhoneのどちらから利用しても同じAI会社になること」
+- 同期対象: Task同期 / Conversation同期 / Timeline同期 / Notification同期 / Workflow Live同期 / Cost同期 / Learning同期 / Approval同期 / Auto Task同期 / Status同期
+- すべて **Supabaseを利用** し、PCとスマホが同一状態になることを目的とする
+- **Version2（Affiliate Intelligence）はVersion1.01完成後に開始する**。Version2開始前にRealtime同期を優先することをRoadmapへ正式記録する。Phase53開始前には必ずユーザー確認を取る
+
+理由:
+- Version1をスマホでも運用可能にした（Decision 044）結果、PC/スマホ両方で使う前提になったため、両者の状態が食い違うと実運用に支障が出る。実際の投稿・実績入力・承認・タスクをどちらの端末からでも同一状態で行えることが、収益化運用の安定に直結する
+- Affiliate Intelligence（Version2）は判断・分析の中核であり、その前提として「どの端末からでも同じAI会社」という運用基盤（Realtime Sync）を整えておくことで、Version2の分析・承認フローが端末差なく機能する
+
+追記日: 2026-07-05（Phase52-10 Version1 Final Complete）
+

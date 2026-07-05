@@ -19,7 +19,161 @@
 
 対応機能: Instagram Marketing Intelligence（50-1）/ Content Planning（50-2）/ Carousel Builder（50-3）/ Design System（50-4）/ Mobile Review Center（50-5）/ Mobile Approval（50-6）/ Publishing Ready Center（50-7）/ Instagram Learning Center（51-1）/ Creative Asset Library Save Center（52-1）。
 
+---
+
+## Version1 Final Complete（Phase52-10 記録・Decision 044）
+
+**Version1 = Final Complete**（v1.00-phase52-10・最新コミット f177fd2）。機能完成に加え、Mobile UI（52-5）/ Mobile Touch Hotfix（52-6）/ Mobile Topbar（52-8/52-9/52-9b）を本番反映し、iPhone Safari実機確認（縦向き・横向きともTopbar 1本横スクロール・全ボタン操作可能・入力/送信可能・横はみ出しなし・PC不変）まで完了。**運用可能な完成版**として正式完成。Manual Only維持。
+
+---
+
+## Version1.01 Realtime Sync Edition（Version2着手前に優先・Decision 045）
+
+**目的**: PC / iPhone どちらから利用しても **同じAI会社になること**。
+
+**実装予定（すべてSupabaseを利用し、PCとスマホが同一状態になることを目的とする）**:
+- Task同期
+- Conversation同期
+- Timeline同期
+- Notification同期
+- Workflow Live同期
+- Cost同期
+- Learning同期
+- Approval同期
+- Auto Task同期
+- Status同期
+
+**Version2開始条件**: Version2 Affiliate Intelligence は **Version1.01 Realtime Sync Edition 完成後に開始する**。Version2着手前にRealtime同期を優先する。Phase53開始前には必ずユーザー確認を取る。
+
+---
+
 ## Version2 予定
+
+---
+
+## 【Version2 Core 全体設計（正式版・Decision 043）】
+
+> 追記日: 2026-07-05（Version2全体設計の正式反映・Decision 043）
+> Version2のテーマ: **Instagram Affiliate Intelligence Company**（Instagramで何を売れば利益が最大になるかをAI会社全体が判断できる会社）。
+> 本セクションはVersion2の最上位設計であり、下記「Version2 開発順（Phase53〜57）」を包含・拡張する（既存記述は削除せず、本Core設計で正式に体系化する）。
+> **開始条件（Decision 045）**: Version2は Version1.01 Realtime Sync Edition 完成後に開始する。着手前にRealtime同期を優先し、Phase53開始前に必ずユーザー確認を取る。
+
+### Version2の目的（経営判断まで行うAI会社）
+
+Version2は「Affiliate Intelligence → ASP分析 → 案件分析」で止まらず、AI会社全体が
+**「利益を最大化する経営判断」**まで行う会社へ進化させる。
+
+最終形は、Leaderへ
+
+> 「今一番利益が出る案件は？」
+
+と聞くだけで、AI会社全体が
+
+```
+市場分析 → 案件分析 → ASP分析 → 利益分析 → 競合分析 → Instagram企画 → Learning → 改善
+```
+
+まで一気通貫で判断できる会社を目指す。
+
+### Version2 Core: Affiliate Intelligence Core（7層Intelligenceパイプライン）
+
+Version2の中核は **Affiliate Intelligence Core** とし、以下の7つのIntelligence層を上から下へ連鎖させる。
+
+```
+Affiliate Intelligence Core
+  ↓
+① Market Opportunity Intelligence  （今どの市場を狙うべきか）
+  ↓
+② Product Intelligence             （何を売るべきか）
+  ↓
+③ ASP Intelligence                 （どのASPを使うべきか）
+  ↓
+④ Competition Intelligence         （競合分析）
+  ↓
+⑤ Revenue Intelligence             （利益・将来性分析）
+  ↓
+⑥ Content Intelligence             （Instagramで勝てる投稿企画）
+  ↓
+⑦ Self Improvement Intelligence    （実績から自動改善）
+```
+
+各層の責務:
+
+| 層 | 名称 | 責務 |
+|----|------|------|
+| ① | Market Opportunity Intelligence | 今狙うべき市場・ジャンルの機会を判断（需要・季節性・伸び）|
+| ② | Product Intelligence | その市場で何を売るべきか（商品・案件カテゴリ選定）|
+| ③ | ASP Intelligence | どのASPを使うべきか（A8/もしも/afb/アクセストレード/バリューコマース/楽天/Amazon 比較）|
+| ④ | Competition Intelligence | 競合数・競合の強さ・参入余地の分析 |
+| ⑤ | Revenue Intelligence | 利益率・承認率・EPC・CVR・案件寿命・想定売上・想定利益・将来性 |
+| ⑥ | Content Intelligence | Instagramで勝てる投稿企画（保存率予測・クリック率予測・構成）※既存Instagramパイプラインと連携 |
+| ⑦ | Self Improvement Intelligence | 実績（保存率/クリック率/フォロー率/CV/売上）から勝ちパターンを学習し自動改善 |
+
+### AI会社が最終的に判断できる16項目（Version2到達目標）
+
+1. 今売るべき市場
+2. 今売るべき商品
+3. どのASPを使うべきか
+4. 利益率
+5. 承認率
+6. EPC
+7. CVR
+8. Instagramとの相性
+9. 競合数
+10. 案件寿命
+11. 季節性
+12. 保存率予測
+13. クリック率予測
+14. 想定売上
+15. 想定利益
+16. おすすめ順位
+
+これら16項目を統合し、**「おすすめ順位」付きの利益ランキング**として出力できることをVersion2の到達目標とする。
+
+### AI Gateway 正式構成（Version2以降の実行レイヤー）
+
+以前から設計しているAI Gateway（Phase49-1で判断層として実装済み）を、Version2の正式な実行選択レイヤーとして構成へ組み込む。
+
+```
+Leader
+  ↓
+Affiliate Intelligence（7層Intelligence Core）
+  ↓
+AI Gateway  ← 「最も低コストで最適な実行方法を自動選択するレイヤー」
+  ↓
+┌──────────┬──────────┬────────────────────┬────────────────┬──────────┐
+OpenAI     Claude     Browser Automation   PC Automation    将来API
+```
+
+AI Gatewayの役割:
+- 各Intelligence層が必要とする実行（分析・生成・データ取得）に対し、**最も低コストで最適な実行方法を自動選択**する
+- 実行経路の候補: OpenAI / Claude / Browser Automation / PC Automation / 将来API
+
+**安全設計（既存Decision 028・030・031を継承・変更しない）**:
+- AI Gatewayは引き続き**判断・ルーティング層**であり、Browser Automation / PC Automation / API 等の実行系は**ユーザー承認 + 安全ゲート（`isAIGatewayExecutionAllowed()`）を通過して初めて実行される**
+- 既存Provider構成（Leader=OpenAI固定 / Writer・Reviewer・Strategy=Claude固定）は一切変更しない。AI GatewayはVersion2新規ドメイン専用の抽象化層
+- 課金・外部API契約・自動投稿・Instagram API接続は引き続きユーザー承認制（承認をバイパスする層ではない）
+
+### Version2 Core 推奨Phase構成（Decision 043・Phase53起点を維持）
+
+Affiliate Intelligence最優先（Decision 042）を維持したまま、7層Intelligence + AI Gateway v2を以下のPhaseへ配分する。**すべて`index.html`追加のみ・既存関数は読み取り専用参照・予測ヒューリスティック＋手動入力・Safetyバッジ固定・実API/課金なし**（Phase50-1 Decision 040の設計思想を踏襲）。
+
+| Phase | 内容 | 対応層 |
+|-------|------|--------|
+| **Phase53** | **Affiliate Intelligence Core**（16判断項目の器・案件データ構造・統合スコア・利益ランキング基盤）| Core |
+| Phase54 | Market Opportunity Intelligence | ① |
+| Phase55 | Product Intelligence | ② |
+| Phase56 | ASP Intelligence（Multi ASP Compare含む）| ③ |
+| Phase57 | Competition Intelligence | ④ |
+| Phase58 | Revenue Intelligence（利益率/承認率/EPC/CVR/案件寿命/想定売上・利益/将来性）| ⑤ |
+| Phase59 | Content Intelligence（保存率予測/クリック率予測・既存Instagramパイプライン連携）| ⑥ |
+| Phase60 | Self Improvement Intelligence（実績Learning→勝ちパターン→自動改善）| ⑦ |
+| Phase61 | AI Gateway v2（低コスト最適経路の自動選択・実行は承認ゲート維持）| Gateway |
+| Phase62 | Leader Integration（「今一番利益が出る案件は？」で全層を統合実行）| 統合 |
+
+（注: 既存の「Version2 開発順（Phase53〜57）」の Multi ASP Compare / Trend Intelligence / Revenue Optimization / AI Campaign Planner は、本Core設計の各Intelligence層へ統合・再配置する。Phase番号は実装着手時に最終確定する。）
+
+---
 
 ### Version2 開発順（Phase53〜57・Affiliate Intelligence最優先・Decision 042）
 

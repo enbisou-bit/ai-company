@@ -1,7 +1,26 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
+> 更新日: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Decision 044/045）
+
+---
+
+## Phase52-10: Version1 Final Complete（docsのみ・コード変更なし）
+
+> 記録日: 2026-07-05。**docsのみ更新・コード変更なし**（index.html/server.js/DB/Workflow/Provider無変更）。
+> 最新コミット: `f177fd2`（Phase52-8-9 mobile topbar unified scroll）— **Render本番反映済み・iPhone Safari実機確認完了**。
+
+- 正式Version: **v1.00-phase52-10 / Version1 Final Complete**
+- Version1を「運用可能な完成版」として正式完成と記録:
+  - Instagram収益化パイプライン完成（Phase50-1〜52-1）
+  - Mobile UI完成（52-5）／ Mobile Touch Hotfix完成（52-6）／ Mobile Topbar完成（52-8/52-9/52-9b）
+  - Render本番反映完了（ai-company-l45x.onrender.com = f177fd2）
+  - iPhone Safari実機確認完了（縦向き・横向きともTopbar 1本横スクロール・全ボタン操作可能・入力/送信可能・横はみ出しなし・PC不変）
+  - Manual Only維持（Instagram API/自動投稿/画像生成/課金なし）
+- 次工程: **Version1.01 Realtime Sync Edition**（PC/iPhone同一状態・Supabase同期）→ その後 Version2 Affiliate Intelligence（Decision 044・045）
+- Phase53（Affiliate Intelligence Core）は作業ツリーに未着手で温存（本Phaseには一切混ぜていない）
+
+---
 
 ## 現在地
 - 現在フェーズ: **Phase49-6 完了（Creative Asset Library）＝Creative Engineファミリー（Phase49-1〜49-6）完結**
@@ -36,6 +55,94 @@ Phase50-2〜52-1（すべてindex.htmlへ追加のみ・既存機能無変更・
 | Phase52-2 | Version1 Documentation Complete（docsのみ・コード変更なし） | v1.00-phase52-2 |
 
 各Phaseは新規パネルをindex.htmlへ追加し、`renderOutputEnginePanel()`のchain末尾（Creative Asset Library→Marketing Intelligence→Content Planning→Carousel Builder→Design System→Mobile Review→Mobile Approval→Publishing Ready→Learning Center→Asset Library Save の順）とMarkdown/JSON Exportへ接続。既存Provider構成・Workflow・Knowledge Chain・Learning Engine・Publishing Engine・Creative Asset Libraryは無変更（読み取り専用参照のみ）。
+
+---
+
+## Phase52-5 / 52-6: Mobile UI Polish & Touch Hotfix（実装済み・本番反映済み）
+
+> 記録日: 2026-07-05（記録漏れの遡及正式化）。**実装・コミット・Render本番反映まで完了済み**。
+> Git: コミット `a983c35 "Phase52-5-6 mobile ui polish and touch hotfix"` / Tag `v1.00-phase52-6-mobile-ui` / `git push origin main`（fast-forward）済み → Render自動デプロイ済み。`index.html`のみ・追加のみ・PC不変。
+
+### Phase52-5: Mobile UI Final Polish ✅
+- 目的: iPhone Safariのスマホ表示品質向上（機能追加なし・UIのみ・PC不変）。
+- `index.html`（追加のみ）:
+  - `<meta viewport>` に **`viewport-fit=cover`** を追加（safe-area env() を有効化。PCでは無効＝無害）。
+  - `@media (max-width:768px)` ブロック追加:
+    - `#topbar-quick` を横スクロール化（`flex:1 1 0`/`overflow-x:auto`/スクロールバー非表示、ボタン`flex-shrink:0`）→ 上部メニュー見切れ対策。
+    - `#current-info { flex:0 1 auto }`（クイックへ幅を譲る）／`#topbar-right { max-width:46vw }`（💰料金等を表示しつつ内部スクロール維持）→ ステータス見切れ対策。
+    - `#topbar`/`#mega-menu-nav`/`#input-area` に safe-area余白（top/left/right/bottom）→ ノッチ・ホームバー回避。
+    - `html { overflow-x:hidden }`（横スクロール抑制の保険）。
+- 検証: dev-check 200/200/200・配信CSS反映・インラインJS構文OK・`<style>`ブレース均衡・PC非影響（全て@media内＋metaはPC無効）。
+
+### Phase52-6: Mobile Touch Hotfix ✅
+- 目的/原因: Phase52-5で追加した **`html { overflow-x:hidden }` が iOS Safari でタッチ/横スクロール/入力欄タップを阻害**していたため補正（`body { overflow:hidden }` が既に横スクロールを抑制済みで、html側指定は不要かつ有害だった）。
+- `index.html`（追加のみ・Phase52-5は残し阻害要因のみ補正）: `@media (max-width:768px)` に Phase52-6ブロック追加:
+  - `html { overflow-x:visible }`（52-5のhiddenを後勝ちで無効化。横スクロール抑制は既存`body/#main`の`overflow:hidden`が担保）。
+  - `#topbar-quick, #mega-menu-nav` に `overflow-x:auto`＋`-webkit-overflow-scrolling:touch`＋`touch-action:pan-x`（横スワイプ復旧）。
+  - `#input-area { z-index:30; pointer-events:auto }`＋`#msg-input, #send-btn { pointer-events:auto; touch-action:manipulation }`（入力欄・送信タップ復旧。既存`position:sticky`は維持）。
+- 検証: dev-check 200/200/200・配信JSパースOK・html上書き順序OK（visibleが後勝ち）・CSSブレース均衡・PC非影響。
+- 禁止事項遵守: 親に`pointer-events:none`なし／透明fixedレイヤーで入力欄を覆わない／body全体のtouch-action制限なし。
+
+### Phase52-5/52-6 共通
+- 変更ファイル: `index.html` のみ。server.js/DB/Workflow/API/環境変数・既存関数は無変更。
+- PC影響: なし（CSSは全て`@media (max-width:768px)`内、`viewport-fit=cover`はPCで無効）。
+- 本番: `ai-company-l45x.onrender.com` に `a983c35` として反映済み（Render自動デプロイ）。
+
+---
+
+## Phase52-8 / 52-9 / 52-9b: Mobile Topbar 一連（iPhone上部UI最終調整）
+
+> 記録日: 2026-07-05。**index.htmlのみ・追加のみ・PC不変**。スマホ（iPhone Safari）の上部バーを段組み＋1本の横スクロールへ再設計。
+> 前提: 本番(Render)は `a983c35`（Phase52-5/52-6）まで反映済み。本一連（52-8/52-9/52-9b）は分離ステージ済みで**コミット予定メッセージ `Phase52-8-9 mobile topbar unified scroll`**（Phase53・docs・cost-logsは除外）。
+
+### 目的
+iPhone Safari（縦・横）で上部タブ（タスク/通知/Timeline/Brain/社長室/Auto Task/自律相談/課金ロック/料金）を、窮屈さ・見切れなく**1本の横スクロール**で自然に操作できるようにする。
+
+### 原因（段階的に判明）
+- Phase52-8時点: `#topbar`をスマホでも1段に3ブロック（現在担当＋`#topbar-quick`＋`#topbar-right`）で圧縮し窮屈だった。
+- Phase52-9時点: `#topbar-quick`と`#topbar-right`が**別`<div>`**のため、`display:contents`＋CSSだけではiOS Safariで1本に統合できず、実機で分断が残存。
+- さらに `@media (max-width:768px)` のみでは**iPhone横向き（幅>768px）に適用されず**PCレイアウトのままだった。
+
+### 変更ファイル
+`index.html` のみ（+232行・追加のみ／既存ルール・関数・Workflow・AIロジックは無変更）。
+
+### HTML変更
+- Phase52-9: `#topbar-quick`＋`#topbar-right`を薄いラッパ `<div id="tb-scroll">` で囲む（既存要素・id・onclick・バッジは無変更で内包するのみ）。
+- ※JSからこれらidへのロジック参照は無し（全てCSSセレクタ）を確認済み。
+
+### CSS変更
+- `#tb-scroll { display: contents; }`（base）… PCではラッパを透過し従来レイアウト完全維持。
+- Phase52-8ブロック `@media (max-width:768px)`: `#topbar{flex-wrap:wrap}` 段組み化。
+- Phase52-9ブロック `@media (max-width:768px)`: `#tb-scroll`をflex+overflow-x:autoで実体化（暫定）。
+- Phase52-9bブロック `@media (max-width:768px), (pointer:coarse)`: `#mobile-quickbar` を全幅1本の横スクロール（`overflow-x:auto` / `-webkit-overflow-scrolling:touch` / `touch-action:pan-x` / `scroll-snap-type:none`）。ボタンは `flex:0 0 auto` / `white-space:nowrap` / `min-width:max-content` / `height:32px`。safe-area(52-5)維持。
+- **`(pointer:coarse)` によりiPhone縦・横 両方に適用**（幅768超の横向きも網羅）。PCの`(pointer:fine)`では非適用。
+
+### JS変更
+- Phase52-9b: `</body>`直前に独立`<script>`で `buildMobileTopbar()` を追加。
+  - モバイル（`matchMedia('(pointer:coarse)')` または 幅≤768）のとき、`#topbar-quick`＋`#topbar-right`の**全9ボタンを実体ごと** `#mobile-quickbar` へ移動（onclick/id/バッジ保持）→物理的に1本化。旧`#tb-scroll`は`display:none`。
+  - PC（`pointer:fine`かつ幅>768）では何もしない。二重実行防止・try/catchで失敗時も既存UI維持。
+  - 既存関数・Workflow・AI社員ロジックは無変更（ボタン移動のみ）。
+
+### PCへの影響
+**なし**。CSSは全て`@media`内、`#tb-scroll`はPCで`display:contents`（透過）、JSは`pointer:fine`かつ幅>768で不発火。ブラウザ実測でPC相当（fine・>768）では`#mobile-quickbar`未生成・従来`#topbar-quick`/`#topbar-right`のまま。
+
+### iPhone縦向き対応（ブラウザ実描画375pxで実測）
+`#mobile-quickbar`に9ボタン集約／scrollWidth **827px** > clientWidth 355px（1本の横スクロール成立）／scrollLeft=472で末尾「料金」まで到達／旧`#tb-scroll`は`display:none`／3段構成（1段=☰＋担当／2段=統合バー／3段=カテゴリ）／入力欄中心の最前面=`msg-input`（被りなし）。
+
+### iPhone横向き対応
+`(pointer:coarse)`＋JSの`matchMedia('(pointer:coarse)')`により、**横向き（幅>768）でも同一UI**を適用。回転しても`#mobile-quickbar`維持（coarseは向きで変わらない）。※headless制約でcoarseエミュ不可のため、横向きの最終確認は実機に委ねる。
+
+### dev-check結果
+🟢 200/200/200。補助: インラインscript 2/2パースOK・DOMリペアレント・シミュレーション7/7・CSSブレース均衡・Phase53マーカー6件保持。
+
+### 未解決事項
+- 本番(Render)未反映（コミット/push前）。iPhone実機での最終目視確認は本番デプロイ後に必要。
+- headless環境では`pointer:coarse`をエミュできないため、横向きcoarse挙動はコード上の担保のみ（実機確認推奨）。
+- `#tb-scroll`の暫定スクロール指定（Phase52-9）は`#mobile-quickbar`導入後は不使用だが、追加のみ方針で残置（無害）。
+
+### 次フェーズへの引き継ぎ
+- 分離ステージ済み（Topbar 5ハンク・232行）。**Phase53(+380)・Version2設計docs・cost-logs系は未コミットで温存**。コミット→`git push origin main`（force無し/`--tags`無し）→Render自動デプロイ→iPhone実機確認、の順で反映する。
+- Phase53（Affiliate Intelligence Core）は引き続き作業ツリー保持。Version2着手時に別途コミット判断。
 
 ---
 

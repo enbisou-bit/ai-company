@@ -2,7 +2,48 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-05（Phase52-2 Version1 Documentation Complete・Instagram収益化パイプライン完成記録・Decision 041）
+更新日: 2026-07-05（Phase52-10 Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Decision 044/045）
+
+---
+
+## 【最重要】Version1 Final Complete（Phase52-10・運用可能な完成版）
+
+- **Version1 = Final Complete**。正式Version **v1.00-phase52-10**。最新コミット **f177fd2**（Phase52-8-9 mobile topbar unified scroll）
+- Mobile Topbar（52-8/52-9/52-9b）を **Render本番反映完了**（`ai-company-l45x.onrender.com` = f177fd2）＋ **iPhone Safari実機確認完了**（縦向き・横向きともTopbar 1本横スクロール・全ボタン操作可能・入力/送信可能・横はみ出しなし・PC不変）
+- Version1は「機能完成」だけでなく **運用可能な完成版**として正式完成（Decision 044）。Manual Only維持
+- **次工程 = Version1.01 Realtime Sync Edition**（PC/iPhoneで同一状態のAI会社。Task/Conversation/Timeline/Notification/Workflow Live/Cost/Learning/Approval/Auto Task/Status を **Supabase同期**）
+- **Version2（Affiliate Intelligence / Phase53）は Version1.01 完成後に開始**する（Decision 045）。Version2着手前にRealtime同期を優先する。**Phase53開始前に必ずユーザー確認を取ること**
+- 作業ツリー: Phase53 Affiliate Intelligence Core（index.html未ステージ +380行）は**未着手で温存**。cost-logs.json / claude-cost-logs.json / claude-quality-history.json は方針未決定のまま据え置き
+- Phase52-10はdocsのみ更新（コード変更なし）
+
+---
+
+## 【Version2 全体設計 正式反映済み（Decision 043）】
+
+- Version2テーマ: **Instagram Affiliate Intelligence Company**（何を売れば利益が最大かをAI会社全体が判断）
+- Version2 Core = **Affiliate Intelligence Core（7層Intelligence）**: ① Market Opportunity → ② Product → ③ ASP → ④ Competition → ⑤ Revenue → ⑥ Content → ⑦ Self Improvement Intelligence
+- AI Gateway正式構成: `Leader → Affiliate Intelligence → AI Gateway → { OpenAI / Claude / Browser Automation / PC Automation / 将来API }`（最も低コストで最適な実行方法を自動選択。実行系は承認ゲート維持）
+- 到達目標16項目・Phase配分（Phase53 Core → 〜 Phase62 Leader Integration）は [docs/04ROADMAP.md](04ROADMAP.md)「Version2 Core 全体設計」/ Decision 043 参照
+- **次工程: Phase53 Affiliate Intelligence Core**（index.html追加のみ・既存無変更・予測ヒューリスティック＋手動入力・Safetyバッジ固定・実API/課金/自動投稿/server.js変更/DB変更なし）
+- 設計反映のみ完了。実装は未着手
+
+---
+
+## 【Mobile UI（Phase52-5 / 52-6）実装済み・本番反映済み】
+
+- **Phase52-5 Mobile UI Final Polish**: `<meta viewport>`に`viewport-fit=cover`追加＋`@media (max-width:768px)`で`#topbar-quick`横スクロール化・`#topbar-right` max-width:46vw・safe-area余白・`html{overflow-x:hidden}`。スマホ表示品質向上（機能追加なし・PC不変）。
+- **Phase52-6 Mobile Touch Hotfix**: 52-5の`html{overflow-x:hidden}`がiOS Safariでタッチ/横スクロール/入力を阻害したため補正（`html{overflow-x:visible}`＝body/#mainのoverflow:hiddenで横スクロール抑制は担保／`#topbar-quick`・`#mega-menu-nav`にtouch-action:pan-x＋-webkit-overflow-scrolling／入力欄・送信のpointer-events/touch-action復旧）。
+- 変更: `index.html`のみ・追加のみ・PC不変。詳細は [docs/02PHASE_PROGRESS.md](02PHASE_PROGRESS.md)「Phase52-5 / 52-6」参照。
+- **Git: コミット `a983c35 "Phase52-5-6 mobile ui polish and touch hotfix"` / Tag `v1.00-phase52-6-mobile-ui` / push済み → Render本番反映済み**（`ai-company-l45x.onrender.com`）。
+
+---
+
+## 【Mobile Topbar UI（Phase52-8 / 52-9 / 52-9b）】
+
+- iPhone上部バーを段組み＋1本の横スクロールへ再設計（`index.html`のみ・PC不変・追加のみ）。詳細は [docs/02PHASE_PROGRESS.md](02PHASE_PROGRESS.md)「Phase52-8 / 52-9 / 52-9b」参照。
+- 実装: HTMLラッパ `#tb-scroll`（PCは`display:contents`透過）＋ `@media (max-width:768px),(pointer:coarse)` CSS ＋ JS `buildMobileTopbar()`（モバイル時に9ボタンを`#mobile-quickbar`へ実体移動＝1本の横スクロール）。ブラウザ実描画375pxで9ボタン統合・末尾到達を実測。
+- 本番反映: **分離ステージ済み（Topbar 5ハンク・232行）。コミット予定 `Phase52-8-9 mobile topbar unified scroll` → `git push origin main`（force無し/`--tags`無し）→ Render**。Phase53(+380)・Version2設計docs・cost-logsは**未コミットで温存**。
+- 本番URL `ai-company-l45x.onrender.com` は現状 `a983c35`（Phase52-5/6）まで＝上部バー再設計は**未反映**。デプロイ後に実機確認が必要。
 
 ---
 
@@ -268,7 +309,15 @@ ENBISOU AI COMPANY は「チャットを返すAI」ではない。
 
 ## 次にやること
 
-### Priority 0: Phase50-1 — Instagram Marketing Intelligence（Decision 039で優先順位変更）
+### Priority 0（最新）: Version1.01 Realtime Sync Edition（Version2着手前に優先・Decision 045）
+
+Version1 Final Complete（Decision 044）後の最優先は **Version1.01 Realtime Sync Edition**。目的は「PC / iPhone どちらから利用しても同じAI会社になること」。すべてSupabaseを利用し、PCとスマホが同一状態になることを目的とする。
+
+同期対象: Task同期 / Conversation同期 / Timeline同期 / Notification同期 / Workflow Live同期 / Cost同期 / Learning同期 / Approval同期 / Auto Task同期 / Status同期。
+
+Version2（Affiliate Intelligence / Phase53）はVersion1.01完成後に開始する。Version2着手前にRealtime同期を優先し、**Phase53開始前に必ずユーザー確認を取る**。詳細は docs/04ROADMAP.md「Version1.01 Realtime Sync Edition」/ Decision 045 を参照。
+
+### Priority 0（旧・完了済み）: Phase50-1 — Instagram Marketing Intelligence（Decision 039で優先順位変更）
 
 目的：
 保存率分析 / リーチ分析 / プロフィール遷移分析 / フォロー率分析 / CTA分析 / ハッシュタグ分析 / 投稿時間分析 / カルーセル分析 / リール分析 / 競合分析 / トレンド分析。Instagram実運用を開始し、Learningを蓄積しながらVersion1（Instagramを毎日運用できること）を完成させる。
