@@ -5427,6 +5427,71 @@
     font-weight: bold;
   }
 
+  /* Phase52-11.8c: 案件タブ削除ボタン + 横スクロール明示（追加のみ） */
+  .case-nav { flex-wrap: nowrap; }
+  .case-tab-wrap { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .case-tab-wrap .case-tab { border-radius: 12px 0 0 12px; }
+  .case-tab-wrap.active .case-tab { background: rgba(0,212,255,0.15); border-color: rgba(0,212,255,0.5); color: #00d4ff; font-weight: bold; }
+  .case-del-btn {
+    padding: 3px 7px; border-radius: 0 12px 12px 0; font-size: 11px; line-height: 1;
+    border: 1px solid rgba(255,255,255,0.15); border-left: none;
+    background: rgba(255,90,90,0.10); color: rgba(255,150,150,0.85);
+    cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  }
+  .case-del-btn:hover { background: rgba(255,90,90,0.28); color: #fff; }
+
+  /* Phase52-11.8d: 案件カード一覧画面（🕒 最新一覧クリックで表示・追加のみ） */
+  .case-list-screen { padding: 14px 16px; max-width: 720px; margin: 0 auto; }
+  .case-list-head { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.85); margin-bottom: 10px; }
+  .case-list-empty { font-size: 12px; color: rgba(255,255,255,0.45); padding: 20px 0; text-align: center; }
+  .case-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .case-card-title { font-size: 13px; font-weight: 700; color: rgba(0,212,255,0.95); margin-bottom: 6px; word-break: break-word; }
+  .case-card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10px; color: rgba(255,255,255,0.55); margin-bottom: 6px; }
+  .case-card-snippet { font-size: 11px; color: rgba(255,255,255,0.6); line-height: 1.5; margin-bottom: 10px; word-break: break-word; }
+  .case-card-actions { display: flex; gap: 8px; }
+  .case-card-open, .case-card-del { padding: 5px 16px; border-radius: 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+  .case-card-open { border: 1px solid rgba(0,212,255,0.4); background: rgba(0,212,255,0.12); color: rgba(120,220,255,0.95); }
+  .case-card-open:hover { background: rgba(0,212,255,0.25); }
+  .case-card-del { border: 1px solid rgba(255,90,90,0.35); background: rgba(255,90,90,0.10); color: rgba(255,150,150,0.9); }
+  .case-card-del:hover { background: rgba(255,90,90,0.25); color: #fff; }
+  @media (max-width: 768px) { .case-list-screen { padding: 12px; } }
+
+  /* ── Phase52-11.8: 新規案件作成バー（追加のみ） ── */
+  #new-case-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 6px 12px; background: rgba(0,0,0,0.22);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    flex-shrink: 0;                 /* Phase52-11.8b: flex列で潰れず常時表示を保証 */
+  }
+  #go-home-btn {
+    padding: 4px 12px; border-radius: 12px; font-size: 11px; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85); cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+  }
+  #go-home-btn:hover { background: rgba(255,255,255,0.16); }
+  #new-case-btn {
+    padding: 4px 12px; border-radius: 12px; font-size: 11px; white-space: nowrap;
+    border: 1px solid rgba(120,220,220,0.4); background: rgba(60,200,200,0.12);
+    color: rgba(150,230,230,0.95); cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+  }
+  #new-case-btn:hover { background: rgba(60,200,200,0.25); }
+  #new-case-form { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
+  #new-case-form input, #new-case-form select {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 8px; color: rgba(255,255,255,0.9); font-size: 11px; padding: 4px 8px;
+  }
+  #new-case-name { width: 140px; max-width: 40vw; }
+  #new-case-form button {
+    padding: 4px 10px; border-radius: 10px; font-size: 11px; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85); cursor: pointer;
+  }
+  #new-case-form button.nc-create { border-color: rgba(120,220,220,0.4); background: rgba(60,200,200,0.15); color: rgba(150,230,230,0.95); }
+  @media (max-width: 768px) {
+    #new-case-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+    #new-case-name { width: 110px; }
+  }
+
   /* ── 提案ボタン + タスク化 ── */
   .suggestion-btn-row {
     display: flex;
@@ -6940,6 +7005,27 @@
     </div>
   </div>
 
+  <!-- Phase52-11.8: 新規案件作成バー（追加のみ・案件タブの上に常時表示） -->
+  <div id="new-case-bar">
+    <button id="go-home-btn" onclick="goHome()" title="ホーム（担当未選択画面）へ戻る">🏠 ホーム</button>
+    <button id="new-case-btn" onclick="showNewCaseForm()">＋ 新規案件</button>
+    <div id="new-case-form">
+      <input id="new-case-name" type="text" placeholder="案件名" maxlength="40"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();createNewCaseFromForm();}">
+      <select id="new-case-template">
+        <option value="free">自由</option>
+        <option value="instagram">Instagram運用</option>
+        <option value="a8">A8登録</option>
+        <option value="flyer">チラシ制作</option>
+        <option value="lp">LP制作</option>
+        <option value="web">Web導線</option>
+        <option value="sales">営業</option>
+        <option value="estimate">見積</option>
+      </select>
+      <button class="nc-create" onclick="createNewCaseFromForm()">作成</button>
+      <button onclick="hideNewCaseForm()">キャンセル</button>
+    </div>
+  </div>
   <div id="case-nav-container"></div>
   <div id="chat-area">
     <div id="empty-state">
@@ -8085,6 +8171,8 @@ function reRenderChatArea(m) {
   const chat = document.getElementById('chat-area');
   if (!chat) return;
   chat.innerHTML = '';
+  // Phase52-11.8d: 案件カード一覧ビュー
+  if (memberCaseView[m.id] === '__caselist__') { renderCaseListScreen(m.id); return; }
   const filtered = getFilteredHistory(m.id);
   if (filtered.length === 0) {
     addBubble('ai', `${m.role}として対応します。ご相談をどうぞ。`, m, false);
@@ -8401,7 +8489,10 @@ async function selectMember(m) {
   // 案件ナビを描画
   renderCaseNav(m.id);
 
-  if (!chatHistory[m.id] || chatHistory[m.id].length === 0) {
+  if (memberCaseView[m.id] === '__caselist__') {
+    // Phase52-11.8d: 案件カード一覧ビュー
+    renderCaseListScreen(m.id);
+  } else if (!chatHistory[m.id] || chatHistory[m.id].length === 0) {
     chatHistory[m.id] = [];
     addBubble('ai', greetings[m.id] || `${m.role}として対応します。ご相談をどうぞ。`, m, false);
   } else {
@@ -8949,8 +9040,11 @@ async function sendMessage() {
   // 履歴にユーザーメッセージ追加
   if (!chatHistory[currentMember.id]) chatHistory[currentMember.id] = [];
   const userTs = new Date().toISOString();
-  chatHistory[currentMember.id].push({ role: 'user', content: text, timestamp: userTs });
+  chatHistory[currentMember.id].push({ role: 'user', content: text, timestamp: userTs, caseId: _ncActiveCaseId(currentMember.id) });
   saveToStorage();
+  // Phase52-11.8c: 送信した案件を最終更新日時で先頭へ並べ替え
+  const _activeCaseOnSend = _ncActiveCaseId(currentMember.id) || (getCasesForMember(currentMember.id)[0] || {}).id;
+  if (_activeCaseOnSend) { touchCase(_activeCaseOnSend); renderCaseNav(currentMember.id); }
   updateDeleteBtn();
   addBubble('user', text, currentMember, false, false, userTs);
 
@@ -8998,7 +9092,7 @@ async function sendMessage() {
       _lastAiReply = safeReply;
 
       // ① 返信を先に描画（ここより後の例外が返信表示を妨げない）
-      chatHistory[currentMember.id].push({ role: 'assistant', content: safeReply, suggestions, timestamp: aiTs });
+      chatHistory[currentMember.id].push({ role: 'assistant', content: safeReply, suggestions, timestamp: aiTs, caseId: _ncActiveCaseId(currentMember.id) });
       saveToStorage();
       updateDeleteBtn();
       addBubble('ai', safeReply, currentMember, false, true, aiTs);
@@ -11509,14 +11603,16 @@ function createCase(userText, memberIds) {
   const title = userText.length > 20 ? userText.slice(0, 20) + '…' : userText;
   // Leader も常に案件に含める
   const allIds = memberIds.includes('leader') ? memberIds : ['leader', ...memberIds];
-  cases[id] = { id, title, ts: new Date().toISOString(), memberIds: allIds, userText };
+  const _now = new Date().toISOString();
+  cases[id] = { id, title, ts: _now, updatedAt: _now, memberIds: allIds, userText }; // Phase52-11.8c: updatedAt追加
   saveCases();
   return id;
 }
 function getCasesForMember(memberId) {
   const all = Object.values(cases)
     .filter(c => c.memberIds && c.memberIds.includes(memberId))
-    .sort((a, b) => b.ts.localeCompare(a.ts));
+    // Phase52-11.8c: 最終更新日時（updatedAt。無ければ作成ts）の新しい順に並べる
+    .sort((a, b) => (b.updatedAt || b.ts).localeCompare(a.updatedAt || a.ts));
   // 正規化後に同一テキストは最新1件のみ残す
   const seen = new Set();
   return all.filter(c => {
@@ -11544,18 +11640,28 @@ function renderCaseNav(memberId) {
 
   // 「最新」タブ
   const latestTab = document.createElement('button');
-  latestTab.className = 'case-tab' + (memberCaseView[memberId] === 'latest' || !memberCaseView[memberId] ? ' active' : '');
-  latestTab.textContent = '最新';
-  latestTab.onclick = () => switchCase(memberId, 'latest');
+  latestTab.className = 'case-tab' + ((memberCaseView[memberId] === 'latest' || memberCaseView[memberId] === '__caselist__' || !memberCaseView[memberId]) ? ' active' : '');
+  latestTab.textContent = '🕒 最新一覧';   // Phase52-11.8c: 案件名でなく全案件ビューと分かる名称へ
+  latestTab.onclick = () => switchCase(memberId, '__caselist__');   // Phase52-11.8d: 案件カード一覧を表示
   nav.appendChild(latestTab);
 
   memberCases.forEach(c => {
+    // Phase52-11.8c: 案件タブ＋削除ボタンをまとめたラッパ（追加のみ）
+    const wrap = document.createElement('span');
+    wrap.className = 'case-tab-wrap' + (memberCaseView[memberId] === c.id ? ' active' : '');
     const tab = document.createElement('button');
     tab.className = 'case-tab' + (memberCaseView[memberId] === c.id ? ' active' : '');
     tab.textContent = c.title;
     tab.title = c.userText;
     tab.onclick = () => switchCase(memberId, c.id);
-    nav.appendChild(tab);
+    const del = document.createElement('button');
+    del.className = 'case-del-btn';
+    del.textContent = '×';
+    del.title = '案件を削除';
+    del.onclick = (e) => { e.stopPropagation(); deleteCase(memberId, c.id); };
+    wrap.appendChild(tab);
+    wrap.appendChild(del);
+    nav.appendChild(wrap);
   });
 
   container.appendChild(nav);
@@ -11563,8 +11669,161 @@ function renderCaseNav(memberId) {
 function switchCase(memberId, caseId) {
   memberCaseView[memberId] = caseId;
   if (currentMember && currentMember.id === memberId) {
-    selectMember(currentMember);
+    selectMember(currentMember);         // 既存呼び出し維持（同一メンバーは早期returnでno-op）
+    // Phase52-11.8c: selectMemberが同一メンバーで早期returnし再描画されない問題を補修（追加のみ）
+    renderCaseNav(memberId);             // タブのactive状態を更新
+    reRenderChatArea(currentMember);     // 選択案件の内容へ確実に再描画
   }
+}
+// Phase52-11.8c: 案件の最終更新日時を更新（先頭へ並べ替え用・localStorage cases のみ・履歴は不変）
+function touchCase(caseId) {
+  if (!caseId || caseId === 'latest') return;
+  if (cases[caseId]) { cases[caseId].updatedAt = new Date().toISOString(); saveCases(); }
+}
+// Phase52-11.8c: 案件削除（ユーザー操作のみ・確認ダイアログ付き・会話履歴は削除しない）
+function deleteCase(memberId, caseId) {
+  if (!caseId || caseId === 'latest') return;   // 全案件ビューは削除不可
+  const c = cases[caseId];
+  const nm = c ? (c.title || c.userText || '案件') : '案件';
+  if (!confirm(`案件「${nm}」を削除しますか？\nこの操作は元に戻せません。`)) return;
+  delete cases[caseId];                          // 案件メタデータのみ削除（chatHistory/Supabaseの履歴は保持）
+  saveCases();
+  if (memberCaseView[memberId] === caseId) memberCaseView[memberId] = 'latest'; // 見ていた案件なら最新一覧へ
+  renderCaseNav(memberId);
+  if (currentMember && currentMember.id === memberId) reRenderChatArea(currentMember);
+}
+// Phase52-11.8d: 日時を読みやすい形へ整形（表示専用）
+function _ncFormatTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// Phase52-11.8d: 案件カード一覧をチャット欄に描画（最終更新順・開く/削除つき・追加のみ）
+function renderCaseListScreen(memberId) {
+  const chat = document.getElementById('chat-area');
+  if (!chat) return;
+  chat.innerHTML = '';
+  const list = getCasesForMember(memberId);   // 最終更新日時の新しい順
+  const wrap = document.createElement('div');
+  wrap.className = 'case-list-screen';
+  const head = document.createElement('div');
+  head.className = 'case-list-head';
+  head.textContent = `📋 案件一覧（${list.length}件）`;
+  wrap.appendChild(head);
+  if (list.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'case-list-empty';
+    empty.textContent = '案件はまだありません。「＋新規案件」から作成できます。';
+    wrap.appendChild(empty);
+  } else {
+    list.forEach(c => {
+      const msgs = (chatHistory[memberId] || []).filter(h => h.caseId === c.id);
+      const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
+      const snippet = lastMsg ? String(lastMsg.content || '').replace(/\s+/g, ' ').slice(0, 40) : '（メッセージなし）';
+      const tplLabel = NEW_CASE_TEMPLATE_LABELS[c.template] || '自由';
+      const updated = _ncFormatTime(c.updatedAt || c.ts);
+      const card = document.createElement('div');
+      card.className = 'case-card';
+      card.innerHTML =
+        `<div class="case-card-title">${escapeHtml(c.title || c.userText || '案件')}</div>` +
+        `<div class="case-card-meta">` +
+          `<span class="case-card-tpl">🏷 ${escapeHtml(tplLabel)}</span>` +
+          `<span class="case-card-time">🕒 ${escapeHtml(updated)}</span>` +
+          `<span class="case-card-owner">👤 Leader</span>` +
+        `</div>` +
+        `<div class="case-card-snippet">${escapeHtml(snippet)}</div>`;
+      const actions = document.createElement('div');
+      actions.className = 'case-card-actions';
+      const openBtn = document.createElement('button');
+      openBtn.className = 'case-card-open';
+      openBtn.textContent = '開く';
+      openBtn.onclick = () => switchCase(memberId, c.id);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'case-card-del';
+      delBtn.textContent = '削除';
+      delBtn.onclick = () => deleteCase(memberId, c.id);
+      actions.appendChild(openBtn);
+      actions.appendChild(delBtn);
+      card.appendChild(actions);
+      wrap.appendChild(card);
+    });
+  }
+  chat.appendChild(wrap);
+  chat.scrollTop = 0;
+}
+
+// ── Phase52-11.8: 新規案件作成UI（追加のみ・既存 createCase / localStorage cases を流用） ──
+const NEW_CASE_TEMPLATE_LABELS = {
+  free: '自由', instagram: 'Instagram運用', a8: 'A8登録', flyer: 'チラシ制作',
+  lp: 'LP制作', web: 'Web導線', sales: '営業', estimate: '見積',
+};
+function showNewCaseForm() {
+  const f = document.getElementById('new-case-form');
+  const b = document.getElementById('new-case-btn');
+  if (f) f.style.display = 'flex';
+  if (b) b.style.display = 'none';
+  const n = document.getElementById('new-case-name');
+  if (n) { n.value = ''; try { n.focus(); } catch {} }
+}
+function hideNewCaseForm() {
+  const f = document.getElementById('new-case-form');
+  const b = document.getElementById('new-case-btn');
+  if (f) f.style.display = 'none';
+  if (b) b.style.display = 'inline-block';
+}
+function _ncFindMember(id) {
+  for (const cat of (CATEGORIES || [])) {
+    const m = (cat.members || []).find(x => x && x.id === id);
+    if (m) return m;
+  }
+  return null;
+}
+// 特定案件ビュー選択中のみ その caseId を返す（'最新'/未選択は undefined＝既存挙動のまま）
+function _ncActiveCaseId(memberId) {
+  const v = memberCaseView[memberId];
+  return (v && v !== 'latest' && v !== '__caselist__') ? v : undefined;
+}
+async function createNewCaseFromForm() {
+  const nameEl = document.getElementById('new-case-name');
+  const tplEl  = document.getElementById('new-case-template');
+  const template = (tplEl && tplEl.value) || 'free';
+  const tplLabel = NEW_CASE_TEMPLATE_LABELS[template] || '自由';
+  let name = ((nameEl && nameEl.value) || '').trim();
+  if (!name) name = (template === 'free') ? '新規案件' : tplLabel;
+  // 既存 createCase を利用（Leaderを常に含む・localStorage cases に保存・重複タイトルは既存を返す）
+  const caseId = createCase(name, ['leader']);
+  if (cases[caseId]) { cases[caseId].template = template; saveCases(); }
+  touchCase(caseId);   // Phase52-11.8c: 作成/再選択した案件を最終更新順で先頭へ
+  const leaderM = _ncFindMember('leader');
+  if (!leaderM) { hideNewCaseForm(); return; }
+  memberCaseView['leader'] = caseId;               // 作成案件を初期担当Leaderで自動選択
+  if (!currentMember || currentMember.id !== 'leader') {
+    await selectMember(leaderM);                    // Leaderへ切替（未選択/別担当時）
+  }
+  memberCaseView['leader'] = caseId;               // selectMember後も最新ビューへ戻さない
+  renderCaseNav('leader');                          // 新タブを追加＆アクティブ化
+  reRenderChatArea(leaderM);                        // 新案件（空）を描画
+  addBubble('ai', `新規案件「${name}」を作成しました。ご相談をどうぞ。`, leaderM, false);
+  hideNewCaseForm();
+}
+// ── Phase52-11.8b: ホームへ戻る（担当未選択のホーム画面へ・追加のみ・更新不要） ──
+function goHome() {
+  currentMember = null;
+  hideNewCaseForm();
+  document.querySelectorAll('.member-btn').forEach(b => b.classList.remove('active'));
+  const av = document.getElementById('current-avatar'); if (av) av.textContent = '🏢';
+  const nm = document.getElementById('cn-name');        if (nm) nm.textContent = 'メンバーを選択';
+  const rl = document.getElementById('cn-role');        if (rl) rl.textContent = '左のメニューから担当を選んでください';
+  const cnc = document.getElementById('case-nav-container'); if (cnc) cnc.innerHTML = '';
+  const chat = document.getElementById('chat-area');
+  if (chat) {
+    chat.innerHTML = '<div id="empty-state"><div class="logo-big">🏢</div><p>縁美創 AI COMPANY</p><p style="font-size:11px">左のメンバーを選んで会話を始めてください</p></div>';
+  }
+  const inp = document.getElementById('msg-input'); if (inp) { inp.value = ''; inp.disabled = true; inp.placeholder = 'メンバーを選択してください'; }
+  const sb = document.getElementById('send-btn');   if (sb) sb.disabled = true;
+  try { closeSidebar(); } catch {}
 }
 function getFilteredHistory(memberId) {
   const all = chatHistory[memberId] || [];
