@@ -8125,8 +8125,8 @@ async function restoreHistoryFromServer() {
       const srvLatest = normalizeMessageTime(serverHistory[serverHistory.length - 1].timestamp);
       const localLatest = normalizeMessageTime(((chatHistory[memberId] || []).filter(h => h.timestamp).pop() || {}).timestamp);
       console.log(`[restore] ${memberId} srvLatest=${srvLatest} localLatest=${localLatest}`);
-      if (srvLatest > localLatest) {
-        chatHistory[memberId] = serverHistory;
+      // Phase52-11.4: REPLACEをやめMERGEへ統一（PCローカルtsが新しくてもサーバー最新を取りこぼさない）
+      if (mergeServerHistory(memberId, serverHistory)) {
         updatedIds.push(memberId);
       }
     } catch (e) {
@@ -8441,13 +8441,10 @@ async function selectMember(m) {
       if (!d.ok || !Array.isArray(d.messages) || d.messages.length === 0) return;
       const srv = d.messages.map(msg => ({ role: msg.sender, content: msg.content, timestamp: msg.created_at }));
       if (srv.length === 0) return;
-      // タイムスタンプで比較：数値化して比較（+00:00 と Z の形式差を吸収・Phase52-11.1）
-      const srvLatest = normalizeMessageTime(srv[srv.length - 1].timestamp);
-      const localLatest = normalizeMessageTime(((chatHistory[m.id] || []).filter(h => h.timestamp).pop() || {}).timestamp);
-      if (srvLatest <= localLatest) return;
-      chatHistory[m.id] = srv;
-      saveToStorage();
-      reRenderChatArea(m);
+      // Phase52-11.4: REPLACEをやめMERGEへ統一（取りこぼし防止・差分追加時のみ再描画）
+      if (mergeServerHistory(m.id, srv)) {
+        reRenderChatArea(m);
+      }
     })
     .catch(() => {});
 
