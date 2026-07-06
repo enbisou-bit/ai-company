@@ -9004,11 +9004,14 @@ async function sendMessage() {
       addBubble('ai', safeReply, currentMember, false, true, aiTs);
 
       // Supabase へ非同期保存（失敗してもチャットに影響しない）
+      // Phase52-11.7: user保存の確定後に assistant を保存＝サーバー created_at の逆転(原因1)を防止
       const _mid = currentMember.id;
       fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: _mid, sender: 'user',      content: text,  channel: 'web' }) }).catch(() => {});
-      fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: _mid, sender: 'assistant', content: reply, channel: 'web' }) }).catch(() => {});
+        body: JSON.stringify({ memberId: _mid, sender: 'user',      content: text,  channel: 'web' }) })
+        .catch(() => {})
+        .then(() => fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memberId: _mid, sender: 'assistant', content: reply, channel: 'web' }) }))
+        .catch(() => {});
 
       // 案件記憶：現在案件に提案を保存
       const activeCaseId = memberCaseView[_mid] || (getCasesForMember(_mid)[0] || {}).id;
