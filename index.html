@@ -8159,36 +8159,35 @@ function normalizeMessageTime(value) {
   return isNaN(t) ? 0 : t;
 }
 
-// サーバー履歴を chatHistory[memberId] へ安全に統合（丸ごと置換しない・Phase52-11.1）。
-//   重複判定 = 同一sender + 同一(簡易正規化)content + 時刻差3秒以内（timestamp形式差を吸収）。
-//   assistantは local safeReply と server raw reply の空白差を trim+空白圧縮で吸収して比較。
-//   timestampの無いローカル旧履歴は同一扱いでサーバー時刻を吸収。新規追加時のみ true を返す。
+// サーバー履歴を chatHistory[memberId] へ安全に統合（丸ごと置換しない・Phase52-11.1 / 52-11.5）。
+//   重複判定 = 同一sender + 同一(強正規化)content + 時刻差10秒以内（クライアントZ と サーバー+00:00 の
+//   クロックずれを吸収）。content正規化は 全角スペース→半角 / 連続空白・改行→1つ / 前後trim。
+//   さらに merge後に自己重複除去を行い、既存localStorageに溜まった重複も掃除する。
+//   timestampの無いローカル旧履歴は同一扱いでサーバー時刻を吸収。表示が変わる時のみ true を返す。
 function mergeServerHistory(memberId, serverHistory) {
   if (!memberId || !Array.isArray(serverHistory) || serverHistory.length === 0) return false;
   const local = Array.isArray(chatHistory[memberId]) ? chatHistory[memberId].slice() : [];
   const localBefore = local.length;
-  const CONV_DEDUP_TOLERANCE_MS = 3000; // 同一sender・同一contentで時刻差がこの範囲内なら同一メッセージ
+  const CONV_DEDUP_TOLERANCE_MS = 10000; // 同一sender・同一contentで時刻差がこの範囲内なら同一（Phase52-11.5で3s→10s）
   const senderOf = h => (h && (h.role || h.sender)) || '';
-  // 比較専用の簡易正規化（trim + 連続空白を1つに）。保存内容は変更しない。
-  const normContent = h => String((h && h.content) != null ? h.content : '').trim().replace(/\s+/g, ' ');
+  // 比較専用の強正規化（全角スペース→半角 / 連続空白・改行→1つ / 前後trim）。保存内容は変更しない。
+  const normContent = h => String((h && h.content) != null ? h.content : '')
+    .replace(/　/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const timeOf = h => normalizeMessageTime(h && (h.timestamp || h.created_at));
+  // 同一メッセージ判定（sender一致・content一致・時刻差10秒以内、片方timestamp無しは同一扱い）
+  const isSame = (a, b) => {
+    if (senderOf(a) !== senderOf(b)) return false;
+    if (normContent(a) !== normContent(b)) return false;
+    const ta = timeOf(a), tb = timeOf(b);
+    if (ta === 0 || tb === 0) return true;
+    return Math.abs(ta - tb) <= CONV_DEDUP_TOLERANCE_MS;
+  };
   let added = 0, upgraded = 0;
   serverHistory.forEach(sh => {
-    const norm = {
-      role: sh.role || sh.sender,
-      content: sh.content,
-      timestamp: sh.timestamp || sh.created_at || null,
-    };
-    const nSender = senderOf(norm);
-    const nContent = normContent(norm);
-    const nTime = normalizeMessageTime(norm.timestamp);
-    // 既存ローカルに「同一sender・同一content・時刻差3秒以内 or ローカルtimestamp無し」があれば重複
-    const dupIdx = local.findIndex(h => {
-      if (senderOf(h) !== nSender) return false;
-      if (normContent(h) !== nContent) return false;
-      const ht = normalizeMessageTime(h.timestamp || h.created_at);
-      if (ht === 0) return true;                    // timestamp無しローカル旧履歴 → 同一扱い
-      return Math.abs(ht - nTime) <= CONV_DEDUP_TOLERANCE_MS;
-    });
+    const norm = { role: sh.role || sh.sender, content: sh.content, timestamp: sh.timestamp || sh.created_at || null };
+    const dupIdx = local.findIndex(h => isSame(h, norm));
     if (dupIdx >= 0) {
       const h = local[dupIdx];
       if (!(h.timestamp || h.created_at) && norm.timestamp) { h.timestamp = norm.timestamp; upgraded++; } // 旧履歴へ時刻を吸収
@@ -8197,10 +8196,21 @@ function mergeServerHistory(memberId, serverHistory) {
     local.push(norm);
     added++;
   });
-  if (added === 0 && upgraded === 0) return false;
+  // 自己重複除去：既存localStorageに残った重複も掃除（先頭優先で保持・timestampは吸収）
+  const deduped = [];
+  local.forEach(h => {
+    const dup = deduped.find(d => isSame(d, h));
+    if (dup) {
+      if (!(dup.timestamp || dup.created_at) && (h.timestamp || h.created_at)) dup.timestamp = h.timestamp || h.created_at;
+      return;
+    }
+    deduped.push(h);
+  });
+  const removed = local.length - deduped.length;
+  if (added === 0 && upgraded === 0 && removed === 0) return false;
   // 数値時刻で安定ソート（timestamp無しは直前メッセージの時刻を継承して順序を保つ）
   let carry = 0;
-  const decorated = local.map((h, i) => {
+  const decorated = deduped.map((h, i) => {
     let t = normalizeMessageTime(h.timestamp || h.created_at);
     if (t === 0) t = carry; else carry = t;
     return { h, t, i };
@@ -8208,8 +8218,8 @@ function mergeServerHistory(memberId, serverHistory) {
   decorated.sort((a, b) => (a.t - b.t) || (a.i - b.i));
   chatHistory[memberId] = decorated.map(d => d.h);
   saveToStorage();
-  console.log(`[conv-sync] merge member=${memberId} local=${localBefore} server=${serverHistory.length} added=${added}`);
-  return added > 0; // 新規メッセージ追加時のみ再描画対象（時刻吸収のみなら表示不変）
+  console.log(`[conv-sync] merge member=${memberId} local=${localBefore} server=${serverHistory.length} added=${added} removed=${removed}`);
+  return (added > 0 || removed > 0); // 追加または重複除去で表示が変わる時のみ再描画
 }
 
 // 現在選択中メンバーのサーバー履歴をpullしてmerge。差分がある時のみ再描画。
