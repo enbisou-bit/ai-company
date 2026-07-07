@@ -2,11 +2,45 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-07（Phase52-11.9 案件メタデータSupabase同期 A案 完了・commit済み・push承認待ち）
+更新日: 2026-07-07（Phase52-12.0 ホーム案件一覧化＋削除後挙動改善 完了・commit済み・push承認待ち）
 
 ---
 
-## 【現在地・最優先】Phase52-11.9 Complete（案件メタデータSupabase同期 A案 完了・push前）
+## 【現在地・最優先】Phase52-12.0 Complete（ホーム案件一覧化＋削除後挙動改善 完了・push前）
+
+- 現在Version: **Version1 / Phase52-12.0 Complete**（ホーム案件一覧化＋削除後挙動改善）
+- Commit: **7e1568c**（`Phase52-12.0 home case list and delete return behavior`）
+- 本番: **未反映（push承認待ち）**。localhost 実画面確認 + dev-check 200/200/200 で確認済み
+
+### 現在地
+**Phase52-12.0 完了（index.htmlのみ・追加のみ）**。ホーム画面の案件一覧化と、案件削除後の画面挙動改善。**server.js / lib / DB / API 無変更**・Phase53混入なし。
+
+### 実装（index.htmlのみ）
+- `renderHomeCaseList()` / `_homeOpenCase()` / `_homeOpenCaseList()` / `_homeMakeCard()` 追加（既存 `case-card` CSS・`getCasesForMember`・`selectMember`・`showNewCaseForm` を流用）
+- `goHome()` を案件一覧優先に変更（案件≥1件→ホーム一覧、0件→従来 empty-state）
+- `deleteCase()` 末尾: **0件時のみ** `goHome()`／残あれば連続削除しやすく画面維持（選択中案件削除時のみ `__caselist__` ビューへ・古いチャット非表示）
+
+### 確認済み
+- localhost 実画面確認（ホーム一覧／カード開く／連続削除／0件時empty-state）完了
+- dev-check 200/200/200 / node --check OK / 削除挙動スモークテスト OK
+- commit `7e1568c` 内 Phase53マーカー = 0件（分離ステージで3hunkのみcommit）
+
+### 温存（未コミット）
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）
+- docs更新（01 / 06 / CHANGELOG・本更新分。commitは別途承認）
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行・Version2まで保留）
+
+### 次工程（Phase52-12.x）
+- **Phase52-12.1 案件削除同期**: 案件タブの×削除を Supabase `cases` からも削除し、リロードで復活しないようにする。**server.js（削除ルート追加）+ lib/casesDb.js（delete関数追加）+ 新規削除API + index.html配線**を含むため **実装前に必ずユーザー承認が必要**。安全条件=id完全一致1件のみ削除・会話履歴(messages)は削除しない・削除確認ダイアログ維持。クロス端末prune（他端末自動反映）は誤削除リスクのため方針決定後に別途
+- **Phase52-12.2 messages.case_id**: 案件ごとの会話完全分離。`messages.case_id` 列追加（DBスキーマ変更）+ conversationsDb + server.js + index.html。**DBスキーマ変更承認が必要**。今回は調査・計画のみ
+- 現状の未対応制約: **削除済み案件がリロードでSupabaseから復活**（Phase52-12.1で解消予定）
+
+### 次アクション
+- **push承認待ち** → 承認後 `git push origin main` → Render本番自動デプロイ → curlで `renderHomeCaseList`/`oe-aic`=0 確認
+
+---
+
+## 【参考・完了済み】Phase52-11.9 Complete（案件メタデータSupabase同期 A案 完了・push前）
 
 - 現在Version: **Version1 / Phase52-11.9 Complete**（案件メタデータSupabase同期 A案）
 - Commit: **1fff426**（`Phase52-11.9 sync case metadata via existing cases api`）

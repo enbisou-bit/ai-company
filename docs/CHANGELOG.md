@@ -4,6 +4,37 @@
 
 ---
 
+## Phase52-12.0 — ホーム案件一覧化＋削除後挙動改善 完了（2026-07-07・push前）
+
+- Commit: **7e1568c**（`Phase52-12.0 home case list and delete return behavior`）
+- 本番: **未反映（push承認待ち）**。localhost + dev-check 200/200/200 で確認済み
+- 変更ファイル: `index.html` のみ（追加のみ・**server.js / lib / DB / API / Workflow 無変更**・Phase53混入なし）
+
+### 内容
+- **ホーム案件一覧化**: 「🏠 ホーム」押下時、案件が1件以上あれば案件一覧カード（🕒最新一覧／各案件／＋新規案件）を表示。0件時は従来 empty-state を維持
+  - 追加関数: `renderHomeCaseList()` / `_homeOpenCase()` / `_homeOpenCaseList()` / `_homeMakeCard()`（既存 `case-card` CSS・`getCasesForMember`・`selectMember`・`showNewCaseForm` を流用）
+  - `goHome()` を案件一覧優先に変更（0件は従来 empty-state）
+- **削除後挙動改善**（`deleteCase()` 末尾）: 案件が残っていれば毎回ホームへ戻さず連続削除しやすくする。**0件になった時のみ** `goHome()`。選択中だった案件を削除した時だけ古いチャットを出さず「案件一覧」ビューへ、それ以外は現在画面を維持
+
+### 確認
+- localhost 実画面確認（ホーム一覧／カード開く／連続削除／0件時empty-state）完了
+- dev-check 200/200/200 / node --check（インラインJS構文）OK / 削除挙動スモークテスト OK
+- commit `7e1568c` 内 Phase53マーカー（oe-aic / affiliate）= 0件
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行）は Version2 まで保留
+
+### 既知の未対応（次工程で対応）
+- **削除済み案件がリロードでSupabaseから復活**する件は **Phase52-12.1 案件削除同期** で対応予定
+- **Phase52-12.1 は server.js / lib / 新規削除API を含むため、実装前に必ずユーザー承認が必要**
+- **messages.case_id**（案件ごとの会話完全分離）は **Phase52-12.2** で調査・DB変更承認相談
+
+### 次工程
+- **push承認待ち**（`git push origin main` → Render本番自動デプロイ → curlで `renderHomeCaseList`/`oe-aic`=0 確認）→ その後 Phase52-12.1 案件削除同期（要承認）
+
+---
+
 ## Phase52-11.9 — 案件メタデータSupabase同期 A案 完了（2026-07-07・push前）
 
 - Commit: **1fff426**（`Phase52-11.9 sync case metadata via existing cases api`）
