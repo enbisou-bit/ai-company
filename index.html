@@ -11912,6 +11912,40 @@ function renderHomeCaseList() {
   return true;
 }
 
+// ── Phase52-12.0a: ホーム画面にも案件タブを表示（Leader画面と操作統一・既存 case-nav / case-tab UI を流用・追加のみ） ──
+// currentMember が null のホーム状態専用。タブclickは _homeOpenCase / _homeOpenCaseList を使う
+// （switchCase は currentMember 依存でホームでは案件を開けないため）。
+// 削除ボタンはホームには置かない（案件削除の端末間同期は Phase52-12.1・現状ローカルのみのため）。
+function renderHomeCaseNav() {
+  const container = document.getElementById('case-nav-container');
+  if (!container) return;
+  container.innerHTML = '';
+  const list = getCasesForMember('leader');   // 最終更新日時の新しい順
+  if (list.length === 0) return;               // 0件はタブ非表示（ホームは empty-state のまま）
+  const nav = document.createElement('div');
+  nav.className = 'case-nav';
+  const label = document.createElement('span');
+  label.className = 'case-nav-label';
+  label.textContent = '案件:';
+  nav.appendChild(label);
+  // 「最新一覧」タブ（案件カード一覧ビューへ・Leader画面と同名称）
+  const latestTab = document.createElement('button');
+  latestTab.className = 'case-tab';
+  latestTab.textContent = '🕒 最新一覧';
+  latestTab.onclick = () => _homeOpenCaseList();
+  nav.appendChild(latestTab);
+  // 各案件タブ（クリックで該当案件を開く＝leaderを選択し該当案件へ・削除ボタンなし）
+  list.forEach(c => {
+    const tab = document.createElement('button');
+    tab.className = 'case-tab';
+    tab.textContent = c.title;
+    tab.title = c.userText;
+    tab.onclick = () => _homeOpenCase(c.id);
+    nav.appendChild(tab);
+  });
+  container.appendChild(nav);
+}
+
 // ── Phase52-11.8: 新規案件作成UI（追加のみ・既存 createCase / localStorage cases を流用） ──
 const NEW_CASE_TEMPLATE_LABELS = {
   free: '自由', instagram: 'Instagram運用', a8: 'A8登録', flyer: 'チラシ制作',
@@ -11982,7 +12016,8 @@ function goHome() {
       chat.innerHTML = '<div id="empty-state"><div class="logo-big">🏢</div><p>縁美創 AI COMPANY</p><p style="font-size:11px">左のメンバーを選んで会話を始めてください</p></div>';
     }
   }
-  const inp = document.getElementById('msg-input'); if (inp) { inp.value = ''; inp.disabled = true; inp.placeholder = 'メンバーを選択してください'; }
+  renderHomeCaseNav();   // Phase52-12.0a: ホーム画面にも案件タブを表示（案件0件時はタブ非表示・Leader画面と操作統一）
+  const inp = document.getElementById('msg-input'); if (inp) { inp.value = ''; inp.disabled = true; inp.placeholder = 'ホームでは入力できません。案件を選択するか、新規案件を作成してください。'; }
   const sb = document.getElementById('send-btn');   if (sb) sb.disabled = true;
   try { closeSidebar(); } catch {}
 }
