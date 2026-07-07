@@ -2,7 +2,73 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-05（Phase52-10 Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Decision 044/045）
+更新日: 2026-07-07（Phase52-11.9 案件メタデータSupabase同期 A案 完了・commit済み・push承認待ち）
+
+---
+
+## Phase52-11.9 Complete（案件メタデータSupabase同期 A案 完了・push前）
+
+- 現在Version: **Version1 / Phase52-11.9 Complete**（案件メタデータSupabase同期 A案）
+- Commit: **1fff426**（`Phase52-11.9 sync case metadata via existing cases api`）
+- 本番: **未反映（push承認待ち）**。localhost + dev-check 200/200/200 で確認済み
+- 変更ファイル: **`index.html` のみ**（追加のみ・**server.js / lib / DB / API / Workflow 無変更**・Phase53混入なし）
+
+### 完了内容（A案 = 既存 `/api/cases` 配線のみ）
+- 案件メタデータ（案件一覧 / 案件タブ / caseId / title / userText / memberIds / updatedAt）を既存 `GET/POST /api/cases`（Supabase `cases` テーブル）経由で端末間同期
+- 起動時 `syncCasesFromServer()` → 既存localStorage案件へ安全merge（updatedAtが新しい方を採用・local限定案件は削除しない）
+- `createCase()` / `touchCase()` に `pushCaseToServer()` を追加（作成・更新時に `POST /api/cases`）
+- 追加関数: `_caseServerToLocal` / `_caseLocalToServer` / `mergeServerCases` / `syncCasesFromServer` / `pushCaseToServer`
+- localStorage（`ai-company-cases-v1`）はキャッシュとして維持（逆戻りなし）
+
+### 確認済み
+- dev-check 200/200/200 / node --check（インラインJS構文）OK / mergeロジック スモークテスト OK
+- `/api/cases` GET→POST→GET 往復で Supabase 永続化を実証（往復テスト行は削除済み）
+- commit内 Phase53マーカー（oe-aic / affiliate / AFFILIATE_INTELLIGENCE）= 0件
+
+### A案の制約（未対応・仕様として許容 / B案・C案で将来対応）
+- **template**: `cases` に列が無く端末間同期対象外（各端末localStorage値を保持）
+- **案件削除の端末間同期**: DELETE APIが無くローカルのみ
+- **メッセージの案件別振り分け（端末間）**: `messages` に case_id 列が無く、他端末では同期メッセージは最新一覧に表示（既存挙動）
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行）は Version2 まで保留
+
+### 次工程
+- **push承認待ち**（`git push origin main` → Render本番自動デプロイ → curlでマーカー確認 → PC⇔携帯実機同期確認）
+
+---
+
+## Phase52-11.8 Complete（案件管理UI Version1 完成・本番反映済み）
+
+- 現在Version: **Version1 / Phase52-11.8 Complete**（案件管理UI Version1 完成）
+- 本番Commit: **5faa3f6**（`Phase52-11.8 complete case creation and navigation UI`）
+- Render: **GitHub Push 完了 / Render 本番反映済み / Deploy live = 5faa3f6**（`ai-company-l45x.onrender.com`・`Phase52-11.8`マーカー21件・Phase53混入なし=oe-aic 0件）
+
+### 現在完成済み（案件管理UI Version1）
+- ホーム追加（🏠 ホームへ戻る導線）
+- ＋新規案件（テンプレ選択つき作成）
+- 案件タブ（上部・クリック切替）
+- 案件一覧（🕒 最新一覧の案件カード画面）
+- 最新一覧（全案件ビュー・名称明確化）
+- 案件カード（案件名/テンプレ/最終更新/直近メッセージ/担当）
+- 案件カード「開く」
+- 案件削除
+- 削除確認ダイアログ
+- 案件並び替え（最終更新日時の新しい順）
+- PC表示改善
+- 携帯表示改善
+
+### 現在確認済み
+- PC: **正常**
+- 携帯: **正常**
+- 本番: **正常**
+
+### 現在未完成
+- 案件メタデータ同期: **現在 localStorage**（端末間で案件タブ/caseId は共有されない）
+- 次Phase: **Phase52-11.9**（案件メタデータSupabase同期調査）
+
+構成の詳細（11.8 / 11.8b ホーム復帰 / 11.8c 案件ナビ改善 / 11.8d 案件カード一覧画面）は docs/CHANGELOG.md を参照。
 
 ---
 

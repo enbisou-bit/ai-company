@@ -2,7 +2,123 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-05（Phase52-10 Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Decision 044/045）
+更新日: 2026-07-07（Phase52-11.9 案件メタデータSupabase同期 A案 完了・commit済み・push承認待ち）
+
+---
+
+## 【現在地・最優先】Phase52-11.9 Complete（案件メタデータSupabase同期 A案 完了・push前）
+
+- 現在Version: **Version1 / Phase52-11.9 Complete**（案件メタデータSupabase同期 A案）
+- Commit: **1fff426**（`Phase52-11.9 sync case metadata via existing cases api`）
+- 本番: **未反映（push承認待ち）**。localhost + dev-check 200/200/200 で確認済み
+
+### 現在地
+**Phase52-11.9 完了（A案・既存 `/api/cases` 配線のみ）**。案件メタデータ（案件一覧 / 案件タブ / caseId / title / userText / memberIds / updatedAt）を既存 `GET/POST /api/cases`（Supabase `cases`）で端末間同期。`index.html`のみ・追加のみ・**server.js / lib / DB / API 無変更**・Phase53混入なし。
+
+### 実装（index.htmlのみ・追加関数5つ）
+- `syncCasesFromServer()`（起動時 `loadCases()` 直後・GET→安全merge・失敗時localStorage継続）
+- `mergeServerCases()`（updatedAtが新しい方を採用・localのtemplate保持・local限定案件は削除しない）
+- `pushCaseToServer()`（`createCase()` と `touchCase()` から `POST /api/cases`）
+- `_caseServerToLocal()` / `_caseLocalToServer()`（DB行↔local変換）
+
+### 確認済み
+- dev-check 200/200/200 / node --check OK / mergeスモークテスト OK
+- `/api/cases` GET→POST→GET 往復で Supabase 永続化を実証（往復テスト行 `case-test-1783421436` は削除済み）
+- commit `1fff426` 内 Phase53マーカー = 0件（分離ステージで4hunkのみcommit）
+
+### A案の制約（未対応・仕様として許容 / 将来B案・C案で解消）
+- **template**: `cases` に列なし → 端末間同期対象外（localStorage値を保持）
+- **案件削除の端末間同期**: DELETE APIなし → ローカルのみ
+- **メッセージの案件別振り分け（端末間）**: `messages` に case_id 列なし → 他端末では最新一覧に表示（既存挙動）
+
+### 温存（未コミット）
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）
+- docs更新（01 / 06 / CHANGELOG・本更新分。commitは別途承認）
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行・Version2まで保留）
+
+### 次工程
+- **push承認待ち** → 承認後 `git push origin main` → Render本番自動デプロイ → curlで `Phase52-11.9`/`oe-aic` マーカー確認 → PC⇔携帯実機同期確認
+
+---
+
+## 【参考・完了済み】Phase52-11.8 Complete（案件管理UI Version1 完成・本番反映済み）
+
+- 現在Version: **Version1 / Phase52-11.8 Complete**（案件管理UI Version1 完成）
+- 本番Commit: **5faa3f6** / Render: **反映済み / Deploy live = 5faa3f6**（`ai-company-l45x.onrender.com`）
+
+### 現在地
+**Phase52-11.8 完了**（11.8 新規案件作成UI / 11.8b ホーム復帰導線 / 11.8c 案件ナビ改善 / 11.8d 最新一覧を案件カード一覧画面化）。index.htmlのみ・追加のみ・dev-check 200/200/200・インラインJS構文エラー0。
+
+### 確認済み
+- PC / 携帯 / ホーム / 新規案件 / 最新一覧 / 案件カード / 開く / 削除 / 削除確認 / 案件切替 — すべて正常（本番確認完了）
+
+### 同期状況
+- **Supabase同期済み**: メッセージ / 会話履歴
+- **未同期**: 案件一覧 / 案件タブ / caseId（現状 localStorage 専用）
+
+### 現在仕様（案件メタデータ）
+- PC案件 → 携帯へ同期しない
+- 携帯案件 → PCへ同期しない
+- ※メッセージ本体は Supabase 同期される
+
+### 現在未コミット（作業ツリー温存）
+- `cost-logs.json`
+- `docs/01PROJECT_STATUS.md`（今回更新）
+- `docs/06HANDOVER_NEXT_CHAT.md`（今回更新）
+- `docs/CHANGELOG.md`（今回新規）
+- `claude-cost-logs.json`
+- `claude-quality-history.json`
+- `index.html` の **Phase53 Affiliate Intelligence Core（約+380行）** — 未ステージ / Version2まで保留
+
+### 次Phase
+**Phase52-11.9 案件メタデータSupabase同期**（※まだ開始していない）。
+次チャットでは **調査のみ・実装禁止**。既存 `/api/cases`（server.js既存）や `conversations` テーブルの活用可否、caseId同期方式、DBスキーマ変更要否（要ならユーザー承認）、既存localStorage案件との移行整合を調査し、報告→承認後に実装。
+
+---
+
+## 【参考・完了済み】Phase52-11 Conversation Sync（Version1.1 Connected AI Company 第1工程）
+
+> 本番Commit: **18b1d00** / 本番URL `ai-company-l45x.onrender.com` は **Phase52-11.5 まで反映済み**。
+> Version1.1「Connected AI Company」の目的＝PC / iPhone / 将来PWA で同一状態のAI会社にする。その第1工程が Conversation Sync。
+
+### これまでに実装・本番反映済み（すべて本番デプロイ完了）
+
+| Phase | 内容 | Commit |
+|-------|------|--------|
+| Phase52-11 | Conversation Sync 基盤（15秒poll＋visibilitychange＋担当切替pull・既存GET/POST /api/messages再利用・Supabase Realtime不使用・localStorageはキャッシュ維持） | ec86b1a |
+| Phase52-11.1 | timestamp正規化（`normalizeMessageTime`）＋merge重複判定を数値比較化（+00:00 と Z の形式差吸収） | ec86b1a同梱 |
+| Phase52-11.2 | `lib/conversationsDb.js` `getMessages()` を **最新50件取得**へ（降順取得→昇順返却）。古い50件で頭打ちする問題を解消 | 0e2c2b1 |
+| Phase52-11.3 | 表示同期の原因調査（Supabase env未接続＝Render環境変数不足を特定→ユーザーがRenderへ `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` 追加で接続復旧・`/api/cases` が `source:db` 化） | 調査 |
+| Phase52-11.4 | 復元3経路（F5復元 / 担当切替pull / 15秒poll）をすべて **`mergeServerHistory()` に統一**。REPLACE方式（srvLatest>localLatestの丸ごと置換）を廃止＝取りこぼし解消 | 4d5d714 |
+| Phase52-11.5 | Dedup強化（sender一致＋content強正規化〔全角空白→半角/連続空白・改行→1つ/trim〕＋時刻許容 **3秒→10秒**）＋**自己重複除去**（既存localStorageの重複も掃除）＋時系列Sort保証 | 18b1d00 |
+
+### 現状（正常）
+- Conversation保存(POST) 正常 / 取得(GET) 正常 / Supabase接続 正常 / Merge 正常 / Dedup 実装済み / Render反映 正常
+
+### 現在残っている問題（未解決・調査中）
+Conversation Sync自体は動作しているが、**PCブラウザのみ表示順が崩れるケース**がある：
+- AI返信が表示されないことがある
+- F5後に表示位置が変わる
+- AI返信が質問より先に表示される
+- 「質問→返信→更新→質問」のような並びになる
+- iPhone側は正常表示のケースあり
+
+→ 保存ではなく **PC描画 / 表示順 / Render(表示) 周辺**の可能性が高い。
+
+### 次チャットで最優先＝原因調査のみ（修正禁止）
+以下①〜⑦のどこで順番が崩れるかをログで切り分け、**100%特定してからのみ修正する**：
+① 保存 ② 取得 ③ Merge ④ Dedup ⑤ Sort ⑥ `renderChatArea()`/`reRenderChatArea()` ⑦ `buildChatHtml()`（バブル描画）
+- 既知の別課題候補: 案件フィルタ（特定案件タブ選択時に caseId無し同期メッセージが `getFilteredHistory` で非表示）／メッセージにidが無くdedupが content+時刻ヒューリスティック依存（`getMessages` が id未取得）
+
+### Version1.1 Connected AI Company 優先順位
+① **Conversation Sync 完成**（現在ここ・PC表示順のみ残） → ② Task Sync → ③ Connected AI Company 完成 → ④ Instagram運用開始 → ⑤ A8.net等ASP登録 → ⑥ Learning蓄積 → ⑦ Version2 Affiliate Intelligence
+
+### Version1完了条件（変更しない）
+PC・iPhone両方で **Conversation / Task / Workflow / Learning / Approval / Publishing** がすべて正常同期すること。その後 Instagram自動運用へ移行する。
+
+### Phase53（Affiliate Intelligence）の扱い
+- Phase53コードは作業ツリー（index.html 未ステージ +380行）に存在するが、**正式Versionへは反映禁止・Version2まで保留・未着手扱い**。
+- 各Phase52-11コミットは Phase53 を混ぜず分離stage（`git apply --cached` でhunk限定）で実施済み。作業ツリーの Phase53 / cost-logs.json / claude-cost-logs.json / claude-quality-history.json は温存。
 
 ---
 
