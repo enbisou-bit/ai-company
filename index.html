@@ -8164,6 +8164,7 @@ document.getElementById('login-input').addEventListener('keydown', e => {
 // 起動時にlocalStorageから読み込み
 loadFromStorage();
 loadCases();
+syncCasesFromServer();   // Phase52-11.9: 起動時にSupabaseの案件一覧をmerge（非同期・非ブロッキング・失敗時はlocalStorage継続）
 
 // ── チャットエリアを現在の chatHistory で再描画（selectMember を呼ばずに済む）──
 function reRenderChatArea(m) {
@@ -11570,6 +11571,75 @@ function loadCases() {
 function saveCases() {
   try { localStorage.setItem(CASES_KEY, JSON.stringify(cases)); } catch {}
 }
+// ── Phase52-11.9: 案件メタデータSupabase同期（A案・既存 /api/cases 配線のみ・追加のみ） ──
+// title/userText/memberIds/updatedAt/caseId を端末間同期する。
+// templateはDB列が無いため同期対象外（既存localStorageの値を保持）。
+// 案件削除・メッセージの案件別振り分けの端末間同期はA案の制約として対象外。
+// GET/POST失敗時はlocalStorageで継続し、既存挙動を一切壊さない。
+function _caseServerToLocal(row, prev) {
+  if (!row || !row.id) return null;
+  return {
+    id:        row.id,
+    title:     row.title || (prev && prev.title) || '案件',
+    userText:  (row.user_text != null) ? row.user_text : ((prev && prev.userText) || ''),
+    memberIds: Array.isArray(row.member_ids) ? row.member_ids : ((prev && prev.memberIds) || ['leader']),
+    updatedAt: row.updated_at || row.ts || (prev && prev.updatedAt) || new Date().toISOString(),
+    ts:        row.ts || row.updated_at || (prev && prev.ts) || new Date().toISOString(),
+    template:  (prev && prev.template) || 'free',   // DB非対応: 既存localのtemplateを保持
+  };
+}
+function _caseLocalToServer(c) {
+  if (!c || !c.id) return null;
+  return {
+    id:        c.id,
+    title:     c.title || '案件',
+    userText:  c.userText || '',
+    genre:     c.genre || null,
+    memberIds: c.memberIds || ['leader'],
+  };
+}
+function mergeServerCases(serverCases) {
+  if (!Array.isArray(serverCases)) return;
+  let changed = false;
+  serverCases.forEach(row => {
+    if (!row || !row.id) return;
+    const prev = cases[row.id];
+    const incoming = _caseServerToLocal(row, prev);
+    if (!incoming) return;
+    if (!prev) { cases[incoming.id] = incoming; changed = true; return; }
+    // updatedAtが新しい方を採用（localのtemplateは常に保持・local限定案件は削除しない）
+    const pt = prev.updatedAt || prev.ts || '';
+    const it = incoming.updatedAt || incoming.ts || '';
+    if (it.localeCompare(pt) > 0) {
+      cases[incoming.id] = Object.assign({}, incoming, { template: prev.template || incoming.template });
+      changed = true;
+    }
+  });
+  if (changed) saveCases();
+}
+async function syncCasesFromServer() {
+  try {
+    const res = await fetch('/api/cases');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !data.ok || !Array.isArray(data.cases)) return;
+    mergeServerCases(data.cases);
+    if (currentMember) renderCaseNav(currentMember.id);
+  } catch (e) { /* localStorageで継続（既存挙動維持） */ }
+}
+function pushCaseToServer(caseId) {
+  const c = cases[caseId];
+  if (!c) return;
+  const body = _caseLocalToServer(c);
+  if (!body) return;
+  try {
+    fetch('/api/cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  } catch (e) { /* 失敗握り潰し・localStorageは保存済み */ }
+}
 function normalizeCaseTitle(text) {
   if (!text) return '';
   let s = text;
@@ -11606,6 +11676,7 @@ function createCase(userText, memberIds) {
   const _now = new Date().toISOString();
   cases[id] = { id, title, ts: _now, updatedAt: _now, memberIds: allIds, userText }; // Phase52-11.8c: updatedAt追加
   saveCases();
+  pushCaseToServer(id);   // Phase52-11.9: 作成した案件をSupabaseへ同期（失敗握り潰し）
   return id;
 }
 function getCasesForMember(memberId) {
@@ -11678,7 +11749,7 @@ function switchCase(memberId, caseId) {
 // Phase52-11.8c: 案件の最終更新日時を更新（先頭へ並べ替え用・localStorage cases のみ・履歴は不変）
 function touchCase(caseId) {
   if (!caseId || caseId === 'latest') return;
-  if (cases[caseId]) { cases[caseId].updatedAt = new Date().toISOString(); saveCases(); }
+  if (cases[caseId]) { cases[caseId].updatedAt = new Date().toISOString(); saveCases(); pushCaseToServer(caseId); }
 }
 // Phase52-11.8c: 案件削除（ユーザー操作のみ・確認ダイアログ付き・会話履歴は削除しない）
 function deleteCase(memberId, caseId) {
