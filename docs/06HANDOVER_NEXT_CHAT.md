@@ -2,11 +2,44 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-07（Phase52-12.0 ホーム案件一覧化＋削除後挙動改善 完了・commit済み・push承認待ち）
+更新日: 2026-07-08（Phase52-12.0a ホーム案件タブ表示＋入力無効化 完了・commit 04e3a63・push前）
 
 ---
 
-## 【現在地・最優先】Phase52-12.0 Complete（ホーム案件一覧化＋削除後挙動改善 完了・push前）
+## 【現在地・最優先】Phase52-12.0a Complete（ホーム案件タブ表示＋入力無効化 完了・push前）
+
+- 現在Version: **Version1 / Phase52-12.0a Complete**（ホーム案件タブ表示＋入力無効化）
+- Commit: **04e3a63**（`Phase52-12.0a home case tabs and disabled input`）
+- 本番: **未反映（push前）**。ユーザー実ブラウザ確認OK + localhost + dev-check 200/200/200
+
+### 現在地
+**Phase52-12.0a 完了（index.htmlのみ・追加のみ）**。ホーム画面に案件タブを表示（Leader画面と操作統一）＋ホーム入力欄を無効化。案件カード一覧（12.0）は維持。**server.js / lib / DB / API / Workflow 無変更**・Phase53/cost混入なし。
+
+### 実装（index.htmlのみ）
+- `renderHomeCaseNav()` 新設（既存 `case-nav`/`case-tab` UI流用）。ホームで 🕒最新一覧＋各案件タブを表示。click=`_homeOpenCase`/`_homeOpenCaseList`（switchCaseはcurrentMember依存のため不使用）。案件0件時はタブ非表示。削除ボタンはホームに置かない（削除同期はPhase52-12.1）
+- `goHome()` に `renderHomeCaseNav()` 呼び出し追加＋placeholderを「ホームでは入力できません。案件を選択するか、新規案件を作成してください。」へ変更
+- 入力欄/送信ボタンの disabled は既存 `goHome()` で成立・Enterは既存 `sendMessage()` の `!currentMember` ガードで発火しない・案件を開くと `selectMember()` が再有効化（既存挙動）
+
+### 確認済み
+- ユーザー実ブラウザ確認OK（案件タブ表示／タブ・カードから開く／入力無効／指定文言）
+- dev-check 200/200/200 / node --check OK
+- 分離stage→commit `04e3a63`。ステージ/コミット差分の Phase53マーカー（oe-aic/affiliate/AFFILIATE_INTELLIGENCE）= 0件・cost系0件
+
+### 温存（未コミット）
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行・Version2まで保留）
+
+### 次工程（Phase52-12.1 案件削除同期・実装前に必ずユーザー承認）
+- 実装候補: Supabase `cases` 削除API（server.js 削除ルート）／1件削除の端末間同期／**ホームカードの削除ボタン**／**選択モード**／**チェックボックス表示**／**選択案件まとめて削除**／削除確認ダイアログ／**messages は削除しない**
+- **server.js / lib / 新規削除API / DB操作を含むため実装前に必ずユーザー承認**。安全条件＝id完全一致1件のみ削除・messages非削除・削除確認ダイアログ維持
+- 現状の未対応制約: 削除済み案件がリロードでSupabaseから復活（Phase52-12.1で解消予定）
+
+### 次アクション
+- **push承認待ち** → 承認後 `git push origin main` → Render本番自動デプロイ → curlで `renderHomeCaseNav`/`oe-aic`=0 確認
+
+---
+
+## 【参考・完了済み】Phase52-12.0 Complete（ホーム案件一覧化＋削除後挙動改善 完了・push前）
 
 - 現在Version: **Version1 / Phase52-12.0 Complete**（ホーム案件一覧化＋削除後挙動改善）
 - Commit: **7e1568c**（`Phase52-12.0 home case list and delete return behavior`）

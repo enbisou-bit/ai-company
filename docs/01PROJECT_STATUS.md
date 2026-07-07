@@ -2,7 +2,40 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-07（Phase52-12.0 ホーム案件一覧化＋削除後挙動改善 完了・commit済み・push承認待ち）
+更新日: 2026-07-08（Phase52-12.0a ホーム案件タブ表示＋入力無効化 完了・commit 04e3a63・push前）
+
+---
+
+## Phase52-12.0a Complete（ホーム案件タブ表示＋入力無効化 完了・push前）
+
+- 現在Version: **Version1 / Phase52-12.0a Complete**（ホーム案件タブ表示＋入力無効化）
+- Commit: **04e3a63**（`Phase52-12.0a home case tabs and disabled input`）
+- 本番: **未反映（push前）**。ユーザー実ブラウザ確認OK + localhost + dev-check 200/200/200 で確認済み
+- 変更ファイル: **`index.html` のみ**（追加のみ・**server.js / lib / DB / API / Workflow 無変更**・Phase53/cost混入なし）
+
+### 完了内容
+- **ホーム案件タブ表示**: `renderHomeCaseNav()` を新設し `goHome()` から呼び出し。ホーム画面でも Leader画面と同じ `case-nav`/`case-tab` UIで 🕒最新一覧＋各案件タブを表示し操作感を統一
+  - タブclickは `_homeOpenCase(id)` / `_homeOpenCaseList()`（`switchCase` は currentMember 依存のためホーム専用ハンドラを使用）。案件0件時はタブ非表示（従来 empty-state 維持）
+  - **削除ボタンはホームに置かない**（案件削除の端末間同期は Phase52-12.1・現状ローカルのみのため）
+- **ホーム入力欄無効化**: ホーム表示中は入力欄・送信ボタンを無効化し、placeholder を「ホームでは入力できません。案件を選択するか、新規案件を作成してください。」へ変更
+  - 入力欄・送信ボタンの disabled は既存 `goHome()` で成立済み。Enter送信も既存 `sendMessage()` 冒頭 `!currentMember` ガードで発火しないため、placeholder 文言のみ更新
+  - 案件を開くと既存 `selectMember()` が入力欄を再有効化（無効のまま残らない）
+- **案件カード一覧は維持**: Phase52-12.0 のホーム案件カード一覧は削除せず、タブ・カード両方から案件を開ける状態
+
+### 確認済み
+- ユーザー実ブラウザ確認OK（案件タブ表示／タブから開く／カードから開く／入力欄無効／指定文言／案件を開くと入力可）
+- dev-check 200/200/200 / node --check（インラインJS構文）OK
+- 分離stage（Phase52-12.0aハンクのみ）で commit `04e3a63`。ステージ/コミット差分の Phase53マーカー（oe-aic/affiliate/AFFILIATE_INTELLIGENCE）= 0件・cost系混入 0件
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行）は Version2 まで保留
+
+### 次工程（Phase52-12.1 案件削除同期・実装前に必ずユーザー承認）
+実装候補: Supabase `cases` 削除API（server.js 削除ルート）／1件削除の端末間同期／**ホームカードの削除ボタン**／**選択モード**／**チェックボックス表示**／**選択案件まとめて削除**／削除確認ダイアログ／**messages は削除しない**。server.js / lib / 新規削除API / DB操作を含むため **実装前に必ずユーザー承認が必要**。安全条件＝id完全一致1件のみ削除・messages非削除・削除確認ダイアログ維持
+
+### 次アクション
+- **push承認待ち** → 承認後 `git push origin main` → Render本番自動デプロイ → curlで `renderHomeCaseNav`/`oe-aic`=0 確認
 
 ---
 
