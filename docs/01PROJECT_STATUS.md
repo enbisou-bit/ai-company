@@ -2,11 +2,45 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-08（Phase52-12.2 messages.case_id 案件別チャット分離 code commit 完了・push前・Render未反映）
+更新日: 2026-07-09（Phase53 Affiliate Intelligence Core Complete・commit bcfba7d・push済み・Render反映済み）
 
 ---
 
-## Phase52-12.2 Committed（messages.case_id 案件別チャット分離・code commit完了・push前）
+## Phase53 Affiliate Intelligence Core Complete（Version2 Core先行搭載・push済み・Render反映済み）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase53 Complete**
+- Commit: **bcfba7d**（`Phase53 affiliate intelligence core base`）
+- 本番: **Render反映済み**（`ai-company-l45x.onrender.com` HTTP 200・Phase53マーカー本番反映済み・既存機能マーカー維持）
+- Git: **origin/main = HEAD = bcfba7d / 未Push 0**
+- 変更ファイル: **`index.html` のみ**（追加のみ・+380行・**DB変更なし / server.js変更なし / API追加なし / Supabase操作なし / 課金なし**）
+
+### 目的
+Version2「Instagram Affiliate Intelligence Company」の中核となる器を Version1 に非破壊で先行搭載。16判断項目（市場/商品/ASP/利益率/承認率/EPC/CVR/IG相性/競合数/案件寿命/季節性/保存率予測/クリック率予測/想定売上/想定利益/おすすめ順位）を**手動入力**で登録し、統合スコア＋おすすめ順位ランキング＋Leader統合サマリーを算出・Copy・Export。
+
+### 完了内容（追加のみ・index.htmlのみ・5箇所）
+- CSS `.oe-aic-*` クラス群
+- AIC関数群（`AFFILIATE_INTELLIGENCE_CORE_VERSION='1.0.0'` / `_affiliateCases`〔メモリ内・最大50件〕/ `recordAffiliateCase` / `buildAffiliateIntelligenceRanking` / `_aicIntegratedScore` / `_aicEstimate` / `_aicBuildLeaderSummary` / `buildAffiliateIntelligenceCoreHtml` 他・+356行）
+- `renderOutputEnginePanel` に `_oeSafe(buildAffiliateIntelligenceCoreHtml,…)` を1行追加
+- `serializeOutputDraft`（JSON/Markdown）に Export関数を各1行追加（案件0件時は出力せず＝既存Export不変）
+- 4 Safetyバッジ固定（No Real API / Manual Input Only / Prediction Heuristic Only / Read Only）
+
+### 確認済み（STEP0検証・全合格）
+- ✅ node --check（インラインJS 2ブロック・Phase53込み）0エラー / dev-check 200/200/200
+- ✅ 配信HTML：Phase53搭載＋既存機能マーカー維持（回帰なし）
+- ✅ 新規ロジックsandbox実行：統合スコア/想定売上・利益/ランキング/Leader統合判断/Export 正常
+- ✅ ユーザー実ブラウザ目視確認OK（AIC表示・Leader統合判断・ランキング・計算結果・既存画面崩れなし）
+- ✅ push後 Render本番マーカー反映確認・既存マーカー維持
+
+### 開始条件（Decision 045 運用判断＝B案・Decision 047）
+- Decision045「Version1.01 Realtime Sync完成後＋ユーザー承認でPhase53開始」を、**Conversation / Case / Messages 中核同期完了をもってPhase53先行開始承認**（B案）としてユーザーが運用判断。
+- **残同期（Task/Cost/Status/Auto Task 自動更新poll・Learning一部in-memory整理・Approval端末間同期）は未完了として別Phase扱い**。特にApproval端末間同期はserver.js/DB/API検討が必要なため独立Phaseで管理。
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）は**未commit温存**（Phase53に非接触）
+
+---
+
+## Phase52-12.2 Committed（messages.case_id 案件別チャット分離・push済み・Render反映済み）
 
 - 現在Version: **Version1 / Phase52-12.2 code commit完了（push前）**
 - Commit: **aabf46c**（`Phase52-12.2 messages case id for per case chat separation`）

@@ -49,7 +49,8 @@
 - Phase52-11〜11.9: Conversation Sync／案件メタデータSupabase同期
 - Phase52-11.8〜12.0a: 案件管理UI／ホーム案件一覧・タブ・入力無効化
 - Phase52-12.1〜12.1b: 案件削除Supabase同期／選択削除UI／F5・ログイン直後のホーム再描画修正
-- **Phase52-12.2: `messages.case_id`（nullable・FKなし）追加＝案件別チャットの端末間分離**（commit aabf46c・push前・Decision 046）。既存messagesはNULL維持・非破壊
+- **Phase52-12.2: `messages.case_id`（nullable・FKなし）追加＝案件別チャットの端末間分離**（commit aabf46c・push済み・Render反映済み・Decision 046）。既存messagesはNULL維持・非破壊
+- **Phase53先行開始をB案運用判断で承認（Decision 047）**: Conversation / Case / Messages 中核同期完了をもってPhase53を先行開始。**残同期（Task/Cost/Status/Auto Task 自動更新poll・Learning一部in-memory整理・Approval端末間同期）は未完了として別Phase扱い**（Approval端末間同期はserver.js/DB/API検討要・独立Phase）
 
 ---
 
@@ -166,7 +167,7 @@ Affiliate Intelligence最優先（Decision 042）を維持したまま、7層Int
 
 | Phase | 内容 | 対応層 |
 |-------|------|--------|
-| **Phase53** | **Affiliate Intelligence Core**（16判断項目の器・案件データ構造・統合スコア・利益ランキング基盤）| Core |
+| **Phase53 ✅ Complete** | **Affiliate Intelligence Core**（16判断項目の器・案件データ構造・統合スコア・利益ランキング基盤）**／commit bcfba7d・push済み・Render反映済み・index.htmlのみ+380行・DB/server.js/API/Supabase/課金なし** | Core |
 | Phase54 | Market Opportunity Intelligence | ① |
 | Phase55 | Product Intelligence | ② |
 | Phase56 | ASP Intelligence（Multi ASP Compare含む）| ③ |

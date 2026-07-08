@@ -2,11 +2,35 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-08（Phase52-12.2 messages.case_id 案件別チャット分離 code commit完了・push前・Render未反映）
+更新日: 2026-07-09（Phase53 Affiliate Intelligence Core Complete・commit bcfba7d・push済み・Render反映済み）
 
 ---
 
-## 【現在地・最優先】Phase52-12.2 Committed（messages.case_id 案件別チャット分離・code commit完了・push前）
+## 【現在地・最優先】Phase53 Affiliate Intelligence Core Complete（Version2 Core先行搭載・push済み・Render反映済み）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase53 Complete**／本番: **Render反映済み**
+- Commit: **bcfba7d**（`Phase53 affiliate intelligence core base`）／**origin/main = HEAD = bcfba7d / 未Push 0**
+- 変更ファイル: **`index.html` のみ**（追加のみ・+380行・**DB変更なし / server.js変更なし / API追加なし / Supabase操作なし / 課金なし**）
+
+### 現在地
+**Phase53 Affiliate Intelligence Core = 本番反映完了**。Version2「Instagram Affiliate Intelligence Company」の中核（16判断項目の器・統合スコア・おすすめ順位ランキング・Leader統合判断）を Version1 に非破壊で先行搭載。`_affiliateCases` はメモリ内のみ（localStorage/DB非依存）・4 Safetyバッジ固定（No Real API / Manual Input Only / Prediction Heuristic Only / Read Only）。既存Workflow/Provider/Realtime Sync/Learning 無変更。
+
+### 確認済み
+- ✅ node --check 0エラー / dev-check 200/200/200 / 配信HTML Phase53搭載＋既存維持 / 新規ロジックsandbox正常 / ユーザー実ブラウザ目視OK / push後 Render本番マーカー反映・既存維持
+
+### 開始条件（Decision 045 運用判断＝B案・Decision 047）
+- **Conversation / Case / Messages 中核同期完了をもってPhase53先行開始をユーザー承認**（B案）。
+- **残同期は別Phase扱い**（未完了）: Task/Cost/Status/Auto Task 自動更新poll（index.htmlのみ）／Learning一部in-memory整理／**Approval端末間同期（server.js/DB/API検討要・独立Phase）**。
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase53非接触）
+
+### 次アクション候補
+- 残同期の別Phase着手（Task/Cost/Status/Auto Task poll化＝index.htmlのみ）、またはApproval端末間同期の独立Phase設計（server.js/DB要検討・要承認）、またはPhase54（Market Opportunity Intelligence）。
+
+---
+
+## 【参考・完了済み】Phase52-12.2 Committed（messages.case_id 案件別チャット分離・push済み・Render反映済み）
 
 - 現在Version: **Version1 / Phase52-12.2 code commit完了（push前）**／本番: **未反映（push前）**
 - Commit: **aabf46c**（`Phase52-12.2 messages case id for per case chat separation`）
