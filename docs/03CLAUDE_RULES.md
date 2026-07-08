@@ -313,3 +313,43 @@ Output Preview完成後は、Preview品質も評価対象とする。
 - PDF
 
 Output Package Quality / Output Template / Output Auto Fill / Output Preview は Workflow正式構成要素とする。
+
+## 18. Run許可範囲（2026-07-08 追記・恒久ルール）
+
+Claude Code が「どこまで自動で進めてよいか／どこで必ず停止するか」を明確化する。
+
+### 許可不要でまとめて実行してよい範囲（停止不要）
+
+以下は調査〜実装〜docs下書きまで、途中停止せずまとめて実行してよい：
+
+- `git status` / `git diff` / `git diff --stat`
+- `grep`（コード検索）
+- `node --check`（構文チェック）
+- `dev-check`（`npm run dev-check`）
+- localhost GET確認 / Render GET確認 / HTML取得確認
+- 構文確認 / 静的な文字列確認
+- 調査 / 実装 / docs下書き更新
+
+### 必ず停止してユーザー承認が必要な範囲
+
+以下は実行前に必ず停止し、ユーザー承認を得る：
+
+- `git add` / 分離stage
+- `git commit`
+- `git push`
+- Render本番反映
+- DBスキーマ変更
+- Supabase直接操作
+- POST / DELETE などDBへ書き込む自動APIテスト
+- テストデータ自動作成
+- `npm install`
+- 環境変数変更 / APIキー追加
+- 課金・契約・外部サービス登録
+- 判断に迷う操作
+
+### 検証ルール
+
+- 実DBへ勝手にテストデータを作成しない
+- POST→DELETE の自動 round-trip テストは禁止
+- 確認は原則 localhost の実ブラウザ操作を優先する
+- 必要な場合はユーザー承認後のみ DB 書き込みテスト可

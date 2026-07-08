@@ -2,7 +2,100 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-08（Phase52-12.0a ホーム案件タブ表示＋入力無効化 完了・commit 04e3a63・push前）
+更新日: 2026-07-08（Phase52-12.1b F5/ログイン直後ホーム0件表示 修正・実ブラウザ確認OK・commit前・push前）
+
+---
+
+## Phase52-12.1b Fixed（F5/ログイン直後のホーム案件一覧0件表示 修正・実ブラウザ確認OK・commit前・push前）
+
+- 現在Version: **Version1 / Phase52-12.1b 修正完了（未commit）**
+- Commit: **未commit**／本番: **未反映**。dev-check 200/200/200 / node --check OK / **実ブラウザ確認OK**
+- 変更ファイル: **`index.html` のみ**（追加のみ・server.js/lib/DB/API/Workflow 無変更・**Phase53/cost非接触**）
+
+### 不具合内容
+F5更新直後 / ログイン直後に、ホーム案件一覧が0件表示になる（Leaderへ移動→ホーム復帰で復活）。データ消失ではなくタイミング問題。
+
+### 根本原因
+`syncCasesFromServer()`（Supabase同期・非同期）は同期完了後、`currentMember` がある時のみ `renderCaseNav()` を再描画し、**ホーム表示中（`currentMember=null`）は再描画していなかった**。localStorageに案件が無くSupabaseのみに案件がある状態でF5/ログインすると、初期ホーム描画が同期完了前に走り0件のまま残る。
+
+### 修正内容（index.htmlのみ・追加のみ）
+- `syncCasesFromServer()` の同期完了処理に、ホーム表示中（`currentMember=null`）は `renderHomeCaseList()` ＋ `renderHomeCaseNav()` を再描画する分岐を追加。既存の `renderCaseNav`（担当選択中）パスは無変更
+- `renderHomeCaseList()` は案件0件なら `false` を返し既存 empty-state を維持。try/catchで描画失敗時も既存表示を維持
+- **F5直後・ログイン直後どちらでも、案件同期完了後にホーム案件一覧が正しく再描画される**
+
+### 確認
+- ✅ node --check（index.htmlインラインJS）エラー0 / dev-check 200/200/200 / localhost配信反映
+- ✅ **実ブラウザ確認OK**（F5更新後にホーム案件一覧が表示される）
+- API往復テスト・DBテストデータ作成なし
+
+### DB/安全
+- server.js / lib / DB / API 変更なし（index.htmlのみ）・課金なし・Phase53/cost非接触
+
+---
+
+## Phase52-12.1a Implemented（選択削除UI 追加改善・実装完了・commit前・push前）
+
+- 現在Version: **Version1 / Phase52-12.1a 実装完了（未commit）**（選択削除UI追加改善）
+- Commit: **未commit**／本番: **未反映**。dev-check 200/200/200 / node --check OK。**実ブラウザ実操作確認はユーザー確認項目**
+- 変更ファイル: **`index.html` のみ**（追加のみ・server.js/lib/DB/API/Workflow 無変更・**Phase53/cost非接触**）
+
+### 完了内容（追加のみ・UI統一）
+- **全選択 / 全解除**: 選択ツールバーに「全選択」「全解除」ボタン追加（ホーム／Leader両方）
+- **ホーム/Leader両方の選択削除**: 共通ビルダー `_buildCaseSelectBar()` を新設し、ホーム(`renderHomeCaseList`)とLeader画面(`renderCaseListScreen`)で同一の選択ツールバー（☑選択／全選択／全解除／🗑選択削除(n件)）を使用。Leader側は `_clSelectMode`/`_clSelectedIds`＋`_clToggleSelectMode`/`_clSelectAll`/`_clDeselectAll`/`_clToggleSelected`/`_clBulkDelete` を新設
+- **選択削除バー上部固定**: 新CSS `.case-select-bar { position: sticky; top:0; z-index:6 }` によりスクロール時も常時上部固定
+- **ホーム案件タブ×削除**: `renderHomeCaseNav` の各タブを `case-tab-wrap`＋`case-del-btn`（×）でLeaderと統一。× で `_homeDeleteCase()`
+- **個別削除ボタン維持**: ホームカード「🗑 削除」／Leaderカード「削除」／タブ「×」いずれも維持
+- **messages / conversations は削除しない**（削除対象は `cases`〔local＋Supabase〕のみ・既存 `deleteCaseFromServer` 経由）
+
+### 確認済み / 未確認
+- ✅ node --check（index.htmlインラインJS）エラー0 / dev-check 200/200/200 / localhost配信HTMLに新要素反映（HTTP 200）
+- ⏳ **実ブラウザ実操作確認はユーザー確認項目**（ホーム/Leaderの選択モード・全選択・全解除・一括削除・タブ×削除・カード個別削除・スクロール時の上部固定バー・リロード復活なし・PC/スマホ）。API往復テスト／DBテストデータ作成は実施しない方針
+
+### DB/安全
+- **DBスキーマ変更なし**・API追加なし（前Phase52-12.1の `DELETE /api/cases/:id` を流用）。課金なし・Phase53/cost非接触
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行）は Version2 まで保留
+
+---
+
+## Phase52-12.1 Implemented（案件削除Supabase同期・実装完了・commit前・push前）
+
+- 現在Version: **Version1 / Phase52-12.1 実装完了（未commit）**（案件削除Supabase同期）
+- Commit: **未commit**（承認後に分離stage→commit）
+- 本番: **未反映**。dev-check 200/200/200 / node --check OK。**実ブラウザ実操作確認はユーザー確認項目**
+- 変更ファイル: **`server.js` / `lib/casesDb.js` / `index.html`**（すべて追加のみ・**DBスキーマ変更なし**・Phase53/cost非接触）
+
+### 目的
+ホーム画面から案件を削除した際に Supabase `cases` も同期削除し、リロードで復活しないようにする（従来は localStorage のみ削除→リロードで `syncCasesFromServer` がSupabaseから再mergeし復活していた）。
+
+### 完了内容（追加のみ）
+- **lib/casesDb.js**: `deleteCase(id)` 追加（`supabase.from('cases').delete().eq('id', id)`・id完全一致1件・Supabase未設定時は既存同様のerror返却）。`module.exports` に追加
+- **server.js**: `DELETE /api/cases/:id` 追加（id必須チェック→`getCasesDb().deleteCase(id)`。**messages/conversationsは一切触らない**）
+- **index.html**:
+  - `deleteCaseFromServer(caseId)` 新設（`DELETE /api/cases/:id`・`pushCaseToServer` と同じfire-and-forget）
+  - 既存 `deleteCase()`（Leader画面の×削除）に `deleteCaseFromServer()` 呼び出しを1行追加（Leader画面削除もSupabase同期）
+  - **ホーム案件カードに「🗑 削除」ボタン追加**＋ `_homeDeleteCase()`（確認ダイアログ→local+Supabase削除→ホーム再描画）
+  - **選択モード**（`_homeSelectMode` / `_homeSelectedIds`）＋ ホーム一覧ヘッダの「☑ 選択」トグル
+  - **チェックボックス表示**（選択モード時に各カードへ）＋「🗑 選択削除（n件）」ボタン
+  - **一括削除** `_homeBulkDelete()`（確認ダイアログ→選択案件をlocal+Supabase削除→再描画）
+- **messages / conversations は削除しない**（`cases` テーブルは `conversations`/`messages` から参照されておらず、cases削除は会話履歴に波及しない設計）
+
+### 確認済み / 未確認
+- ✅ dev-check 200/200/200 / node --check（server.js・casesDb.js・index.htmlインラインJS）エラー0
+- ⏳ **実ブラウザ実操作確認はユーザー確認項目**（案件作成→ホームから削除→Supabase同期→リロードで復活しないこと・PC/スマホ）。API往復テストは実施しない方針
+
+### DB/安全
+- **DBスキーマ変更なし**（既存`cases`＋RLS `cases_all FOR ALL` で削除可能）。API追加＝`DELETE /api/cases/:id` 1本のみ。課金操作なし
+- 既知の制約（次段階候補）: 他端末側localStorageに残る案件の自動prune（クロス端末即時反映）は未実装（誤削除リスク回避のため）。削除操作した端末はリロードで復活しない（Supabase側が削除済みのため）
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行）は Version2 まで保留
+
+### 次アクション
+- 実ブラウザ実操作確認 → 承認 → 分離stage（server.js / lib/casesDb.js / index.htmlの本Phase分のみ・Phase53/cost除外）→ commit → docs commit → push → Render確認
 
 ---
 

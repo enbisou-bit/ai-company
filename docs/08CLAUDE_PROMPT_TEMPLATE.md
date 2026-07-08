@@ -155,6 +155,41 @@ Git
 
 ---
 
+## Run許可範囲（2026-07-08 追記・全 Phase 共通）
+
+実装指示書には、Claude Code の実行範囲として以下を前提とする（詳細は docs/03CLAUDE_RULES.md「18. Run許可範囲」）。
+
+### 許可不要でまとめて実行してよい範囲（停止不要）
+- git status / git diff / git diff --stat
+- grep（コード検索）
+- node --check（構文チェック）
+- dev-check（npm run dev-check）
+- localhost GET確認 / Render GET確認 / HTML取得確認
+- 構文確認 / 静的な文字列確認
+- 調査 / 実装 / docs下書き更新
+
+### 必ず停止してユーザー承認が必要な範囲
+- git add / 分離stage
+- git commit
+- git push
+- Render本番反映
+- DBスキーマ変更
+- Supabase直接操作
+- POST / DELETE などDBへ書き込む自動APIテスト
+- テストデータ自動作成
+- npm install
+- 環境変数変更 / APIキー追加
+- 課金・契約・外部サービス登録
+- 判断に迷う操作
+
+### 検証ルール
+- 実DBへ勝手にテストデータを作成しない
+- POST→DELETE の自動 round-trip テストは禁止
+- 確認は原則 localhost の実ブラウザ操作を優先する
+- 必要な場合はユーザー承認後のみ DB 書き込みテスト可
+
+---
+
 ## 実装指示書テンプレート
 
 以下の順番で作成する。順番を変更しない。

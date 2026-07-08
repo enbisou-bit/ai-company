@@ -4,6 +4,77 @@
 
 ---
 
+## Phase52-12.1b — F5/ログイン直後のホーム案件一覧0件表示 修正（2026-07-08・commit前・push前）
+
+- Commit: **未commit**／本番: **未反映**。dev-check 200/200/200 / node --check OK / **実ブラウザ確認OK**
+- 変更ファイル: `index.html` のみ（追加のみ・server.js/lib/DB/API/Workflow無変更・**Phase53/cost非接触**）
+
+### 不具合
+- F5更新直後 / ログイン直後にホーム案件一覧が0件表示になる（Leader移動→ホーム復帰で復活）。データ消失ではなくタイミング問題
+
+### 原因
+- `syncCasesFromServer()`（Supabase同期・非同期）が同期完了後、`currentMember` がある時のみ `renderCaseNav()` を再描画し、ホーム表示中（`currentMember=null`）は再描画していなかった
+
+### 修正（index.htmlのみ・追加のみ）
+- `syncCasesFromServer()` 完了時、ホーム表示中なら `renderHomeCaseList()`＋`renderHomeCaseNav()` を再描画。既存 `renderCaseNav`（担当選択中）パスは無変更、案件0件は既存 empty-state 維持、try/catch保護
+- F5直後・ログイン直後どちらでも、案件同期完了後にホーム案件一覧が正しく再描画される
+
+### 確認
+- node --check（index.htmlインラインJS）0エラー / dev-check 200/200/200 / **実ブラウザ確認OK**
+- server.js/lib/DB/API変更なし・Phase53/cost非接触・API往復テスト/DBテストデータ作成なし
+
+---
+
+## Phase52-12.1a — 選択削除UI 追加改善 実装完了（2026-07-08・commit前・push前）
+
+- Commit: **未commit**／本番: **未反映**。dev-check 200/200/200 / node --check OK。**実ブラウザ実操作確認はユーザー確認項目**
+- 変更ファイル: `index.html` のみ（追加のみ・server.js/lib/DB/API/Workflow無変更・**Phase53/cost非接触**）
+
+### 内容（追加のみ・UI統一）
+- 共通ビルダー `_buildCaseSelectBar()` でホーム・Leaderの選択ツールバーを統一（☑選択／全選択／全解除／🗑選択削除(n件)）
+- **全選択 / 全解除**（ホーム・Leader両方）
+- **Leader画面の選択削除**: `renderCaseListScreen` に選択モード・チェックボックス・一括削除（`_clSelectMode`/`_clSelectAll`/`_clDeselectAll`/`_clBulkDelete` 他）追加
+- **選択削除バー上部固定**: 新CSS `.case-select-bar { position:sticky; top:0; z-index:6 }`
+- **ホーム案件タブ×削除**: `renderHomeCaseNav` を `case-tab-wrap`+`case-del-btn` でLeaderと統一（× で `_homeDeleteCase`）
+- 個別削除ボタン維持 ／ **messages・conversations 非削除**（cases のみ削除）
+
+### 確認
+- node --check 0エラー / dev-check 200/200/200 / localhost配信HTML反映（HTTP 200）
+- **実ブラウザ実操作確認はユーザー確認項目**（API往復テスト・DBテストデータ作成は不実施方針）
+
+### DB/安全
+- DBスキーマ変更なし・API追加なし（`DELETE /api/cases/:id` 流用）・課金なし・Phase53/cost非接触
+
+---
+
+## Phase52-12.1 — 案件削除Supabase同期 実装完了（2026-07-08・commit前・push前）
+
+- Commit: **未commit**（承認後に分離stage→commit）
+- 本番: **未反映**。dev-check 200/200/200 / node --check OK。**実ブラウザ実操作確認はユーザー確認項目**
+- 変更ファイル: `server.js` / `lib/casesDb.js` / `index.html`（すべて追加のみ・**DBスキーマ変更なし**・Phase53/cost非接触）
+
+### 目的
+ホームから案件を削除した際に Supabase `cases` も同期削除し、リロードで復活しないようにする。
+
+### 内容（追加のみ）
+- **lib/casesDb.js**: `deleteCase(id)` 追加（`supabase.from('cases').delete().eq('id', id)`・id完全一致1件・未設定時error返却）
+- **server.js**: `DELETE /api/cases/:id` 追加（id必須→`deleteCase`。**messages/conversationsは削除しない**）
+- **index.html**: `deleteCaseFromServer()` 新設／既存 `deleteCase()` にサーバ削除1行追加／ホームカード「🗑 削除」ボタン＋ `_homeDeleteCase()`／選択モード（`_homeSelectMode`）＋「☑ 選択」トグル／チェックボックス／一括削除 `_homeBulkDelete()`／削除確認ダイアログ
+
+### 確認
+- dev-check 200/200/200 / node --check（server.js・casesDb.js・index.htmlインラインJS）0エラー
+- **実ブラウザ実操作確認はユーザー確認項目**（作成→ホーム削除→Supabase同期→リロード復活なし・PC/スマホ）。DB書込/削除のAPI往復テストは実施しない方針
+
+### DB/安全
+- DBスキーマ変更なし（既存`cases`＋RLSで削除可）。API追加＝`DELETE /api/cases/:id` 1本。課金なし
+- messages/conversations非削除（`cases`は会話テーブルから参照されておらず波及しない）
+- 既知の制約: 他端末localStorageの自動prune（クロス端末即時反映）は未実装（誤削除回避）
+
+### 温存
+- cost関連 / Phase53 Affiliate Intelligence Core は未コミット温存
+
+---
+
 ## Phase52-12.0a — ホーム案件タブ表示＋入力無効化 完了（2026-07-08・push前）
 
 - Commit: **04e3a63**（`Phase52-12.0a home case tabs and disabled input`）

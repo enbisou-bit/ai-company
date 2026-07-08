@@ -2,11 +2,101 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-08（Phase52-12.0a ホーム案件タブ表示＋入力無効化 完了・commit 04e3a63・push前）
+更新日: 2026-07-08（Phase52-12.1b F5/ログイン直後ホーム0件表示 修正・実ブラウザ確認OK・commit前・push前）
 
 ---
 
-## 【現在地・最優先】Phase52-12.0a Complete（ホーム案件タブ表示＋入力無効化 完了・push前）
+## 【現在地・最優先】Phase52-12.1b Fixed（F5/ログイン直後のホーム案件一覧0件表示 修正・実ブラウザ確認OK・commit前・push前）
+
+- 現在Version: **Version1 / Phase52-12.1b 修正完了（未commit）**／本番: **未反映**
+- dev-check 200/200/200 / node --check OK / **実ブラウザ確認OK**
+
+### 不具合 → 修正
+- **不具合**: F5更新直後 / ログイン直後にホーム案件一覧が0件表示（Leader移動→ホーム復帰で復活）。データ消失ではなくタイミング問題
+- **原因**: `syncCasesFromServer()`（Supabase同期・非同期）が同期完了後、`currentMember` がある時のみ `renderCaseNav()` 再描画し、ホーム表示中（`currentMember=null`）は再描画していなかった
+- **修正**: `syncCasesFromServer()` 完了時、ホーム表示中なら `renderHomeCaseList()`＋`renderHomeCaseNav()` を再描画（既存 `renderCaseNav` パス無変更・0件は empty-state 維持・try/catch保護）。**index.htmlのみ・追加のみ**
+
+### 確認
+- ✅ node --check 0エラー / dev-check 200/200/200 / **実ブラウザ確認OK**
+- server.js/lib/DB/API 変更なし・Phase53/cost非接触・API往復テスト/DBテストデータ作成なし
+
+### 次アクション
+- 承認 → 分離stage（server.js/lib/casesDb.js/index.htmlのPhase52-12.1＋12.1a＋12.1b分のみ・Phase53/cost除外）→ commit → docs commit → push → Render確認
+
+---
+
+## 【参考・完了済み】Phase52-12.1a Implemented（選択削除UI 追加改善・実装完了・commit前・push前）
+
+- 現在Version: **Version1 / Phase52-12.1a 実装完了（未commit）**／本番: **未反映**
+- dev-check 200/200/200 / node --check OK / localhost配信反映OK。**実ブラウザ実操作確認はユーザー確認項目**
+
+### 現在地
+**Phase52-12.1a 実装完了（index.htmlのみ・追加のみ・UI統一）**。選択削除UIの追加改善。server.js/lib/DB/API/Workflow 無変更・**Phase53/cost非接触**。
+
+### 実装（index.htmlのみ）
+- 共通ビルダー `_buildCaseSelectBar()`（☑選択／全選択／全解除／🗑選択削除(n件)）でホーム・Leaderの選択UIを統一
+- **全選択/全解除**（ホーム: `_homeSelectAll`/`_homeDeselectAll`／Leader: `_clSelectAll`/`_clDeselectAll`）
+- **Leader画面**(`renderCaseListScreen`)に選択モード・チェックボックス・一括削除（`_clSelectMode`/`_clBulkDelete` 他）追加
+- **選択削除バー上部固定**（新CSS `.case-select-bar { position:sticky; top:0 }`）
+- **ホーム案件タブ×削除**（`renderHomeCaseNav` を `case-tab-wrap`+`case-del-btn` でLeaderと統一・× で `_homeDeleteCase`）
+- 個別削除ボタン維持／messages・conversations 非削除（cases のみ削除）
+
+### 確認済み / 未確認
+- ✅ node --check 0エラー / dev-check 200/200/200 / localhost配信HTML反映（HTTP 200）
+- ⏳ **実ブラウザ実操作確認はユーザー確認項目**（選択モード・全選択・全解除・一括削除・タブ×・個別削除・スクロール時の上部固定バー・リロード復活なし・PC/スマホ）
+
+### DB/安全
+- **DBスキーマ変更なし・API追加なし**（`DELETE /api/cases/:id` 流用）・課金なし・Phase53/cost非接触
+
+### 温存（未コミット）
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行・Version2まで保留）
+
+### 次アクション
+- 実ブラウザ実操作確認 → 承認 → 分離stage（server.js/lib/casesDb.js/index.htmlのPhase52-12.1＋12.1a分のみ・Phase53/cost除外）→ commit → docs commit → push → Render確認
+
+---
+
+## 【Run許可範囲・要約】（2026-07-08・詳細は docs/03CLAUDE_RULES.md「18. Run許可範囲」）
+
+- **停止不要でまとめて実行OK**: git status / git diff / grep / node --check / dev-check / localhost・Render GET確認 / HTML取得 / 構文・静的確認 / 調査 / 実装 / docs下書き更新
+- **必ず停止して承認**: git add(分離stage) / git commit / git push / Render本番反映 / DBスキーマ変更 / Supabase直接操作 / POST・DELETE等のDB書込自動APIテスト / テストデータ自動作成 / npm install / 環境変数・APIキー / 課金・契約 / 判断に迷う操作
+- **検証ルール**: 実DBへ勝手にテストデータ作成しない・POST→DELETE自動round-tripテスト禁止・確認は原則localhost実ブラウザ操作優先・DB書込テストは承認後のみ
+
+---
+
+## 【参考・完了済み】Phase52-12.1 Implemented（案件削除Supabase同期・実装完了・commit前・push前）
+
+- 現在Version: **Version1 / Phase52-12.1 実装完了（未commit）**
+- Commit: **未commit**（承認後に分離stage→commit）／本番: **未反映**
+- dev-check 200/200/200 / node --check OK。**実ブラウザ実操作確認はユーザー確認項目**（API往復テストは実施しない方針・Decision的運用）
+
+### 現在地
+**Phase52-12.1 実装完了（未commit）**。ホーム案件削除をSupabase `cases` へ同期削除（リロード復活の解消）。**server.js / lib/casesDb.js / index.html を変更（追加のみ・DBスキーマ変更なし）**・Phase53/cost非接触。
+
+### 実装（追加のみ）
+- **lib/casesDb.js**: `deleteCase(id)`（`cases` を id完全一致1件のみ削除。messages/conversations不変）
+- **server.js**: `DELETE /api/cases/:id`（id必須→`deleteCase`。messages/conversations非削除）
+- **index.html**: `deleteCaseFromServer()` 新設／既存 `deleteCase()` にサーバ削除1行追加／ホームカード「🗑 削除」＋ `_homeDeleteCase()`／選択モード `_homeSelectMode`＋「☑ 選択」トグル／チェックボックス／一括削除 `_homeBulkDelete()`／削除確認ダイアログ
+
+### 確認済み / 未確認
+- ✅ dev-check 200/200/200 / node --check（server.js・casesDb.js・index.htmlインラインJS）0エラー
+- ⏳ **実ブラウザ実操作確認はユーザー確認項目**（案件作成→ホーム削除→Supabase同期→リロード復活なし・PC/スマホ）
+
+### DB/安全
+- **DBスキーマ変更なし**（既存`cases`＋RLSで削除可）。API追加＝`DELETE /api/cases/:id` 1本。課金なし。messages/conversations非削除（設計上cases削除は波及しない）
+- 既知の制約: 他端末localStorageの自動prune（クロス端末即時反映）は未実装（誤削除回避）。削除操作端末はリロード復活なし
+
+### 温存（未コミット）
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行・Version2まで保留）
+
+### 次アクション
+- 実ブラウザ実操作確認 → 承認 → 分離stage（本Phase分のみ・Phase53/cost除外）→ commit → docs commit → push → Render確認
+
+---
+
+## 【参考・完了済み】Phase52-12.0a Complete（ホーム案件タブ表示＋入力無効化 完了・push前）
 
 - 現在Version: **Version1 / Phase52-12.0a Complete**（ホーム案件タブ表示＋入力無効化）
 - Commit: **04e3a63**（`Phase52-12.0a home case tabs and disabled input`）
