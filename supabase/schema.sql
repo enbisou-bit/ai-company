@@ -33,8 +33,11 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
   sender          TEXT NOT NULL CHECK (sender IN ('user', 'assistant')),
   content         TEXT NOT NULL,
+  case_id         TEXT,                 -- Phase52-12.2: 案件別チャット分離（nullable・FKなし・既存はNULL）
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+-- Phase52-12.2: 既存DBへは以下のALTERで case_id を追加（実DB反映済み・非破壊・nullable）
+--   ALTER TABLE messages ADD COLUMN IF NOT EXISTS case_id TEXT;
 
 -- タスクテーブル
 CREATE TABLE IF NOT EXISTS tasks (

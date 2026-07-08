@@ -1096,16 +1096,16 @@ app.get('/api/line-history/members', (req, res) => {
   res.json({ ok: true, members, userId });
 });
 // ── Web チャット履歴 Supabase保存 ─────────────────
-// POST /api/messages  { userId, memberId, sender, content, channel }
+// POST /api/messages  { userId, memberId, sender, content, channel, caseId }
 app.post('/api/messages', express.json(), async (req, res) => {
-  const { userId = 'web-user', memberId, sender, content, channel = 'web' } = req.body || {};
+  const { userId = 'web-user', memberId, sender, content, channel = 'web', caseId = null } = req.body || {};
   if (!memberId || !sender || !content) {
     return res.status(400).json({ ok: false, error: 'memberId / sender / content は必須です' });
   }
   try {
     const { upsertConversation, saveMessage } = require('./lib/conversationsDb');
     const convId = await upsertConversation({ userId, memberId, channel });
-    if (convId) await saveMessage({ conversationId: convId, sender, content });
+    if (convId) await saveMessage({ conversationId: convId, sender, content, caseId: caseId || null });   // Phase52-12.2: 案件別分離用にcase_idを保存（未指定はNULL）
     res.json({ ok: true, saved: Boolean(convId) });
   } catch (e) {
     res.json({ ok: false, error: e.message });

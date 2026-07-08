@@ -8213,6 +8213,7 @@ async function restoreHistoryFromServer() {
         role: msg.sender,
         content: msg.content,
         timestamp: msg.created_at,
+        caseId: msg.case_id,                 // Phase52-12.2: 案件別分離（NULLはundefined扱い＝最新一覧）
       }));
       // タイムスタンプ比較：数値化して比較（+00:00 と Z の形式差を吸収・Phase52-11.1）
       const srvLatest = normalizeMessageTime(serverHistory[serverHistory.length - 1].timestamp);
@@ -8279,7 +8280,9 @@ function mergeServerHistory(memberId, serverHistory) {
   };
   let added = 0, upgraded = 0;
   serverHistory.forEach(sh => {
-    const norm = { role: sh.role || sh.sender, content: sh.content, timestamp: sh.timestamp || sh.created_at || null };
+    // Phase52-12.2: サーバーの case_id を保持（NULL/未指定は undefined＝従来どおり最新一覧に表示）
+    const _shCase = (sh.caseId != null) ? sh.caseId : ((sh.case_id != null) ? sh.case_id : undefined);
+    const norm = { role: sh.role || sh.sender, content: sh.content, timestamp: sh.timestamp || sh.created_at || null, caseId: _shCase };
     const dupIdx = local.findIndex(h => isSame(h, norm));
     if (dupIdx >= 0) {
       const h = local[dupIdx];
@@ -8325,7 +8328,7 @@ async function syncCurrentMemberFromServer() {
     const data = await res.json();
     if (!data || !data.ok || !Array.isArray(data.messages) || data.messages.length === 0) return;
     const serverHistory = data.messages.map(msg => ({
-      role: msg.sender, content: msg.content, timestamp: msg.created_at,
+      role: msg.sender, content: msg.content, timestamp: msg.created_at, caseId: msg.case_id,   // Phase52-12.2: 案件別分離
     }));
     console.log(`[conv-sync] pull member=${memberId} count=${serverHistory.length}`);
     const changed = mergeServerHistory(memberId, serverHistory);
@@ -8545,7 +8548,7 @@ async function selectMember(m) {
     .then(r => r.json())
     .then(d => {
       if (!d.ok || !Array.isArray(d.messages) || d.messages.length === 0) return;
-      const srv = d.messages.map(msg => ({ role: msg.sender, content: msg.content, timestamp: msg.created_at }));
+      const srv = d.messages.map(msg => ({ role: msg.sender, content: msg.content, timestamp: msg.created_at, caseId: msg.case_id }));   // Phase52-12.2: 案件別分離
       if (srv.length === 0) return;
       // Phase52-11.4: REPLACEをやめMERGEへ統一（取りこぼし防止・差分追加時のみ再描画）
       if (mergeServerHistory(m.id, srv)) {
@@ -9105,11 +9108,12 @@ async function sendMessage() {
       // Supabase へ非同期保存（失敗してもチャットに影響しない）
       // Phase52-11.7: user保存の確定後に assistant を保存＝サーバー created_at の逆転(原因1)を防止
       const _mid = currentMember.id;
+      const _cid = _ncActiveCaseId(_mid) || null;   // Phase52-12.2: 現在案件のcaseId（特定案件ビュー選択時のみ・最新/未選択はnull）
       fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: _mid, sender: 'user',      content: text,  channel: 'web' }) })
+        body: JSON.stringify({ memberId: _mid, sender: 'user',      content: text,  channel: 'web', caseId: _cid }) })
         .catch(() => {})
         .then(() => fetch('/api/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memberId: _mid, sender: 'assistant', content: reply, channel: 'web' }) }))
+          body: JSON.stringify({ memberId: _mid, sender: 'assistant', content: reply, channel: 'web', caseId: _cid }) }))
         .catch(() => {});
 
       // 案件記憶：現在案件に提案を保存
