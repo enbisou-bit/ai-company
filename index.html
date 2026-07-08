@@ -983,6 +983,33 @@
   .oe-imi-copybtn:hover { background: rgba(255,80,150,0.3); }
   .oe-imi-copymsg     { font-size: 10px; color: rgba(255,140,190,0.85); opacity: 0; transition: opacity 0.3s; }
   .oe-imi-copymsg.show { opacity: 1; }
+  /* Phase53: Affiliate Intelligence Core (Version2 Core) */
+  .oe-aic-section    { border-radius: 10px; border: 1px solid rgba(255,200,80,0.30); background: linear-gradient(135deg, rgba(40,30,4,0.92), rgba(20,15,3,0.96)); padding: 12px 14px; margin-top: 10px; }
+  .oe-aic-title      { font-size: 11px; color: rgba(255,215,120,0.9); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
+  .oe-aic-badge      { display: inline-block; font-size: 8px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin: 2px 4px 2px 0; background: rgba(255,200,80,0.16); color: rgba(255,220,140,0.95); border: 1px solid rgba(255,200,80,0.4); }
+  .oe-aic-summary    { background: rgba(255,200,80,0.08); border: 1px solid rgba(255,200,80,0.35); border-radius: 8px; padding: 9px 11px; margin: 8px 0; font-size: 11px; color: rgba(255,225,160,0.95); line-height: 1.6; }
+  .oe-aic-card       { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px 11px; margin-bottom: 7px; }
+  .oe-aic-card.rank1 { border-color: rgba(255,215,120,0.6); background: rgba(255,200,80,0.07); }
+  .oe-aic-card-head  { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .oe-aic-rank       { font-size: 12px; font-weight: 800; color: rgba(255,215,120,0.95); }
+  .oe-aic-name       { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.85); flex: 1; }
+  .oe-aic-score      { font-size: 11px; font-weight: 800; padding: 2px 9px; border-radius: 10px; }
+  .oe-aic-status-good         { color: rgba(150,230,150,0.95); background: rgba(80,200,90,0.15); }
+  .oe-aic-status-watch        { color: rgba(255,210,120,0.95); background: rgba(255,180,60,0.15); }
+  .oe-aic-status-insufficient { color: rgba(255,150,150,0.9); background: rgba(255,90,90,0.13); }
+  .oe-aic-metrics    { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10px; color: rgba(255,255,255,0.6); line-height: 1.6; }
+  .oe-aic-metrics span strong { color: rgba(255,220,140,0.85); font-weight: 700; }
+  .oe-aic-note       { font-size: 10px; color: rgba(255,255,255,0.55); line-height: 1.7; }
+  .oe-aic-warning    { font-size: 10px; color: rgba(255,180,80,0.9); line-height: 1.6; }
+  .oe-aic-label      { font-size: 10px; color: rgba(255,215,120,0.8); font-weight: 700; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .oe-aic-input-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; margin: 6px 0; }
+  .oe-aic-input      { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,200,80,0.3); border-radius: 6px; color: rgba(255,255,255,0.85); font-size: 10px; padding: 4px 8px; width: 100%; box-sizing: border-box; }
+  .oe-aic-btnrow     { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .oe-aic-btn        { background: rgba(255,200,80,0.15); border: 1px solid rgba(255,200,80,0.4); border-radius: 14px; color: rgba(255,220,140,0.95); font-size: 10px; font-weight: 600; padding: 4px 14px; cursor: pointer; transition: background 0.15s; }
+  .oe-aic-btn:hover  { background: rgba(255,200,80,0.3); }
+  .oe-aic-btn.remove { background: rgba(255,90,90,0.12); border-color: rgba(255,90,90,0.35); color: rgba(255,160,160,0.9); font-size: 9px; padding: 2px 10px; }
+  .oe-aic-copymsg    { font-size: 10px; color: rgba(255,220,140,0.9); opacity: 0; transition: opacity 0.3s; }
+  .oe-aic-copymsg.show { opacity: 1; }
   /* Phase50-2: Instagram Content Planning */
   .oe-icp-section    { border-radius: 10px; border: 1px solid rgba(60,200,200,0.28); background: linear-gradient(135deg, rgba(6,34,40,0.92), rgba(3,16,20,0.96)); padding: 12px 14px; margin-top: 10px; }
   .oe-icp-title      { font-size: 11px; color: rgba(120,220,220,0.9); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; font-weight: 700; }
@@ -24311,6 +24338,7 @@ function serializeOutputDraft(format) {
     appendPublishingReadyToExportJson(jsonObj);
     appendInstagramLearningToExportJson(jsonObj);
     appendAssetLibrarySaveToExportJson(jsonObj);
+    appendAffiliateIntelligenceCoreToExportJson(jsonObj);
     return JSON.stringify(jsonObj, null, 2);
   }
 
@@ -24554,6 +24582,7 @@ function serializeOutputDraft(format) {
   appendPublishingReadyToExportMarkdown(mdLines);
   appendInstagramLearningToExportMarkdown(mdLines);
   appendAssetLibrarySaveToExportMarkdown(mdLines);
+  appendAffiliateIntelligenceCoreToExportMarkdown(mdLines);
   return mdLines.join('\n');
 }
 
@@ -31581,6 +31610,356 @@ function appendAssetLibrarySaveToExportJson(payload) {
   };
 }
 
+// ============================================================
+// Phase53: Affiliate Intelligence Core（Version2 Core・Decision 043）
+// 目的: Version2「Instagram Affiliate Intelligence Company」の中核となる器。
+//   16判断項目（市場/商品/ASP/利益率/承認率/EPC/CVR/Instagram相性/競合数/案件寿命/
+//   季節性/保存率予測/クリック率予測/想定売上/想定利益/おすすめ順位）を保持し、
+//   統合スコアと「おすすめ順位付き利益ランキング」を算出する。
+//   Leaderへ「今一番利益が出る案件は？」に答える統合サマリーを提示する。
+// 方針（Decision 043 / Decision 040踏襲）: index.html追加のみ・既存関数は無変更・
+//   案件データはユーザーの手動入力のみ（_affiliateCasesメモリ内）・予測ヒューリスティック・
+//   実ASP/Instagram API接続・自動データ取得・画像/動画生成・投稿・外部AI実行・自動課金は一切なし。
+//   server.js変更・DB変更・localStorage保存は行わない。
+// ============================================================
+
+const AFFILIATE_INTELLIGENCE_CORE_VERSION = '1.0.0';
+
+const AIC_SAFETY_LABELS = [
+  'No Real API Connection', 'Manual Input Only', 'Prediction Heuristic Only', 'Read Only Analysis',
+];
+
+const AIC_CASE_MAX = 50;
+// 案件データはメモリ保持のみ（localStorage/DB/Asset Library/Learningへは書き込まない）
+let _affiliateCases = [];
+
+function _aicNum(v) { return (typeof v === 'number' && !isNaN(v)) ? v : null; }
+
+function _aicNormalize(v, fullValue) {
+  if (v === null) return null;
+  var s = (v / fullValue) * 100;
+  return Math.max(0, Math.min(100, s));
+}
+
+function _aicStatusFromScore(score) {
+  if (score >= 70) return 'good';
+  if (score >= 45) return 'watch';
+  return 'insufficient';
+}
+
+// 統合スコア（0〜100）: 加重ヒューリスティック。未入力項目は中立値50で扱い（捏造しない）、
+// knownFactorsで入力充足度を併記する（Decision 032の誠実性方針を踏襲）。
+function _aicIntegratedScore(c) {
+  var parts = [];
+  function add(val, weight) { parts.push({ v: (val === null ? 50 : val), w: weight, known: val !== null }); }
+  add(_aicNormalize(_aicNum(c.profitRate), 100), 0.20);   // 利益率 100%=満点
+  add(_aicNormalize(_aicNum(c.approvalRate), 100), 0.15); // 承認率 100%=満点
+  add(_aicNormalize(_aicNum(c.epc), 100), 0.15);          // EPC 100円=満点（参考基準）
+  add(_aicNormalize(_aicNum(c.cvr), 10), 0.15);           // CVR 10%=満点（参考基準）
+  add(_aicNormalize(_aicNum(c.igFit), 100), 0.20);        // Instagram相性 100=満点
+  var comp = _aicNum(c.competitors);
+  add(comp === null ? null : Math.max(0, 100 - Math.min(100, comp * 2)), 0.10); // 競合数 少ないほど高（50件で0）
+  add(_aicNormalize(_aicNum(c.lifespanMonths), 24), 0.05); // 案件寿命 24ヶ月=満点
+  var tot = 0, wsum = 0, known = 0;
+  parts.forEach(function(p) { tot += p.v * p.w; wsum += p.w; if (p.known) known++; });
+  var score = wsum > 0 ? Math.round(tot / wsum) : 0;
+  return { score: Math.max(0, Math.min(100, score)), knownFactors: known, totalFactors: parts.length };
+}
+
+// 想定売上・想定利益（EPC優先、なければ CVR×報酬単価。承認率・利益率で実収益へ補正）
+function _aicEstimate(c) {
+  var clicks = _aicNum(c.monthlyClicks);
+  var epc = _aicNum(c.epc);
+  var cvr = _aicNum(c.cvr);
+  var payout = _aicNum(c.payout);
+  var sales = null;
+  if (clicks !== null && epc !== null) sales = clicks * epc;
+  else if (clicks !== null && cvr !== null && payout !== null) sales = clicks * (cvr / 100) * payout;
+  var profit = null;
+  if (sales !== null) {
+    var appr = (c.approvalRate !== null && typeof c.approvalRate === 'number') ? c.approvalRate / 100 : 1;
+    var pr = (c.profitRate !== null && typeof c.profitRate === 'number') ? c.profitRate / 100 : 1;
+    profit = Math.round(sales * appr * pr);
+    sales = Math.round(sales);
+  }
+  return { estimatedSales: sales, estimatedProfit: profit };
+}
+
+// 案件登録（手動入力のみ）。16項目のうちユーザーが入力可能な生データを保持する。
+function recordAffiliateCase(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  var name = (entry.name || '').trim();
+  if (!name) return null;
+  var record = {
+    id: 'aic-' + Date.now(),
+    recordedAt: new Date().toISOString(),
+    name: name,
+    market: (entry.market || '').trim(),
+    asp: (entry.asp || '').trim(),
+    seasonality: (entry.seasonality || '').trim(),
+    payout: _aicNum(entry.payout),
+    profitRate: _aicNum(entry.profitRate),
+    approvalRate: _aicNum(entry.approvalRate),
+    epc: _aicNum(entry.epc),
+    cvr: _aicNum(entry.cvr),
+    igFit: _aicNum(entry.igFit),
+    competitors: _aicNum(entry.competitors),
+    lifespanMonths: _aicNum(entry.lifespanMonths),
+    saveRatePred: _aicNum(entry.saveRatePred),
+    clickRatePred: _aicNum(entry.clickRatePred),
+    monthlyClicks: _aicNum(entry.monthlyClicks),
+  };
+  _affiliateCases = [record].concat(_affiliateCases).slice(0, AIC_CASE_MAX);
+  return record;
+}
+
+function removeAffiliateCase(id) {
+  _affiliateCases = _affiliateCases.filter(function(c) { return c.id !== id; });
+  renderOutputEnginePanel();
+}
+
+// 全案件を統合スコアで採点し、おすすめ順位付きランキングを生成する
+function buildAffiliateIntelligenceRanking() {
+  var ranked = _affiliateCases.map(function(c) {
+    var sc = _aicIntegratedScore(c);
+    var est = _aicEstimate(c);
+    return {
+      id: c.id, name: c.name, market: c.market, asp: c.asp, seasonality: c.seasonality,
+      payout: c.payout, profitRate: c.profitRate, approvalRate: c.approvalRate, epc: c.epc,
+      cvr: c.cvr, igFit: c.igFit, competitors: c.competitors, lifespanMonths: c.lifespanMonths,
+      saveRatePred: c.saveRatePred, clickRatePred: c.clickRatePred, monthlyClicks: c.monthlyClicks,
+      integratedScore: sc.score, knownFactors: sc.knownFactors, totalFactors: sc.totalFactors,
+      status: _aicStatusFromScore(sc.score),
+      estimatedSales: est.estimatedSales, estimatedProfit: est.estimatedProfit,
+    };
+  });
+  ranked.sort(function(a, b) {
+    if (b.integratedScore !== a.integratedScore) return b.integratedScore - a.integratedScore;
+    var ap = a.estimatedProfit === null ? -1 : a.estimatedProfit;
+    var bp = b.estimatedProfit === null ? -1 : b.estimatedProfit;
+    return bp - ap;
+  });
+  ranked.forEach(function(r, i) { r.rank = i + 1; });
+  return ranked;
+}
+
+// Leaderへ「今一番利益が出る案件は？」に答える統合サマリー
+function _aicBuildLeaderSummary(ranked) {
+  if (!ranked.length) return '案件が未登録です。下のフォームから案件を手動入力すると、統合スコアとおすすめ順位を算出します。';
+  var top = ranked[0];
+  var profitTxt = top.estimatedProfit !== null ? ('想定利益 約' + top.estimatedProfit.toLocaleString() + '円/月') : '想定利益は入力不足で未算出';
+  var salesTxt = top.estimatedSales !== null ? ('想定売上 約' + top.estimatedSales.toLocaleString() + '円/月') : '';
+  return '今おすすめの案件は「' + top.name + '」'
+    + (top.asp ? '（' + top.asp + '）' : '')
+    + '。統合スコア ' + top.integratedScore + '点'
+    + '、' + profitTxt + (salesTxt ? '、' + salesTxt : '')
+    + '。入力充足度 ' + top.knownFactors + '/' + top.totalFactors + '項目。';
+}
+
+function _aicCaseWarnings(ranked) {
+  var warnings = ['本Phaseは手動入力データに基づく予測ヒューリスティックです。実際のASP管理画面・Instagram Graph API等への接続や自動データ取得は一切行っていません。'];
+  var lowInput = ranked.filter(function(r) { return r.knownFactors < 4; });
+  if (lowInput.length) warnings.push(lowInput.length + '件の案件は入力項目が少なく（4項目未満）、統合スコアの信頼度が低い状態です。');
+  return warnings;
+}
+
+function _aicBuildRankingText(ranked) {
+  var lines = ['【Affiliate Intelligence Core / おすすめ順位ランキング】', ''];
+  if (!ranked.length) { lines.push('（案件未登録）'); return lines.join('\n'); }
+  ranked.forEach(function(r) {
+    lines.push('#' + r.rank + ' ' + r.name + (r.asp ? '（' + r.asp + '）' : '') + ' — 統合スコア ' + r.integratedScore + '点');
+    if (r.market) lines.push('  市場: ' + r.market);
+    var m = [];
+    if (r.profitRate !== null) m.push('利益率 ' + r.profitRate + '%');
+    if (r.approvalRate !== null) m.push('承認率 ' + r.approvalRate + '%');
+    if (r.epc !== null) m.push('EPC ' + r.epc + '円');
+    if (r.cvr !== null) m.push('CVR ' + r.cvr + '%');
+    if (r.igFit !== null) m.push('IG相性 ' + r.igFit);
+    if (r.competitors !== null) m.push('競合 ' + r.competitors + '件');
+    if (r.lifespanMonths !== null) m.push('寿命 ' + r.lifespanMonths + 'ヶ月');
+    if (r.seasonality) m.push('季節性 ' + r.seasonality);
+    if (m.length) lines.push('  ' + m.join(' / '));
+    var e = [];
+    if (r.estimatedSales !== null) e.push('想定売上 約' + r.estimatedSales.toLocaleString() + '円/月');
+    if (r.estimatedProfit !== null) e.push('想定利益 約' + r.estimatedProfit.toLocaleString() + '円/月');
+    if (e.length) lines.push('  ' + e.join(' / '));
+  });
+  return lines.join('\n');
+}
+
+function _aicBuildFullReport(ranked) {
+  var lines = ['【Affiliate Intelligence Core】 v' + AFFILIATE_INTELLIGENCE_CORE_VERSION, ''];
+  lines.push('Safety: ' + AIC_SAFETY_LABELS.join(' / '));
+  lines.push('');
+  lines.push('■ Leader統合判断（今一番利益が出る案件は？）');
+  lines.push(_aicBuildLeaderSummary(ranked));
+  lines.push('');
+  lines.push(_aicBuildRankingText(ranked));
+  return lines.join('\n');
+}
+
+// 手動入力フォームからの案件登録
+function addAffiliateCase() {
+  function num(id) {
+    var el = document.getElementById(id);
+    if (!el || el.value === '') return null;
+    var v = parseFloat(el.value);
+    return isNaN(v) ? null : v;
+  }
+  function str(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+  var rec = recordAffiliateCase({
+    name: str('aic-input-name'),
+    market: str('aic-input-market'),
+    asp: str('aic-input-asp'),
+    seasonality: str('aic-input-seasonality'),
+    payout: num('aic-input-payout'),
+    profitRate: num('aic-input-profitRate'),
+    approvalRate: num('aic-input-approvalRate'),
+    epc: num('aic-input-epc'),
+    cvr: num('aic-input-cvr'),
+    igFit: num('aic-input-igFit'),
+    competitors: num('aic-input-competitors'),
+    lifespanMonths: num('aic-input-lifespanMonths'),
+    saveRatePred: num('aic-input-saveRatePred'),
+    clickRatePred: num('aic-input-clickRatePred'),
+    monthlyClicks: num('aic-input-monthlyClicks'),
+  });
+  if (!rec) {
+    var nameEl = document.getElementById('aic-input-name');
+    if (nameEl) { nameEl.style.borderColor = 'rgba(255,90,90,0.7)'; setTimeout(function() { nameEl.style.borderColor = ''; }, 1500); }
+    return;
+  }
+  renderOutputEnginePanel();
+}
+
+function copyAffiliateIntelligenceField(fieldKey) {
+  var ranked = buildAffiliateIntelligenceRanking();
+  var text = '';
+  if (fieldKey === 'ranking') text = _aicBuildRankingText(ranked);
+  else if (fieldKey === 'leader') text = _aicBuildLeaderSummary(ranked);
+  else if (fieldKey === 'full') text = _aicBuildFullReport(ranked);
+  if (!text) return;
+  var msg = document.getElementById('oe-aic-copy-msg');
+  function showMsg() { if (msg) { msg.classList.add('show'); setTimeout(function() { msg.classList.remove('show'); }, 1800); } }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); showMsg(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+}
+
+// Phase53: Affiliate Intelligence Core HTML生成
+// _lastOutputDraftに依存しない会社レベルの案件判断ツール（常時表示）。
+function buildAffiliateIntelligenceCoreHtml() {
+  var esc = escapeHtml;
+  var ranked = buildAffiliateIntelligenceRanking();
+
+  var safetyBadgesHtml = AIC_SAFETY_LABELS.map(function(label) {
+    return '<span class="oe-aic-badge">' + esc(label) + '</span>';
+  }).join('');
+
+  var leaderSummaryHtml = '<div class="oe-aic-summary">👑 <strong>Leader統合判断</strong><br>' + esc(_aicBuildLeaderSummary(ranked)) + '</div>';
+
+  var rankingHtml = ranked.map(function(r) {
+    var statusClass = 'oe-aic-status-' + r.status;
+    var metrics = [];
+    function push(label, val, unit) { if (val !== null && val !== '') metrics.push('<span>' + esc(label) + ': <strong>' + esc(String(val)) + (unit || '') + '</strong></span>'); }
+    push('市場', r.market, '');
+    push('利益率', r.profitRate, '%');
+    push('承認率', r.approvalRate, '%');
+    push('EPC', r.epc, '円');
+    push('CVR', r.cvr, '%');
+    push('IG相性', r.igFit, '');
+    push('競合数', r.competitors, '件');
+    push('案件寿命', r.lifespanMonths, 'ヶ月');
+    push('季節性', r.seasonality, '');
+    push('保存率予測', r.saveRatePred, '%');
+    push('クリック率予測', r.clickRatePred, '%');
+    push('想定売上', r.estimatedSales !== null ? '約' + r.estimatedSales.toLocaleString() : null, '円/月');
+    push('想定利益', r.estimatedProfit !== null ? '約' + r.estimatedProfit.toLocaleString() : null, '円/月');
+    return '<div class="oe-aic-card' + (r.rank === 1 ? ' rank1' : '') + '">'
+      + '<div class="oe-aic-card-head">'
+      +   '<span class="oe-aic-rank">#' + r.rank + '</span>'
+      +   '<span class="oe-aic-name">' + esc(r.name) + (r.asp ? ' <span style="opacity:.6;font-weight:400;">' + esc(r.asp) + '</span>' : '') + '</span>'
+      +   '<span class="oe-aic-score ' + statusClass + '">' + r.integratedScore + '点</span>'
+      + '</div>'
+      + '<div class="oe-aic-metrics">' + metrics.join('') + '</div>'
+      + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目'
+      +   ' <button class="oe-aic-btn remove" onclick="removeAffiliateCase(\'' + r.id + '\')">除外</button></div>'
+      + '</div>';
+  }).join('');
+  if (!ranked.length) rankingHtml = '<div class="oe-aic-note">案件が未登録です。下のフォームから最初の案件を入力してください。</div>';
+
+  var warningsHtml = _aicCaseWarnings(ranked).map(function(w) { return '<div class="oe-aic-warning">⚠ ' + esc(w) + '</div>'; }).join('');
+
+  var inputGrid = '<div class="oe-aic-input-grid">'
+    + '<input type="text" id="aic-input-name" class="oe-aic-input" placeholder="案件/商品名 *">'
+    + '<input type="text" id="aic-input-market" class="oe-aic-input" placeholder="市場/ジャンル">'
+    + '<input type="text" id="aic-input-asp" class="oe-aic-input" placeholder="ASP名">'
+    + '<input type="number" id="aic-input-payout" class="oe-aic-input" placeholder="報酬単価(円)">'
+    + '<input type="number" id="aic-input-profitRate" class="oe-aic-input" placeholder="利益率(%)">'
+    + '<input type="number" id="aic-input-approvalRate" class="oe-aic-input" placeholder="承認率(%)">'
+    + '<input type="number" id="aic-input-epc" class="oe-aic-input" placeholder="EPC(円)">'
+    + '<input type="number" id="aic-input-cvr" class="oe-aic-input" placeholder="CVR(%)">'
+    + '<input type="number" id="aic-input-igFit" class="oe-aic-input" placeholder="Instagram相性(0-100)">'
+    + '<input type="number" id="aic-input-competitors" class="oe-aic-input" placeholder="競合数(件)">'
+    + '<input type="number" id="aic-input-lifespanMonths" class="oe-aic-input" placeholder="案件寿命(月)">'
+    + '<input type="text" id="aic-input-seasonality" class="oe-aic-input" placeholder="季節性(例:12月がピーク)">'
+    + '<input type="number" id="aic-input-saveRatePred" class="oe-aic-input" placeholder="保存率予測(%)">'
+    + '<input type="number" id="aic-input-clickRatePred" class="oe-aic-input" placeholder="クリック率予測(%)">'
+    + '<input type="number" id="aic-input-monthlyClicks" class="oe-aic-input" placeholder="想定月間クリック数">'
+    + '</div>';
+
+  return '<div class="oe-aic-section">'
+    + '<div class="oe-aic-title">🏆 Affiliate Intelligence Core <span style="font-weight:400;opacity:.5;">v' + AFFILIATE_INTELLIGENCE_CORE_VERSION + ' / Version2 Core</span></div>'
+    + '<div>' + safetyBadgesHtml + '</div>'
+    + leaderSummaryHtml
+    + '<div class="oe-aic-label">おすすめ順位ランキング（統合スコア順）</div>'
+    + rankingHtml
+    + (warningsHtml ? '<div class="oe-aic-label">Warnings</div>' + warningsHtml : '')
+    + '<div class="oe-aic-label">案件を追加（手動入力・* は必須）</div>'
+    + inputGrid
+    + '<div class="oe-aic-btnrow">'
+    +   '<button class="oe-aic-btn" onclick="addAffiliateCase()">案件を追加</button>'
+    +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'leader\')">Copy Leader判断</button>'
+    +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'ranking\')">Copy ランキング</button>'
+    +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'full\')">Copy Full Report</button>'
+    +   '<span id="oe-aic-copy-msg" class="oe-aic-copymsg">コピーしました</span>'
+    + '</div>'
+    + '</div>';
+}
+
+// Phase53: Export反映（案件が1件以上ある時のみ出力）
+function appendAffiliateIntelligenceCoreToExportMarkdown(lines) {
+  if (!_affiliateCases.length) return;
+  var ranked = buildAffiliateIntelligenceRanking();
+  lines.push('');
+  lines.push('## Affiliate Intelligence Core (Phase53 / Version2 Core)');
+  lines.push('- Safety: ' + AIC_SAFETY_LABELS.join(' / '));
+  lines.push('- Leader統合判断: ' + _aicBuildLeaderSummary(ranked));
+  lines.push('- おすすめ順位ランキング:');
+  ranked.forEach(function(r) {
+    var extra = [];
+    if (r.estimatedProfit !== null) extra.push('想定利益 約' + r.estimatedProfit.toLocaleString() + '円/月');
+    lines.push('  - #' + r.rank + ' ' + r.name + (r.asp ? '（' + r.asp + '）' : '') + ' 統合スコア ' + r.integratedScore + '点' + (extra.length ? ' / ' + extra.join(' / ') : ''));
+  });
+}
+
+function appendAffiliateIntelligenceCoreToExportJson(payload) {
+  if (!_affiliateCases.length) return;
+  var ranked = buildAffiliateIntelligenceRanking();
+  payload.affiliateIntelligenceCore = {
+    version: AFFILIATE_INTELLIGENCE_CORE_VERSION,
+    safetyLabels: AIC_SAFETY_LABELS,
+    leaderSummary: _aicBuildLeaderSummary(ranked),
+    ranking: ranked,
+  };
+}
+
 // Phase44-6: 汎用ディスパッチャー
 function buildOutputPackageHtml() {
   if (!_lastOutputDraft || !_lastOutputDraft.fields) return '';
@@ -31718,6 +32097,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
     + _oeSafe(buildInstagramLearningHtml,        'InstagramLearningCenter')
     + _oeSafe(buildAssetLibrarySaveHtml,         'AssetLibrarySaveCenter')
+    + _oeSafe(buildAffiliateIntelligenceCoreHtml, 'AffiliateIntelligenceCore')
     + _oeSafe(buildLearningItemsHtml,            'LearningItems')
     + _oeSafe(buildMemoryCandidatesHtml,         'MemoryCandidates')
     + _oeSafe(buildKnowledgeCandidatesHtml,      'KnowledgeCandidates')
