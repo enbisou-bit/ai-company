@@ -1181,6 +1181,16 @@ app.post('/api/case-memory/:caseId', express.json(), async (req, res) => {
     res.json({ ok: !dbResult.error, error: dbResult.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
+
+// DELETE /api/cases/:id  （Phase52-12.1: 案件削除同期。id完全一致1件のみcases行を削除。messages/conversationsは削除しない）
+app.delete('/api/cases/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ ok: false, error: 'id は必須です' });
+  try {
+    const result = await getCasesDb().deleteCase(id);
+    res.json({ ok: !result.error, error: result.error });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
 // ─────────────────────────────────────────────────
 
 // ══════════════════════════════════════════════════════════════

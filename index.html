@@ -5454,6 +5454,10 @@
   .case-card-open:hover { background: rgba(0,212,255,0.25); }
   .case-card-del { border: 1px solid rgba(255,90,90,0.35); background: rgba(255,90,90,0.10); color: rgba(255,150,150,0.9); }
   .case-card-del:hover { background: rgba(255,90,90,0.25); color: #fff; }
+  /* Phase52-12.1a: 選択ツールバー（上部固定・全選択/全解除/一括削除・追加のみ） */
+  .case-select-bar { position: sticky; top: 0; z-index: 6; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 8px 0; margin-bottom: 8px; background: rgba(13,17,23,0.96); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .case-sel-btn { padding: 5px 12px; border-radius: 10px; font-size: 11px; cursor: pointer; white-space: nowrap; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
+  .case-sel-btn:hover { background: rgba(255,255,255,0.14); }
   @media (max-width: 768px) { .case-list-screen { padding: 12px; } }
 
   /* ── Phase52-11.8: 新規案件作成バー（追加のみ） ── */
@@ -11624,7 +11628,14 @@ async function syncCasesFromServer() {
     const data = await res.json();
     if (!data || !data.ok || !Array.isArray(data.cases)) return;
     mergeServerCases(data.cases);
-    if (currentMember) renderCaseNav(currentMember.id);
+    if (currentMember) {
+      renderCaseNav(currentMember.id);
+    } else {
+      // Phase52-12.1b: ホーム表示中（未選択）は同期完了後に案件一覧＋タブを再描画。
+      // F5/ログイン直後、localStorageに案件が無くSupabaseのみに存在する場合の「ホーム0件表示」を解消する。
+      // renderHomeCaseList()は案件0件ならfalseを返し既存 empty-state を維持（追加のみ・既存挙動を壊さない）。
+      try { renderHomeCaseList(); renderHomeCaseNav(); } catch (e2) { /* 描画失敗時も既存表示を維持 */ }
+    }
   } catch (e) { /* localStorageで継続（既存挙動維持） */ }
 }
 function pushCaseToServer(caseId) {
@@ -11639,6 +11650,13 @@ function pushCaseToServer(caseId) {
       body: JSON.stringify(body),
     }).catch(() => {});
   } catch (e) { /* 失敗握り潰し・localStorageは保存済み */ }
+}
+// Phase52-12.1: 案件削除をSupabaseへ同期（DELETE /api/cases/:id・id完全一致1件のみ・messages/conversationsは削除しない・失敗握り潰し）
+function deleteCaseFromServer(caseId) {
+  if (!caseId) return;
+  try {
+    fetch('/api/cases/' + encodeURIComponent(caseId), { method: 'DELETE' }).catch(() => {});
+  } catch (e) { /* 失敗握り潰し・localStorageは削除済み。リロード時のmerge復活はサーバ削除成功後に解消 */ }
 }
 function normalizeCaseTitle(text) {
   if (!text) return '';
@@ -11759,6 +11777,7 @@ function deleteCase(memberId, caseId) {
   if (!confirm(`案件「${nm}」を削除しますか？\nこの操作は元に戻せません。`)) return;
   delete cases[caseId];                          // 案件メタデータのみ削除（chatHistory/Supabaseの履歴は保持）
   saveCases();
+  deleteCaseFromServer(caseId);                  // Phase52-12.1: Supabase cases も同期削除（messages/conversationsは削除しない）
   // Phase52-12.0(修正): 案件が残っていれば毎回ホームへ戻さず連続削除しやすくする。0件時のみホーム/empty-state。
   const _remaining = Object.keys(cases).length;
   if (_remaining === 0) { goHome(); return; }     // 最後の1件を削除 → ホーム/empty-state（renderHomeCaseListが0件でempty-state分岐）
@@ -11776,6 +11795,58 @@ function _ncFormatTime(iso) {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 // Phase52-11.8d: 案件カード一覧をチャット欄に描画（最終更新順・開く/削除つき・追加のみ）
+// ── Phase52-12.1a: 選択ツールバー共通ビルダー（ホーム/Leader画面でUI統一・追加のみ） ──
+// opts: { selectMode, selectedCount, onToggle, onSelectAll, onDeselectAll, onBulkDelete }
+function _buildCaseSelectBar(opts) {
+  const bar = document.createElement('div');
+  bar.className = 'case-select-bar';
+  const selBtn = document.createElement('button');
+  selBtn.className = 'case-sel-btn';
+  selBtn.textContent = opts.selectMode ? '選択モード解除' : '☑ 選択';
+  selBtn.onclick = opts.onToggle;
+  bar.appendChild(selBtn);
+  if (opts.selectMode) {
+    const allBtn = document.createElement('button');
+    allBtn.className = 'case-sel-btn';
+    allBtn.textContent = '全選択';
+    allBtn.onclick = opts.onSelectAll;
+    bar.appendChild(allBtn);
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'case-sel-btn';
+    noneBtn.textContent = '全解除';
+    noneBtn.onclick = opts.onDeselectAll;
+    bar.appendChild(noneBtn);
+    const bulkBtn = document.createElement('button');
+    bulkBtn.className = 'case-card-del';
+    bulkBtn.id = 'case-bulk-del-btn';
+    bulkBtn.textContent = `🗑 選択削除（${opts.selectedCount}件）`;
+    bulkBtn.onclick = opts.onBulkDelete;
+    bar.appendChild(bulkBtn);
+  }
+  return bar;
+}
+// ── Phase52-12.1a: Leader画面（案件カード一覧）の選択モード・全選択・一括削除（追加のみ） ──
+let _clSelectMode = false;
+const _clSelectedIds = new Set();
+function _clToggleSelectMode(memberId) { _clSelectMode = !_clSelectMode; _clSelectedIds.clear(); renderCaseListScreen(memberId); }
+function _clSelectAll(memberId) { getCasesForMember(memberId).forEach(c => _clSelectedIds.add(c.id)); renderCaseListScreen(memberId); }
+function _clDeselectAll(memberId) { _clSelectedIds.clear(); renderCaseListScreen(memberId); }
+function _clToggleSelected(caseId, checked) {
+  if (checked) _clSelectedIds.add(caseId); else _clSelectedIds.delete(caseId);
+  const b = document.getElementById('case-bulk-del-btn');
+  if (b) b.textContent = `🗑 選択削除（${_clSelectedIds.size}件）`;
+}
+function _clBulkDelete(memberId) {
+  const ids = Array.from(_clSelectedIds);
+  if (ids.length === 0) { alert('削除する案件を選択してください。'); return; }
+  if (!confirm(`選択した ${ids.length} 件の案件を削除しますか？\nこの操作は元に戻せません。`)) return;
+  ids.forEach(id => { if (cases[id]) { delete cases[id]; deleteCaseFromServer(id); } });   // local + Supabase削除（messages非削除）
+  saveCases();
+  _clSelectedIds.clear();
+  _clSelectMode = false;
+  renderCaseNav(memberId);
+  renderCaseListScreen(memberId);
+}
 function renderCaseListScreen(memberId) {
   const chat = document.getElementById('chat-area');
   if (!chat) return;
@@ -11793,6 +11864,15 @@ function renderCaseListScreen(memberId) {
     empty.textContent = '案件はまだありません。「＋新規案件」から作成できます。';
     wrap.appendChild(empty);
   } else {
+    // Phase52-12.1a: 選択ツールバー（上部固定・選択/全選択/全解除/一括削除・ホームと統一）
+    wrap.appendChild(_buildCaseSelectBar({
+      selectMode: _clSelectMode,
+      selectedCount: _clSelectedIds.size,
+      onToggle: () => _clToggleSelectMode(memberId),
+      onSelectAll: () => _clSelectAll(memberId),
+      onDeselectAll: () => _clDeselectAll(memberId),
+      onBulkDelete: () => _clBulkDelete(memberId),
+    }));
     list.forEach(c => {
       const msgs = (chatHistory[memberId] || []).filter(h => h.caseId === c.id);
       const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
@@ -11811,6 +11891,15 @@ function renderCaseListScreen(memberId) {
         `<div class="case-card-snippet">${escapeHtml(snippet)}</div>`;
       const actions = document.createElement('div');
       actions.className = 'case-card-actions';
+      if (_clSelectMode) {
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = _clSelectedIds.has(c.id);
+        cb.title = '選択';
+        cb.style.cssText = 'width:18px;height:18px;cursor:pointer;';
+        cb.onclick = (e) => { e.stopPropagation(); _clToggleSelected(c.id, cb.checked); };
+        actions.appendChild(cb);
+      }
       const openBtn = document.createElement('button');
       openBtn.className = 'case-card-open';
       openBtn.textContent = '開く';
@@ -11860,11 +11949,55 @@ function _homeMakeCard(titleHtml, snippet, onOpen, openLabel) {
   card.appendChild(actions);
   return card;
 }
+// ── Phase52-12.1: ホーム案件の削除・選択モード・一括削除（追加のみ・既存 confirm/case-card を流用） ──
+// 削除対象は cases(localStorage) と Supabase(cases行) のみ。messages/conversations は削除しない。
+let _homeSelectMode = false;
+const _homeSelectedIds = new Set();
+function _homeDeleteCase(caseId) {
+  const c = cases[caseId];
+  const nm = c ? (c.title || c.userText || '案件') : '案件';
+  if (!confirm(`案件「${nm}」を削除しますか？\nこの操作は元に戻せません。`)) return;
+  delete cases[caseId];
+  saveCases();
+  deleteCaseFromServer(caseId);      // Supabase cases も同期削除（messages/conversationsは削除しない）
+  _homeSelectedIds.delete(caseId);
+  goHome();                          // ホーム再描画（0件はempty-state・案件タブも更新）
+}
+function _homeToggleSelectMode() {
+  _homeSelectMode = !_homeSelectMode;
+  _homeSelectedIds.clear();
+  goHome();                          // ホーム再描画（選択UIの表示切替）
+}
+function _homeToggleSelected(caseId, checked) {
+  if (checked) _homeSelectedIds.add(caseId); else _homeSelectedIds.delete(caseId);
+  const btn = document.getElementById('case-bulk-del-btn');
+  if (btn) btn.textContent = `🗑 選択削除（${_homeSelectedIds.size}件）`;
+}
+function _homeSelectAll() {
+  getCasesForMember('leader').forEach(c => _homeSelectedIds.add(c.id));
+  goHome();                          // ホーム再描画（チェック状態反映）
+}
+function _homeDeselectAll() {
+  _homeSelectedIds.clear();
+  goHome();                          // ホーム再描画
+}
+function _homeBulkDelete() {
+  const ids = Array.from(_homeSelectedIds);
+  if (ids.length === 0) { alert('削除する案件を選択してください。'); return; }
+  if (!confirm(`選択した ${ids.length} 件の案件を削除しますか？\nこの操作は元に戻せません。`)) return;
+  ids.forEach(id => {
+    if (cases[id]) { delete cases[id]; deleteCaseFromServer(id); }   // local + Supabase削除（messages非削除）
+  });
+  saveCases();
+  _homeSelectedIds.clear();
+  _homeSelectMode = false;
+  goHome();                          // ホーム再描画
+}
 function renderHomeCaseList() {
   const chat = document.getElementById('chat-area');
   if (!chat) return false;
   const list = getCasesForMember('leader');   // 最終更新日時の新しい順
-  if (list.length === 0) return false;         // 0件は従来 empty-state へ（chatは未変更のまま返す）
+  if (list.length === 0) { _homeSelectMode = false; _homeSelectedIds.clear(); return false; }   // 0件は従来 empty-state へ（chatは未変更のまま返す）
   chat.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'case-list-screen';
@@ -11873,10 +12006,20 @@ function renderHomeCaseList() {
   head.textContent = `🏠 ホーム — 案件一覧（${list.length}件）`;
   wrap.appendChild(head);
 
+  // Phase52-12.1a: 選択ツールバー（上部固定・選択/全選択/全解除/一括削除・Leaderと統一）
+  wrap.appendChild(_buildCaseSelectBar({
+    selectMode: _homeSelectMode,
+    selectedCount: _homeSelectedIds.size,
+    onToggle: () => _homeToggleSelectMode(),
+    onSelectAll: () => _homeSelectAll(),
+    onDeselectAll: () => _homeDeselectAll(),
+    onBulkDelete: () => _homeBulkDelete(),
+  }));
+
   // 最新一覧（全案件ビューへ）
   wrap.appendChild(_homeMakeCard('🕒 最新一覧', 'すべての案件を最終更新順で表示', () => _homeOpenCaseList()));
 
-  // 各案件カード（開く＝leaderを選択し該当案件へ）
+  // 各案件カード（開く／🗑削除／選択モード時はチェックボックス）
   list.forEach(c => {
     const msgs = (chatHistory['leader'] || []).filter(h => h.caseId === c.id);
     const lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
@@ -11895,11 +12038,25 @@ function renderHomeCaseList() {
       `<div class="case-card-snippet">${escapeHtml(snippet)}</div>`;
     const actions = document.createElement('div');
     actions.className = 'case-card-actions';
+    if (_homeSelectMode) {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = _homeSelectedIds.has(c.id);
+      cb.title = '選択';
+      cb.style.cssText = 'width:18px;height:18px;cursor:pointer;';
+      cb.onclick = (e) => { e.stopPropagation(); _homeToggleSelected(c.id, cb.checked); };
+      actions.appendChild(cb);
+    }
     const openBtn = document.createElement('button');
     openBtn.className = 'case-card-open';
     openBtn.textContent = '開く';
     openBtn.onclick = () => _homeOpenCase(c.id);
     actions.appendChild(openBtn);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'case-card-del';
+    delBtn.textContent = '🗑 削除';
+    delBtn.onclick = (e) => { e.stopPropagation(); _homeDeleteCase(c.id); };
+    actions.appendChild(delBtn);
     card.appendChild(actions);
     wrap.appendChild(card);
   });
@@ -11934,14 +12091,23 @@ function renderHomeCaseNav() {
   latestTab.textContent = '🕒 最新一覧';
   latestTab.onclick = () => _homeOpenCaseList();
   nav.appendChild(latestTab);
-  // 各案件タブ（クリックで該当案件を開く＝leaderを選択し該当案件へ・削除ボタンなし）
+  // Phase52-12.1a: 各案件タブ＋「×」削除（Leader画面と統一・既存 case-tab-wrap / case-del-btn を流用）
   list.forEach(c => {
+    const w = document.createElement('span');
+    w.className = 'case-tab-wrap';
     const tab = document.createElement('button');
     tab.className = 'case-tab';
     tab.textContent = c.title;
     tab.title = c.userText;
     tab.onclick = () => _homeOpenCase(c.id);
-    nav.appendChild(tab);
+    const del = document.createElement('button');
+    del.className = 'case-del-btn';
+    del.textContent = '×';
+    del.title = '案件を削除';
+    del.onclick = (e) => { e.stopPropagation(); _homeDeleteCase(c.id); };
+    w.appendChild(tab);
+    w.appendChild(del);
+    nav.appendChild(w);
   });
   container.appendChild(nav);
 }
