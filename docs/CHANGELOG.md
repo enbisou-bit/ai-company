@@ -4,6 +4,37 @@
 
 ---
 
+## Phase52-12.2 — messages.case_id 案件別チャット分離 code commit（2026-07-08・push前・Render未反映）
+
+- Commit: **aabf46c**（`Phase52-12.2 messages case id for per case chat separation`）
+- 本番: **未反映（push前）**。dev-check 200/200/200 / node --check OK / 実ブラウザ確認OK
+- 変更ファイル: `supabase/schema.sql` / `lib/conversationsDb.js` / `server.js` / `index.html`（追加のみ・非破壊・**Phase53/cost非接触**）
+
+### 目的
+案件ごとのチャット履歴をPC/スマホ間で分離する（従来 messages に案件情報が無く端末間で最新一覧に混在していた）。
+
+### DB変更（ユーザーがSupabase SQL Editorで実行済み・非破壊）
+```sql
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS case_id TEXT;
+```
+nullable・FKなし・既存はNULL（移行なし）。messages/conversations非削除。
+
+### 内容（追加のみ）
+- **supabase/schema.sql**: messages に `case_id TEXT`（nullable・FKなし）
+- **lib/conversationsDb.js**: `saveMessage({..., caseId})` で case_id 保存（未指定NULL）／`getMessages` select に `case_id`
+- **server.js**: `POST /api/messages` で caseId 受領（`caseId || null`）。GETは case_id を返却
+- **index.html**: 送信POST（user/assistant）に `caseId` 付与／`mergeServerHistory` norm＋サーバー→ローカル変換3箇所で `case_id` 保持。`getFilteredHistory` 無変更（caseIdで案件別自動分離）
+
+### 確認
+- node --check（server.js・conversationsDb.js・index.htmlインラインJS）0エラー / dev-check 200/200/200
+- localhost 読み取りGET: `GET /api/messages` 応答に `case_id`（既存はNULL＝後方互換）/ 実ブラウザ確認OK
+- API往復テスト・DBテストデータ作成なし
+
+### 既存挙動維持
+- 既存messages（case_id=NULL）は「最新一覧」に表示継続。未更新端末はNULL保存（後方互換）
+
+---
+
 ## Phase52-12.1b — F5/ログイン直後のホーム案件一覧0件表示 修正（2026-07-08・commit前・push前）
 
 - Commit: **未commit**／本番: **未反映**。dev-check 200/200/200 / node --check OK / **実ブラウザ確認OK**

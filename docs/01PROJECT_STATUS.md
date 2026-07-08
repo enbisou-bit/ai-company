@@ -2,7 +2,50 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-08（Phase52-12.1b F5/ログイン直後ホーム0件表示 修正・実ブラウザ確認OK・commit前・push前）
+更新日: 2026-07-08（Phase52-12.2 messages.case_id 案件別チャット分離 code commit 完了・push前・Render未反映）
+
+---
+
+## Phase52-12.2 Committed（messages.case_id 案件別チャット分離・code commit完了・push前）
+
+- 現在Version: **Version1 / Phase52-12.2 code commit完了（push前）**
+- Commit: **aabf46c**（`Phase52-12.2 messages case id for per case chat separation`）
+- 本番: **未反映（push前）**。dev-check 200/200/200 / node --check OK / 実ブラウザ確認OK
+- 変更ファイル: **`supabase/schema.sql` / `lib/conversationsDb.js` / `server.js` / `index.html`**（追加のみ・非破壊・**Phase53/cost非接触**）
+
+### 目的
+案件ごとのチャット履歴をPC/スマホ間で分離する。従来 `messages`/`conversations` に案件情報が無く、caseId がローカルにしか存在しないため、端末をまたぐと案件別チャットが「最新一覧」に混在していた。
+
+### DB変更（ユーザーがSupabase SQL Editorで実行済み・非破壊）
+```sql
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS case_id TEXT;
+```
+- **nullable・FKなし**。既存メッセージは自動的に `case_id = NULL`（データ移行なし・非破壊）
+- **messages / conversations は削除しない**（列追加のみ・FKなしでcases削除と疎結合）
+
+### 完了内容（追加のみ）
+- **supabase/schema.sql**: `messages` 定義に `case_id TEXT`（nullable・FKなし）＋ALTERコメント追記
+- **lib/conversationsDb.js**: `saveMessage({..., caseId})` で `case_id` 保存（未指定はNULL）／`getMessages()` の select に `case_id` 追加
+- **server.js**: `POST /api/messages` で `caseId` を受領し保存（`caseId || null`）。GETは `getMessages` 返却がそのまま流れ `case_id` を返す
+- **index.html**: 送信POST（user/assistant両方）に `caseId: _ncActiveCaseId()` 付与／`mergeServerHistory` の norm＋サーバー→ローカル変換3箇所（restore/担当切替補完/syncCurrentMember）で `case_id` を保持。`getFilteredHistory` は無変更（caseId が入れば案件別に自動分離）
+- **POST / GET /api/messages で caseId 授受・client mergeで caseId保持** → 案件ごとの会話分離に対応
+
+### 確認済み / 未確認
+- ✅ node --check（server.js・conversationsDb.js・index.htmlインラインJS）0エラー / dev-check 200/200/200
+- ✅ localhost 読み取りGET確認: `GET /api/messages` 応答に `case_id` キーが含まれ、既存メッセージは全て `null`（ALTER成功・後方互換）
+- ✅ 実ブラウザ確認（大きな問題なし）
+- API往復テスト・DBテストデータ作成なし
+
+### 既存挙動維持
+- 既存messagesは `case_id=NULL` のまま → 従来どおり「最新一覧」に表示（`getFilteredHistory` の `|| !h.caseId`）
+- 未更新端末は caseId を送らずNULL保存（後方互換）
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行）は Version2 まで保留
+
+### 次アクション
+- **push承認待ち**（`git push origin main` → Render本番自動デプロイ → curlで `case_id`/`caseId`反映・`oe-aic`=0 確認）
 
 ---
 

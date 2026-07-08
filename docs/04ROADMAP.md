@@ -45,6 +45,12 @@
 
 **Version2開始条件**: Version2 Affiliate Intelligence は **Version1.01 Realtime Sync Edition 完成後に開始する**。Version2着手前にRealtime同期を優先する。Phase53開始前には必ずユーザー確認を取る。
 
+**進捗（Conversation同期・案件管理系）**:
+- Phase52-11〜11.9: Conversation Sync／案件メタデータSupabase同期
+- Phase52-11.8〜12.0a: 案件管理UI／ホーム案件一覧・タブ・入力無効化
+- Phase52-12.1〜12.1b: 案件削除Supabase同期／選択削除UI／F5・ログイン直後のホーム再描画修正
+- **Phase52-12.2: `messages.case_id`（nullable・FKなし）追加＝案件別チャットの端末間分離**（commit aabf46c・push前・Decision 046）。既存messagesはNULL維持・非破壊
+
 ---
 
 ## Version2 予定

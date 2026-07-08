@@ -2,11 +2,48 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-08（Phase52-12.1b F5/ログイン直後ホーム0件表示 修正・実ブラウザ確認OK・commit前・push前）
+更新日: 2026-07-08（Phase52-12.2 messages.case_id 案件別チャット分離 code commit完了・push前・Render未反映）
 
 ---
 
-## 【現在地・最優先】Phase52-12.1b Fixed（F5/ログイン直後のホーム案件一覧0件表示 修正・実ブラウザ確認OK・commit前・push前）
+## 【現在地・最優先】Phase52-12.2 Committed（messages.case_id 案件別チャット分離・code commit完了・push前）
+
+- 現在Version: **Version1 / Phase52-12.2 code commit完了（push前）**／本番: **未反映（push前）**
+- Commit: **aabf46c**（`Phase52-12.2 messages case id for per case chat separation`）
+- dev-check 200/200/200 / node --check OK / 実ブラウザ確認OK
+
+### 現在地
+**Phase52-12.2 code commit完了（push前）**。案件ごとのチャットをPC/スマホ間で分離するため `messages.case_id` を追加。**追加のみ・非破壊・Phase53/cost非接触**。
+
+### DB変更（ユーザーがSupabase実行済み・非破壊）
+```sql
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS case_id TEXT;
+```
+nullable・FKなし・既存はNULL（移行なし）。messages/conversations非削除。
+
+### 実装（4ファイル・追加のみ）
+- **supabase/schema.sql**: messages に `case_id TEXT`（nullable・FKなし）
+- **lib/conversationsDb.js**: `saveMessage(caseId)` 保存／`getMessages` select に `case_id`
+- **server.js**: `POST /api/messages` で caseId 受領（GETは自動で case_id 返却）
+- **index.html**: 送信POSTに `caseId` 付与／merge 4箇所（norm・restore・担当切替補完・syncCurrentMember）で `case_id` 保持。`getFilteredHistory` 無変更
+
+### 確認済み / 未確認
+- ✅ node --check 0エラー / dev-check 200/200/200 / localhost GET応答に `case_id`（既存はNULL＝後方互換）/ 実ブラウザ確認OK
+- API往復テスト・DBテストデータ作成なし
+
+### 既存挙動維持
+- 既存messages（case_id=NULL）は「最新一覧」に表示継続（`getFilteredHistory` の `|| !h.caseId`）
+
+### 温存（未コミット）
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）
+- Phase53 Affiliate Intelligence Core（index.html 未ステージ +380行・Version2まで保留）
+
+### 次アクション
+- **push承認待ち**（docs commit → `git push origin main` → Render自動デプロイ → curlで `case_id` 反映・`oe-aic`=0 確認）
+
+---
+
+## 【参考・完了済み】Phase52-12.1b Fixed（F5/ログイン直後のホーム案件一覧0件表示 修正・実ブラウザ確認OK・commit前・push前）
 
 - 現在Version: **Version1 / Phase52-12.1b 修正完了（未commit）**／本番: **未反映**
 - dev-check 200/200/200 / node --check OK / **実ブラウザ確認OK**

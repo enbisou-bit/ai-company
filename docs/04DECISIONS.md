@@ -876,3 +876,35 @@ Version1 Final Complete（Decision 044）を受け、Version2（Affiliate Intell
 
 追記日: 2026-07-05（Phase52-10 Version1 Final Complete）
 
+---
+
+# Decision 046
+## 案件別チャットの端末間分離は messages.case_id（A案）で実装する
+
+Phase52-12.2において、案件ごとのチャット履歴をPC/スマホ間で分離するための実装方式を決定した。
+
+背景:
+- 従来、`conversations` は (user_id, member_id, channel) の担当単位で、`messages` は conversation 配下。**どちらにも案件情報（case_id）が無い**。caseId はクライアントの localStorage（`chatHistory` の各メッセージ・`cases`）にしか存在しなかった
+- そのため端末をまたぐと、同期取得したメッセージが caseId 無しで入り、`getFilteredHistory` の `|| !h.caseId` により全て「最新一覧」に集約され、案件別分離が失われていた
+
+採用方針（A案・messages.case_id）:
+- `messages` に `case_id TEXT`（**nullable・FKなし**）を1列追加する（`ALTER TABLE messages ADD COLUMN IF NOT EXISTS case_id TEXT;`・ユーザーがSupabase SQL Editorで実行）
+- `POST /api/messages` で caseId を受領し `saveMessage` が case_id を保存、`GET /api/messages` は case_id を返却。クライアントは送信時に現在案件の caseId を付与し、merge 時に case_id を保持する
+- `getFilteredHistory` は無変更（caseId が入れば `h.caseId === view` で案件別に自動分離）
+- 会話（conversations）は担当単位のまま変更しない＝**メッセージ単位で case を判別**する
+
+却下した案:
+- **B案（conversations.case_id で会話を案件単位に分離）**: upsert/getMessages の鍵変更が大きく回帰リスクが高いため却下
+- **C案（DB変更なし・クライアントのみ）**: サーバーに case 情報が無く他端末へ返せないため、真の端末間分離が実現できず却下
+
+安全設計:
+- **nullable・FKなし・デフォルトなし**とすることで、既存メッセージは自動的に `case_id=NULL`（データ移行なし・非破壊）。既存messagesは「最新一覧」に表示され続ける（後方互換）
+- FKを付けないことで、案件削除（`DELETE /api/cases/:id`・Phase52-12.1）による messages への ON DELETE CASCADE 等の波及を防ぎ、「messages/conversations 非削除」設計を維持する
+- 未更新端末は caseId を送らずNULL保存＝後方互換。dedup（sender+content+時刻）は無変更
+- 変更範囲は `supabase/schema.sql` / `lib/conversationsDb.js` / `server.js` / `index.html` の4点のみ。Phase53・cost系は非接触
+
+理由:
+- 列追加1つ（nullable）で最小・非破壊・後方互換に案件別分離を実現でき、既存の会話同期（Phase52-11）・案件管理（Phase52-11.8〜12.1）の設計を崩さずに拡張できるため
+
+追記日: 2026-07-08（Phase52-12.2 messages.case_id・commit aabf46c・push前）
+
