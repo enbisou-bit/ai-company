@@ -2,7 +2,40 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-09（Phase53 Affiliate Intelligence Core Complete・commit bcfba7d・push済み・Render反映済み）
+更新日: 2026-07-09（Phase54-1b Approval Sync Server API Complete・commit d9310d0・push済み・Render反映済み）
+
+---
+
+## Phase54-1b Approval Sync Server API Complete（承認/公開状態のSupabase永続化・サーバー側・push済み・Render反映済み）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1b Complete**
+- Commit: **d9310d0**（`Phase54-1b approval sync server api`）／**origin/main = HEAD = d9310d0 / 未Push 0**
+- 本番: **Render反映済み**（`ai-company-l45x.onrender.com`・`GET /api/approvals` 本番確認済み・既存API回帰なし・Phase53維持）
+- 変更ファイル: **`server.js`（+2ルート+遅延ローダー）/ `lib/approvalsDb.js`（新規）**（追加のみ・**index.html変更なし / Phase53非接触 / cost系非接触 / 課金なし**）
+
+### 目的
+Version1.01 残同期の独立Phase（Decision 047 で別Phase扱い確定）。PC/スマホの承認（Mobile Approval）・公開（Publishing Ready）状態を **case_id 単位で Supabase 永続化**する**サーバー基盤**を用意（A案・最小サブセット）。UI反映は Phase54-1c。
+
+### DB変更（ユーザーがSupabase SQL Editorで実行済み・非破壊）
+- **新規テーブル `output_approvals` のみ**（`case_id TEXT PRIMARY KEY` / `approval_decision` / `approved_at` / `published` / `published_at` / `archived` / `checklist` / `review_status` / `updated_at`・**FKなし・nullable中心・既存テーブル無変更・データ移行なし**）＋RLS `output_approvals_all FOR ALL`。
+- **DBスキーマ変更は output_approvals 新規のみ**。Supabase SQL はユーザー実行済み（Claudeは実行していない）。
+
+### 完了内容（追加のみ）
+- **lib/approvalsDb.js**（新規）: `upsertApproval`（case_id完全一致1件・onConflict: case_id）/ `getApprovals`（全件）/ `getApproval(caseId)`（1件・maybeSingle）。casesDb.js と同型・`source:'db'|'fallback'|'error'` 規約。
+- **server.js**: 遅延ローダー `getApprovalsDb`（`_approvalsDb`）＋ `GET /api/approvals`（`?caseId=`任意）＋ `POST /api/approvals`（upsert）。POSTはグローバル `app.use(express.json())`〔417行〕依拠で per-route express.json() なし。既存ルート・Workflow・Provider 無変更。
+
+### 確認済み
+- ✅ node --check（server.js・approvalsDb.js）0エラー / dev-check 200/200/200（既存API回帰なし）
+- ✅ **GET /api/approvals 本番確認済み**（`source:"db"`・全件/1件/存在しないID すべて正常）
+- ✅ **POST /api/approvals localhost確認済み**（最小1件 `phase54-1b-test` upsert→GET往復成功・DELETE未実行・round-trip禁止遵守）
+- ✅ 既存API `GET /api/cases` 本番正常（回帰なし）/ Phase53マーカー本番維持
+- ※ テストデータ `phase54-1b-test` 1件が `output_approvals` に残存（DELETE禁止のため保持）
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1b非接触）
+
+### 次工程
+- **Phase54-1c（index.html 同期配線）**: 承認/公開確定時の `pushApprovalToServer`（POST）＋起動/case切替/visibilitychange時の `syncApprovalsFromServer`（GET→updated_at新しい方でmerge→`renderOutputEnginePanel`再描画・`_oeSafe`保護）。index.htmlのみ・追加のみ。
 
 ---
 

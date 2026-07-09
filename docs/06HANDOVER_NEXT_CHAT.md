@@ -2,11 +2,38 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-09（Phase53 Affiliate Intelligence Core Complete・commit bcfba7d・push済み・Render反映済み）
+更新日: 2026-07-09（Phase54-1b Approval Sync Server API Complete・commit d9310d0・push済み・Render反映済み）
 
 ---
 
-## 【現在地・最優先】Phase53 Affiliate Intelligence Core Complete（Version2 Core先行搭載・push済み・Render反映済み）
+## 【現在地・最優先】Phase54-1b Approval Sync Server API Complete（承認/公開状態のSupabase永続化・サーバー側・push済み・Render反映済み）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1b Complete**／本番: **Render反映済み**
+- Commit: **d9310d0**（`Phase54-1b approval sync server api`）／**origin/main = HEAD = d9310d0 / 未Push 0**
+- 変更ファイル: **`server.js`（+2ルート+ローダー）/ `lib/approvalsDb.js`（新規）**（追加のみ・**index.html変更なし / Phase53非接触 / cost系非接触 / 課金なし**）
+
+### 現在地
+**Phase54-1b Approval Sync（サーバー側）= 本番反映完了**。承認（Mobile Approval）・公開（Publishing Ready）状態を **case_id 単位で Supabase 永続化**するAPIを用意（A案・最小サブセット）。`GET/POST /api/approvals` 本番稼働。**UI反映は未実装＝Phase54-1c**（54-1b時点でUI未接続のため既存挙動は完全に不変）。
+
+### DB / 実装
+- **新規テーブル `output_approvals` のみ**（FKなし・nullable中心・非破壊・RLS `FOR ALL`）。**Supabase SQL はユーザー実行済み**。
+- `lib/approvalsDb.js`（新規・upsert/get）＋ server.js（遅延ローダー＋GET/POST）。POSTはグローバルexpress.json依拠。
+
+### 確認済み
+- ✅ node --check 0エラー / dev-check 200/200/200 / **GET /api/approvals 本番確認済み**（source:db）/ **POST localhost確認済み**（`phase54-1b-test` 1件・往復成功・DELETE未実行）/ 既存 `GET /api/cases` 回帰なし / Phase53維持
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1b非接触）
+- テストデータ `phase54-1b-test` 1件が `output_approvals` に残存（DELETE禁止のため保持）
+
+### 次工程（Phase54-1c index.html 同期配線）
+- `pushApprovalToServer(caseId)`（`approveMobileApproval`/`rejectMobileApproval`/`markAsPublished`/`archive` 等の確定時にPOST・fire-and-forget）
+- `syncApprovalsFromServer()`（起動/case切替/visibilitychange時にGET→`updated_at`新しい方でmerge→`_mobileApprovalState`/`_publishingReadyState`反映→`renderOutputEnginePanel`再描画・`_oeSafe`保護）
+- index.htmlのみ・追加のみ・Output Engine中核状態を扱うため回帰注意（中リスク）。実装前にユーザー承認。
+
+---
+
+## 【参考・完了済み】Phase53 Affiliate Intelligence Core Complete（Version2 Core先行搭載・push済み・Render反映済み）
 
 - 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase53 Complete**／本番: **Render反映済み**
 - Commit: **bcfba7d**（`Phase53 affiliate intelligence core base`）／**origin/main = HEAD = bcfba7d / 未Push 0**
