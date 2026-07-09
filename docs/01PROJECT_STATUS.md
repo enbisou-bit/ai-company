@@ -2,7 +2,39 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-09（Phase54-1c Approval Sync Client Complete・commit 4f53dd5・tag v1.01-phase54-1c・push未実施）
+更新日: 2026-07-10（Phase54-1d Mobile Approval Cache Fix Complete・commit 43513cc・tag v1.01-phase54-1d・push未実施）
+
+---
+
+## Phase54-1d Mobile Approval Cache Fix Complete（Mobile Approval canApprove キャッシュ無効化漏れ修正・commit済み・push未実施）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1d Complete**
+- Commit: **43513cc**（`Phase54-1d mobile approval cache fix`）／Tag: **v1.01-phase54-1d**／**HEAD = 43513cc・origin/main = 1574241・未Push 1（push未実施）**
+- 本番: **未反映（push前）**。dev-check 200/200/200 / node --check 0エラー / ブラウザ起動時コンソールエラー0
+- 変更ファイル: **`index.html` のみ**（+10・追加のみ・**server.js / DB / API変更なし / Phase54-1c同期非接触 / Phase53非接触 / cost系非接触 / 課金なし**）
+
+### 不具合 → 修正
+- **不具合**: Mobile Review で全スライドOK＋「この内容で承認する」で承認済み（reviewStatus=approved）にしても、Mobile Approval の「この内容で承認する」が **disabled のまま**（7項目チェックを1つ外して再チェックすると `_mapRerender()` が走り有効化される、というキャッシュ無効化漏れ）
+- **根本原因**: `canApprove` を含む `_lastOutputDraft.mobileApproval` は Mobile Approval 自身の `_mapRerender()` でしか再生成されず、Mobile Review 側の `_mrcRerender()` は `mobileReviewCenter` のみ更新して `mobileApproval` を無効化しなかった
+- **修正（A案'・index.htmlのみ・追加のみ）**: `_mrcRerender()` に「**reviewStatus 変化時のみ `_lastOutputDraft.mobileApproval` を無効化**」する分岐を追加。新 reviewStatus（`mobileReviewCenter.mobileApprovalInput.reviewStatus`）と旧キャッシュ（`mobileApproval.summary.reviewStatus`）を比較し、異なる時だけ `mobileApproval = null`（次回 `buildMobileApprovalHtml` で `createMobileApprovalDraft` 再計算→`canApprove` 追従）。**スライド移動/前後/サムネ選択（reviewStatus不変）ではキャッシュ維持＝不要な再計算を回避**
+
+### 変更していないもの（安全策）
+- `createMobileApprovalDraft` / `canApprove` / `_mapAllChecked` / `_mapReviewApproved` のロジック無変更
+- `_mobileApprovalState`（checklist / decision / approvedAt）不変（7項目チェック・承認済み状態を保持・勝手に解除しない）
+- Phase54-1c 同期関数（`pushApprovalToServer` / `syncApprovalsFromServer` / `mergeApprovalStateFromServer` / `scheduleApprovalSync` / `getCurrentApprovalCaseId`）非接触・無効化経路から POST 非発火（不要POSTなし）
+
+### 確認済み
+- ✅ dev-check 200/200/200 / node --check 0エラー / インラインJS 2ブロックparse OK
+- ✅ ブラウザ起動時コンソールエラー0 / `_mrcRerender`・`_mapRerender` 健在 / Phase54-1c同期5関数すべて typeof function
+- ✅ 合成ロジック検証：reviewStatus 変化→無効化 / 同一→維持 / ナビ相当→維持
+- ✅ Phase53 `oe-aic` 67件維持
+- ⚠️ 実ワークフローでの「承認→自動有効化／修正依頼→自動無効化」実操作確認は成果物draft生成（Workflow実行＝API課金）を伴うため未実施（push/Render反映後にユーザー実機確認）
+
+### 温存（未コミット）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1d非接触・stageに含めず）
+
+### 次工程
+- **docs commit（別commit）→ push（origin/main同期・要承認）→ Render反映 → 実機確認**。その後：残同期の別Phase（Task/Cost/Status/Auto Task poll）または Phase54系Intelligence
 
 ---
 
