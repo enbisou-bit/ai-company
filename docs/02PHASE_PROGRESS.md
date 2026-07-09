@@ -1,7 +1,41 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Decision 044/045）
+> 更新日: 2026-07-09（Phase54-1c Approval Sync Client Complete・commit 4f53dd5・tag v1.01-phase54-1c・push未実施）
+
+---
+
+## Phase54-1c: Approval Sync Client（承認/公開状態のPC⇔スマホ同期・index.htmlのみ・commit済み・push前）
+
+> 記録日: 2026-07-09。**index.htmlのみ・追加のみ（+135 / -2）**。server.js / DB / API / Workflow / Provider / Phase53 / cost系 いずれも無変更・非接触。
+> Commit: `4f53dd5`（`Phase54-1c approval sync client`）/ Tag: `v1.01-phase54-1c` / **HEAD=4f53dd5・origin/main=5bfaf6b・未Push 1**。
+
+### 目的
+Phase54-1b の既存API（`GET/POST /api/approvals`）を index.html から利用し、承認/却下/公開/アーカイブ状態を case_id 単位で PC⇔スマホ同期する（A案・単一グローバル状態を現在case_idへマッピング・Decision 048継承）。
+
+### 実装（index.htmlのみ・追加のみ）
+- **追加関数7**: `getCurrentApprovalCaseId` / `buildApprovalPayloadForServer` / `pushApprovalToServer` / `syncApprovalsFromServer` / `mergeApprovalStateFromServer` / `isRemoteApprovalNewer` / `scheduleApprovalSync`
+- **追加変数3**: `_approvalSyncInFlight`（多重実行防止・成功/失敗/早期return問わずfinallyで必ず解除＝解除漏れ防止）/ `_approvalSyncLastLocalChangeAt`（編集中ガード起点）/ `_approvalSyncLastReason`
+- **定数/Version**: `APPROVAL_SYNC_EDIT_GUARD_MS = 3000` / `APPROVAL_SYNC_CLIENT_VERSION = '1.0.0'`
+- **push接続（確定時に非同期送信＋ガード起点更新）**: `approveInstagramPackage`(approve) / `rejectMobileApproval`(reject) / `cancelApproval`(cancel・空状態) / `markInstagramPublished`(publish) / `archivePublishingReady`(archive) / `resetPublishingReadyStatus`(reset・空状態)。`toggleApprovalCheck` はガード起点更新のみ（push対象外）
+- **pull接続（契機）**: 起動時（`syncCasesFromServer()`直後に`scheduleApprovalSync('startup')`）/ `switchCase`・`_homeOpenCase`（`'caseSwitch'`）/ `visibilitychange`（`'visible'`・既存`syncCurrentMemberFromServer()`は残置）
+
+### 同期・merge・安全設計
+- case_id は `_ncActiveCaseId(currentMember)` 優先 → `_lastOutputDraft.caseId` 補助 → 無ければ null（push/pullスキップ＝現状のephemeral挙動維持）
+- GET `?caseId=` 単件（`data.approval`）を取得。**編集中ガード（最終ローカル操作から3000ms以内はローカル優先）** ＋ **updated_at がリモート新しい時のみ反映**。古い/同値/新旧不明は上書きしない。反映時のみ `_mapRerender()`/`_prcRerender()`（`renderOutputEnginePanel`・`_oeSafe`保護下）
+- 全通信は非同期・try/catch握り潰し・UIブロックなし。`scheduleApprovalSync` はマイクロタスク遅延で起動時TDZ回避＋多重実行防止
+
+### dev-check / ブラウザ確認
+- 🟢 dev-check 200/200/200 / node --check 0エラー / インラインJS 2ブロックparse OK
+- 🟢 起動時コンソールエラー0 / 全7関数 typeof function / 定数一致 / 起動同期発火（reason=startup）→ `_approvalSyncInFlight=false`（解除漏れ防止が実機で機能）/ `isRemoteApprovalNewer` 新旧判定正常
+- 🟢 既存API回帰なし（`GET /api/cases`・`GET /api/approvals`）/ Phase53 `oe-aic` 67件維持
+- ⚠️ PC⇔スマホ実機ラウンドトリップ（実POST）は未実施（実DBへ勝手にテストデータ作成しない方針・push/Render反映後にユーザー実機確認）
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存（stageに含めず）
+
+### 次工程
+- docs commit（別commit）→ push（要承認）→ Render反映 → 実機同期確認。その後 残同期の別Phase（Task/Cost/Status/Auto Task poll）または Phase54系Intelligence
 
 ---
 

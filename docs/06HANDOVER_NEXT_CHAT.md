@@ -2,11 +2,42 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-09（Phase54-1b Approval Sync Server API Complete・commit d9310d0・push済み・Render反映済み）
+更新日: 2026-07-09（Phase54-1c Approval Sync Client Complete・commit 4f53dd5・tag v1.01-phase54-1c・push未実施）
 
 ---
 
-## 【現在地・最優先】Phase54-1b Approval Sync Server API Complete（承認/公開状態のSupabase永続化・サーバー側・push済み・Render反映済み）
+## 【現在地・最優先】Phase54-1c Approval Sync Client Complete（承認/公開状態のPC⇔スマホ同期・クライアント配線・commit済み・push未実施）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1c Complete**／本番: **未反映（push前）**
+- Commit: **4f53dd5**（`Phase54-1c approval sync client`）／Tag: **v1.01-phase54-1c**／**HEAD = 4f53dd5・origin/main = 5bfaf6b・未Push 1**
+- 変更ファイル: **`index.html` のみ**（+135 / -2・追加のみ・**server.js / DB / API変更なし / Phase53非接触 / cost系非接触 / 課金なし**）
+
+### 現在地
+**Phase54-1c Approval Sync Client = コードcommit完了（push前）**。Phase54-1b の既存API（`GET/POST /api/approvals`）を index.html から利用し、承認/却下/公開/アーカイブ状態を **case_id 単位で PC⇔スマホ同期**（A案・単一グローバル状態を現在case_idへマッピング）。UI挙動・既存Output Engine描画は不変。**Approval Sync Client 完成**。
+
+### 実装（index.htmlのみ・追加のみ）
+- 追加関数7: `getCurrentApprovalCaseId`（現在案件優先→`_lastOutputDraft.caseId`補助→無ければnull=同期スキップ）/ `buildApprovalPayloadForServer` / `pushApprovalToServer`（fire-and-forget）/ `syncApprovalsFromServer`（GET・finallyで`_approvalSyncInFlight`必ず解除＝解除漏れ防止）/ `mergeApprovalStateFromServer` / `isRemoteApprovalNewer` / `scheduleApprovalSync`（マイクロタスク遅延でTDZ回避・多重実行防止）
+- 追加変数3: `_approvalSyncInFlight` / `_approvalSyncLastLocalChangeAt` / `_approvalSyncLastReason`。定数: `APPROVAL_SYNC_EDIT_GUARD_MS=3000` / Version `APPROVAL_SYNC_CLIENT_VERSION='1.0.0'`
+- push接続（実名）: `approveInstagramPackage`/`rejectMobileApproval`/`cancelApproval`(空状態)/`markInstagramPublished`/`archivePublishingReady`/`resetPublishingReadyStatus`(空状態)。`toggleApprovalCheck` はガード起点更新のみ（push対象外）
+- pull接続: 起動時（`syncCasesFromServer()`直後）/ `switchCase`・`_homeOpenCase`（案件切替）/ `visibilitychange`
+- 同期仕様: case_id取得不可時スキップ（ephemeral維持）・updated_atが新しい方採用・古い状態で上書きしない・編集中3000msはローカル優先・取消/公開取消は空状態POST（case未確定時POSTしない）・通信失敗は既存UI維持・反映時のみ `_mapRerender`/`_prcRerender`（`_oeSafe`保護）
+
+### 確認済み
+- ✅ dev-check 200/200/200 / node --check 0エラー / インラインJS 2ブロックparse OK
+- ✅ ブラウザ起動時コンソールエラー0 / 全7関数 typeof function / 定数一致 / 起動同期発火（reason=startup）→ `_approvalSyncInFlight=false`（解除漏れ防止が実機で機能）/ `isRemoteApprovalNewer` 新旧判定正常
+- ✅ 既存API `GET /api/cases`・`GET /api/approvals` 回帰なし / Phase53 `oe-aic` 67件維持・`buildAffiliateIntelligenceCoreHtml` 健在
+- ⚠️ **PC⇔スマホ実機ラウンドトリップ（実POST書き込み）は未実施**（実DBへ勝手にテストデータ作成しない方針。push/Render反映後にユーザー実機確認）
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1c非接触・stageに含めず）
+- テストデータ `phase54-1b-test` 1件が `output_approvals` に残存（DELETE禁止のため保持・case_id一致時のみ同期対象）
+
+### 次工程
+- **docs commit（別commit・要承認）→ push（origin/main同期・要承認）→ Render反映 → 実機PC⇔スマホ同期確認**。その後：残同期の別Phase（Task/Cost/Status/Auto Task poll・index.htmlのみ）または Phase54系Intelligence（Market Opportunity 等）
+
+---
+
+## 【参考・完了済み】Phase54-1b Approval Sync Server API Complete（承認/公開状態のSupabase永続化・サーバー側・push済み・Render反映済み）
 
 - 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1b Complete**／本番: **Render反映済み**
 - Commit: **d9310d0**（`Phase54-1b approval sync server api`）／**origin/main = HEAD = d9310d0 / 未Push 0**

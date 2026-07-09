@@ -51,7 +51,7 @@
 - Phase52-12.1〜12.1b: 案件削除Supabase同期／選択削除UI／F5・ログイン直後のホーム再描画修正
 - **Phase52-12.2: `messages.case_id`（nullable・FKなし）追加＝案件別チャットの端末間分離**（commit aabf46c・push済み・Render反映済み・Decision 046）。既存messagesはNULL維持・非破壊
 - **Phase53先行開始をB案運用判断で承認（Decision 047）**: Conversation / Case / Messages 中核同期完了をもってPhase53を先行開始。**残同期（Task/Cost/Status/Auto Task 自動更新poll・Learning一部in-memory整理・Approval端末間同期）は未完了として別Phase扱い**（Approval端末間同期はserver.js/DB/API検討要・独立Phase）
-- **Phase54-1 Approval Sync（独立Phase・Decision 048）**: 承認/公開状態のPC⇔スマホ同期。**54-1a 設計（A案・case_idスコープ・最小サブセット）承認済み → 54-1b サーバー側 ✅ Complete**（commit d9310d0・push済み・Render反映済み・新規テーブル `output_approvals`〔FKなし〕＋`lib/approvalsDb.js`＋server.js `GET/POST /api/approvals`・index.html非接触）。**次: 54-1c index.html 同期配線**（未着手）。残る Task/Cost/Status/Auto Task poll・Learning in-memory整理 は引き続き別Phase
+- **Phase54-1 Approval Sync（独立Phase・Decision 048）**: 承認/公開状態のPC⇔スマホ同期。**54-1a 設計（A案・case_idスコープ・最小サブセット）承認済み → 54-1b サーバー側 ✅ Complete**（commit d9310d0・push済み・Render反映済み・新規テーブル `output_approvals`〔FKなし〕＋`lib/approvalsDb.js`＋server.js `GET/POST /api/approvals`・index.html非接触）→ **54-1c クライアント配線 ✅ Complete**（commit 4f53dd5・tag v1.01-phase54-1c・**push未実施/未Push 1**・index.htmlのみ+135行・既存API利用でserver.js/DB/API変更なし・Phase53/cost非接触。case_id単位・updated_atが新しい方採用・編集中3000msガード・取消/公開取消は空状態POST・通信失敗は既存UI維持）。**Approval Sync Client 完成＝承認/公開のPC⇔スマホ同期に対応**（実機ラウンドトリップはpush/Render反映後に確認）。残る Task/Cost/Status/Auto Task poll・Learning in-memory整理 は引き続き別Phase
 
 ---
 
