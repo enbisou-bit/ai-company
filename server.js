@@ -1115,7 +1115,7 @@ app.post('/api/messages', express.json(), async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 // Supabase lib モジュール（遅延ロード）
 // ══════════════════════════════════════════════════════════════
-let _casesDb, _customersDb, _memberScoresDb, _learningDb, _companyMemoryDb, _knowledgeDb, _companyScoreDb;
+let _casesDb, _customersDb, _memberScoresDb, _learningDb, _companyMemoryDb, _knowledgeDb, _companyScoreDb, _approvalsDb;
 const getCasesDb        = () => _casesDb        || (_casesDb        = require('./lib/casesDb'));
 const getCustomersDb    = () => _customersDb    || (_customersDb    = require('./lib/customersDb'));
 const getMemberScoresDb = () => _memberScoresDb || (_memberScoresDb = require('./lib/memberScoresDb'));
@@ -1123,6 +1123,7 @@ const getLearningDb     = () => _learningDb     || (_learningDb     = require('.
 const getCompanyMemDb   = () => _companyMemoryDb|| (_companyMemoryDb= require('./lib/companyMemoryDb'));
 const getKnowledgeDb    = () => _knowledgeDb    || (_knowledgeDb    = require('./lib/knowledgeDb'));
 const getCompanyScoreDb = () => _companyScoreDb || (_companyScoreDb = require('./lib/companyScoreDb'));
+const getApprovalsDb    = () => _approvalsDb    || (_approvalsDb    = require('./lib/approvalsDb'));
 
 // ジャンル自動判定（/api/chat でも使用）
 function detectGenre(text) {
@@ -1188,6 +1189,35 @@ app.delete('/api/cases/:id', async (req, res) => {
   if (!id) return res.status(400).json({ ok: false, error: 'id は必須です' });
   try {
     const result = await getCasesDb().deleteCase(id);
+    res.json({ ok: !result.error, error: result.error });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// ─────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// Approval Sync API（Phase54-1b: 承認/公開状態のSupabase永続化・A案case_idスコープ）
+// ══════════════════════════════════════════════════════════════
+// GET /api/approvals            → 全件
+// GET /api/approvals?caseId=xxx → 1件
+app.get('/api/approvals', async (req, res) => {
+  const { caseId } = req.query;
+  try {
+    if (caseId) {
+      const result = await getApprovalsDb().getApproval(caseId);
+      return res.json({ ok: true, approval: result.approval, source: result.source });
+    }
+    const result = await getApprovalsDb().getApprovals();
+    res.json({ ok: true, approvals: result.approvals, source: result.source });
+  } catch (e) { res.json({ ok: false, approvals: [], error: e.message }); }
+});
+
+// POST /api/approvals { caseId, approvalDecision, approvedAt, published, publishedAt, archived, checklist, reviewStatus }
+// ※ server.js は app.use(express.json()) をグローバル設定済みのため、per-route express.json() は付けない
+app.post('/api/approvals', async (req, res) => {
+  const { caseId, approvalDecision, approvedAt, published, publishedAt, archived, checklist, reviewStatus } = req.body || {};
+  if (!caseId) return res.status(400).json({ ok: false, error: 'caseId は必須です' });
+  try {
+    const result = await getApprovalsDb().upsertApproval({ caseId, approvalDecision, approvedAt, published, publishedAt, archived, checklist, reviewStatus });
     res.json({ ok: !result.error, error: result.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
