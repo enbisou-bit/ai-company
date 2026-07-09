@@ -29885,6 +29885,16 @@ function createMobileReviewCenterDraft(outputDraft) {
 
 function _mrcRerender() {
   if (_lastOutputDraft) _lastOutputDraft.mobileReviewCenter = createMobileReviewCenterDraft(_lastOutputDraft);
+  // Phase54-1d: reviewStatus が変化した時のみ mobileApproval キャッシュを無効化（ナビ/前後移動/サムネ選択では維持）。
+  // canApprove の Mobile Review 由来入力は reviewStatus === 'approved' の1点のみ。承認/修正依頼で reviewStatus が変わった時だけ
+  // 次回 buildMobileApprovalHtml で createMobileApprovalDraft を再計算させ、canApprove を追従させる。
+  // 状態（_mobileApprovalState の checklist/decision/approvedAt）は _mobileApprovalState 側に保持され不変。push は発火しない（Phase54-1c非接触）。
+  if (_lastOutputDraft && _lastOutputDraft.mobileApproval) {
+    var _mrcRs = (_lastOutputDraft.mobileReviewCenter && _lastOutputDraft.mobileReviewCenter.mobileApprovalInput)
+      ? _lastOutputDraft.mobileReviewCenter.mobileApprovalInput.reviewStatus : undefined;
+    var _mapRs = _lastOutputDraft.mobileApproval.summary ? _lastOutputDraft.mobileApproval.summary.reviewStatus : undefined;
+    if (_mrcRs !== _mapRs) _lastOutputDraft.mobileApproval = null;   // 無効化のみ（再計算は次回描画で自然実行・状態は不変）
+  }
   renderOutputEnginePanel();
 }
 
