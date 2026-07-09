@@ -8192,10 +8192,119 @@ document.getElementById('login-input').addEventListener('keydown', e => {
 });
 // ─────────────────────────────────────────────────
 
+// ══════════════════════════════════════════════════════════════
+// Phase54-1c: Approval Sync Client（承認/公開状態のcase_id単位同期・index.htmlのみ・追加のみ）
+// 既存 GET/POST /api/approvals（Phase54-1b）を利用。server.js/DB/API変更なし。
+// _mobileApprovalState / _publishingReadyState の読み出し箇所は変更せず、確定操作時POST＋起動/切替/visibility時GET。
+// case_id取得不可時は同期スキップ（現状のephemeral挙動を完全維持）。updated_atが新しい方を採用・編集中3000msはローカル優先。
+// ══════════════════════════════════════════════════════════════
+var APPROVAL_SYNC_CLIENT_VERSION = '1.0.0';
+var APPROVAL_SYNC_EDIT_GUARD_MS = 3000;      // 編集中ガード猶予時間（ローカル操作直後はpull上書きを抑止）
+let _approvalSyncInFlight = false;           // 同期の多重実行防止フラグ（成功・失敗問わずfinallyで必ず解除）
+let _approvalSyncLastLocalChangeAt = 0;      // 最終ローカル操作時刻（承認/公開/チェック操作で更新・編集中ガード判定）
+let _approvalSyncLastReason = null;          // 最終同期理由（startup / caseSwitch / visible）
+
+// 現在の承認/公開状態が属する case_id を一元決定（現在案件を最優先・無ければdraftのcaseId・それも無ければnull=同期スキップ）
+function getCurrentApprovalCaseId() {
+  try {
+    if (currentMember) {
+      var active = _ncActiveCaseId(currentMember.id);
+      if (active) return active;
+    }
+    if (_lastOutputDraft && _lastOutputDraft.caseId) return _lastOutputDraft.caseId;
+  } catch (e) { /* 取得不可 */ }
+  return null;
+}
+
+// 単一状態＋reviewStatusをPhase54-1bのPOST受領キーへ写像（読み取り専用・状態は変更しない）
+function buildApprovalPayloadForServer(caseId) {
+  var reviewStatus = null;
+  try {
+    var d = _lastOutputDraft;
+    var review = d && (d.mobileReviewCenter || (typeof createMobileReviewCenterDraft === 'function' ? createMobileReviewCenterDraft(d) : null));
+    var mai = review && review.mobileApprovalInput;
+    if (mai && mai.reviewStatus) reviewStatus = mai.reviewStatus;
+  } catch (e) { reviewStatus = null; }
+  return {
+    caseId:           caseId,
+    approvalDecision: _mobileApprovalState.decision || null,
+    approvedAt:       _mobileApprovalState.approvedAt || null,
+    published:        !!_publishingReadyState.published,
+    publishedAt:      _publishingReadyState.publishedAt || null,
+    archived:         !!_publishingReadyState.archived,
+    checklist:        _mobileApprovalState.checklist || {},
+    reviewStatus:     reviewStatus,
+  };
+}
+
+// POST /api/approvals（fire-and-forget・失敗握り潰し・UIブロックなし）。取消/公開取消も現在状態（空側）をそのまま送る。
+function pushApprovalToServer(caseId, reason) {
+  if (!caseId) return;
+  _approvalSyncLastReason = reason || _approvalSyncLastReason;
+  try {
+    var body = buildApprovalPayloadForServer(caseId);
+    fetch('/api/approvals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(function () {});
+  } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
+}
+
+// updated_at比較のみ（副作用なし）。remoteが無効なら常にfalse。
+function isRemoteApprovalNewer(remote, local) {
+  if (!remote || !remote.updated_at) return false;
+  var r = Date.parse(remote.updated_at);
+  if (isNaN(r)) return false;
+  var l = (typeof local === 'number' && local > 0) ? local : 0;
+  return r > l;
+}
+
+// サーバー行を単一状態へ反映（編集中ガード＋updated_at新しい方のみ・反映時のみ既存再描画）
+function mergeApprovalStateFromServer(remoteApproval) {
+  if (!remoteApproval) return;                                                   // 当該case無し→現状維持
+  if ((Date.now() - _approvalSyncLastLocalChangeAt) < APPROVAL_SYNC_EDIT_GUARD_MS) return; // 編集中→ローカル優先
+  if (!isRemoteApprovalNewer(remoteApproval, _approvalSyncLastLocalChangeAt)) return;      // 新しくない→上書きしない
+  _mobileApprovalState.decision       = remoteApproval.approval_decision || null;
+  _mobileApprovalState.approvedAt     = remoteApproval.approved_at || null;
+  _mobileApprovalState.checklist      = remoteApproval.checklist || {};
+  _mobileApprovalState.approveBlocked = false;
+  _publishingReadyState.published     = !!remoteApproval.published;
+  _publishingReadyState.publishedAt   = remoteApproval.published_at || null;
+  _publishingReadyState.archived      = !!remoteApproval.archived;
+  try { _mapRerender(); _prcRerender(); } catch (e) { /* 描画失敗時も既存表示維持 */ }
+}
+
+// GET /api/approvals?caseId=（非ブロッキング・失敗時は現状維持）。finallyで_approvalSyncInFlightを必ず解除。
+async function syncApprovalsFromServer(options) {
+  try {
+    var caseId = getCurrentApprovalCaseId();
+    if (!caseId) return;                                   // case未確定→同期スキップ
+    var res = await fetch('/api/approvals?caseId=' + encodeURIComponent(caseId));
+    if (!res.ok) return;
+    var data = await res.json();
+    if (!data || !data.ok) return;
+    mergeApprovalStateFromServer(data.approval);
+  } catch (e) {
+    /* 通信失敗→既存UI維持 */
+  } finally {
+    _approvalSyncInFlight = false;                         // 成功・失敗・早期returnを問わず必ず解除（解除漏れ防止）
+  }
+}
+
+// 起動/切替/visibility契機の一本化（多重実行防止）。TDZ回避のため実処理はマイクロタスクへ遅延。
+function scheduleApprovalSync(reason) {
+  _approvalSyncLastReason = reason || _approvalSyncLastReason;
+  if (_approvalSyncInFlight) return;
+  _approvalSyncInFlight = true;
+  Promise.resolve().then(function () { syncApprovalsFromServer({ reason: reason }); });
+}
+
 // 起動時にlocalStorageから読み込み
 loadFromStorage();
 loadCases();
 syncCasesFromServer();   // Phase52-11.9: 起動時にSupabaseの案件一覧をmerge（非同期・非ブロッキング・失敗時はlocalStorage継続）
+scheduleApprovalSync('startup');   // Phase54-1c: 起動時に承認/公開状態を取得（deferred・case未確定なら何もしない）
 
 // ── チャットエリアを現在の chatHistory で再描画（selectMember を呼ばずに済む）──
 function reRenderChatArea(m) {
@@ -8375,7 +8484,7 @@ setInterval(() => { syncCurrentMemberFromServer(); }, CONVERSATION_SYNC_INTERVAL
 
 // タブ/Safari 復帰時にpull（visible時のみ）
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') syncCurrentMemberFromServer();
+  if (document.visibilityState === 'visible') { syncCurrentMemberFromServer(); scheduleApprovalSync('visible'); }   // Phase54-1c: 復帰時に承認/公開状態もpull
 });
 
 // ── 旧塗装専門発言を含む会話履歴を起動時に自動クリア ──
@@ -11794,6 +11903,7 @@ function switchCase(memberId, caseId) {
     renderCaseNav(memberId);             // タブのactive状態を更新
     reRenderChatArea(currentMember);     // 選択案件の内容へ確実に再描画
   }
+  scheduleApprovalSync('caseSwitch');    // Phase54-1c: 案件切替時に承認/公開状態をpull
 }
 // Phase52-11.8c: 案件の最終更新日時を更新（先頭へ並べ替え用・localStorage cases のみ・履歴は不変）
 function touchCase(caseId) {
@@ -11957,6 +12067,7 @@ function _homeOpenCase(caseId) {
   if (!leaderM) return;
   memberCaseView['leader'] = caseId;   // 開く案件を指定（selectMemberが該当案件を描画）
   selectMember(leaderM);
+  scheduleApprovalSync('caseSwitch');   // Phase54-1c: ホームから案件を開いた時に承認/公開状態をpull
 }
 function _homeOpenCaseList() {
   const leaderM = _ncFindMember('leader');
@@ -30178,6 +30289,7 @@ function toggleApprovalCheck(key) {
   _mobileApprovalState.checklist[key] = !_mobileApprovalState.checklist[key];
   _mobileApprovalState.approveBlocked = false;
   _mapRerender();
+  _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c: チェック操作中はpull上書きを抑止（push対象外）
 }
 
 function approveInstagramPackage() {
@@ -30191,6 +30303,9 @@ function approveInstagramPackage() {
     _mobileApprovalState.approveBlocked = true;
   }
   _mapRerender();
+  _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c: 編集中ガード起点
+  var _acidAp = getCurrentApprovalCaseId();
+  if (_acidAp) pushApprovalToServer(_acidAp, 'approve');   // Phase54-1c: 承認確定を同期
 }
 
 function rejectMobileApproval() {
@@ -30198,6 +30313,9 @@ function rejectMobileApproval() {
   _mobileApprovalState.approvedAt = null;
   _mobileApprovalState.approveBlocked = false;
   _mapRerender();
+  _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c
+  var _acidRj = getCurrentApprovalCaseId();
+  if (_acidRj) pushApprovalToServer(_acidRj, 'reject');   // Phase54-1c: 却下を同期
 }
 
 function cancelApproval() {
@@ -30205,6 +30323,9 @@ function cancelApproval() {
   _mobileApprovalState.approvedAt = null;
   _mobileApprovalState.approveBlocked = false;
   _mapRerender();
+  _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c
+  var _acidCn = getCurrentApprovalCaseId();
+  if (_acidCn) pushApprovalToServer(_acidCn, 'cancel');   // Phase54-1c: 取消を空状態として同期（case未確定時はPOSTしない）
 }
 
 function _mapBuildApprovalSummaryText(draft) {
@@ -30626,10 +30747,19 @@ function markInstagramPublished() {
   _publishingReadyState.published = true;
   _publishingReadyState.publishedAt = new Date().toISOString();
   _prcRerender();
+  _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c
+  var _acidPb = getCurrentApprovalCaseId();
+  if (_acidPb) pushApprovalToServer(_acidPb, 'publish');   // Phase54-1c: 公開を同期
 }
 
 function archivePublishingReady() {
-  if (_publishingReadyState.published) { _publishingReadyState.archived = true; _prcRerender(); }
+  if (_publishingReadyState.published) {
+    _publishingReadyState.archived = true;
+    _prcRerender();
+    _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c
+    var _acidAr = getCurrentApprovalCaseId();
+    if (_acidAr) pushApprovalToServer(_acidAr, 'archive');   // Phase54-1c: アーカイブを同期
+  }
 }
 
 function resetPublishingReadyStatus() {
@@ -30637,6 +30767,9 @@ function resetPublishingReadyStatus() {
   _publishingReadyState.publishedAt = null;
   _publishingReadyState.archived = false;
   _prcRerender();
+  _approvalSyncLastLocalChangeAt = Date.now();   // Phase54-1c
+  var _acidRs = getCurrentApprovalCaseId();
+  if (_acidRs) pushApprovalToServer(_acidRs, 'reset');   // Phase54-1c: 公開取消を空状態として同期（case未確定時はPOSTしない）
 }
 
 function _prcBuildFullText(draft) {
