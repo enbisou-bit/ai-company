@@ -2,7 +2,58 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-10（Phase54-1e Approval State Reset / Case Isolation Complete・commit 06d07d5・tag v1.01-phase54-1e・push未実施）
+更新日: 2026-07-11（Phase54-1f Approval Output Binding Complete・commit 9fd25a0・tag v1.01-phase54-1f・push未実施）
+
+---
+
+## Phase54-1f Approval Output Binding / Leakage Prevention Complete（Approval行へoutput_id紐付け・別成果物への誤復元防止・commit済み・push未実施）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1f Complete**
+- Commit: **9fd25a0**（`Phase54-1f bind approvals to output`）／Tag: **v1.01-phase54-1f**（コードcommitを指す）／**HEAD = 9fd25a0・origin/main = 4c0ef2c・未Push 1（push未実施）**
+- 本番: **未反映（push前・Render未反映）**。実機確認完了 / dev-check 200/200/200 / node --check 0エラー / コンソールエラー0
+- 変更ファイル: **`index.html` / `lib/approvalsDb.js` / `server.js` / `supabase/schema.sql` の4ファイル**（追加のみ・+63/-11・**Phase54-1c同期の判定に一致条件を1つ追加以外は非変更 / Phase54-1d・1e非変更 / Phase53非接触 / cost系非接触 / 課金なし**）
+- DB: ユーザーが `ALTER TABLE output_approvals ADD COLUMN IF NOT EXISTS output_id TEXT;` を実行済み（nullable・PK変更なし・データ移行なし・非破壊）。**ClaudeはDDL未実行**
+
+### 正式目的（＝完全な複数成果物履歴保存ではない）
+- 最新の案件Approval行（`output_approvals` は case_id PRIMARY KEY・1案件1行を維持）へ **`output_id` を紐付け**、**現在成果物と `output_id` が一致する場合だけ復元**する。
+- 同一案件で新しい成果物を生成した際に、以前の成果物の承認状態が混入する（Phase54-1eの残課題）を恒久防止。Phase54-1eのリセットと連携し新成果物を未承認に保つ。
+
+### 実装済み（追加のみ）
+- **DB**: nullable `output_id TEXT` 追加（ユーザー実行済み・非破壊）
+- **supabase/schema.sql**: `output_approvals` 定義を追記（schema drift解消。DEFAULT/NOT NULL/RLS本文は未introspectのため推測記載せずコメント明記）
+- **lib/approvalsDb.js**: `upsertApproval` に任意 `outputId`（指定時のみ `output_id` 書き込み＝undefinedで既存値を壊さない・`onConflict:'case_id'` 維持）／`getApproval(caseId, outputId)`（outputId指定時のみ `output_id` 一致行を返す）
+- **server.js**: 既存 GET/POST `/api/approvals` に任意 `outputId` を受領しlibへ委譲（新規エンドポイントなし・レスポンス形式不変）
+- **index.html**: `getCurrentApprovalOutputId()` 追加（`_lastOutputDraft.id`・無ければnull・ID新規生成なし）／`buildApprovalPayloadForServer` に `outputId` 追加／`syncApprovalsFromServer` のGET URLに任意 `&outputId=`／`mergeApprovalStateFromServer` の先頭に **output_id一致判定**（不一致・NULL・Draftなしは復元しない・上書きなし・POSTなし・タイムスタンプ不変）
+
+### 実機確認済み（実ワークフロー2回＋実UI操作＋DB読み取り）
+- ✅ 新成果物生成時：Mobile Review=unconfirmed / Mobile Approval=draft / Publishing Ready=draft / 承認取消ボタン非表示
+- ✅ POST body に現在 `outputId`（通常UI経由・手動curl POST 0回）→ DBへ `output_id` 保存 → 現在 `draft.id` と完全一致（既存項目も正常保存）
+- ✅ 同一成果物内で承認維持（同期でGET URLに outputId・編集中3000msガード健在・`_approvalSyncInFlight` 解除・同期による追加POST 0）
+- ✅ **同一案件の別成果物へ承認混入なし**（新draft ID発行→Phase54-1eリセット→同期後も旧承認を復元せず未承認）
+- ✅ 案件間の承認混入なし／既存 `output_id=NULL` 行は復元しない（未承認）
+- ✅ Mobile Review / Mobile Approval / Publishing Ready / Output Engine / Phase53 回帰・コンソールエラー0 / dev-check 200/200/200
+
+### 未確認・対象外
+- Workflow Live 本文描画（Auto Task経路のため）／認証無効環境のログイン・ログアウト（`auth-required:false` で画面なし）／ページリロード後の同一成果物復元（Draft未永続・対象外）／PC⇔スマホでの同一Draft共有（対象外）
+
+### 現Phaseで変更しなかったもの
+Output Draft Persistence／複数成果物Approval履歴／過去成果物再表示／PC・スマホ同一Draft共有／PRIMARY KEY・複合PK／新規Approvalテーブル／既存NULL行のデータ移行／output ID生成方式（`'out_'+Date.now()`）／`getCurrentApprovalCaseId()` dead fallback／UI／Phase53／Version1完成部分／他Realtime Sync
+
+### 残課題
+- Output Draftはメモリのみ（リロード後の同一成果物復元不可・PC/スマホ共有不可・複数成果物Approval履歴なし）
+- `getCurrentApprovalCaseId()` の dead fallback（`_lastOutputDraft.caseId` 未設定・未修正・報告のみ）
+- **Approval POST の fire-and-forget 着順逆転**（同一tick内で approve→reject→cancel を連続実行するとPOST着順が逆転しローカル/DB一時不一致。**Phase54-1f起因ではない**・Phase54-1c由来。別Phase候補）
+- **検証で生じた孤立Approval行**：検証案件 `case-mrf0d8vobb3y`（`output_id=out_1783695572489` / `approval_decision=rejected`）。対応Draftはメモリ消失済みで**今後同じoutput_idのDraftは再生成されない**ため、output_id一致判定によりUIへ復元されず他案件へ混入しない**非活性の孤立データ**として許容。DELETE・手動POSTによる整理は実施していない
+
+### 別Phase候補（どちらを先に実施するかはユーザー判断待ち）
+- **Output Draft Persistence**（Draft永続化＝リロード復元・PC/スマホ共有・複数成果物履歴の前提）
+- **Approval POST Ordering / Last Action Wins**（POST直列化・最終状態デバウンス・stale request破棄・着順逆転対策）
+
+### 温存（未コミット）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1f非接触・stageに含めず）
+
+### 次工程
+- **docs commit（別commit）→ push（origin/main同期・要承認）→ Tag個別push → Render反映 → 本番実機確認**
 
 ---
 

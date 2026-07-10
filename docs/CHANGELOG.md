@@ -4,6 +4,32 @@
 
 ---
 
+## Phase54-1f — Approval Output Binding / Leakage Prevention（Approval行へoutput_id紐付け・別成果物への誤復元防止・2026-07-11・commit済み・push未実施）
+
+- Commit: **9fd25a0**（`Phase54-1f bind approvals to output`）／Tag: **v1.01-phase54-1f**（コードcommitを指す）／**HEAD = 9fd25a0・origin/main = 4c0ef2c・未Push 1**
+- 本番: **未反映（push前・Render未反映）**。実機確認完了 / dev-check 200/200/200 / node --check 0エラー / コンソールエラー0
+- 変更ファイル: **`index.html` / `lib/approvalsDb.js` / `server.js` / `supabase/schema.sql`（4ファイル）**（追加のみ・+63/-11・**Phase54-1c同期は一致判定1つ追加以外は非変更 / Phase54-1d・1e非変更 / Phase53非接触 / cost系非接触 / 課金なし**）
+- DB: ユーザーが `ALTER TABLE output_approvals ADD COLUMN IF NOT EXISTS output_id TEXT;` 実行済み（nullable・PK変更なし・移行なし・非破壊）。ClaudeはDDL未実行
+
+### 正式目的
+- 最新の案件Approval行（case_id PRIMARY KEY・1案件1行維持）へ `output_id` を紐付け、現在成果物と一致する場合だけ復元＝別成果物への誤復元防止。**完全な複数成果物履歴保存ではない**。Phase54-1eのリセットと連携し新成果物を未承認に保つ。
+
+### 内容（追加のみ）
+- lib: `upsertApproval(outputId任意)` / `getApproval(caseId, outputId任意)`（onConflict:case_id維持）／server.js: GET/POSTに任意 `outputId`（新規エンドポイントなし・レスポンス不変）／index.html: `getCurrentApprovalOutputId()`＋payload `outputId`＋GET URL `&outputId=`＋`mergeApprovalStateFromServer` に output_id一致判定（不一致・NULL・Draftなしは復元しない）／schema.sql: `output_approvals` 定義追記（drift解消）
+
+### 確認
+- 実機（実ワークフロー2回＋実UI＋DB読み取り）: 新成果物未承認・POSTへoutputId・DB保存・draft.id一致・同一成果物内で承認維持・同一案件の別成果物へ混入なし・案件間混入なし・NULL行復元しない・回帰OK・コンソールエラー0 / dev-check 200/200/200
+- 未確認・対象外: Workflow Live本文描画／認証無効環境ログイン／リロード後復元／PC⇔スマホ同一Draft共有
+
+### 残課題／別Phase候補
+- 残課題: Output Draft未永続／複数成果物Approval履歴なし／`getCurrentApprovalCaseId()` dead fallback／Approval POST着順逆転（Phase54-1f起因ではない）／孤立Approval行（`case-mrf0d8vobb3y`/`out_1783695572489`/rejected・非活性・許容）
+- 別Phase候補: Output Draft Persistence ／ Approval POST Ordering / Last Action Wins
+
+### 温存
+- cost系3ファイル（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝未commit温存（Phase54-1f非接触・stageに含めず）
+
+---
+
 ## Phase54-1e — Approval State Reset / Case Isolation（成果物単位で必ず未承認から開始・表示バグ修正・2026-07-10・commit済み・push未実施）
 
 - Commit: **06d07d5**（`Phase54-1e approval state reset per output draft`）／Tag: **v1.01-phase54-1e**／**HEAD = 06d07d5・origin/main = b29be90・未Push 1**

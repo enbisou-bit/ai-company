@@ -2,11 +2,45 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-10（Phase54-1e Approval State Reset / Case Isolation Complete・commit 06d07d5・tag v1.01-phase54-1e・push未実施）
+更新日: 2026-07-11（Phase54-1f Approval Output Binding Complete・commit 9fd25a0・tag v1.01-phase54-1f・push未実施）
 
 ---
 
-## 【現在地・最優先】Phase54-1e Approval State Reset / Case Isolation Complete（成果物単位で必ず未承認から開始・表示バグ修正・commit済み・push未実施）
+## 【現在地・最優先】Phase54-1f Approval Output Binding / Leakage Prevention Complete（Approval行へoutput_id紐付け・別成果物への誤復元防止・commit済み・push未実施）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1f Complete**／本番: **未反映（push前・Render未反映）**
+- Commit: **9fd25a0**（`Phase54-1f bind approvals to output`）／Tag: **v1.01-phase54-1f**（コードcommitを指す）／**HEAD = 9fd25a0・origin/main = 4c0ef2c・未Push 1**
+- 変更ファイル: **`index.html` / `lib/approvalsDb.js` / `server.js` / `supabase/schema.sql`（4ファイル）**（追加のみ・+63/-11・**Phase54-1c同期は一致判定1つ追加以外は非変更 / Phase54-1d・1e非変更 / Phase53非接触 / cost系非接触 / 課金なし**）
+- DB: ユーザーが `ALTER TABLE output_approvals ADD COLUMN IF NOT EXISTS output_id TEXT;` 実行済み（nullable・PK変更なし・移行なし・非破壊）。ClaudeはDDL未実行
+
+### 現在地
+**Phase54-1f = コードcommit＋Tag完了（push前）**。最新の案件Approval行（case_id PRIMARY KEY・1案件1行維持）へ **`output_id` を紐付け**、**現在成果物と一致する場合だけ復元**。同一案件で新成果物を生成しても旧承認が混入しない（Phase54-1eの残課題を恒久解消）。**完全な複数成果物履歴保存ではない**。
+
+### 実装（追加のみ・4ファイル）
+- lib：`upsertApproval(outputId任意・onConflict:case_id維持)` / `getApproval(caseId, outputId任意)`／server.js：GET/POSTに任意 `outputId`（新規エンドポイントなし）／index.html：`getCurrentApprovalOutputId()`＋payload `outputId`＋GET URL `&outputId=`＋`mergeApprovalStateFromServer` に **output_id一致判定**（不一致・NULL・Draftなしは復元しない）／schema.sql：`output_approvals` 定義追記（drift解消）
+
+### 実機確認済み
+- 新成果物：Review=unconfirmed / Approval=draft / PR=draft / 承認取消非表示／POSTへ現在outputId（手動POST 0回）→DB保存→draft.id一致／同一成果物内で承認維持（ガード健在・追加POST 0）／**同一案件の別成果物へ混入なし**／案件間混入なし／NULL行は復元しない／回帰OK／コンソールエラー0／dev-check 200/200/200
+
+### 未確認・対象外
+- Workflow Live 本文描画／認証無効環境のログイン・ログアウト／リロード後の同一成果物復元／PC⇔スマホ同一Draft共有
+
+### 残課題
+- Output Draftはメモリのみ（リロード復元不可・PC/スマホ共有不可・複数成果物Approval履歴なし）／`getCurrentApprovalCaseId()` dead fallback（未修正・報告のみ）／**Approval POST 着順逆転**（Phase54-1f起因ではない・Phase54-1c由来・別Phase候補）／**孤立Approval行**（`case-mrf0d8vobb3y`/`out_1783695572489`/rejected・非活性・許容・整理未実施）
+
+### 別Phase候補（どちらを先に実施するかユーザー判断待ち）
+- **Output Draft Persistence**（Draft永続化＝リロード復元・PC/スマホ共有・複数成果物履歴の前提）
+- **Approval POST Ordering / Last Action Wins**（POST直列化・最終状態デバウンス・stale request破棄・着順逆転対策）
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1f非接触・stageに含めず）
+
+### 次工程
+- **docs commit（別commit・要承認）→ push（origin/main同期・要承認）→ Tag個別push（`--tags` 不使用）→ Render反映 → 本番実機確認**
+
+---
+
+## 【参考・完了済み】Phase54-1e Approval State Reset / Case Isolation Complete（成果物単位で必ず未承認から開始・表示バグ修正・commit済み・push未実施）
 
 - 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1e Complete**／本番: **未反映（push前）**
 - Commit: **06d07d5**（`Phase54-1e approval state reset per output draft`）／Tag: **v1.01-phase54-1e**／**HEAD = 06d07d5・origin/main = b29be90・未Push 1**

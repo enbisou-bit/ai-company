@@ -1,7 +1,53 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-10（Phase54-1e Approval State Reset / Case Isolation Complete・commit 06d07d5・tag v1.01-phase54-1e・push未実施）
+> 更新日: 2026-07-11（Phase54-1f Approval Output Binding Complete・commit 9fd25a0・tag v1.01-phase54-1f・push未実施）
+
+---
+
+## Phase54-1f: Approval Output Binding / Leakage Prevention（Approval行へoutput_id紐付け・別成果物への誤復元防止・commit済み・push前）
+
+> 記録日: 2026-07-11。**変更4ファイル・追加のみ（+63/-11）**：`index.html` / `lib/approvalsDb.js` / `server.js` / `supabase/schema.sql`。Phase54-1c同期の判定に一致条件を1つ追加以外は非変更・Phase54-1d/1e/Phase53/cost系 非接触。
+> Commit: `9fd25a0`（`Phase54-1f bind approvals to output`）/ Tag: `v1.01-phase54-1f`（コードcommitを指す）/ **HEAD=9fd25a0・origin/main=4c0ef2c・未Push 1**。
+> DB: ユーザーが `ALTER TABLE output_approvals ADD COLUMN IF NOT EXISTS output_id TEXT;` 実行済み（nullable・PK変更なし・移行なし・非破壊）。ClaudeはDDL未実行。
+
+### 正式目的
+- 最新の案件Approval行（`output_approvals` は **case_id PRIMARY KEY・1案件1行を維持**）へ **`output_id` を紐付け**、**現在成果物と `output_id` が一致する場合だけ復元**する。別成果物への誤復元を防止。**完全な複数成果物履歴保存ではない**。Phase54-1eのリセットと連携し新成果物を未承認に保つ。
+
+### 実装（追加のみ）
+- **DB**: nullable `output_id TEXT` 追加（ユーザー実行済み・非破壊）
+- **supabase/schema.sql**: `output_approvals` 定義を追記（drift解消・DEFAULT/NOT NULL/RLS本文は未introspectのため推測記載せずコメント明記）
+- **lib/approvalsDb.js**: `upsertApproval` に任意 `outputId`（指定時のみ書き込み・`onConflict:'case_id'` 維持）／`getApproval(caseId, outputId)`（outputId指定時のみ一致行）
+- **server.js**: 既存 GET/POST `/api/approvals` に任意 `outputId` 受領（新規エンドポイントなし・レスポンス不変）
+- **index.html**: `getCurrentApprovalOutputId()` 追加／payloadに `outputId`／GET URLに任意 `&outputId=`／`mergeApprovalStateFromServer` 先頭に **output_id一致判定**（不一致・NULL・Draftなしは復元しない・上書きなし・POSTなし・タイムスタンプ不変）
+
+### 実機確認済み（実ワークフロー2回＋実UI＋DB読み取り）
+- 新成果物生成時：Mobile Review=unconfirmed / Mobile Approval=draft / Publishing Ready=draft / 承認取消ボタン非表示
+- POST bodyへ現在 `outputId`（通常UI経由・手動curl POST 0回）→ DBへ `output_id` 保存 → 現在 `draft.id` と完全一致（既存項目も正常保存）
+- 同一成果物内で承認維持（同期でGET URLに outputId・編集中3000msガード健在・`_approvalSyncInFlight` 解除・追加POST 0）
+- **同一案件の別成果物へ承認混入なし**（新draft ID→Phase54-1eリセット→同期後も旧承認を復元せず未承認）／案件間混入なし／既存 `output_id=NULL` 行は復元しない
+- Mobile Review / Mobile Approval / Publishing Ready / Output Engine / Phase53 回帰・コンソールエラー0・dev-check 200/200/200
+
+### 未確認・対象外
+- Workflow Live 本文描画／認証無効環境のログイン・ログアウト／リロード後の同一成果物復元（Draft未永続・対象外）／PC⇔スマホの同一Draft共有（対象外）
+
+### 現Phaseで変更しなかったもの
+Output Draft Persistence／複数成果物Approval履歴／過去成果物再表示／PC・スマホ同一Draft共有／PRIMARY KEY・複合PK／新規Approvalテーブル／既存NULL行のデータ移行／output ID生成方式／`getCurrentApprovalCaseId()` dead fallback／UI／Phase53／Version1完成部分／他Realtime Sync
+
+### 残課題
+- Output Draftはメモリのみ（リロード復元不可・PC/スマホ共有不可・複数成果物Approval履歴なし）
+- `getCurrentApprovalCaseId()` の dead fallback（未修正・報告のみ）
+- Approval POST の fire-and-forget 着順逆転（**Phase54-1f起因ではない**・Phase54-1c由来・別Phase候補）
+- 検証で生じた孤立Approval行（`case-mrf0d8vobb3y` / `output_id=out_1783695572489` / `rejected`。対応Draftはメモリ消失済み・同output_idは再生成されず一致判定によりUIへ復元されない**非活性の孤立データ**として許容。DELETE・手動POST未実施）
+
+### 別Phase候補（どちらを先に実施するかユーザー判断待ち）
+- Output Draft Persistence／Approval POST Ordering / Last Action Wins
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存（stageに含めず）
+
+### 次工程
+- docs commit（別commit）→ push（要承認）→ Tag個別push → Render反映 → 本番実機確認
 
 ---
 
