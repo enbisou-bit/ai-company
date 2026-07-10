@@ -103,6 +103,32 @@ CREATE TABLE IF NOT EXISTS cases (
 );
 
 -- ============================================================
+-- 承認/公開状態テーブル（Phase54-1b 新規作成 / Phase54-1f output_id 追加）
+-- ※ 実DBは Supabase SQL Editor で直接作成・変更済み。本ファイルは再構築用の定義記録であり、
+--    ここから実DBを再作成する処理は行わない。
+-- ※ 列名は GET /api/approvals の実レスポンスで確認済み。型は作成時SQL（docs記録）と実値に基づく。
+-- ※ DEFAULT / NOT NULL / RLSポリシー本文は実DBから introspect していないため、推測で記載しない。
+--    再構築時は Supabase 側の実定義を必ず確認すること。
+-- ※ 1案件1Approval行（case_id PRIMARY KEY）。複数成果物のApproval履歴は保持しない。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS output_approvals (
+  case_id           TEXT PRIMARY KEY,
+  output_id         TEXT,          -- Phase54-1f: 承認がどのOutput Draftのものかを識別（nullable・既存行はNULL）
+  approval_decision TEXT,
+  approved_at       TIMESTAMPTZ,
+  published         BOOLEAN,
+  published_at      TIMESTAMPTZ,
+  archived          BOOLEAN,
+  checklist         JSONB,
+  review_status     TEXT,
+  updated_at        TIMESTAMPTZ
+);
+-- Phase54-1f: 既存DBへは以下のALTERで output_id を追加（実DB反映済み・非破壊・nullable・PK変更なし・データ移行なし）
+--   ALTER TABLE output_approvals ADD COLUMN IF NOT EXISTS output_id TEXT;
+-- RLS: docs記録では ENABLE ROW LEVEL SECURITY ＋ ポリシー "output_approvals_all"（FOR ALL）。
+--      ポリシー本文（USING / WITH CHECK）は未 introspect のため、ここには記載しない。
+
+-- ============================================================
 -- 顧客テーブル
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customers (

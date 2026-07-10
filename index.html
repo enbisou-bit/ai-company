@@ -8216,6 +8216,15 @@ function getCurrentApprovalCaseId() {
   return null;
 }
 
+// Phase54-1f: 現在表示中のOutput Draft ID を返す（IDは新規生成しない・createOutputDraftのid生成方式は変更しない）
+// Draftが無い場合は null（安全な空値）。Approvalの output_id 紐付け／一致判定に使用。
+function getCurrentApprovalOutputId() {
+  try {
+    if (_lastOutputDraft && _lastOutputDraft.id) return _lastOutputDraft.id;
+  } catch (e) { /* 取得不可 */ }
+  return null;
+}
+
 // 単一状態＋reviewStatusをPhase54-1bのPOST受領キーへ写像（読み取り専用・状態は変更しない）
 function buildApprovalPayloadForServer(caseId) {
   var reviewStatus = null;
@@ -8227,6 +8236,7 @@ function buildApprovalPayloadForServer(caseId) {
   } catch (e) { reviewStatus = null; }
   return {
     caseId:           caseId,
+    outputId:         getCurrentApprovalOutputId(),   // Phase54-1f: 承認がどのOutput Draftのものかを保存（無ければnull・偽IDは生成しない）
     approvalDecision: _mobileApprovalState.decision || null,
     approvedAt:       _mobileApprovalState.approvedAt || null,
     published:        !!_publishingReadyState.published,
@@ -8263,6 +8273,10 @@ function isRemoteApprovalNewer(remote, local) {
 // サーバー行を単一状態へ反映（編集中ガード＋updated_at新しい方のみ・反映時のみ既存再描画）
 function mergeApprovalStateFromServer(remoteApproval) {
   if (!remoteApproval) return;                                                   // 当該case無し→現状維持
+  // Phase54-1f: 現在のOutput Draftと一致するApprovalのみ復元する（別成果物からの誤復元を防ぐ）。
+  // 不一致 / output_id が NULL・空 / 現在Draftが無い場合は「正常な対象外」としてreturn（未承認維持・上書きなし・POSTなし・タイムスタンプ不変）。
+  var _curOid = getCurrentApprovalOutputId();
+  if (!_curOid || !remoteApproval.output_id || remoteApproval.output_id !== _curOid) return;
   if ((Date.now() - _approvalSyncLastLocalChangeAt) < APPROVAL_SYNC_EDIT_GUARD_MS) return; // 編集中→ローカル優先
   if (!isRemoteApprovalNewer(remoteApproval, _approvalSyncLastLocalChangeAt)) return;      // 新しくない→上書きしない
   _mobileApprovalState.decision       = remoteApproval.approval_decision || null;
@@ -8280,7 +8294,11 @@ async function syncApprovalsFromServer(options) {
   try {
     var caseId = getCurrentApprovalCaseId();
     if (!caseId) return;                                   // case未確定→同期スキップ
-    var res = await fetch('/api/approvals?caseId=' + encodeURIComponent(caseId));
+    // Phase54-1f: Output Draft がある場合のみ outputId を任意付与（無い場合は従来どおり caseId のみ）
+    var _oid = getCurrentApprovalOutputId();
+    var _url = '/api/approvals?caseId=' + encodeURIComponent(caseId)
+             + (_oid ? '&outputId=' + encodeURIComponent(_oid) : '');
+    var res = await fetch(_url);
     if (!res.ok) return;
     var data = await res.json();
     if (!data || !data.ok) return;
