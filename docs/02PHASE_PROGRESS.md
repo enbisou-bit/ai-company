@@ -1,7 +1,48 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-10（Phase54-1d Mobile Approval Cache Fix Complete・commit 43513cc・tag v1.01-phase54-1d・push未実施）
+> 更新日: 2026-07-10（Phase54-1e Approval State Reset / Case Isolation Complete・commit 06d07d5・tag v1.01-phase54-1e・push未実施）
+
+---
+
+## Phase54-1e: Approval State Reset / Case Isolation（成果物単位で未承認から開始・表示バグ修正・index.htmlのみ・commit済み・push前）
+
+> 記録日: 2026-07-10。**index.htmlのみ・追加のみ（+20）**。共通リセット関数1個＋5境界呼び出し。server.js / DB / API / Workflow / Provider / Phase54-1c同期 / Phase54-1d `_mrcRerender` / Phase53 / cost系 いずれも無変更・非接触。
+> Commit: `06d07d5`（`Phase54-1e approval state reset per output draft`）/ Tag: `v1.01-phase54-1e` / **HEAD=06d07d5・origin/main=b29be90・未Push 1**。
+
+### 不具合
+- 承認/レビュー/公開の状態が単一グローバル（`_mobileReviewState`/`_mobileApprovalState`/`_publishingReadyState`）で、新規案件・案件切替・新成果物生成のいずれでも初期化されず、前状態が引き継がれて「承認済み／投稿準備完了／『承認を取消』」が誤表示。
+
+### 目的（限定）
+- **表示バグ修正に限定**。承認対象は「成果物（Output Draft）」単位。新規案件・案件切替・新成果物生成では必ず Mobile Review / Mobile Approval / Publishing Ready が**未承認から開始**する。
+
+### 実装（index.htmlのみ・追加のみ）
+- 共通リセット関数 **`resetApprovalStatesToDefault()`** 新設：
+  - `_mobileReviewState`/`_mobileApprovalState`/`_publishingReadyState` を既定へ
+  - `_lastOutputDraft.mobileReviewCenter`/`.mobileApproval`/`.publishingReady` を無効化（次回描画で再計算・Phase54-1d整合）
+  - `pushApprovalToServer` 非呼出（不要POSTなし）／`_approvalSyncLastLocalChangeAt` 不変（Phase54-1c非干渉）／既存描画経路のみ
+  - 将来の「成果物削除→再生成」でも再利用可能な共通関数
+- 接続5境界：`createOutputDraft`（新成果物生成・唯一の生成点／冒頭）／`switchCase`・`_homeOpenCase`（案件切替／冒頭。この後の既存 `scheduleApprovalSync('caseSwitch')` が当該案件を復元）／`createCase`（新規作成分岐・dedup早期returnには入れない）／`createNewCaseFromForm`（フォーム経由・新規/dedup両対応）
+
+### 非変更（安全・スコープ外）
+- **Phase54-1c 同期7関数 非変更**（GET復元仕様を複雑化しない）。新規case行なし→GET 0件→復元なし→未承認維持
+- **Phase54-1d `_mrcRerender` 非変更**
+- `createMobileApprovalDraft`/`canApprove`/`_mapAllChecked`/`_mapReviewApproved`/`_mrcOverallStatus` 判定ロジック無変更
+- 成果物単位永続化（output_id）は **Phase54-1f** へ分離（本Phase対象外）
+
+### dev-check / ブラウザ確認
+- 🟢 dev-check 200/200/200 / node --check 0エラー / インラインJS 2ブロックparse OK
+- 🟢 起動時コンソールエラー0 / `resetApprovalStatesToDefault` 定義 / Phase54-1c同期5関数 typeof function / `_mrcRerender` 健在
+- 🟢 合成リセット検証：承認済み汚染→reset で decision=null・checklist空・reviewApproved=false・published=false・archived=false・draftキャッシュ3種=null・`_approvalSyncLastLocalChangeAt` 不変
+- 🟢 Phase53 `oe-aic` 67件維持 / Phase54-1c同期diff 0 / Phase54-1d `_mrcRerender` diff 0
+- ⚠️ 実ワークフローでの実操作確認（新規案件→新成果物→未承認／案件A→B切替で混入なし／同一案件の作り直しで未承認）は成果物draft生成（API課金）を伴うため未実施（push/Render反映後にユーザー実機確認）
+
+### 温存
+- cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存（stageに含めず）
+
+### 次工程
+- docs commit（別commit）→ push（要承認）→ Render反映 → 実機確認
+- **Phase54-1f（今後予定・別設計・要承認）**: 承認の成果物単位永続化（`output_approvals` に `output_id`/`draft_id` 追加・Phase54-1c同期を output_id キーへ整合。DB/server.js/API/Supabase作業を伴う）。同一案件・既存承認×新成果物の再承認（case_id単位GET復元の残課題）を恒久解決
 
 ---
 
