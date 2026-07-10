@@ -11835,6 +11835,7 @@ function createCase(userText, memberIds) {
   cases[id] = { id, title, ts: _now, updatedAt: _now, memberIds: allIds, userText }; // Phase52-11.8c: updatedAt追加
   saveCases();
   pushCaseToServer(id);   // Phase52-11.9: 作成した案件をSupabaseへ同期（失敗握り潰し）
+  resetApprovalStatesToDefault();   // Phase54-1e: 新規案件は必ず未承認から開始（既存へのdedup時は上の早期returnでここに来ないためリセットしない）
   return id;
 }
 function getCasesForMember(memberId) {
@@ -11896,6 +11897,7 @@ function renderCaseNav(memberId) {
   container.appendChild(nav);
 }
 function switchCase(memberId, caseId) {
+  resetApprovalStatesToDefault();   // Phase54-1e: 案件切替時に前案件の承認状態表示を消す（この後の scheduleApprovalSync が当該案件の保存状態を復元）
   memberCaseView[memberId] = caseId;
   if (currentMember && currentMember.id === memberId) {
     selectMember(currentMember);         // 既存呼び出し維持（同一メンバーは早期returnでno-op）
@@ -12063,6 +12065,7 @@ function renderCaseListScreen(memberId) {
 // leader を集約ビューとして全案件を表示（全案件は必ずleaderを含む）。カードを開くとleaderを選択し該当案件へ。
 // 案件0件は false を返し、goHome() 側で従来 empty-state を表示する。削除ボタンはホームには置かない（削除同期はPhase52-12.1）。
 function _homeOpenCase(caseId) {
+  resetApprovalStatesToDefault();   // Phase54-1e: ホームから案件を開く時に前案件の承認状態表示を消す（この後の scheduleApprovalSync が復元）
   const leaderM = _ncFindMember('leader');
   if (!leaderM) return;
   memberCaseView['leader'] = caseId;   // 開く案件を指定（selectMemberが該当案件を描画）
@@ -12294,6 +12297,7 @@ async function createNewCaseFromForm() {
   if (!name) name = (template === 'free') ? '新規案件' : tplLabel;
   // 既存 createCase を利用（Leaderを常に含む・localStorage cases に保存・重複タイトルは既存を返す）
   const caseId = createCase(name, ['leader']);
+  resetApprovalStatesToDefault();   // Phase54-1e: 新規案件フォーム経由（新規/既存dedupいずれも）で承認状態表示を未承認へ初期化
   if (cases[caseId]) { cases[caseId].template = template; saveCases(); }
   touchCase(caseId);   // Phase52-11.8c: 作成/再選択した案件を最終更新順で先頭へ
   const leaderM = _ncFindMember('leader');
@@ -23722,6 +23726,7 @@ function evaluateOutputPackageCompleteness(draft) {
 }
 
 function createOutputDraft(type, sourceText) {
+  resetApprovalStatesToDefault();   // Phase54-1e: 新成果物生成境界。前成果物の承認状態を必ずリセット（未承認から開始）
   var def = getOutputTypeDefinition(type);
   if (!def) return null;
   var roleInfo = getOutputRoleAssignments(type);
@@ -30569,6 +30574,21 @@ var PRC_AXIS_LABELS = { readiness: 'Readiness', caption: 'Caption', cta: 'CTA', 
 
 // 投稿状態はメモリ保持のみ（DB/localStorage/Learning/Asset Libraryへは書き込まない）
 let _publishingReadyState = { published: false, publishedAt: null, archived: false };
+
+// Phase54-1e: 承認系3状態を既定へ戻す共通リセット（成果物単位で必ず未承認から開始する・表示リセットのみ）。
+// 呼び出し境界: 新規成果物生成(createOutputDraft) / 案件切替(switchCase・_homeOpenCase) / 新規案件作成(createCase・createNewCaseFromForm)。将来の「成果物削除→再生成」でも再利用可能。
+// 制約: pushApprovalToServer を呼ばない（不要POSTなし）／_approvalSyncLastLocalChangeAt を変更しない（Phase54-1c同期は非接触）／既存描画経路のみ使用（Phase54-1d整合でキャッシュ無効化→次回再計算）。
+function resetApprovalStatesToDefault() {
+  _mobileReviewState    = { statusBySlide: {}, commentsBySlide: {}, revisionTargetBySlide: {}, currentSlideId: null, defaultTarget: 'Designer', approved: false, approveBlocked: false };
+  _mobileApprovalState  = { checklist: {}, decision: null, approvedAt: null, approveBlocked: false };
+  _publishingReadyState = { published: false, publishedAt: null, archived: false };
+  if (_lastOutputDraft) {
+    _lastOutputDraft.mobileReviewCenter = null;   // draftキャッシュ無効化→次回 buildXxxHtml で createXxxDraft 再計算
+    _lastOutputDraft.mobileApproval     = null;
+    _lastOutputDraft.publishingReady    = null;
+  }
+  try { if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel(); } catch (e) { /* 描画失敗時も既存表示維持 */ }
+}
 
 function _prcResolveStatus(approvalStatus) {
   if (_publishingReadyState.archived) return 'archived';
