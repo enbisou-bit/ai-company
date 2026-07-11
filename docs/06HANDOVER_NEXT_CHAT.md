@@ -2,17 +2,18 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins・実装済み＝index.htmlのみ未Commit・合成確認＋localhost実機確認 完了・docs更新のみ実施・commit/tag/push前）
+更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins **正式Complete**・commit d6a6905・tag v1.01-phase54-1g・push済み・Render反映済み・本番実機確認完了）
 
 ---
 
-## 【現在地・最優先】Phase54-1g Approval POST Ordering / Last Action Wins（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・実装済み未Commit）
+## 【現在地・最優先】Phase54-1g Approval POST Ordering / Last Action Wins **Complete**（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・push済み・Render反映済み・本番確認済み）
 
-- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1g 実装済み・未Commit**／本番: **未反映**
-- 状態: **index.html のみ変更（+89/-7・追加のみ・`pushApprovalToServer` 内部の直列キュー化）**。**commit/tag/push いずれも未実施**。**docs更新まで完了**（本Phaseはdocs更新のみ実施）。cost系3ファイルは未commit温存（stageに含めない）
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1g Complete**／本番: **Render反映済み**（`ai-company-l45x.onrender.com` = d6a6905）
+- Commit: **d6a6905**（`Phase54-1g enforce last action wins`）／docs commit: **2bb5a86**（`Phase54-1g update documentation`）＋Complete確定docs／Tag: **v1.01-phase54-1g**（→ d6a6905）／**origin/main = d6a6905・push済み**
+- 変更ファイル: **index.html のみ（+89/-7・追加のみ・`pushApprovalToServer` 内部の直列キュー化）**。cost系3ファイルは未commit温存（stageに含めない）
 
 ### 現在地
-**Phase54-1g = 実装＋合成確認＋localhost実機確認＋docs更新 まで完了（commit前）**。Approval POST の fire-and-forget 着順逆転（approve→reject→cancel 高速連続でローカル最終とDB最終が不一致）を、**POST直列化＋対象別 Last Action Wins** で解消。**Approval Sync(GET)の仕様変更ではない**。Phase54-1c由来の残課題を恒久解決（Phase54-1f起因ではない）。
+**Phase54-1g = 実装＋合成確認＋localhost実機確認＋push＋Render反映＋本番実機確認 まで完了＝正式Complete**。Approval POST の fire-and-forget 着順逆転（approve→reject→cancel 高速連続でローカル最終とDB最終が不一致）を、**POST直列化＋対象別 Last Action Wins** で解消。**本番でUI最終状態=DB最終状態を確認**。**Approval Sync(GET)の仕様変更ではない**。Phase54-1c由来の残課題を恒久解決（Phase54-1f起因ではない）。
 
 ### 実装（index.htmlのみ・追加のみ・変更は `pushApprovalToServer` 内部限定）
 - グローバル直列 runner `_runApprovalPostQueue`（1件ずつ `await`・多重起動ガード）／対象別 pending `targetKey=caseId::outputId` 最新のみ保持（同一対象supersede＝Last Action Wins／別対象個別保持）＝`_approvalPostPendingByTarget`(Map)＋`_approvalPostTargetOrder`(配列)／`_enqueueApprovalPost` payload凍結／成功条件 `response.ok`（4xx/5xx/例外=失敗）／最大1回再送・失敗時に新pendingあればstale再送しない（新操作優先）・失敗継続／outputId無しはPOSTしない／外部IF維持・非ブロック（戻り値undefined）
@@ -23,9 +24,12 @@
 ### 確認済み
 - 合成（スタブ・実POST 0・課金なし）：Queue動作 / LAW（approve→reject→cancel → `[approve, cancel]`）/ 対象別保持（`outA:approve / outB:reject2 / outC:publish`）/ 失敗→最大1回再送（`[ng, ok]`）/ 新操作優先（stale再送なし）/ outputId無しPOST禁止 / 回帰・後始末原状復帰・コンソールエラー0
 - localhost実機（実POST・実Supabase・透過ロガー・AI生成なし）：実成果物Draft＋実ハンドラで approve→reject→cancel → **実POST 2回のみ**（中間reject supersedeで未送信）・UI最終=cancel(null)＝**DB最終null 一致**／reject→cancel は postLog `[rejected:200, null:200]`（着順保持）でDB最終null 一致／別案件混入なし・output_id不一致=復元なし（1f保護健在）・回帰OK・コンソールエラー0 / dev-check 200/200/200
+- **本番実機（Render `ai-company-l45x.onrender.com`・実POST・実Supabase・本番POST 6件・手動curl 0）**：approve→reject→cancel → **実POST 2件 `[null:200, null:200]`**（中間reject supersede）・**UI最終=cancel(null)＝DB最終null 一致**・pending残留0／reject→cancel `[rejected:200, null:200]`（着順保持）DB最終null 一致／別案件混入なし・output_id不一致=復元なし（**Phase54-1f保護維持**）／Approval Sync GET回帰なし・非ブロック・コンソールエラー0
 
-### 実機検証で生成したテスト行（DB `output_approvals`・通常UI POST経由・最小）
-- `case-1g-rm-*`（最終null）/ `case-1g-B-*`（最終null）/ `case-1g-C-*`（rejected）。手動curl POST 0回・DELETE未実施。非活性テストデータとして記録（対応Draftはメモリ消失済み・一致判定によりUIへ復元されない・他案件へ混入しない）。
+### 実機検証で生成したテスト行（DB `output_approvals`・通常UI POST経由・最小・DELETE未実施）
+- localhost：`case-1g-rm-*`（null）/ `case-1g-B-*`（null）/ `case-1g-C-*`（rejected）
+- 本番：`case-1g-prod-A-*`（null）/ `case-1g-prod-B-*`（null）/ `case-1g-prod-C-*`（rejected）
+- 手動curl POST 0回・DELETE未実施。非活性テストデータとして記録（対応Draftはメモリ消失済み・一致判定によりUIへ復元されない・他案件へ混入しない）。
 
 ### 残課題（Phase54-1g範囲外・継続）
 - Output Draftはメモリのみ（リロード復元不可・PC/スマホ共有不可・複数成果物Approval履歴なし）／`getCurrentApprovalCaseId()` dead fallback（未修正・報告のみ）／Phase54-1f検証由来の孤立行 `case-mrf0d8vobb3y`（out_1783695572489/rejected・非活性・許容）＋本Phase検証のテスト3行
@@ -36,8 +40,8 @@
 ### 温存（未コミット・保護対象すべて維持）
 - cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1g非接触・stageに含めず）
 
-### 次工程
-- **docs commit（別commit・要承認）→ index.html commit（要承認）→ Tag（`--tags`不使用）→ push（origin/main同期・要承認）→ Render反映 → 本番実機確認**
+### 次工程（別Phase候補・ユーザー判断待ち）
+- **Output Draft Persistence**（Draft永続化＝リロード復元・PC/スマホ共有・複数成果物Approval履歴の前提）。※Phase54-1g自体は完了・追加作業なし
 
 ---
 

@@ -4,10 +4,11 @@
 
 ---
 
-## Phase54-1g — Approval POST Ordering / Last Action Wins（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・2026-07-11・実装済み未Commit）
+## Phase54-1g — Approval POST Ordering / Last Action Wins **Complete**（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・2026-07-11・push済み・Render反映済み・本番確認済み）
 
-- 状態: **index.html のみ変更（+89/-7・追加のみ・`pushApprovalToServer` 内部の直列キュー化）**。**commit/tag/push いずれも未実施**・**本番未反映**。docs更新のみ実施（本Phase）
-- 変更範囲: **index.html のみ**（**server.js / lib / DB / API / Approval Sync(GET) / output_id判定 / Phase53 / Phase54-1d・1e・1f / cost系 非接触**・課金なし）
+- Commit: **d6a6905**（`Phase54-1g enforce last action wins`）／docs commit: **2bb5a86**（`Phase54-1g update documentation`）＋Complete確定docs／Tag: **v1.01-phase54-1g**（→ d6a6905）／**origin/main = d6a6905・push済み**
+- 本番: **Render反映済み**（`ai-company-l45x.onrender.com` = d6a6905・`_runApprovalPostQueue` 反映確認）。**本番実機確認完了**（Last Action Wins・UI最終状態=DB最終状態）
+- 変更範囲: **index.html のみ（+89/-7・追加のみ・`pushApprovalToServer` 内部の直列キュー化）**（**server.js / lib / DB / API / Approval Sync(GET) / output_id判定 / Phase53 / Phase54-1d・1e・1f / cost系 非接触**・課金なし）
 
 ### 目的
 - Approval POST の fire-and-forget 着順逆転（同一成果物へ approve→reject→cancel を高速連続 → POST到着順逆転でローカル最終とDB最終が不一致）を解消し **Last Action Wins** を保証。Phase54-1c由来の残課題（Phase54-1f起因ではない）を恒久解決。**Approval Sync(GET)の仕様変更ではない**。
@@ -18,10 +19,14 @@
 ### 確認
 - 合成（スタブ・実POST 0・課金なし）: Queue動作 / LAW（approve→reject→cancel → `[approve, cancel]`）/ 対象別保持 / 失敗→最大1回再送 / 新操作優先 / outputId無しPOST禁止 / 回帰・コンソールエラー0
 - localhost実機（実POST・実Supabase・透過ロガー・AI生成なし）: approve→reject→cancel → 実POST 2回のみ（中間reject supersede）・UI最終=cancel(null)＝DB最終null 一致／reject→cancel は `[rejected:200, null:200]`（着順保持）DB最終null 一致／別案件混入なし・output_id不一致=復元なし（1f保護健在）・回帰OK / dev-check 200/200/200
-- 実機検証テスト行（DB `output_approvals`・通常UI POST経由・最小）: `case-1g-rm-*`／`case-1g-B-*`／`case-1g-C-*`（手動curl 0回・DELETE未実施・非活性）
+- **本番実機（Render `ai-company-l45x.onrender.com`・実POST・実Supabase・本番POST 6件・手動curl 0）**: approve→reject→cancel → 実POST 2件 `[null:200, null:200]`（中間reject supersede）・UI最終=cancel(null)＝DB最終null 一致・pending残留0／reject→cancel `[rejected:200, null:200]`（着順保持）DB最終null 一致／別案件混入なし・output_id不一致=復元なし（Phase54-1f保護維持）／Approval Sync GET回帰なし・非ブロック・コンソールエラー0
+- 実機検証テスト行（DB `output_approvals`・通常UI POST経由・最小・DELETE未実施）: localhost `case-1g-rm-*`／`case-1g-B-*`／`case-1g-C-*`・本番 `case-1g-prod-A/B/C-*`（手動curl 0回・非活性）
 
 ### 温存
 - cost系3ファイル（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝未commit温存（Phase54-1g非接触・stageに含めず）
+
+### 次Phase候補（ユーザー判断待ち）
+- Output Draft Persistence（Draft永続化＝リロード復元・PC/スマホ共有・複数成果物Approval履歴の前提）
 
 ---
 

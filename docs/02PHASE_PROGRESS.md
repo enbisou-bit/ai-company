@@ -1,13 +1,13 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins・実装済み＝index.htmlのみ未Commit・合成確認＋localhost実機確認 完了・docs更新のみ・commit/tag/push前）
+> 更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins **正式Complete**・commit d6a6905・tag v1.01-phase54-1g・push済み・Render反映済み・本番実機確認完了）
 
 ---
 
-## Phase54-1g: Approval POST Ordering / Last Action Wins（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・実装済み未Commit）
+## Phase54-1g: Approval POST Ordering / Last Action Wins **Complete**（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・push済み・Render反映済み・本番確認済み）
 
-> 記録日: 2026-07-11。**変更1ファイル・追加のみ（index.html +89/-7）**＝`pushApprovalToServer` 内部の直列キュー化のみ。**commit/tag/push いずれも未実施**。docs更新のみ実施（本Phase）。Phase54-1c同期／54-1d/1e/1f／Phase53／cost系 非接触。
+> 記録日: 2026-07-11。**変更1ファイル・追加のみ（index.html +89/-7）**＝`pushApprovalToServer` 内部の直列キュー化のみ。commit **d6a6905**（`Phase54-1g enforce last action wins`）／docs commit **2bb5a86**／Tag **v1.01-phase54-1g**（→ d6a6905）／**origin/main = d6a6905・push済み・Render反映済み**。Phase54-1c同期／54-1d/1e/1f／Phase53／server.js/lib/DB/API／cost系 非接触・課金なし。
 
 ### 目的
 - Approval POST の fire-and-forget 着順逆転（同一成果物へ approve→reject→cancel を高速連続 → POST到着順逆転でローカル最終とDB最終が不一致）を解消し **Last Action Wins** を保証。Phase54-1c由来の残課題（Phase54-1f起因ではない）を恒久解決。**Approval Sync(GET)の仕様変更ではない**。
@@ -27,17 +27,22 @@
 - 対象分離：別案件 target2=rejected / target1=null不変 / output_id不一致=復元なし（Phase54-1f保護健在）
 - 回帰：GET同期・review/approval描画関数 健在 / `pushApprovalToServer` 戻り値undefined（非ブロック）/ コンソールエラー0
 
-### 実機検証で生成したテスト行（DB `output_approvals`・通常UI POST経由・最小）
-- `case-1g-rm-*`（最終null）/ `case-1g-B-*`（最終null）/ `case-1g-C-*`（rejected）の3案件行。手動curl POST 0回・DELETE未実施。非活性テストデータとして記録（対応Draftはメモリ消失済み・一致判定によりUIへ復元されない）。
+### 本番実機確認（Render `ai-company-l45x.onrender.com`・実POST・実Supabase・透過ロガー・AI生成なし・本番POST 6件）
+- 通常/LAW：approve→reject→cancel → **実POST 2件 `[null:200, null:200]`**（中間reject supersedeで未送信）・**UI最終=cancel(null)＝DB最終null 一致**・pending残留0
+- 着順保持/中間非上書き：reject→cancel → `[rejected:200, null:200]`・DB最終null 一致
+- 別案件/別成果物 混入なし：target3=rejected / target2=null不変 / output_id不一致=復元なし（Phase54-1f保護維持）
+- 回帰：Approval Sync GET回帰なし・描画関数健在・`pushApprovalToServer` 戻り値undefined（非ブロック）・コンソールエラー0
 
-### 未実施
-- docs commit / index.html commit / tag / push / Render反映 / 本番実機確認（すべてユーザー承認後）
+### 実機検証で生成したテスト行（DB `output_approvals`・通常UI POST経由・最小・DELETE未実施）
+- localhost：`case-1g-rm-*`（null）/ `case-1g-B-*`（null）/ `case-1g-C-*`（rejected）
+- 本番：`case-1g-prod-A-*`（null）/ `case-1g-prod-B-*`（null）/ `case-1g-prod-C-*`（rejected）
+- 手動curl POST 0回・DELETE未実施。非活性テストデータとして記録（対応Draftはメモリ消失済み・一致判定によりUIへ復元されない・他案件へ混入しない）。
 
 ### 温存
 - cost関連（cost-logs.json / claude-cost-logs.json / claude-quality-history.json）は未コミット温存（Phase54-1g非接触・stageに含めず）
 
-### 次工程
-- docs commit（別commit・要承認）→ index.html commit（要承認）→ Tag → push（要承認）→ Render反映 → 本番実機確認
+### 次工程（別Phase候補・ユーザー判断待ち）
+- **Output Draft Persistence**（Draft永続化＝リロード復元・PC/スマホ共有・複数成果物Approval履歴の前提）
 
 ---
 
