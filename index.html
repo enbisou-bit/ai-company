@@ -8247,17 +8247,99 @@ function buildApprovalPayloadForServer(caseId) {
   };
 }
 
-// POST /api/approvals（fire-and-forget・失敗握り潰し・UIブロックなし）。取消/公開取消も現在状態（空側）をそのまま送る。
+// ══════════════════════════════════════════════════════════════
+// Phase54-1g: Approval POST Ordering / Target-based Last Action Wins（index.htmlのみ・追加のみ）
+// 目的: 承認→却下→取消 等の連続操作で fire-and-forget POST の着順逆転により
+//       「最後のユーザー操作」と異なる状態がDBへ残る問題を解消する。
+// 方式: POST全体を1件ずつ直列送信（グローバル runner）。pendingは targetKey=caseId::outputId 単位で
+//       最新のみ保持（同一対象は上書き＝Last Action Wins／別対象は個別保持で喪失させない）。
+// 非接触: buildApprovalPayloadForServer既存項目 / GET同期(scheduleApprovalSync/syncApprovalsFromServer/
+//         mergeApprovalStateFromServer/isRemoteApprovalNewer) / _approvalSyncInFlight / _approvalSyncLastLocalChangeAt
+//         / output_id判定 / server.js / lib / DB / API は無変更。変更は pushApprovalToServer 内部のみ。
+// ══════════════════════════════════════════════════════════════
+let _approvalPostRunning = false;                       // POST runner 稼働中フラグ（GET用 _approvalSyncInFlight とは別物）
+const _approvalPostPendingByTarget = new Map();         // Map<targetKey, frozenJob> 対象ごとの最新未送信job
+const _approvalPostTargetOrder = [];                    // 未送信 targetKey の処理順（重複登録しない）
+
+// 対象キー生成: caseId::outputId。null/空は無効キー（呼び出し側で事前弾き）。偽IDは生成しない。
+function _approvalTargetKey(caseId, outputId) {
+  return String(caseId) + '::' + String(outputId);
+}
+
+// UI操作直後にApproval状態を frozenJob として確定しキューへ登録。payloadはこの時点で凍結（送信時に読み直さない）。
+function _enqueueApprovalPost(caseId, reason) {
+  if (!caseId) return;
+  var outputId = getCurrentApprovalOutputId();
+  // Phase54-1g/1f: 成果物Approvalは outputId が対象識別に必須。null/undefined/空はPOSTしない（偽ID生成なし・case単位保存へ戻さない）。
+  if (!outputId) { try { console.warn('[approvalPost] skip: no outputId (caseId=' + caseId + ')'); } catch (e) {} return; }
+  var targetKey = _approvalTargetKey(caseId, outputId);
+  var job = {
+    caseId: caseId,
+    outputId: outputId,
+    reason: reason,
+    targetKey: targetKey,
+    payload: buildApprovalPayloadForServer(caseId),   // ★キュー投入時に凍結（既存項目は不変）
+    enqueuedAt: Date.now(),
+    attempts: 0,                                      // attempts: この job の送信試行回数（最大1回再送＝合計2試行）
+  };
+  _approvalPostPendingByTarget.set(targetKey, job);   // 同一targetKeyのみ最新で上書き（Last Action Wins）
+  if (_approvalPostTargetOrder.indexOf(targetKey) === -1) _approvalPostTargetOrder.push(targetKey);
+  _runApprovalPostQueue();                            // 未起動なら起動（多重起動は先頭ガードで防止）
+}
+
+// 1件だけ送信。fetchはHTTP 4xx/5xxでもrejectしないため response.ok を成功条件とする。true=成功 / false=失敗。
+async function _sendApprovalPostOnce(job) {
+  try {
+    var res = await fetch('/api/approvals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(job.payload),
+    });
+    return !!(res && res.ok);                         // 400/401/403/404/409/429/500 等は false（失敗扱い）
+  } catch (e) {
+    return false;                                    // ネットワーク例外も失敗扱い
+  }
+}
+
+// グローバル直列 runner。1件ずつawaitで送信。最大1回再送・新操作優先・失敗継続・try/finallyでrunning復帰＋残pending再起動。
+async function _runApprovalPostQueue() {
+  if (_approvalPostRunning) return;                  // 多重起動防止（同時に複数POSTを走らせない）
+  _approvalPostRunning = true;
+  try {
+    while (_approvalPostTargetOrder.length > 0) {
+      var key = _approvalPostTargetOrder.shift();    // FIFOで次の対象
+      var job = _approvalPostPendingByTarget.get(key);
+      _approvalPostPendingByTarget.delete(key);      // ★送信開始時にこのスナップショットを消費（await中の新jobは別途set）
+      if (!job) continue;
+      var ok = await _sendApprovalPostOnce(job);
+      if (!ok) {
+        // 失敗: 同一targetKeyに“より新しいpending”が既にあれば stale を再送しない（新操作優先＝Last Action Wins）
+        if (!_approvalPostPendingByTarget.has(key) && job.attempts < 1) {
+          job.attempts = job.attempts + 1;           // 最大1回だけ再送（合計2試行）
+          _approvalPostPendingByTarget.set(key, job);
+          if (_approvalPostTargetOrder.indexOf(key) === -1) _approvalPostTargetOrder.push(key);
+        } else {
+          try { console.warn('[approvalPost] failed (dropped after retries): ' + key); } catch (e) {}
+          // キューは止めない・pending全体は消さない・他対象jobを失わない
+        }
+      }
+      // ★送信完了時に pending.delete(key) を再実行しない（await中に入った新jobを守る＝競合防止）
+    }
+  } finally {
+    _approvalPostRunning = false;
+    // running解除時点で未処理order/pendingが残っていれば再起動を保証（無限同期再帰を避けマイクロタスクへ）
+    if (_approvalPostTargetOrder.length > 0) {
+      Promise.resolve().then(function () { _runApprovalPostQueue(); });
+    }
+  }
+}
+
+// POST /api/approvals（外部インターフェース維持・非ブロック）。Phase54-1g: 直接fetchせずキュー投入へ委譲。
 function pushApprovalToServer(caseId, reason) {
   if (!caseId) return;
   _approvalSyncLastReason = reason || _approvalSyncLastReason;
   try {
-    var body = buildApprovalPayloadForServer(caseId);
-    fetch('/api/approvals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).catch(function () {});
+    _enqueueApprovalPost(caseId, reason);            // 直列化＋対象別Last Action Wins（fire-and-forget維持・awaitさせない）
   } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
 }
 
