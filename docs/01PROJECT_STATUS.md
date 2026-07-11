@@ -2,7 +2,51 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-11（Phase54-1f Approval Output Binding Complete・commit 9fd25a0・tag v1.01-phase54-1f・push未実施）
+更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins・実装済み＝index.htmlのみ未Commit・ブラウザ合成確認＋localhost実機確認 完了・docs更新のみ実施・commit/tag/push前）
+
+---
+
+## Phase54-1g Approval POST Ordering / Last Action Wins（Approval POSTを直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・実装済み未Commit）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1g 実装済み・未Commit**
+- 状態: **index.html のみ変更（+89/-7・追加のみ・`pushApprovalToServer` 内部の直列キュー化）**。**commit/tag/push いずれも未実施**。docs更新のみ実施（本Phase）
+- 本番: **未反映**。ブラウザ合成確認（スタブ）＋localhost実機確認（実POST・実Supabase）完了 / dev-check 200/200/200 / コンソールエラー0
+
+### 目的
+- Approval POST の fire-and-forget 着順逆転（同一成果物へ approve→reject→cancel を高速連続操作するとPOST到着順が逆転し、ローカル最終状態とDB最終状態が不一致になる）を解消し、**Last Action Wins（最後の操作が必ずDB最終になる）**を保証する。Phase54-1c由来の残課題（Phase54-1f起因ではない）を恒久解決。**Approval Sync（GET）の仕様変更ではない**。
+
+### 実装（index.htmlのみ・追加のみ・変更は `pushApprovalToServer` 内部に限定）
+- **グローバル直列 runner** `_runApprovalPostQueue`：POSTを1件ずつ `await` 送信（多重起動を先頭ガードで防止）。
+- **対象別 pending**：`targetKey = caseId::outputId` 単位で最新jobのみ保持（同一対象は上書き＝supersede＝Last Action Wins／別対象は個別保持で喪失させない）。`_approvalPostPendingByTarget`(Map)＋`_approvalPostTargetOrder`(配列)。
+- **payload凍結**：`_enqueueApprovalPost` でキュー投入時に `buildApprovalPayloadForServer` を凍結（送信時に読み直さない）。
+- **成功条件 `response.ok`**：4xx/5xx/ネットワーク例外は失敗扱い（`_sendApprovalPostOnce`）。
+- **最大1回再送**（合計2試行）。ただし失敗時に同一targetKeyへ**より新しいpendingが既にあればstaleを再送しない（新操作優先）**。失敗継続（キューは止めない・他対象jobを失わない）。
+- **outputId無しはPOSTしない**（偽ID生成なし・case単位保存へ戻さない）。
+- 外部インターフェース維持・**非ブロック（戻り値undefined・fire-and-forget維持）**。
+
+### 非接触（保護対象すべて）
+- `buildApprovalPayloadForServer` 既存項目 / GET同期（`scheduleApprovalSync`・`syncApprovalsFromServer`・`mergeApprovalStateFromServer`・`isRemoteApprovalNewer`）/ `_approvalSyncInFlight` / `_approvalSyncLastLocalChangeAt` / output_id判定 / server.js / lib / DB / API / Phase53 / Phase54-1d・1e・1f / cost系。
+
+### 確認済み（合成＝スタブ・実POST 0・課金なし）
+- Queue動作 / Last Action Wins（approve→reject→cancel → 送信 `[approve, cancel]`・reject supersede）/ 対象別保持（`outA:approve / outB:reject2 / outC:publish`・別対象喪失なし）/ POST失敗→最大1回再送（`[ng, ok]`）/ 新操作優先（stale再送なし）/ outputId無しPOST禁止（送信0）/ 回帰（通常1件・戻り値undefined）/ 後始末原状復帰・コンソールエラー0
+
+### 確認済み（localhost実機＝実POST・実Supabase・透過ロガー・AI生成なし）
+- **通常/LAW**：実成果物Draft（AI生成なし）＋実ハンドラ `approveInstagramPackage`/`rejectMobileApproval`/`cancelApproval` を高速連続実行。approve→reject→cancel の3操作 → **実POST 2回のみ**（中間rejectはsupersedeで未送信）・両200・pending残留0・**UI最終=cancel(null)＝DB最終null 一致**
+- **着順保持**：reject→cancel → postLog `[rejected:200, null:200]`（reject先行→cancel最終）・**DB最終null 一致**（中間rejectがDBに残らない）
+- **対象分離**：別案件 target2=rejected / target1=null不変（混入なし）/ output_id不一致=復元なし（Phase54-1f保護健在）
+- **回帰**：GET同期・review/approval描画関数 健在 / `pushApprovalToServer` 戻り値undefined（非ブロック）/ コンソールエラー0
+
+### 実機検証で生成したテスト行（DB `output_approvals`・通常UI POST経由・最小）
+- `case-1g-rm-*`（最終null）/ `case-1g-B-*`（最終null）/ `case-1g-C-*`（rejected）の3案件行。**手動curl POST 0回・DELETE未実施**。Phase54-1f孤立行（`case-mrf0d8vobb3y`）と同様、非活性テストデータとして記録（対応Draftはメモリ消失済み・同output_idは再生成されず一致判定によりUIへ復元されない）。
+
+### 未実施
+- docs commit / tag / push / Render反映 / 本番実機確認（すべてユーザー承認後）
+
+### 温存（未コミット・保護対象すべて維持）
+- cost関連（`cost-logs.json` 未commit / `claude-cost-logs.json`・`claude-quality-history.json` 未追跡）＝**未commit温存**（Phase54-1g非接触・stageに含めず）
+
+### 次工程
+- **docs commit（別commit・要承認）→ commit（index.html・要承認）→ Tag → push（origin/main同期・要承認）→ Render反映 → 本番実機確認**
 
 ---
 
