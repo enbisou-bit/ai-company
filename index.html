@@ -8343,6 +8343,64 @@ function pushApprovalToServer(caseId, reason) {
   } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase54-2c: Output Draft Persistence 保存配線（index.htmlのみ・追加のみ・保存のみ／復元はPhase54-2d）
+// 目的: Leader Final完成後の完成Draftを POST /api/output-drafts へ自動保存（本文＋メタのみ・Phase54-2b確定仕様の範囲だけ）。
+// 非接触: Approval POST Queue（pushApprovalToServer/_enqueueApprovalPost/_runApprovalPostQueue）/ Approval Sync GET /
+//         mergeApprovalStateFromServer / output_id判定(Phase54-1f) / Phase54-1g / server.js / lib / DB / API は無変更。
+//         承認状態・派生キャッシュ(mobileReviewCenter/mobileApproval/publishingReady)・exports・reviewNotes・
+//         providerRefs・Learning/Memory/Knowledge候補・cost は送らない。Approval Queueへは混ぜない（独立POST）。
+// ══════════════════════════════════════════════════════════════
+// title は Draft top-level に無いため fields から安全に導出（無ければnull・新規生成しない）。
+function _outputDraftTitle(draft) {
+  try {
+    var f = (draft && draft.fields) ? draft.fields : {};
+    return f.title || f.headline || f.catchcopy || (f.caption ? String(f.caption).slice(0, 60) : null) || null;
+  } catch (e) { return null; }
+}
+
+// 保存payloadを組み立て（Phase54-2b確定仕様の範囲のみ）。派生キャッシュ・Approval状態・cost は含めない。
+function buildOutputDraftPayloadForServer(draft, caseId) {
+  if (!draft) return null;
+  return {
+    outputId:       draft.id,
+    caseId:         caseId,
+    type:           draft.type || null,
+    status:         draft.status || null,
+    title:          _outputDraftTitle(draft),
+    sourceText:     draft.sourceText || null,
+    fields:         draft.fields || null,
+    quality:        draft.quality || null,
+    packageQuality: draft.packageQuality || null,
+    assignedRoles:  draft.assignedRoles || null,
+    schemaVersion:  draft.schemaVersion || null,
+    detection:      draft.detection || null,
+    createdAt:      draft.createdAt || null,
+    updatedAt:      draft.updatedAt || null,
+    builtAt:        draft.builtAt || null,
+  };
+}
+
+// POST /api/output-drafts（fire-and-forget・非ブロック・失敗握り潰し）。復元はPhase54-2dで実装。
+// 保存条件: outputId(draft.id) / caseId(現在案件・dead fallback非依存) / fields非空 が揃う時のみ。空Draft直後は保存しない。
+// output_id upsert のため重複保存は安全（サーバ側で上書き）。UI/Workflowはブロックしない。
+function pushOutputDraftToServer(draft) {
+  try {
+    if (!draft || !draft.id) return;                                   // outputIdなし→送らない
+    var caseId = getCurrentApprovalCaseId();                           // 現在案件を確実に取得（_lastOutputDraft.caseId dead fallbackに依存しない）
+    if (!caseId) return;                                               // caseIdなし→送らない
+    var fields = draft.fields;
+    if (!fields || Object.keys(fields).length === 0) return;           // fields空→送らない（空Draft直後の保存を防ぐ）
+    var payload = buildOutputDraftPayloadForServer(draft, caseId);
+    if (!payload) return;
+    fetch('/api/output-drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(function () { /* 保存失敗でもUI/Workflowを止めない */ });
+  } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
+}
+
 // updated_at比較のみ（副作用なし）。remoteが無効なら常にfalse。
 function isRemoteApprovalNewer(remote, local) {
   if (!remote || !remote.updated_at) return false;
@@ -24111,6 +24169,9 @@ function buildOutputDraftFromLeaderFinal(finalText) {
 
   // Phase46-8: Output Engine の oe-body を常に更新（パネル開閉状態に関わらず）
   try { renderOutputEnginePanel(); } catch(_re) {}
+
+  // Phase54-2c: 完成Draftをサーバへ保存（fire-and-forget・非ブロック・保存のみ／復元はPhase54-2d）。失敗してもWorkflowを止めない。
+  try { pushOutputDraftToServer(_lastOutputDraft); } catch(_ods) {}
 
   return { ok: true, type: type, updatedFields: updatedFields, status: OUTPUT_STATUS.READY };
 }
