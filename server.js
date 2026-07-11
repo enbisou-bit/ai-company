@@ -1115,7 +1115,7 @@ app.post('/api/messages', express.json(), async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 // Supabase lib モジュール（遅延ロード）
 // ══════════════════════════════════════════════════════════════
-let _casesDb, _customersDb, _memberScoresDb, _learningDb, _companyMemoryDb, _knowledgeDb, _companyScoreDb, _approvalsDb;
+let _casesDb, _customersDb, _memberScoresDb, _learningDb, _companyMemoryDb, _knowledgeDb, _companyScoreDb, _approvalsDb, _outputDraftsDb;
 const getCasesDb        = () => _casesDb        || (_casesDb        = require('./lib/casesDb'));
 const getCustomersDb    = () => _customersDb    || (_customersDb    = require('./lib/customersDb'));
 const getMemberScoresDb = () => _memberScoresDb || (_memberScoresDb = require('./lib/memberScoresDb'));
@@ -1124,6 +1124,7 @@ const getCompanyMemDb   = () => _companyMemoryDb|| (_companyMemoryDb= require('.
 const getKnowledgeDb    = () => _knowledgeDb    || (_knowledgeDb    = require('./lib/knowledgeDb'));
 const getCompanyScoreDb = () => _companyScoreDb || (_companyScoreDb = require('./lib/companyScoreDb'));
 const getApprovalsDb    = () => _approvalsDb    || (_approvalsDb    = require('./lib/approvalsDb'));
+const getOutputDraftsDb = () => _outputDraftsDb || (_outputDraftsDb = require('./lib/outputDraftsDb'));
 
 // ジャンル自動判定（/api/chat でも使用）
 function detectGenre(text) {
@@ -1220,6 +1221,33 @@ app.post('/api/approvals', async (req, res) => {
   if (!caseId) return res.status(400).json({ ok: false, error: 'caseId は必須です' });
   try {
     const result = await getApprovalsDb().upsertApproval({ caseId, outputId, approvalDecision, approvedAt, published, publishedAt, archived, checklist, reviewStatus });
+    res.json({ ok: !result.error, error: result.error });
+  } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// ─────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// Output Draft Persistence API（Phase54-2b: Output Draft のSupabase永続化・B案 output_id スコープ）
+// ══════════════════════════════════════════════════════════════
+// GET /api/output-drafts?caseId=xxx                 → その案件の最新Draft1件（updated_at DESC）
+// GET /api/output-drafts?caseId=xxx&outputId=out_xx → output_id 一致の1件
+// ※ 一覧・履歴取得は今回未実装（Phase54-2e候補）。既存 /api/approvals・/api/cases は無変更。
+app.get('/api/output-drafts', async (req, res) => {
+  const { caseId, outputId } = req.query;
+  if (!caseId) return res.status(400).json({ ok: false, draft: null, error: 'caseId は必須です' });
+  try {
+    const result = await getOutputDraftsDb().getOutputDraft({ caseId, outputId });
+    res.json({ ok: true, draft: result.draft, source: result.source });
+  } catch (e) { res.json({ ok: false, draft: null, error: e.message }); }
+});
+
+// POST /api/output-drafts { outputId, caseId, fields, type?, status?, title?, sourceText?, quality?, packageQuality?, assignedRoles?, schemaVersion?, detection?, createdAt?, updatedAt?, builtAt? }
+// ※ server.js は app.use(express.json()) をグローバル設定済みのため、per-route express.json() は付けない（Phase54-1b規約に統一）
+app.post('/api/output-drafts', async (req, res) => {
+  const { outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt } = req.body || {};
+  if (!outputId || !caseId || !fields) return res.status(400).json({ ok: false, error: 'outputId / caseId / fields は必須です' });
+  try {
+    const result = await getOutputDraftsDb().upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt });
     res.json({ ok: !result.error, error: result.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });

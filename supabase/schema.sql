@@ -129,6 +129,50 @@ CREATE TABLE IF NOT EXISTS output_approvals (
 --      ポリシー本文（USING / WITH CHECK）は未 introspect のため、ここには記載しない。
 
 -- ============================================================
+-- Output Draft 永続化テーブル（Phase54-2b 新規作成）
+-- ※ 実DBは Supabase SQL Editor で作成する。本ファイルは定義記録＋実行用SQL。
+-- ※ 既存テーブル（output_approvals / cases / conversations / messages 等）は一切変更しない。
+-- ※ Approval状態は output_approvals が正。本テーブルは Draft 本文＋メタのみを保持し、
+--    Mobile Review/Approval/Publishing Ready 派生キャッシュ・Approvalグローバル状態・exports・
+--    reviewNotes・providerRefs・Learning/Memory/Knowledge候補・cost情報 は保存しない（Phase54-2a設計どおり）。
+-- ※ output_id PRIMARY KEY（複数Draft保存可）。FKなし（case削除のCASCADE波及を回避＝cases/output_approvals踏襲）。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS output_drafts (
+  output_id       TEXT PRIMARY KEY,
+  case_id         TEXT NOT NULL,
+  type            TEXT,
+  status          TEXT,
+  title           TEXT,
+  source_text     TEXT,
+  fields          JSONB,
+  quality         JSONB,
+  package_quality JSONB,
+  assigned_roles  JSONB,
+  schema_version  TEXT,
+  detection       JSONB,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  built_at        TIMESTAMPTZ
+);
+
+-- 検索用index（case_id 検索／案件別・最新1件取得 updated_at DESC）。IF NOT EXISTS で再実行安全。
+CREATE INDEX IF NOT EXISTS idx_output_drafts_case_id            ON output_drafts (case_id);
+CREATE INDEX IF NOT EXISTS idx_output_drafts_case_id_updated_at ON output_drafts (case_id, updated_at DESC);
+
+-- RLS: 既存の新テーブル群（cases / customers / ... FOR ALL USING(true) WITH CHECK(true)）と同一方式。
+-- ※ ENABLE は冪等。ポリシーは未存在時のみ作成（再実行で壊さない非破壊・冪等）。
+ALTER TABLE output_drafts ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'output_drafts' AND policyname = 'output_drafts_all'
+  ) THEN
+    CREATE POLICY "output_drafts_all" ON output_drafts FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+-- ============================================================
 -- 顧客テーブル
 -- ============================================================
 CREATE TABLE IF NOT EXISTS customers (
