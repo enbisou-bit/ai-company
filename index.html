@@ -4676,6 +4676,14 @@
   }
   #task-list::-webkit-scrollbar { width: 3px; }
   #task-list::-webkit-scrollbar-thumb { background: var(--border); }
+  /* Phase54-3a UI-A: PC（マウス環境=pointer:fine）は縦スクロールバーを掴みやすく拡張。スマホ(coarse)は上記3px/慣性スクロール維持 */
+  @media (pointer: fine) {
+    #task-list { scrollbar-width: thin; scrollbar-color: rgba(120,180,255,0.55) transparent; }
+    #task-list::-webkit-scrollbar { width: 10px; }
+    #task-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 8px; }
+    #task-list::-webkit-scrollbar-thumb { background: rgba(120,180,255,0.45); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+    #task-list::-webkit-scrollbar-thumb:hover { background: rgba(120,180,255,0.8); background-clip: padding-box; }
+  }
 
   #task-empty {
     text-align: center;
@@ -4833,31 +4841,33 @@
   #task-bulk-toolbar {
     display: none;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 6px 10px;
     background: rgba(100, 180, 255, 0.08);
     border: 1px solid rgba(100, 180, 255, 0.2);
     border-radius: 8px;
     margin: 4px 12px 0;
-    flex-wrap: wrap;
+    flex-wrap: wrap;   /* Phase54-3a UI-A: 基本1行・狭幅のみ最小折返し */
   }
   #task-bulk-toolbar.visible { display: flex; }
   .task-bulk-count {
     font-size: 12px;
     color: var(--accent);
     font-weight: 600;
-    flex: 1;
-    min-width: 80px;
+    flex: 1 1 auto;
+    min-width: 64px;
+    white-space: nowrap;   /* Phase54-3a UI-A: 「N件選択中」を1行固定 */
   }
   .task-bulk-btn {
     font-size: 11px;
-    padding: 4px 10px;
+    padding: 4px 9px;
     border-radius: 6px;
     border: 1px solid rgba(255,255,255,0.15);
     background: rgba(255,255,255,0.06);
     color: var(--text);
     cursor: pointer;
     transition: background 0.15s;
+    white-space: nowrap;   /* Phase54-3a UI-A: ボタン文言を折り返さない（切れ防止） */
   }
   .task-bulk-btn:hover { background: rgba(255,255,255,0.12); }
   .task-bulk-btn.danger {
@@ -6674,12 +6684,12 @@
   <button id="task-add-btn" onclick="openTaskForm()">＋ タスクを追加</button>
   <!-- 一括操作ツールバー（bulk action toolbar） -->
   <div id="task-bulk-toolbar">
-    <span class="task-bulk-count" id="task-bulk-count">selected（選択中）0件</span>
+    <span class="task-bulk-count" id="task-bulk-count">0件選択中</span>
     <button class="task-bulk-btn" onclick="taskSelectAll()">全選択</button>
-    <button class="task-bulk-btn" onclick="taskDeselectAll()">選択解除</button>
-    <button class="task-bulk-btn danger" id="task-bulk-archive-btn" onclick="taskArchiveSelected()">選択したタスクをアーカイブ</button>
-    <button class="task-bulk-btn restore" id="task-bulk-restore-btn" onclick="taskRestoreSelected()">↩ 選択したタスクを復元</button>
-    <button class="task-bulk-btn perm-delete" id="task-bulk-perm-delete-btn" onclick="taskPermanentDeleteSelected()">🗑 選択したタスクを削除</button>
+    <button class="task-bulk-btn" onclick="taskDeselectAll()">解除</button>
+    <button class="task-bulk-btn danger" id="task-bulk-archive-btn" onclick="taskArchiveSelected()" title="選択したタスクをアーカイブ">🗃 アーカイブ</button>
+    <button class="task-bulk-btn restore" id="task-bulk-restore-btn" onclick="taskRestoreSelected()" title="選択したタスクを復元">↩ 復元</button>
+    <button class="task-bulk-btn perm-delete" id="task-bulk-perm-delete-btn" onclick="taskPermanentDeleteSelected()" title="選択したタスクを削除">🗑 削除</button>
   </div>
   <div id="task-list"></div>
 </div>
@@ -20050,7 +20060,7 @@ function updateTaskBulkToolbar() {
   if (permBtn) permBtn.classList.toggle('visible', isArchivedView);
   if (n > 0) {
     toolbar.classList.add('visible');
-    countEl.textContent = `selected（選択中）${n}件`;
+    countEl.textContent = `${n}件選択中`;
   } else {
     toolbar.classList.remove('visible');
   }
