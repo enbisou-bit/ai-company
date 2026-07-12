@@ -2,9 +2,32 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-12（Phase54-2 Output Draft Persistence **正式Complete**・2b/2c/2d＋2f(Mobile Review State Persistence)・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番実機確認完了）
+更新日: 2026-07-12（Phase54-3 Remaining Realtime Sync 正式化・**Phase54-3a Task Basic Sync 実装・localhost確認済み**・index.htmlのみ・未commit・push/Render/本番未実施。Phase54-2は正式Complete）
 
 ---
+
+## Phase54-3 Remaining Realtime Sync（残Realtime Sync完成工程・Version1.1「PC⇔スマホ同一AI会社」直結）
+
+- **現在Phase**：**Phase54-3a Task Basic Sync**（実装・localhost確認済み・未commit）
+- **Phase54-2 Complete**（Output Draft Persistence＋Mobile Review State Persistence・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番確認済み）
+- **目的**：Task/Status/Auto Task/Timeline/Notification/Workflow Live の端末間同期を完成し、Version1.1「PC/iPhoneで同じAI会社」を満たす
+- **Phase分割**：
+  - **3a Task Basic Sync**（今回・実装済み・localhost確認済み）＝**全社共通Taskの基本同期**（`tasks` 全件pull・基本status 3値・案件分離なし）
+  - **3a-2 Task Case Scoping**（案件別Task分離＝`tasks.case_id` A案・**未着手**）
+  - 3b Task History Persistence（`global.__taskHistory` のDB化・**詳細Live Statusはここで扱う**・**未着手**）
+  - 3c Notification Unread / Workflow Live Restore（**未着手**）
+  - 3d Version1.1 Sync Final Verification（**未着手**）
+  - **Cost同期＝別工程**（cost系3ファイル温存・server-globalで端末非依存に共有済み・Version1.1必須ではない）
+  - **Learning残部分（in-memory buffer）＝Version2候補**（主要はDB化済み）
+
+### Phase54-3a Task Basic Sync（実装済み・localhost確認済み・未commit）
+- **スコープ**：**全社共通Taskの基本同期のみ**（`tasks.status` は基本3値 pending/in_progress/done）。**案件別Task分離は含めない → 3a-2 Task Case Scoping で扱う**。**詳細Live Status（working/reviewing等）は task_history 側（3b）で扱う**
+- **内容**：既存 `GET /api/tasks`（DB由来）をクライアントが起動時・案件切替時・ホーム案件を開いた時に pull・merge。**index.htmlのみ・DB/API/SQL変更なし・新規pollingなし**
+- **追加関数**：`syncTasksFromServer`／`_taskFromServerRow`／`_mapServerTaskStatus`（`_taskSyncInFlight` ガード）
+- **merge安全規則**：dbId(サーバーUUID)で重複排除／未存在Taskのみ追加（他端末作成Task表示）／同一Taskはサーバー `updated_at` が厳密に新しい時のみ採用／localのみ(dbIdなし)Task保持／取得失敗・空レスポンスで既存を削除しない／localStorageはキャッシュ維持
+- **重要制約（既知）**：クライアントstatus語彙（todo/working/reviewing等10種）と `tasks.status` CHECK（pending/in_progress/done 3種）が不一致。rich statusのPATCHはCHECK違反で失敗＝`updated_at` が進まないため、pull時に**rich statusを降格しない**（＝既存を壊さない）。完全な双方向status統一は 3b 以降で扱う
+- **localhost確認**：起動pullでサーバー22件merge（pending→todo/done→done写像）・dedup重複なし・空/失敗で既存維持・in-flightガードで重複GET 1回・newer-wins採用＋rich status保護・F5後22件復元・回帰（Approval/Draft/review_state/Case/Notification関数健在）・console 0・dev-check 200/200/200
+- **未実施**：本番実機・push・Render・commit（コード/docs）・Complete確定
 
 ## Phase54-2 Output Draft Persistence **Complete**（Output Draftのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案／2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
 

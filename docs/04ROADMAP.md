@@ -166,6 +166,8 @@ AI Gatewayの役割:
 
 Affiliate Intelligence最優先（Decision 042）を維持したまま、7層Intelligence + AI Gateway v2を以下のPhaseへ配分する。**すべて`index.html`追加のみ・既存関数は読み取り専用参照・予測ヒューリスティック＋手動入力・Safetyバッジ固定・実API/課金なし**（Phase50-1 Decision 040の設計思想を踏襲）。
 
+> ⚠️ **【番号整合の注記・Decision 053】** 本表の「Phase54（Market Opportunity Intelligence）」は**旧Version2計画（superseded）**であり、**現在の実開発 Phase54-1〜54-3（Version1.1 Connected AI Company / Realtime Sync系）とは別物**である。旧定義は履歴として保持し、削除・置換しない。**Version2側のPhase番号は着手前に `V2-Pxx` もしくは Phase60番台以降へ再採番**する。実開発の現在地は docs/01・02・DECISIONS(053) を正とする。
+
 | Phase | 内容 | 対応層 |
 |-------|------|--------|
 | **Phase53 ✅ Complete** | **Affiliate Intelligence Core**（16判断項目の器・案件データ構造・統合スコア・利益ランキング基盤）**／commit bcfba7d・push済み・Render反映済み・index.htmlのみ+380行・DB/server.js/API/Supabase/課金なし** | Core |
@@ -530,6 +532,8 @@ Business KPI Intelligence
 ---
 
 ### Company Brain v2 ファミリー（Decision 039によりInstagram Marketing Intelligenceより後回し）
+
+> ⚠️ **【番号整合の注記・Decision 053】** 以下の「Phase54-1 Consult Engine / 54-2 Self Review / 54-3 Autonomous Quality Loop / 54-4」は**旧Version2 Company Brain v2 計画（superseded）**であり、**現在の実開発 Phase54-1（Approval Sync）/ 54-2（Output Draft Persistence）/ 54-3（Remaining Realtime Sync）＝Version1.1 Realtime Sync系 とは別物**である。旧定義は履歴として保持（削除・置換しない）。**Version2側は着手前に再採番**する。
 
 Creative Engine完了後はCompany BrainよりInstagram Marketing Intelligence（Phase50-1）を優先する。Instagram実運用開始・Learning蓄積・Version1完成を優先し、Company Brain v2は引き続きPhase54で着手する。
 

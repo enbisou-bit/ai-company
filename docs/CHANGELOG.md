@@ -4,6 +4,18 @@
 
 ---
 
+## Phase54-3 — Remaining Realtime Sync 正式化／Phase54-3a Task Basic Sync（2026-07-12・実装・localhost確認済み・未commit・push/Render/本番未実施）
+
+- **Phase54-3正式化（Decision 053）**：実開発Phase54系＝Version1.1 Realtime Sync系。ROADMAP旧Phase54は旧計画として履歴保持・Version2再採番。分割＝3a Task Basic Sync（全社共通Task・基本status 3値・案件分離なし）／3a-2 Task Case Scoping（`tasks.case_id`・案件別Task分離）／3b Task History Persistence（詳細Live Statusはここ）／3c Notification Unread・Workflow Live Restore／3d 最終確認。Cost＝別工程・Learning残＝Version2候補。**3a-2/3b/3c/3d未着手**
+- **Phase54-3a Task Basic Sync**：既存 `GET /api/tasks`（DB由来）をクライアントが起動時・案件切替時・ホーム案件を開いた時に pull・merge。**index.htmlのみ・DB/API/SQL変更なし・新規pollingなし**
+  - 追加：`syncTasksFromServer`/`_taskFromServerRow`/`_mapServerTaskStatus`＋`_taskSyncInFlight`ガード
+  - merge安全規則：dbId重複排除／未存在のみ追加／サーバー `updated_at` 厳密新しい時のみ採用／localのみTask保持／失敗・空で削除しない／localStorageキャッシュ維持
+  - 既知制約：client status(10種) vs server CHECK(3種)不一致。rich statusのPATCH失敗で `updated_at` 不進行のため pull時に降格しない（rich status保護）。双方向status統一は3b以降
+  - 確認：起動pullで22件merge・dedup・空/失敗維持・in-flightガード(GET1回)・newer-wins＋rich status保護・F5復元・回帰OK・console0・dev-check 200/200/200
+  - 非接触：Approval系/output_drafts/review_state/Conversation・Case・Messages/Workflow Live/Notification/Cost/Learning・server.js/lib/DB/API/schema
+
+---
+
 ## Phase54-2 — Output Draft Persistence **Complete**（Output Draトのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案・2b/2c/2d/2f・2026-07-12・push済み・Render反映済み・本番確認済み）
 
 - Commit: **6dec27d**(2b `add output draft persistence API`)／**5eec84b**(2c `save output drafts`)／**7589f4f**(2d `restore output drafts`)／**f0f382f**(2f `persist mobile review state`)／各docs commit＋Tag **v1.01-phase54-2d**・**v1.01-phase54-2f**（→ f0f382f）／**origin/main = f0f382f・push済み**

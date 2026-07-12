@@ -2,11 +2,31 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-12（Phase54-2 Output Draft Persistence **正式Complete**・2b/2c/2d＋2f・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番実機確認完了。次工程＝Phase54-3 開始前レビュー）
+更新日: 2026-07-12（Phase54-3 Remaining Realtime Sync 正式化・Phase54-3a Task Basic Sync 実装・localhost確認済み・未commit・push/Render/本番未実施。Phase54-2は正式Complete）
 
 ---
 
-## 【現在地・最優先】Phase54-2 Output Draft Persistence **Complete**（Output Draトのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案・2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
+## 【現在地・最優先】Phase54-3a Task Basic Sync（実装・localhost確認済み・未commit）
+
+- 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54-3a Task Basic Sync**（Phase54-3 Remaining Realtime Sync の第1工程）
+- **Phase54-2 Complete**（Output Draft Persistence＋Mobile Review State Persistence・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番確認済み）
+- **Phase54-3 正式化（Decision 053）**：実開発Phase54系＝**Version1.1 Realtime Sync系**。ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番。分割＝**3a Task Basic Sync（今回・全社共通Task基本同期）→ 3a-2 Task Case Scoping（案件別Task分離・`tasks.case_id`）→ 3b Task History Persistence（詳細Live Statusはここ）→ 3c Notification Unread/Workflow Live Restore → 3d 最終確認**。Cost＝別工程・Learning残＝Version2候補。**3a-2/3b/3c/3dは未着手**
+
+### Task同期の現状と今回の対象（3a）
+- 現状：`tasks`テーブル＋`GET/POST/PATCH /api/tasks`＋`tasksDb.js` 完備。だが**クライアントは起動時 localStorage のみ読込＝GET pull未配線**。`tasks` に `case_id` 列なし＝Taskは案件横断
+- 今回（index.htmlのみ・DB/API/SQL無・新規poll無）：`syncTasksFromServer`/`_taskFromServerRow`/`_mapServerTaskStatus`（`_taskSyncInFlight`ガード）を追加し、起動時・switchCase・_homeOpenCase で pull・merge
+- merge安全規則：dbId重複排除／未存在のみ追加／サーバー `updated_at` 厳密新しい時のみ採用／localのみTask保持／失敗・空で削除しない／localStorageキャッシュ維持
+- 既知制約：client status(10種) vs server CHECK(pending/in_progress/done)。rich statusのPATCHは失敗し `updated_at` が進まないため pull時に降格しない（rich status保護）。双方向status統一は3b以降
+- localhost確認：起動pullで22件merge・dedup・空/失敗維持・in-flightガード(GET1回)・newer-wins＋rich status保護・F5復元・回帰OK・console0・dev-check 200/200/200
+- **未実施**：commit（コード/docs）・tag・push・Render・本番実機・3a Complete確定
+
+### 次工程
+- 3a：ユーザー承認後に commit（`Phase54-3a sync tasks from server` / docs `Phase54-3a update documentation`）→ tag（承認後）→ push → Render → 本番実機 → 3a Complete。以後 3b（`task_history` DB化）へ
+
+---
+
+## 【参考・完了済み】Phase54-2 Output Draft Persistence **Complete**（Output Draトのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案・2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
 
 - 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2 Complete**／本番: **Render反映済み・本番実機確認完了**
 - Commit: **6dec27d**(2b)／**5eec84b**(2c)／**7589f4f**(2d)／**f0f382f**(2f `persist mobile review state`)／Tag **v1.01-phase54-2d**・**v1.01-phase54-2f**（→ f0f382f）／**origin/main = f0f382f**

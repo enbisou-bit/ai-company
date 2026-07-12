@@ -1,7 +1,32 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-12（Phase54-2 Output Draft Persistence **正式Complete**・2b/2c/2d＋2f(Mobile Review State Persistence)・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番実機確認完了）
+> 更新日: 2026-07-12（Phase54-3 Remaining Realtime Sync 正式化・Phase54-3a Task Basic Sync 実装・localhost確認済み・未commit。Phase54-2は正式Complete）
+
+---
+
+## Phase54-3: Remaining Realtime Sync（残Realtime Sync完成工程・Version1.1「PC⇔スマホ同一AI会社」直結）
+
+> 記録日: 2026-07-12。目的＝Task/Status/Auto Task/Timeline/Notification/Workflow Live の端末間同期を完成。実開発Phase54系は **Version1.1 Connected AI Company / Realtime Sync系**（ROADMAP旧Phase54定義とは別・Decision 053）。
+
+### Phase分割（工程＋分離）
+- **3a Task Basic Sync**：既存 `GET /api/tasks` を pull・merge＝**全社共通Taskの基本同期**（基本status 3値・案件分離なし）。index.htmlのみ・DB/API/SQL無・新規poll無。**実装済み・localhost確認済み・未commit**
+- **3a-2 Task Case Scoping**：案件別Task分離（`tasks` へ nullable `case_id`＝A案・messages.case_id踏襲）。DB/server/lib/index。**未着手**
+- **3b Task History Persistence**：`global.__taskHistory`（server memory・非DB・volatile）を新規 `task_history` テーブルへDB化 → Timeline/Notification/Workflow Live/Auto Task の端末間・F5・再起動復元を一括解錠。**詳細Live Status（working/reviewing等）はここで扱う**。server.js/lib/schema＋SQL。**未着手**
+- **3c Notification Unread / Workflow Live Restore**：通知未読(`_notifSeenIds`・非永続)の永続化＋完了Workflowの復元。**未着手**
+- **3d Version1.1 Sync Final Verification**：全同期のPC⇔スマホ・F5・再ログイン・案件分離・回帰の通し確認。**未着手**
+- **Cost同期＝別工程**（cost系3ファイル温存・server-globalで端末非依存共有済み・Version1.1必須外）
+- **Learning残（in-memory buffer）＝Version2候補**（主要DB化済み）
+
+### Phase54-3a Task Basic Sync（実装済み・localhost確認済み・未commit）
+- **スコープ**：**全社共通Taskの基本同期のみ**（`tasks.status` は基本3値）。**案件分離は3a-2、詳細Live Statusは3b（task_history）で扱う**
+- **現在の構造**：`tasks`テーブル＋`GET/POST/PATCH /api/tasks`＋`tasksDb.js` は完備。だがクライアントは起動時 localStorage(`TASK_KEY`) のみ読込＝**GET pull未配線**。`tasks` テーブルに `case_id` 列なし＝Taskは案件横断
+- **実装内容（index.htmlのみ）**：`syncTasksFromServer`／`_taskFromServerRow`／`_mapServerTaskStatus`＋`_taskSyncInFlight` ガード。起動時(`loadTasks`直後)・switchCase・_homeOpenCase で pull・merge
+- **merge安全規則**：dbId(UUID)で重複排除／未存在のみ追加／同一Taskはサーバー `updated_at` 厳密新しい時のみ採用／localのみTask保持／失敗・空で削除しない／localStorageキャッシュ維持
+- **既知制約**：client status語彙(10種) vs server CHECK(pending/in_progress/done)。rich statusのPATCHは失敗し `updated_at` が進まないため pull時に降格しない（rich status保護）。双方向status統一は3b以降
+- **確認**：起動pullで22件merge・dedup・空/失敗維持・in-flightガード(GET1回)・newer-wins＋rich status保護・F5復元・回帰OK・console0・dev-check 200/200/200
+- **変更ファイル**：`index.html`のみ（+88・追加のみ）。server.js/lib/DB/API/schema/cost 非接触
+- **未実施**：commit・tag・push・Render・本番実機・Complete確定
 
 ---
 
