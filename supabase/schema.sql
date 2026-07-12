@@ -150,10 +150,13 @@ CREATE TABLE IF NOT EXISTS output_drafts (
   assigned_roles  JSONB,
   schema_version  TEXT,
   detection       JSONB,
+  review_state    JSONB,          -- Phase54-2f: Mobile Review状態（statusBySlide/commentsBySlide/revisionTargetBySlide/approved）を成果物単位で永続化。nullable・既存行はNULL
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   built_at        TIMESTAMPTZ
 );
+-- Phase54-2f: 既存DBへは以下のALTERで review_state を追加（非破壊・nullable・既存列/データ変更なし・既存行はNULL）
+--   ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS review_state JSONB;
 
 -- 検索用index（case_id 検索／案件別・最新1件取得 updated_at DESC）。IF NOT EXISTS で再実行安全。
 CREATE INDEX IF NOT EXISTS idx_output_drafts_case_id            ON output_drafts (case_id);

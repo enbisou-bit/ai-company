@@ -8401,6 +8401,59 @@ function pushOutputDraftToServer(draft) {
   } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase54-2f: Mobile Review State Persistence 保存配線（index.htmlのみ・追加のみ）
+// 目的: スライド別レビュー状態(_mobileReviewState)を成果物(output_id)単位で output_drafts.review_state へ保存。
+// 非接触: Approval Sync GET / mergeApprovalStateFromServer / pushApprovalToServer / Approval POST Queue /
+//         output_approvals / Phase54-1f/1g / Publishing Ready / Mobile Approval / cost系 は無変更。独立POST（Queueへ混ぜない）。
+// 保存対象は statusBySlide / commentsBySlide / revisionTargetBySlide / approved のみ（DOM/現在スライド/一時UIは送らない）。
+// ══════════════════════════════════════════════════════════════
+// review_state ペイロード（4項目のみ）。checklist/decision/publishing/cost は含めない。
+function buildReviewStatePayload() {
+  return {
+    statusBySlide:         _mobileReviewState.statusBySlide || {},
+    commentsBySlide:       _mobileReviewState.commentsBySlide || {},
+    revisionTargetBySlide: _mobileReviewState.revisionTargetBySlide || {},
+    approved:              !!_mobileReviewState.approved,
+  };
+}
+
+// POST /api/output-drafts（review_stateのみ・fire-and-forget・非ブロック・失敗握り潰し）。Approval Queueへは混ぜない（独立）。
+// 送信条件: outputId(draft.id) と caseId(現在案件・dead fallback非依存) が揃う時のみ。Draトなし/未確定は送らない。新規output_id生成なし。
+function pushReviewStateToServer() {
+  try {
+    var draft = _lastOutputDraft;
+    if (!draft || !draft.id) return;                                   // outputIdなし→送らない
+    var caseId = getCurrentApprovalCaseId();
+    if (!caseId) return;                                               // caseIdなし→送らない
+    fetch('/api/output-drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outputId: draft.id, caseId: caseId, reviewState: buildReviewStatePayload() }),
+    }).catch(function () { /* 保存失敗でもレビューを止めない */ });
+  } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
+}
+
+// コメント(oninput)等の高頻度入力用にデバウンス保存（ポーリングではない・末尾1回のみ送信）。離散操作は即時保存を使う。
+let _reviewStateSaveTimer = null;
+function scheduleReviewStateSave() {
+  try { if (_reviewStateSaveTimer) clearTimeout(_reviewStateSaveTimer); } catch (e) {}
+  _reviewStateSaveTimer = setTimeout(function () { _reviewStateSaveTimer = null; pushReviewStateToServer(); }, 400);
+}
+
+// 復元: DB行の review_state を _mobileReviewState の4項目のみへ反映（NULL/無効なら既定維持・他項目は不変）。
+// 別 output_id 混入防止は呼び出し側 restoreOutputDraftFromServer（output_id一致行のみ）で保証。
+function _applyReviewStateFromServerRow(row) {
+  try {
+    var rs = row && row.review_state;
+    if (!rs || typeof rs !== 'object') return;                                                          // NULL/無効→既存デフォルト維持
+    if (rs.statusBySlide         && typeof rs.statusBySlide         === 'object') _mobileReviewState.statusBySlide         = rs.statusBySlide;
+    if (rs.commentsBySlide       && typeof rs.commentsBySlide       === 'object') _mobileReviewState.commentsBySlide       = rs.commentsBySlide;
+    if (rs.revisionTargetBySlide && typeof rs.revisionTargetBySlide === 'object') _mobileReviewState.revisionTargetBySlide = rs.revisionTargetBySlide;
+    if (typeof rs.approved === 'boolean') _mobileReviewState.approved = rs.approved;
+  } catch (e) { /* 反映失敗でも既存状態維持 */ }
+}
+
 // updated_at比較のみ（副作用なし）。remoteが無効なら常にfalse。
 function isRemoteApprovalNewer(remote, local) {
   if (!remote || !remote.updated_at) return false;
@@ -8534,6 +8587,7 @@ async function restoreOutputDraftFromServer(reqCaseId, reason) {
     var restored = _outputDraftFromServerRow(row);
     if (!restored) return;
     _lastOutputDraft = restored;                            // 保存済 output_id のまま復元（新規採番しない）
+    _applyReviewStateFromServerRow(row);                    // Phase54-2f: 同 output_id の Mobile Review状態を復元（NULLなら既定維持）
     try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }
     scheduleApprovalSync('outputDraftRestore');             // 復元後、既存Approval Syncが同 output_id で承認復元（Draft APIから承認は復元しない）
   } catch (e) { /* 失敗握り潰し・UIを止めない */ } finally {
@@ -30188,16 +30242,18 @@ function setMobileReviewSlideOk(slideId) {
   _mobileReviewState.statusBySlide[slideId] = 'ok';
   _mobileReviewState.approveBlocked = false;
   _mrcRerender();
+  pushReviewStateToServer();   // Phase54-2f: OK押下を即時永続化（fire-and-forget）
 }
 
 function requestSlideRevision(slideId) {
   _mobileReviewState.statusBySlide[slideId] = 'revision';
   _mobileReviewState.approved = false;
   _mrcRerender();
+  pushReviewStateToServer();   // Phase54-2f: 修正依頼を即時永続化
 }
 
-function _mrcSetTarget(slideId, target) { _mobileReviewState.revisionTargetBySlide[slideId] = target; }
-function _mrcOnComment(slideId, val) { _mobileReviewState.commentsBySlide[slideId] = val; }
+function _mrcSetTarget(slideId, target) { _mobileReviewState.revisionTargetBySlide[slideId] = target; pushReviewStateToServer(); }   // Phase54-2f: 修正対象変更を永続化
+function _mrcOnComment(slideId, val) { _mobileReviewState.commentsBySlide[slideId] = val; scheduleReviewStateSave(); }   // Phase54-2f: コメント変更をデバウンス永続化
 
 function approveMobileReview() {
   var slides = buildMobileReviewSlides(_lastOutputDraft);
@@ -30205,6 +30261,7 @@ function approveMobileReview() {
   if (allOk) { _mobileReviewState.approved = true; _mobileReviewState.approveBlocked = false; }
   else { _mobileReviewState.approved = false; _mobileReviewState.approveBlocked = true; }
   _mrcRerender();
+  pushReviewStateToServer();   // Phase54-2f: approved 変更を即時永続化
 }
 
 function _mrcTouchStart(e) { try { _mrcTouchX = (e.touches && e.touches[0]) ? e.touches[0].clientX : 0; } catch (x) {} }

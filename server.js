@@ -1241,13 +1241,15 @@ app.get('/api/output-drafts', async (req, res) => {
   } catch (e) { res.json({ ok: false, draft: null, error: e.message }); }
 });
 
-// POST /api/output-drafts { outputId, caseId, fields, type?, status?, title?, sourceText?, quality?, packageQuality?, assignedRoles?, schemaVersion?, detection?, createdAt?, updatedAt?, builtAt? }
+// POST /api/output-drafts { outputId, caseId, fields, type?, status?, title?, sourceText?, quality?, packageQuality?, assignedRoles?, schemaVersion?, detection?, createdAt?, updatedAt?, builtAt?, reviewState? }
 // ※ server.js は app.use(express.json()) をグローバル設定済みのため、per-route express.json() は付けない（Phase54-1b規約に統一）
+// ※ Phase54-2f: reviewState（Mobile Review状態・JSONB）を任意受領。Draト本文保存(fields)と review_stateのみ保存 のどちらも許可。
 app.post('/api/output-drafts', async (req, res) => {
-  const { outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt } = req.body || {};
-  if (!outputId || !caseId || !fields) return res.status(400).json({ ok: false, error: 'outputId / caseId / fields は必須です' });
+  const { outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState } = req.body || {};
+  if (!outputId || !caseId) return res.status(400).json({ ok: false, error: 'outputId / caseId は必須です' });
+  if (fields === undefined && reviewState === undefined) return res.status(400).json({ ok: false, error: 'fields または reviewState が必要です' });
   try {
-    const result = await getOutputDraftsDb().upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt });
+    const result = await getOutputDraftsDb().upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
     res.json({ ok: !result.error, error: result.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
