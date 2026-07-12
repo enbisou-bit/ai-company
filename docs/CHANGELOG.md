@@ -4,6 +4,29 @@
 
 ---
 
+## Phase54-2 — Output Draft Persistence（Output Draトのサーバ永続化＝リロード復元・案件切替復元・B案・2b/2c/2d・2026-07-12・localhost確認済み・本番実機未確認）
+
+- Commit: **6dec27d**(2b `add output draft persistence API`)／**5eec84b**(2c `save output drafts`)／**7589f4f**(2d `restore output drafts`)／docs commit＋Tag **v1.01-phase54-2d**（→ 7589f4f）／push・Render反映は本リリースで実施
+- DB: ユーザーが `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊・既存無変更）作成済み
+- 変更範囲: **2b=`lib/outputDraftsDb.js`新規＋`server.js`＋`supabase/schema.sql`／2c・2d=`index.html`のみ**（**Phase54-1f/1g・Approval Sync GET・`mergeApprovalStateFromServer`・Approval POST Queue・Phase53・cost系 非接触**・課金なし）
+
+### 目的
+- メモリのみだった Output Draット をサーバ(`output_drafts`)へ永続化し **リロード後の成果物復元／案件別最新Draト復元** を実現。`output_id` を承認(output_approvals)との共通キーにして整合（**完全な複数履歴ではない＝最新1件**）。
+
+### 内容
+- **2b**: `outputDraftsDb`(upsert/get)＋`GET/POST /api/output-drafts`＋schema（index2本・RLS冪等）。実DB round-trip・400・回帰OK
+- **2c**: `buildOutputDraftFromLeaderFinal` 完成後に `pushOutputDraftToServer`（本文＋メタのみ・fire-and-forget・outputId/caseId/fields揃う時のみ）
+- **2d**: 起動/switchCase/_homeOpenCase で `scheduleOutputDraftRestore`→保存済 output_id のまま復元→既存Approval Sync承認復元。未マークWorkflow Draト保護／Draトなし案件は前案件表示クリア(fix1)／高速連続切替で最新要求再実行(fix2)
+
+### 確認（localhost・実ワークフロー1回＋実DB）
+- 完成Draト保存（`out_1783814527200`/`case-mrgfnfgutvtb`・200・承認POST 0）→ F5後復元・ID一致・Approval GETが同 output_id・復元中POST 0／案件別最新復元／Draトなし案件で前案件クリア（POST 0）／高速連続切替で最終案件即時復元・stale不採用／Output Engine・Mobile三種 回帰OK・コンソールエラー0・dev-check 200/200/200
+- **本番実機確認は未実施（次段）**。検証行は非活性・DELETE未実施。polling/複数履歴UI/PC⇔スマホ能動再取得は Phase54-2e候補（対象外）
+
+### 温存
+- cost系3ファイル＝未commit温存（Phase54-2非接触・stageに含めず）
+
+---
+
 ## Phase54-1g — Approval POST Ordering / Last Action Wins **Complete**（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・2026-07-11・push済み・Render反映済み・本番確認済み）
 
 - Commit: **d6a6905**（`Phase54-1g enforce last action wins`）／docs commit: **2bb5a86**（`Phase54-1g update documentation`）＋Complete確定docs／Tag: **v1.01-phase54-1g**（→ d6a6905）／**origin/main = d6a6905・push済み**

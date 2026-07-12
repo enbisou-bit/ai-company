@@ -2,11 +2,42 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins **正式Complete**・commit d6a6905・tag v1.01-phase54-1g・push済み・Render反映済み・本番実機確認完了）
+更新日: 2026-07-12（Phase54-2 Output Draft Persistence・2b/2c/2d実装＋localhost実ワークフロー確認完了・commit 6dec27d/5eec84b/7589f4f・tag v1.01-phase54-2d・push＋Render本リリース実施・本番実機確認は未実施）
 
 ---
 
-## 【現在地・最優先】Phase54-1g Approval POST Ordering / Last Action Wins **Complete**（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・push済み・Render反映済み・本番確認済み）
+## 【現在地・最優先】Phase54-2 Output Draft Persistence（Output Draトのサーバ永続化＝リロード復元・案件切替復元・B案・2b/2c/2d実装完了・localhost確認済み・本番実機未確認）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2d 実装完了・localhost確認済み**／本番: **未確認**（push・Render反映は本リリースで実施）
+- Commit: **6dec27d**(2b `add output draft persistence API`)／**5eec84b**(2c `save output drafts`)／**7589f4f**(2d `restore output drafts`)／docs commit＋Tag **v1.01-phase54-2d**（→ 7589f4f）
+- DB: ユーザーが `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）作成済み
+
+### 現在地
+**Phase54-2 = Output Draト永続化（B案）を 2b(サーバ基盤)→2c(保存)→2d(復元) で実装完了・localhost実機確認済み**。`output_id` を承認との共通キーにし、復元後は既存 Approval Sync が同 output_id で承認復元（**Phase54-1f/1g 非接触**）。**本番実機確認は未実施**。
+
+### 実装
+- **2b**：`lib/outputDraftsDb.js`＋`server.js` `GET/POST /api/output-drafts`＋`supabase/schema.sql`（実DB round-trip・400・回帰確認済み）
+- **2c**（index.htmlのみ）：`buildOutputDraftFromLeaderFinal` 完成後に `pushOutputDraftToServer`（本文＋メタのみ・fire-and-forget・outputId/caseId/fields揃う時のみ・Approval Queue非接触）
+- **2d**（index.htmlのみ）：起動/switchCase/_homeOpenCase で `scheduleOutputDraftRestore`→保存済 output_id のまま `_lastOutputDraft` 復元→既存Approval Sync承認復元。**未マークWorkflow Draト保護／Draトなし案件は前案件表示クリア(fix1)／高速連続切替で最新要求を再実行(fix2)**
+
+### localhost実機確認済み（実ワークフロー1回＋実DB）
+- 完成Draト保存（`out_1783814527200`/`case-mrgfnfgutvtb`・200・承認POST 0）→ **F5後に復元**・ID一致・Approval GETが同 output_id・復元中POST 0／案件別最新復元／**Draトなし案件で前案件クリア（POST 0）**／**高速連続切替で最終案件即時復元・stale不採用**／Output Engine・Mobile Review/Approval/Publishing Ready 回帰OK・コンソールエラー0・dev-check 200/200/200
+
+### 非接触・保護
+- Phase54-1f（output_id判定）／1g（Approval POST Queue）／Approval Sync GET／`mergeApprovalStateFromServer`／server.js・lib・DB・API（2c/2dはindex.htmlのみ）／Phase53／cost系 非接触。承認状態はDraft APIから復元しない。
+
+### 対象外・残課題（Phase54-2e候補）
+- polling／複数成果物履歴UI／PC⇔スマホ能動再取得／未完了Workflow Draト保持中の別案件自動置換 は対象外。検証行（`out_2btest_*`/`out_2ctest_*`/`out_1783814527200` 等）は非活性・DELETE未実施。
+
+### 温存
+- cost関連3ファイル＝未commit温存（Phase54-2非接触・stageに含めず）
+
+### 次工程
+- 本リリース：docs commit → tag `v1.01-phase54-2d` → push → Render反映・GET確認。**本番実機確認は未実施（次段・ユーザー承認後）**
+
+---
+
+## 【参考・完了済み】Phase54-1g Approval POST Ordering / Last Action Wins **Complete**（Approval POST直列化＋対象別Last Action Wins・着順逆転防止・index.htmlのみ・push済み・Render反映済み・本番確認済み）
 
 - 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-1g Complete**／本番: **Render反映済み**（`ai-company-l45x.onrender.com` = d6a6905）
 - Commit: **d6a6905**（`Phase54-1g enforce last action wins`）／docs commit: **2bb5a86**（`Phase54-1g update documentation`）＋Complete確定docs／Tag: **v1.01-phase54-1g**（→ d6a6905）／**origin/main = d6a6905・push済み**

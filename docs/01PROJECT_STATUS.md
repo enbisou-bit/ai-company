@@ -2,7 +2,39 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins **正式Complete**・commit d6a6905・tag v1.01-phase54-1g・push済み・Render反映済み・本番実機確認完了）
+更新日: 2026-07-12（Phase54-2 Output Draft Persistence・2b/2c/2d実装＋localhost実ワークフロー確認完了・commit 6dec27d/5eec84b/7589f4f・tag v1.01-phase54-2d・push＋Render反映は本リリースで実施・本番実機確認は未実施）
+
+---
+
+## Phase54-2 Output Draft Persistence（Output Draftのサーバ永続化＝リロード復元・案件切替復元・B案／2b/2c/2d実装完了・localhost確認済み・本番実機未確認）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2d 実装完了・localhost確認済み**
+- Commit: **6dec27d**（`Phase54-2b add output draft persistence API`）／**5eec84b**（`Phase54-2c save output drafts`）／**7589f4f**（`Phase54-2d restore output drafts`）／docs commit＋Tag **v1.01-phase54-2d**（→ 7589f4f）／**push・Render反映は本リリースで実施・本番実機確認は未実施**
+- DB: ユーザーが `output_drafts` テーブル作成済み（output_id PK・case_id NOT NULL・FKなし・非破壊・既存テーブル無変更）
+
+### 目的（B案・Phase54-2a設計）
+- メモリのみだった Output Draft をサーバ（`output_drafts`）へ永続化し、**リロード後の成果物復元／案件ごとの最新Draト復元**を実現。既存 approvals/cases と同型・追加のみ・**Phase54-1f/1g 完成部分に非接触**。`output_id` を承認(output_approvals)との共通キーにして整合。
+
+### 実装（2b/2c/2d）
+- **2b サーバ基盤**（`lib/outputDraftsDb.js` 新規＋`server.js` `GET/POST /api/output-drafts`＋`supabase/schema.sql` 定義・実DB round-trip確認済み）
+- **2c 保存**（index.htmlのみ・`buildOutputDraftFromLeaderFinal` 完成後に `pushOutputDraftToServer` で本文＋メタのみ保存・fire-and-forget・outputId/caseId/fields揃う時のみ・Approval Queue非接触）
+- **2d 復元**（index.htmlのみ・起動/switchCase/_homeOpenCase の各 `scheduleApprovalSync` 直前で `scheduleOutputDraftRestore`→保存済 output_id のまま `_lastOutputDraft` 復元→既存Approval Syncが同 output_id で承認復元）
+
+### localhost実機確認済み（実ワークフロー1回＋実DB）
+- 実ワークフロー完成Draト保存（`out_1783814527200`/`case-mrgfnfgutvtb`・200）→ **F5リロード後に復元**・復元ID＝保存値一致・Approval GETが同 output_id 使用・復元中POST 0
+- 案件切替で案件別最新Draト復元／**Draトなし案件で前案件Draト表示をクリア（POST 0）**／**高速連続切替で最終案件の最新Draトを即時復元・staleは不採用**／Output Engine・Mobile Review/Approval/Publishing Ready 回帰OK・コンソールエラー0・dev-check 200/200/200
+
+### 保護・非接触
+- **Phase54-1f（output_id一致判定）／1g（Approval POST Queue）／Approval Sync GET／`mergeApprovalStateFromServer` 非接触**。承認状態はDraft APIから復元しない（output_approvals が正）。polling/複数履歴UIは未実装（Phase54-2e候補）。
+
+### 未実施
+- **本リリースで**：docs commit → tag → push → Render反映・GET確認。**本番実機確認は未実施（次段・ユーザー承認後）**
+
+### 残課題・対象外
+- 検証行（`out_2btest_*`/`out_2ctest_*`/`out_1783814527200` 等）は実DBに残存（非活性・DELETE未実施）／未マーク(進行中Workflow)Draト保持中の別案件切替は自動置換しない（保護・意図的仕様）／polling・複数履歴UI・PC⇔スマホ能動再取得は Phase54-2e候補（対象外）
+
+### 温存
+- cost関連3ファイル（`cost-logs.json`/`claude-cost-logs.json`/`claude-quality-history.json`）＝未commit温存（Phase54-2非接触・stageに含めず）
 
 ---
 

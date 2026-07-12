@@ -1,7 +1,33 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-11（Phase54-1g Approval POST Ordering / Last Action Wins **正式Complete**・commit d6a6905・tag v1.01-phase54-1g・push済み・Render反映済み・本番実機確認完了）
+> 更新日: 2026-07-12（Phase54-2 Output Draft Persistence・2b/2c/2d実装＋localhost実ワークフロー確認完了・commit 6dec27d/5eec84b/7589f4f・tag v1.01-phase54-2d・push＋Render本リリース実施・本番実機未確認）
+
+---
+
+## Phase54-2: Output Draft Persistence（Output Draftのサーバ永続化＝リロード復元・案件切替復元・B案・2b/2c/2d実装完了・localhost確認済み）
+
+> 記録日: 2026-07-12。B案（既存 approvals/cases と同型・追加のみ・Phase54-1f/1g非接触）。DB: ユーザーが `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）作成済み。commit **6dec27d**(2b)／**5eec84b**(2c)／**7589f4f**(2d)／Tag **v1.01-phase54-2d**（→ 7589f4f）。push・Render反映は本リリースで実施・**本番実機確認は未実施**。
+
+### 目的
+- メモリのみだった Output Draft をサーバ永続化し **リロード後の成果物復元／案件ごとの最新Draト復元** を実現。`output_id` を承認(output_approvals)との共通キーにして整合。**完全な複数成果物履歴ではない**（最新1件）。
+
+### 実装
+- **2b サーバ基盤**：`lib/outputDraftsDb.js`（`upsertOutputDraft`/`getOutputDraft`・approvalsDb踏襲）＋`server.js` `GET/POST /api/output-drafts`（グローバルexpress.json依拠）＋`supabase/schema.sql` 定義（index2本・RLS冪等）。実DB round-trip・400・回帰確認済み
+- **2c 保存**（index.htmlのみ +61）：`_outputDraftTitle`/`buildOutputDraftPayloadForServer`/`pushOutputDraftToServer`。`buildOutputDraftFromLeaderFinal` 完成後に本文＋メタのみ保存（fire-and-forget・outputId/caseId/fields揃う時のみ・Approval Queue非接触・cost非送信）
+- **2d 復元**（index.htmlのみ +104）：`_outputDraftFromServerRow`/`fetchLatestOutputDraftForCase`/`_canReplaceDraftWithRestore`/`restoreOutputDraftFromServer`/`scheduleOutputDraftRestore`。起動/switchCase/_homeOpenCase で復元→既存Approval Syncが同 output_id で承認復元。**未マークWorkflow Draト保護／Draトなし案件は前案件表示クリア（fix1）／高速連続切替で最新要求を再実行（fix2）**
+
+### localhost実機確認（実ワークフロー1回＋実DB）
+- 完成Draト保存（`out_1783814527200`/`case-mrgfnfgutvtb`・200・承認POST 0）→ F5後に復元・ID一致・Approval GETが同 output_id・復元中POST 0／案件別最新復元／Draトなし案件で前案件クリア（POST 0）／高速連続切替で最終案件即時復元・stale不採用／Output Engine・Mobile三種 回帰OK・コンソールエラー0・dev-check 200/200/200
+
+### 非接触・保護
+- Phase54-1f（output_id判定）／1g（Approval POST Queue）／Approval Sync GET／`mergeApprovalStateFromServer`／server.js・lib・DB・API（2c/2dはindex.htmlのみ）／Phase53／cost系 非接触。承認状態はDraft APIから復元しない。
+
+### 対象外・残課題
+- polling／複数成果物履歴UI／PC⇔スマホ能動再取得／未完了Workflow Draト保持中の別案件自動置換 は **Phase54-2e候補（対象外）**。検証行は非活性・DELETE未実施。
+
+### 次工程
+- 本リリース：docs commit → tag → push → Render反映・GET確認。**本番実機確認は未実施（ユーザー承認後）**
 
 ---
 
