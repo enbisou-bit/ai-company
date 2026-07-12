@@ -2,11 +2,22 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-12（Phase54-2 Output Draft Persistence・2b/2c/2d実装＋localhost実ワークフロー確認完了・commit 6dec27d/5eec84b/7589f4f・tag v1.01-phase54-2d・push＋Render本リリース実施・本番実機確認は未実施）
+更新日: 2026-07-12（Phase54-2 Output Draft Persistence **正式Complete**・2b/2c/2d＋2f・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番実機確認完了。次工程＝Phase54-3 開始前レビュー）
 
 ---
 
-## 【現在地・最優先】Phase54-2 Output Draft Persistence（Output Draトのサーバ永続化＝リロード復元・案件切替復元・B案・2b/2c/2d実装完了・localhost確認済み・本番実機未確認）
+## 【現在地・最優先】Phase54-2 Output Draft Persistence **Complete**（Output Draトのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案・2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
+
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2 Complete**／本番: **Render反映済み・本番実機確認完了**
+- Commit: **6dec27d**(2b)／**5eec84b**(2c)／**7589f4f**(2d)／**f0f382f**(2f `persist mobile review state`)／Tag **v1.01-phase54-2d**・**v1.01-phase54-2f**（→ f0f382f）／**origin/main = f0f382f**
+- DB: `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）＋`review_state JSONB`(2f) 作成済み
+- **Phase54-2f**: スライド別レビュー状態（`statusBySlide`/`commentsBySlide`/`revisionTargetBySlide`/`approved`＝「OK x/10」）を `output_drafts.review_state` へ成果物単位で保存・復元。output_approvals・Approval Sync・Phase54-1f/1g・Publishing Ready・Mobile Approval 非接触
+- **本番実機確認（ユーザー通常ブラウザ）**: OK x/10保持・コメント/修正依頼/修正担当保持・F5復元・案件切替・別案件混入なし・元案件復元・Mobile Approval/Publishing Ready回帰なし・Approval Sync正常・console 0 → **Phase54-2 Complete 確定**
+- 次工程: **Phase54-3 開始前レビュー**（現状整理・影響範囲・採用案・実装計画のみ・実装しない）
+
+---
+
+## 【参考・完了済み】Phase54-2 実装詳細（2b/2c/2d・B案）
 
 - 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2d 実装完了・localhost確認済み**／本番: **未確認**（push・Render反映は本リリースで実施）
 - Commit: **6dec27d**(2b `add output draft persistence API`)／**5eec84b**(2c `save output drafts`)／**7589f4f**(2d `restore output drafts`)／docs commit＋Tag **v1.01-phase54-2d**（→ 7589f4f）

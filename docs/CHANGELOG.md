@@ -4,10 +4,12 @@
 
 ---
 
-## Phase54-2 — Output Draft Persistence（Output Draトのサーバ永続化＝リロード復元・案件切替復元・B案・2b/2c/2d・2026-07-12・localhost確認済み・本番実機未確認）
+## Phase54-2 — Output Draft Persistence **Complete**（Output Draトのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案・2b/2c/2d/2f・2026-07-12・push済み・Render反映済み・本番確認済み）
 
-- Commit: **6dec27d**(2b `add output draft persistence API`)／**5eec84b**(2c `save output drafts`)／**7589f4f**(2d `restore output drafts`)／docs commit＋Tag **v1.01-phase54-2d**（→ 7589f4f）／push・Render反映は本リリースで実施
-- DB: ユーザーが `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊・既存無変更）作成済み
+- Commit: **6dec27d**(2b `add output draft persistence API`)／**5eec84b**(2c `save output drafts`)／**7589f4f**(2d `restore output drafts`)／**f0f382f**(2f `persist mobile review state`)／各docs commit＋Tag **v1.01-phase54-2d**・**v1.01-phase54-2f**（→ f0f382f）／**origin/main = f0f382f・push済み**
+- DB: `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）＋`review_state JSONB`(2f) 作成済み
+- **Phase54-2f Mobile Review State Persistence**: スライド別レビュー状態（`statusBySlide`/`commentsBySlide`/`revisionTargetBySlide`/`approved`＝「OK x/10」）を `output_drafts.review_state` へ成果物単位で保存・復元。**output_approvals・Approval Sync・Phase54-1f/1g・Publishing Ready・Mobile Approval 非接触**。保存: OK/修正/対象/approved=即時・コメント=デバウンス400ms・独立POST
+- **本番実機確認（ユーザー通常ブラウザ）**: OK x/10保持・コメント/修正依頼/修正担当保持・F5復元・案件切替・別案件混入なし・元案件復元・Mobile Approval/Publishing Ready回帰なし・Approval Sync正常・console 0
 - 変更範囲: **2b=`lib/outputDraftsDb.js`新規＋`server.js`＋`supabase/schema.sql`／2c・2d=`index.html`のみ**（**Phase54-1f/1g・Approval Sync GET・`mergeApprovalStateFromServer`・Approval POST Queue・Phase53・cost系 非接触**・課金なし）
 
 ### 目的

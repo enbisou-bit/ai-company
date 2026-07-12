@@ -2,15 +2,27 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-12（Phase54-2 Output Draft Persistence・2b/2c/2d実装＋localhost実ワークフロー確認完了・commit 6dec27d/5eec84b/7589f4f・tag v1.01-phase54-2d・push＋Render反映は本リリースで実施・本番実機確認は未実施）
+更新日: 2026-07-12（Phase54-2 Output Draft Persistence **正式Complete**・2b/2c/2d＋2f(Mobile Review State Persistence)・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番実機確認完了）
 
 ---
 
-## Phase54-2 Output Draft Persistence（Output Draftのサーバ永続化＝リロード復元・案件切替復元・B案／2b/2c/2d実装完了・localhost確認済み・本番実機未確認）
+## Phase54-2 Output Draft Persistence **Complete**（Output Draftのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案／2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
 
-- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2d 実装完了・localhost確認済み**
-- Commit: **6dec27d**（`Phase54-2b add output draft persistence API`）／**5eec84b**（`Phase54-2c save output drafts`）／**7589f4f**（`Phase54-2d restore output drafts`）／docs commit＋Tag **v1.01-phase54-2d**（→ 7589f4f）／**push・Render反映は本リリースで実施・本番実機確認は未実施**
-- DB: ユーザーが `output_drafts` テーブル作成済み（output_id PK・case_id NOT NULL・FKなし・非破壊・既存テーブル無変更）
+- 現在Version: **Version1（Version1.1 Connected AI Company 工程）/ Phase54-2 Complete**
+- Commit: **6dec27d**(2b)／**5eec84b**(2c)／**7589f4f**(2d)／**f0f382f**(2f `persist mobile review state`)／各docs commit／Tag **v1.01-phase54-2d**(→7589f4f)・**v1.01-phase54-2f**(→f0f382f)／**origin/main = f0f382f・push済み・Render反映済み**
+- DB: ユーザーが `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）作成済み＋`review_state JSONB` 列追加済み（Phase54-2f・非破壊・既存行NULL）
+
+### Phase54-2f Mobile Review State Persistence（本番実機確認判明の不足を解消）
+- 症状: スライド別レビュー状態（`_mobileReviewState`＝「OK x/10」）がメモリのみで、F5/案件切替/再ログインで消失（Phase54-2dのバグではなく元々保存対象外だった仕様不足）
+- 修正（A案）: `output_drafts` に `review_state JSONB` 追加。`statusBySlide`/`commentsBySlide`/`revisionTargetBySlide`/`approved` を成果物(output_id)単位で保存・復元。**output_approvals・Approval Sync・Phase54-1f/1g・Publishing Ready・Mobile Approval は非接触**
+- 実装: server.js/lib（review_state任意受領・指定列のみ更新でDraト本文を壊さない）＋index.html（`pushReviewStateToServer`/`scheduleReviewStateSave`/`_applyReviewStateFromServerRow`＋5ハンドラ配線＋復元適用）
+- 保存: OK/修正依頼/修正対象/approved=即時、コメント=デバウンス400ms。独立POST（Approval Queue非利用）
+
+### 本番実機確認結果（ユーザー通常ブラウザ）
+- ✅ OK x/10保持・コメント保持・修正依頼保持・修正担当保持・F5復元・案件切替・**別案件混入なし**・元案件復元・Mobile Approval回帰なし・Publishing Ready回帰なし・Approval Sync正常・console error 0
+
+### localhost実DB往復確認（Phase54-2f）
+- OK→実DB `review_state` 保存（ローカル状態と完全一致・fields無傷）→ F5→再オープンで「OK 2/10」＋コメント/修正依頼/修正対象/approved 復元・別案件混入なし・**Approval POST 0**・Mobile Approval/Publishing Ready回帰なし・console 0・dev-check 200/200/200
 
 ### 目的（B案・Phase54-2a設計）
 - メモリのみだった Output Draft をサーバ（`output_drafts`）へ永続化し、**リロード後の成果物復元／案件ごとの最新Draト復元**を実現。既存 approvals/cases と同型・追加のみ・**Phase54-1f/1g 完成部分に非接触**。`output_id` を承認(output_approvals)との共通キーにして整合。
@@ -27,14 +39,17 @@
 ### 保護・非接触
 - **Phase54-1f（output_id一致判定）／1g（Approval POST Queue）／Approval Sync GET／`mergeApprovalStateFromServer` 非接触**。承認状態はDraft APIから復元しない（output_approvals が正）。polling/複数履歴UIは未実装（Phase54-2e候補）。
 
-### 未実施
-- **本リリースで**：docs commit → tag → push → Render反映・GET確認。**本番実機確認は未実施（次段・ユーザー承認後）**
+### 完了（Phase54-2 Complete）
+- 実装・localhost実DB確認・commit・tag・push・Render反映・GET確認・**本番実機確認（ユーザー通常ブラウザ）まで完了**。Phase54-2 を正式 Complete とする
 
-### 残課題・対象外
-- 検証行（`out_2btest_*`/`out_2ctest_*`/`out_1783814527200` 等）は実DBに残存（非活性・DELETE未実施）／未マーク(進行中Workflow)Draト保持中の別案件切替は自動置換しない（保護・意図的仕様）／polling・複数履歴UI・PC⇔スマホ能動再取得は Phase54-2e候補（対象外）
+### 残課題・対象外（次候補・今回スコープ外）
+- 検証行（`out_2btest_*`/`out_2ctest_*`/`out_1783814527200`/`case-2f-*` 等）は実DBに残存（非活性・DELETE未実施）／未マーク(進行中Workflow)Draト保持中の別案件切替は自動置換しない（保護・意図的仕様）／review保存はfire-and-forget（超高速連打時の一時的着順逆転は次操作で収束）・コメントは400msデバウンス／polling・複数履歴UI・PC⇔スマホ能動再取得は Phase54-2e候補
 
 ### 温存
 - cost関連3ファイル（`cost-logs.json`/`claude-cost-logs.json`/`claude-quality-history.json`）＝未commit温存（Phase54-2非接触・stageに含めず）
+
+### 次工程
+- **Phase54-3 開始前レビュー**（現状整理・影響範囲・採用案・実装計画のみ／実装は行わない）
 
 ---
 

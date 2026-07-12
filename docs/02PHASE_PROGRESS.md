@@ -1,13 +1,17 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-12（Phase54-2 Output Draft Persistence・2b/2c/2d実装＋localhost実ワークフロー確認完了・commit 6dec27d/5eec84b/7589f4f・tag v1.01-phase54-2d・push＋Render本リリース実施・本番実機未確認）
+> 更新日: 2026-07-12（Phase54-2 Output Draft Persistence **正式Complete**・2b/2c/2d＋2f(Mobile Review State Persistence)・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番実機確認完了）
 
 ---
 
-## Phase54-2: Output Draft Persistence（Output Draftのサーバ永続化＝リロード復元・案件切替復元・B案・2b/2c/2d実装完了・localhost確認済み）
+## Phase54-2: Output Draft Persistence **Complete**（Output Draftのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案・2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
 
-> 記録日: 2026-07-12。B案（既存 approvals/cases と同型・追加のみ・Phase54-1f/1g非接触）。DB: ユーザーが `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）作成済み。commit **6dec27d**(2b)／**5eec84b**(2c)／**7589f4f**(2d)／Tag **v1.01-phase54-2d**（→ 7589f4f）。push・Render反映は本リリースで実施・**本番実機確認は未実施**。
+> 記録日: 2026-07-12。B案（既存 approvals/cases と同型・追加のみ・Phase54-1f/1g非接触）。DB: `output_drafts`（output_id PK・case_id NOT NULL・FKなし・非破壊）＋`review_state JSONB`(2f) 作成済み。commit **6dec27d**(2b)／**5eec84b**(2c)／**7589f4f**(2d)／**f0f382f**(2f)／Tag **v1.01-phase54-2d**・**v1.01-phase54-2f**。**origin/main = f0f382f・push済み・Render反映済み・本番実機確認完了**。
+>
+> **Phase54-2f Mobile Review State Persistence**（本番実機で判明した不足の解消）: スライド別レビュー状態 `_mobileReviewState`（「OK x/10」）がメモリのみで F5/案件切替/再ログインで消失していた問題を、`output_drafts.review_state JSONB` へ `statusBySlide`/`commentsBySlide`/`revisionTargetBySlide`/`approved` を成果物単位で保存・復元して解消。**output_approvals・Approval Sync・Phase54-1f/1g・Publishing Ready・Mobile Approval 非接触**。保存: OK/修正依頼/修正対象/approved=即時・コメント=デバウンス400ms・独立POST。lib は指定列のみ更新でDraト本文を壊さない。
+>
+> **本番実機確認結果（ユーザー通常ブラウザ）**: OK x/10保持・コメント保持・修正依頼保持・修正担当保持・F5復元・案件切替・別案件混入なし・元案件復元・Mobile Approval回帰なし・Publishing Ready回帰なし・Approval Sync正常・console error 0。**localhost実DB往復**: OK→review_state保存(状態一致・fields無傷)→F5→「OK 2/10」復元・Approval POST 0・dev-check 200/200/200。
 
 ### 目的
 - メモリのみだった Output Draft をサーバ永続化し **リロード後の成果物復元／案件ごとの最新Draト復元** を実現。`output_id` を承認(output_approvals)との共通キーにして整合。**完全な複数成果物履歴ではない**（最新1件）。
