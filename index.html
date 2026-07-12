@@ -7244,6 +7244,88 @@ async function syncTasksFromServer() {
     _taskSyncInFlight = false;
   }
 }
+
+// ══════════════════════════════════════════════════════════════
+// Phase54-3a-fix: Task完全収束（全作成経路POST接続＋ローカルのみTaskの初回バックフィル・index.htmlのみ）
+// 目的: PC/iPhone のTask集合を「サーバーを介して一致」させる。ローカルのみTask(dbIdなし)を削除せずサーバーへ押し上げ、
+//       サーバーを正として収束させる。既存 syncTaskToServer / GET /api/tasks のみ利用（server.js/lib/DB/API/SQL変更なし）。
+// 冪等・重複防止: POST成功後にのみ dbId を付与（再POSTしない）／バックフィル前にサーバー署名一致を確認し、既存なら再POSTせずdbId採用／
+//       多重バックフィル防止フラグ／失敗Taskはローカル保持（削除しない）／空・失敗で既存を消さない。
+// ══════════════════════════════════════════════════════════════
+let _taskBackfillInFlight = false;   // 初回/多重バックフィル防止（新規setIntervalは追加しない）
+
+// 重複判定署名（title単独では判定しない・複数フィールド組合せ）。localとサーバー行の両方から同形で生成。
+function _taskSignature(t) {
+  return [
+    (t && t.title ? String(t.title).trim() : ''),
+    (t && t.memberId ? String(t.memberId) : ''),
+    (t && t.sourceMessage ? String(t.sourceMessage).trim() : ''),
+    (t && t.body ? String(t.body).trim() : ''),
+  ].join('¦');
+}
+
+// 新規作成Taskをサーバーへ保存（成功時のみ dbId 付与＝冪等・再POSTしない）。fire-and-forget・非ブロック。
+function _persistNewTask(t) {
+  try {
+    if (!t || t.dbId) return;                                          // 既にdbIdあり→再POSTしない
+    syncTaskToServer(t).then(function (dbId) {
+      if (dbId) { t.dbId = dbId; try { saveTasks(); } catch (e) {} }  // 成功時のみ dbId 付与＋キャッシュ更新
+    }).catch(function () { /* 失敗はローカルに残す（削除しない） */ });
+  } catch (e) { /* 非ブロック */ }
+}
+
+// ローカルのみ(dbIdなし)Taskをサーバーへ初回バックフィル（冪等・重複防止・多重防止・削除しない）。
+async function backfillLocalOnlyTasks() {
+  if (_taskBackfillInFlight) return { skipped: true };                 // 多重バックフィル防止
+  _taskBackfillInFlight = true;
+  var posted = 0, matched = 0, failed = 0;
+  try {
+    if (!Array.isArray(tasks)) return { posted, matched, failed };
+    // 1. 重複判定の基準として最新サーバーTaskを取得
+    var serverTasks = [];
+    try {
+      var res = await fetch('/api/tasks');
+      if (res && res.ok) { var d = await res.json(); if (d && d.ok && Array.isArray(d.tasks)) serverTasks = d.tasks; }
+      else { return { posted, matched, failed, aborted: 'get_failed' }; }  // GET失敗→バックフィルしない（安全側・既存維持）
+    } catch (e) { return { posted, matched, failed, aborted: 'get_error' }; }
+    // サーバー署名→dbId（先勝ち）＋既に確保済みdbId
+    var serverSigToId = {};
+    serverTasks.forEach(function (row) {
+      var sig = _taskSignature({ title: row.title, memberId: row.assigned_member_id, sourceMessage: row.source_message, body: row.description });
+      if (!serverSigToId[sig]) serverSigToId[sig] = row.id;
+    });
+    var claimedDbIds = {};
+    tasks.forEach(function (t) { if (t && t.dbId) claimedDbIds[t.dbId] = true; });
+    // 2. dbIdなし・サーバー由来でないローカルTaskを順に処理（逐次POST・floodしない）
+    var targets = tasks.filter(function (t) { return t && !t.dbId && !t._fromServer; });
+    for (var i = 0; i < targets.length; i++) {
+      var t = targets[i];
+      if (t.dbId) continue;                                            // 途中でdbId付与済みならスキップ
+      var sig = _taskSignature(t);
+      // 2a. サーバーに同署名が既存 かつ 未確保 → 再POSTせず dbId 採用（重複防止・冪等）
+      if (serverSigToId[sig] && !claimedDbIds[serverSigToId[sig]]) {
+        t.dbId = serverSigToId[sig]; claimedDbIds[t.dbId] = true; matched++;
+        try { saveTasks(); } catch (e) {}
+        continue;
+      }
+      // 2b. サーバーに無い → POST（成功時のみ dbId 付与・失敗はローカル保持）
+      var newId = await syncTaskToServer(t);
+      if (newId) {
+        t.dbId = newId; claimedDbIds[newId] = true; serverSigToId[sig] = newId; posted++;
+        try { saveTasks(); } catch (e) {}
+      } else {
+        failed++;                                                      // 失敗→ローカルに残す（削除しない）
+      }
+    }
+    if (posted > 0 || matched > 0) { try { renderTaskList(); } catch (e) {} try { updateTaskBadge(); } catch (e) {} }
+    return { posted, matched, failed };
+  } catch (e) {
+    try { console.warn('[Task backfill] スキップ:', e && e.message); } catch (_e) {}
+    return { posted, matched, failed, error: true };
+  } finally {
+    _taskBackfillInFlight = false;
+  }
+}
 // ──────────────────────────────────────────────────────
 
 // ── カテゴリ・メンバー定義 ──
@@ -7728,6 +7810,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
       createdAt: dispatchTs, updatedAt: dispatchTs,
       sourceMessage: instruction, sourceType: 'leader_dispatch', caseId,
     });
+    _persistNewTask(tasks[0]);   // Phase54-3a-fix: 作成直後にサーバー保存（成功時dbId付与・冪等）
   });
   saveToStorage(); saveTasks(); updateTaskBadge();
 
@@ -7984,6 +8067,7 @@ function renderSuggestionButtons(suggestions) {
         sourceMessage: cleanText,
         sourceType: 'suggestion',
       });
+      _persistNewTask(tasks[0]);   // Phase54-3a-fix: 作成直後にサーバー保存（成功時dbId付与・冪等）
       saveTasks();
       updateTaskBadge();
       taskBtn.textContent = '✅';
@@ -11819,6 +11903,7 @@ function submitDelegation() {
     delegationId: dlg.id,
   };
   tasks.unshift(task);
+  _persistNewTask(task);   // Phase54-3a-fix: 作成直後にサーバー保存（成功時dbId付与・冪等）
   dlg.taskId = task.id;
   saveTasks();
   saveDelegations();
@@ -20274,6 +20359,7 @@ document.addEventListener('keydown', e => {
 // 起動時初期化
 loadTasks();
 syncTasksFromServer();   // Phase54-3a: 起動時にサーバーTaskをpull・merge（loadTasks後・非ブロック・失敗時localStorage継続）
+backfillLocalOnlyTasks();   // Phase54-3a-fix: ローカルのみTaskをサーバーへ初回バックフィル（冪等・重複防止・削除しない）
 initMemberSelect();
 updateTaskBadge();
 
