@@ -2,13 +2,32 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-14（**Phase54-3b-1 Task History Persistence：実装・実DB確認済み**・commit 2e4b0fc・tag v1.01-phase54-3b-1・**本番確認前＝正式Completedではない**。`task_history` テーブル永続化＋DB/メモリHybrid。次工程＝push→Render→本番確認→Phase54-3b-2 case_id配線。Phase54-3a-2／3a／Phase54-2 は正式Complete）
+更新日: 2026-07-14（**Phase54-3b-2 Task History Case Scoping：実装・localhost・実DB確認済み（Auto Task実ワークフロー確認済み）**・commit b5ab89d・**本番確認前＝未Completed**。case_id送信/保存/復元＋Notification案件分離完成。Phase54-3b-1 Completed。次工程＝push→Render→本番確認。Phase54-3a-2／3a／Phase54-2 は正式Complete）
 
 ---
 
-## Phase54-3b-1 Task History Persistence（Task History永続化基盤・実装・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前）
+## Phase54-3b-2 Task History Case Scoping（Task History案件別分離・実装・localhost・実DB確認済み・commit b5ab89d・本番確認前）
 
-- **現在Phase**：**Phase54-3b-1 実装・実DB確認済み（本番未確認＝未Completed）** ／ HEAD = **2e4b0fc**・tag **v1.01-phase54-3b-1**（→ 2e4b0fc）
+- **現在Phase**：**Phase54-3b-2 実装・実DB確認済み（本番未確認＝未Completed）** ／ HEAD = **b5ab89d**（code）
+- **目的**：Task History を案件単位で保存・取得・表示分離。**Phase54-3b-1（永続化基盤）は Completed**
+- **実装（commit b5ab89d・2ファイル・+29/-12）**：
+  - `index.html`：`/api/auto-task`・`/api/consult` POST に `caseId: getCurrentApprovalCaseId() || null` 送信／`_historyVisibleInView`（NULL横断は常時表示・case付きは現在案件のみ）＋`renderNotifications` に案件別表示フィルタ
+  - `server.js`：auto-task・consult で `caseId` 受領→生成履歴各行へ保存（`h.caseId == null` のときのみ＝既存値尊重）／`_hybridTaskHistory` に任意caseIdフィルタ／GET `/api/task-history`・`/api/workflow-dashboard` に任意 `?caseId=`
+- **仕様**：**引数なしGET＝全件**（クライアント全保持・Hybrid/dedup維持）／`?caseId=X`＝該当案件のみ厳密（NULL含まず）／NULL横断はクライアント表示側（`_historyVisibleInView`）で担保＝案件画面＝該当案件＋NULL横断／ホーム・未選択＝NULL横断のみ
+- **保護**：既存APIレスポンス形不変（`{ok,history,total}`／`{ok,workflows,total}`）／3b-1のHybrid/dedup維持／`global.__taskHistory`維持／Learning(refreshLearningPanel)は全社で据え置き／Workflow Live(aiLivePoll)はworkflowId scopedで既存維持・大幅変更なし／Approval・Output Draft・tasks.case_id・Provider・Routing・Cost 非接触・**新規SQL/DB変更なし**
+- **確認済み（localhost・実DB・commit b5ab89d）**：
+  - consult(caseId)：entry.caseId保存・GET`?caseId`厳密・appearOnce=1
+  - **Auto Task実ワークフロー1回**（案件A・実AI）：生成6行**全て case_id=A**・history_id重複0・GET`?caseId=A`→6/`?caseId=B`→0・NULL横断存続・**Notification実描画 案件A=6件/案件B=0件**・workflow-dashboard形不変＋`?caseId`フィルタ（Aに出現/Bに非出現）
+  - サーバー再起動後も case_id 維持（DB復元・dup 0）／既存consumer回帰なし（loadNotifications/learningPanel/workflow-dashboard）／console 0／dev-check 200/200/200
+- **検証テスト行（DB残存・識別可能・非活性・削除しない）**：`zzz-3b2-A/B/NULL`＋実consult/実Auto Task行（wf-3b2consult / wf-3b2autotask-*）
+- **⚠ 未Completed**：push・Render反映・本番API確認・ユーザー実機確認 未実施
+- **次工程**：push → Render反映 → 本番 `/api/task-history`・`/api/workflow-dashboard` 確認 → **3b-2 Completed確定** → Phase54-3b-3（Notification未読永続化・Workflow Live Restore 等）
+
+---
+
+## Phase54-3b-1 Task History Persistence **Completed**（Task History永続化基盤・commit 2e4b0fc・tag v1.01-phase54-3b-1・push済み・Render反映済み・本番API確認済み）
+
+- **現在Phase**：**Phase54-3b-1 Completed** ／ origin/main = **6d1f5b6**（code 2e4b0fc＋docs 6d1f5b6）・tag **v1.01-phase54-3b-1**（→ 2e4b0fc）
 - **目的**：`global.__taskHistory`（サーバーメモリ・非DB・Render再起動で消失）を新規 `task_history` テーブルへ永続化 → Timeline/Notification/Workflow Live/Auto Task/Live Status の再起動復元基盤。**今回は永続化基盤のみ（case_id配線・UI変更は3b-2以降）**
 - **SQL実行済み（ユーザー）**：`CREATE TABLE task_history`（`history_id TEXT NOT NULL UNIQUE`・`case_id TEXT` nullable/FKなし・`status TEXT` CHECKなし・`meta JSONB`）＋3 index＋冪等RLS。Supabase作成成功
 - **変更ファイル（commit 2e4b0fc・3ファイル・+195/-8）**：
@@ -23,8 +42,8 @@
   - **サーバー再起動復元**：2回再起動後もDBから履歴復元（lib挿入＋実consultの2件・dupInGet 0・workflow-dashboard集約）
   - DB未作成でも従来動作（graceful・throwなし）／既存consumer回帰なし（loadNotifications ok）／console 0／dev-check 200/200/200
 - **検証テスト行（DB残存・識別可能・非活性・DELETE未実施＝削除禁止順守）**：`zzz-3b1-rt-*`（wf-3b1test）＋`consult-1783955050504-p53pn`（wf-3b1consult）
-- **⚠ 未Completed**：push・Render反映・本番API確認 未実施。localhost・実DB確認のみでは Completed としない
-- **次工程**：push → Render反映 → 本番 `/api/task-history`・`/api/workflow-dashboard` 確認・再起動後DB残存確認 → **3b-1 Completed確定** → **Phase54-3b-2**（`case_id` client配線・案件別履歴）
+- **本番反映・確認済み（Completed）**：push（`47d7417..6d1f5b6`・cost非混入）→ Render自動デプロイ反映（新Hybridコード稼働＝本番GETがDB履歴を返却）→ **本番API確認済み**（`/api/task-history`・`/api/workflow-dashboard` 200・レスポンス形不変・DB履歴取得・重複0・from filter動作・console 0）→ **Render再デプロイ後（新規インスタンス＝メモリ空）もDB履歴復元を確認**（本番再起動復元成立）
+- **次工程**：**Phase54-3b-2**（`case_id` client配線・案件別履歴・GET `?caseId`任意フィルタ・消費側案件別表示）
 
 ---
 

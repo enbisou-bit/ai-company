@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-14（Decision 055・Phase54-3b-1 Task History Persistence 永続化基盤＝新規 `task_history` テーブル＋DB/メモリHybrid・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前。Decision 054・Phase54-3a-2 Task Case Scoping Completed＝`tasks` へ nullable `case_id`・案件別Task分離完成）
+更新日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping＝case_id を auto-task/consult へclient配線・生成履歴各行へ保存・GET任意caseIdフィルタ・Notification案件別表示・実DB/Auto Task確認済み・commit b5ab89d・本番確認前。Decision 055・Phase54-3b-1 Task History Persistence Completed＝`task_history`＋DB/メモリHybrid）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1177,6 +1177,38 @@ Phase54-3b 接続方針（比較のみ・未着手）:
 確認（localhost・実DB・commit 2e4b0fc）:
 - SQL実行済み（`task_history` 作成成功）／round-trip＋meta復元／`history_id` 冪等upsert（running→completed で**重複行0**）／Hybrid(memory+DB) dedup（実consult1回・appearCount=1・live優先）／**サーバー再起動2回後もDBから履歴復元**（lib挿入＋実consultの2件・dupInGet 0・workflow-dashboard集約）／DB未作成でもgraceful（throwなし・従来動作）／既存consumer回帰なし／console 0／dev-check 200/200/200。
 - 検証テスト行2件（`zzz-3b1-rt-*`／`consult-1783955050504-p53pn`・識別可能・非活性・DELETE未実施）。
+- **本番（Render）**：push→Render自動デプロイ反映（新Hybridコード稼働＝本番GETがDB履歴返却）→ 本番API確認（`/api/task-history`・`/api/workflow-dashboard` 200・レスポンス形不変・DB履歴取得・重複0・from filter・console 0）→ **Render再デプロイ後の新規インスタンス（メモリ空）もDB履歴復元** ⇒ **Phase54-3b-1 Completed**。
+
+追記日: 2026-07-14（Decision 055・Phase54-3b-1 Task History Persistence 永続化基盤・**Completed**・commit 2e4b0fc・tag v1.01-phase54-3b-1・push済み・Render反映済み・本番API/再デプロイ後DB復元確認済み）
+
+---
+
+# Decision 056
+## Phase54-3b-2 Task History Case Scoping ＝ case_id を task history 各行へ配線＋GET任意フィルタ＋クライアント表示側でNULL横断
+
+背景:
+- Phase54-3b-1 で `task_history` 永続化＋DB/メモリHybridが完成。次に **Task History を案件単位で分離**（案件Aの履歴が案件Bに出ない・NULL横断は両案件表示）。
+- `task_history.case_id` 列は3b-1で既に用意（nullable・3b-1では常にNULL）。3b-2で実配線。
+
+決定（追加のみ・非破壊・新規SQL不要）:
+- **client送信**：`/api/auto-task`・`/api/consult` POST に `caseId: getCurrentApprovalCaseId() || null`（tasks/Approval/Draftと同一の現在案件解決関数を流用）。未確定時はnull＝横断履歴。
+- **server保存**：受領 `caseId` を生成履歴の各エントリへ付与（`h.caseId == null` のときのみ＝既存値を尊重／auto-taskはworkflow全エントリへ一括付与・consultは単一エントリ）。永続化は3b-1の `_persistTaskHistory` がそのまま `case_id` を保存。
+- **GET任意フィルタ**：`GET /api/task-history?caseId=`・`/api/workflow-dashboard?caseId=` を追加。**引数なしは従来どおり全件**（`backfill`相当＝クライアント全保持を維持）。`?caseId=X` は**該当案件のみ厳密**（NULL含まず）。`_hybridTaskHistory` にcaseId追加（メモリ・DB両方をcaseId厳密フィルタ）。
+- **NULL横断はクライアント表示側で担保**：`_historyVisibleInView(entry)`＝`caseId==null ? 常時表示 : caseId===現在案件`。`renderNotifications` に適用。「**クライアントは全履歴を保持し、表示時のみ案件別に絞る**」方針（サーバーGETは全件のまま・厳密フィルタは任意用途）。案件画面＝該当案件＋NULL横断／ホーム・未選択＝NULL横断のみ。
+
+適用範囲（既存表示を壊さない・Workflow Live大幅変更しない）:
+- **Notification（renderNotifications）** に案件別表示フィルタ適用。
+- **Workflow Live（aiLivePoll）** は workflowId scoped（1 workflow=1案件）で既にスコープ済み＝変更なし。
+- **各種 workflow-dashboard** は全社サマリとして全件維持（大幅変更しない）。任意 `?caseId=` フィルタは提供。
+- **Learning（refreshLearningPanel）** は全社学習で case非対象＝据え置き（Learning非接触）。
+
+保護・非対象:
+- レスポンス形不変（`{ok,history,total}`／`{ok,workflows,total}`）・3b-1のHybrid/dedup維持・`global.__taskHistory`維持・status改善せず・新規SQL/DB構造変更なし・polling/WebSocket追加なし。Notification未読永続化・Timeline独立案件化・Workflow Live Restore は 3b-3以降候補。
+
+確認（localhost・実DB・commit b5ab89d）:
+- consult(caseId)：entry.caseId保存・GET`?caseId`厳密・appearOnce=1。
+- **Auto Task実ワークフロー1回（案件A・実AI）**：生成6行全て `case_id=A`・history_id重複0・GET`?caseId=A`→6/`?caseId=B`→0・NULL横断存続・**Notification実描画 案件A=6件/案件B=0件**・workflow-dashboard形不変＋`?caseId`フィルタ（Aに出現/Bに非出現）。
+- サーバー再起動後も case_id 維持（DB復元・dup 0）／既存consumer回帰なし／console 0／dev-check 200/200/200。
 - **本番未確認のため正式Completedではない**。
 
-追記日: 2026-07-14（Decision 055・Phase54-3b-1 Task History Persistence 永続化基盤・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前）
+追記日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping・実DB/Auto Task確認済み・commit b5ab89d・本番確認前）
