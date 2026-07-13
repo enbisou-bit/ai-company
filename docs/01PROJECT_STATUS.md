@@ -2,30 +2,27 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-13（**Phase54-3a-2 Task Case Scoping：実装済み・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2**・**本番未反映（push/Render/実機未実施）＝正式Completeではない**。次工程＝push→Render→PC/iPhone本番確認→その後 3b。Phase54-3a／Phase54-2 は正式Complete）
+更新日: 2026-07-13（**Phase54-3a-2 Task Case Scoping：Completed**・push済み・Render反映済み・本番PC確認済み・ユーザー実機確認済み・commit bc98455・tag v1.01-phase54-3a-2。次工程＝**Phase54-3b Task History Persistence**（案A：task_historyにnullable case_id）。Phase54-3a／Phase54-2 は正式Complete）
 
 ---
 
-## Phase54-3a-2 Task Case Scoping（案件別Task分離・A案・実装済み・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映）
+## Phase54-3a-2 Task Case Scoping **Completed**（案件別Task分離・A案・push済み・Render反映済み・本番PC確認済み・ユーザー実機確認済み・commit bc98455・tag v1.01-phase54-3a-2）
 
-- **現在Phase**：**Phase54-3a-2 実装済み・localhost確認済み（本番未確認＝未Complete）** ／ HEAD = **bc98455**・tag **v1.01-phase54-3a-2**（→ bc98455）
-- **採用＝A案（Decision 054）**：`tasks` へ **nullable `case_id TEXT`（FKなし・既存行NULL維持）**。**`messages.case_id` 踏襲・追加のみ・非破壊**
+- **現在Phase**：**Phase54-3a-2 Completed** ／ origin/main = **4372576**（code bc98455＋docs 4372576）・tag **v1.01-phase54-3a-2**（→ bc98455）
+- **採用＝A案（Decision 054）**：`tasks` へ **nullable `case_id TEXT`（FKなし・既存行NULL維持）**。**`messages.case_id` 踏襲・追加のみ・非破壊**。**Task Case Scoping 完成＝案件別Task分離完成**
 - **SQL実行済み（ユーザー実行）**：`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS case_id TEXT;` ＋ `CREATE INDEX IF NOT EXISTS idx_tasks_case_id ON tasks (case_id);`
-- **表示仕様**：案件画面＝該当案件Task＋`case_id=NULL`横断Task／ホーム・案件未選択＝`case_id=NULL`横断Taskのみ。**既存55件はNULLのまま温存・非表示/強制分類なし**
+- **表示仕様**：案件画面＝該当案件Task＋`case_id=NULL`横断Task／ホーム・案件未選択＝`case_id=NULL`横断Taskのみ。**既存55件はNULLのまま温存・非破壊・非表示/強制分類なし（NULL横断Task維持）**
 - **変更ファイル（commit bc98455・4ファイル・+72/-20）**：
   - `supabase/schema.sql`：tasks CREATEに `case_id TEXT` 追記＋ALTER/index冪等コメント
   - `lib/tasksDb.js`：`createTask` caseId受領（非null時のみ列送信）・`getTasks` 任意caseIdフィルタ（既定全件）
   - `server.js`：POST `/api/tasks` caseId受領／GET `/api/tasks` 任意caseId query（**既定全件維持**）／PATCH変更なし
   - `index.html`：`syncTaskToServer` caseId送信・`_taskFromServerRow` case_id map・merge反映・`_ensureTaskCaseId`/`_taskViewCaseId` 追加・全Task作成経路へcaseId配線・`renderTaskList` 案件別フィルタ・switchCase/_homeOpenCase/goHome にパネル再描画フック
 - **保護**：**`_taskSignature` 不変**（title¦memberId¦sourceMessage¦body）／GET既定全件（backfill契約維持）／既存local-only TaskへcaseId強制付与しない／status CHECK非対象（3b以降）／Approval・Output Draft・Review State・Conversation・Messages・Workflow・Timeline・Notification・Learning・Cost・Phase53 非接触
-- **localhost確認結果（SQL実行済み・commit bc98455）**：
-  - `tasks.case_id` 実DB存在／caseId付き保存・NULL保存・GET全件・GET?caseId=フィルタ 動作
-  - 案件A/B分離（実DOM）・NULL横断（既存55件全view表示）・F5維持・**実ログアウト→再ログイン→案件A/B分離（実DOM）**
-  - backfill重複POST 0・dbId重複0・既存55件減少なし・DB60件（検証テスト5件追加）・console 0・dev-check 200/200/200
-- **検証テスト行（識別可能・非活性・DELETE未実施＝削除禁止順守）**：`ZZZ-TEST3a2-A/B/NULL`（案件A/B合成id・NULL）＋`ZZZ-RELOGIN-A/B`（実案件A `case-mrc0zr7w0w4k`／実案件B `case-mrc0zyatv78y`）
-- **⚠ 未Complete**：**push・Render反映・本番PC/iPhone実機確認 未実施**。localhost確認のみでは Complete としない
-- **Known Issue（継続・非修正）**：Edge（Windows・表示倍率125%）Taskスクロールバー判定ずれ（軽微・UIリファイン時再調査）
-- **次工程**：push → Render反映 → 本番PC/iPhone実機確認 → **3a-2 Complete確定** → **Phase54-3b Task History Persistence**（推奨=案A：`task_history` 自身に nullable `case_id`）
+- **localhost確認結果（SQL実行済み・commit bc98455）**：`tasks.case_id` 実DB存在／caseId付き保存・NULL保存・GET全件・GET?caseId=フィルタ／案件A/B分離（実DOM）・NULL横断（既存55件全view表示）・F5維持・**実ログアウト→再ログイン→案件A/B分離（実DOM）**／backfill重複POST 0・dbId重複0・既存55件減少なし・DB60件・console 0・dev-check 200/200/200
+- **本番反映・確認済み**：push（`a71ca79..4372576` fast-forward・cost非混入）→ Render自動デプロイ反映（新server.js＝GET`?caseId=`サーバーフィルタ稼働・新index.html＝新関数稼働・GET正常・エラーなし・Render設定/環境変数変更なし）→ **本番PC確認済み**（案件A/B分離・NULL横断・F5・再ログイン維持・重複なし・既存減少なし・console 0）→ **ユーザー実機確認済み**
+- **検証テスト行（識別可能・非活性・温存＝削除しない）**：`ZZZ-TEST3a2-A/B/NULL`（案件A/B合成id・NULL）＋`ZZZ-RELOGIN-A/B`（実案件A `case-mrc0zr7w0w4k`／実案件B `case-mrc0zyatv78y`）
+- **Known Issue（継続・非修正・従来どおり維持）**：Edge（Windows・表示倍率125%）Taskスクロールバー判定ずれ（軽微・UIリファイン時再調査）
+- **次工程**：**Phase54-3b Task History Persistence**（`global.__taskHistory` を新規 `task_history` テーブルへDB化・**推奨=案A：`task_history` 自身に nullable `case_id` を保持**・詳細Live Statusはここ・要SQL・未着手）
 
 ---
 

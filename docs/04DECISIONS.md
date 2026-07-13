@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping A案採用＝`tasks` へ nullable `case_id`・案件別Task分離・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映。Decision 053・Phase54番号整合＝実開発Phase54系はVersion1.1 Realtime Sync系／ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番）
+更新日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping **Completed**＝`tasks` へ nullable `case_id`・案件別Task分離完成・SQL実行済み・commit bc98455・tag v1.01-phase54-3a-2・push済み・Render反映済み・本番PC/ユーザー実機確認済み。Decision 053・Phase54番号整合＝実開発Phase54系はVersion1.1 Realtime Sync系／ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1146,9 +1146,9 @@ Phase54-3a の設計判断（今回実装・localhost確認済み・未commit）
 Phase54-3b 接続方針（比較のみ・未着手）:
 - **推奨＝案A（`task_history` 自身に nullable `case_id` を保持）**。理由＝履歴は「その時点の事実」であり、Task削除・欠損に独立して案件判定可（復元耐性・取得効率・同期単純さで有利）。`messages.case_id` と同一思想で一貫。案B（`task_id` のみ・`tasks.case_id` 参照）はデータ重複が少ない反面、tasks欠損時に案件不明化（FKなし方針）。
 
-確認（localhost・SQL実行済み・commit bc98455）:
-- SQL反映（`tasks.case_id` 実在）／caseId付き保存・NULL保存・GET全件・GET?caseId=フィルタ／案件A/B分離（実DOM）／NULL横断（既存55件全view表示）／F5維持／**実ログアウト→再ログイン→案件A/B分離（実DOM）**／backfill重複POST 0・dbId重複0／既存55件減少なし／console 0／dev-check 200/200/200。
-- 検証テスト行5件（`ZZZ-TEST3a2-A/B/NULL`＋`ZZZ-RELOGIN-A/B`・識別可能・非活性・DELETE未実施＝削除禁止順守）でDB60件。
-- **本番PC/iPhone未確認のため正式Completeではない**。
+確認（localhost＋本番・Completed）:
+- localhost（SQL実行済み・commit bc98455）：SQL反映（`tasks.case_id` 実在）／caseId付き保存・NULL保存・GET全件・GET?caseId=フィルタ／案件A/B分離（実DOM）／NULL横断（既存55件全view表示）／F5維持／**実ログアウト→再ログイン→案件A/B分離（実DOM）**／backfill重複POST 0・dbId重複0／既存55件減少なし／console 0／dev-check 200/200/200。
+- **本番（Render `ai-company-l45x.onrender.com`）**：push→自動デプロイ反映（新server.js＝GET`?caseId=`サーバーフィルタ稼働・新index.html＝新関数稼働・GET正常・エラーなし・Render設定/環境変数変更なし）→ **本番PC確認済み**（案件A/B分離・NULL横断・F5・再ログイン維持・重複なし・既存減少なし・console 0）→ **ユーザー実機確認済み** ⇒ **Phase54-3a-2 Completed**。
+- 検証テスト行5件（`ZZZ-TEST3a2-A/B/NULL`＋`ZZZ-RELOGIN-A/B`・識別可能・非活性・温存＝削除しない）。
 
-追記日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping A案採用・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映）
+追記日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping A案採用・**Completed**・SQL実行済み・commit bc98455・tag v1.01-phase54-3a-2・push済み・Render反映済み・本番PC/ユーザー実機確認済み）
