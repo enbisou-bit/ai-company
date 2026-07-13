@@ -4677,15 +4677,10 @@
   #task-list::-webkit-scrollbar { width: 3px; }
   #task-list::-webkit-scrollbar-thumb { background: var(--border); }
   /* Phase54-3a UI-A: PC（マウス環境=pointer:fine）は縦スクロールバーを掴みやすく拡張。スマホ(coarse)は上記3px/慣性スクロール維持 */
-  /* UI-A微修正: 幅15px・thumb最小高40px・コントラスト強化・track境界を明確化（ノートPCタッチパッドでも掴みやすく） */
+  /* UI-A標準一本化(A①): 見た目=ヒット判定を一致させるため、標準スクロールバー(scrollbar-width/scrollbar-color)のみを使用。
+     WebKit擬似要素(::-webkit-scrollbar系)との2系統重複を撤去し、Edge/Chromeのネイティブ描画=判定に統一（幅はnative約17px・青系thumb維持）。 */
   @media (pointer: fine) {
-    #task-list { scrollbar-width: auto; scrollbar-color: rgba(130,190,255,0.75) rgba(255,255,255,0.06); }
-    #task-list::-webkit-scrollbar { width: 15px; }
-    #task-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.08); }
-    /* UI-A微修正2: 透明border+background-clipを撤去し、thumbの塗り=バー全幅15pxに一致（見た目=ドラッグ判定領域）。掴める範囲を全幅化 */
-    #task-list::-webkit-scrollbar-thumb { background: rgba(130,190,255,0.6); border-radius: 4px; min-height: 40px; }
-    #task-list::-webkit-scrollbar-thumb:hover { background: rgba(140,200,255,0.95); }
-    #task-list::-webkit-scrollbar-thumb:active { background: rgba(160,210,255,1); }
+    #task-list { scrollbar-width: auto; scrollbar-color: rgba(130,190,255,0.8) rgba(255,255,255,0.06); }
   }
 
   #task-empty {
