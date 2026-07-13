@@ -459,10 +459,48 @@ app.post('/api/login', express.json(), (req, res) => {
 // ─────────────────────────────────────────────────
 
 // ── Supabase連携ライブラリ（遅延ロード）───────────────
-let _membersDb, _tasksDb, _customMembersDb;
+let _membersDb, _tasksDb, _customMembersDb, _taskHistoryDb;
 function getMembersDb()       { if (!_membersDb)       _membersDb       = require('./lib/membersDb');       return _membersDb; }
 function getTasksDb()         { if (!_tasksDb)         _tasksDb         = require('./lib/tasksDb');         return _tasksDb; }
 function getCustomMembersDb() { if (!_customMembersDb) _customMembersDb = require('./lib/customMembersDb'); return _customMembersDb; }
+function getTaskHistoryDb()   { if (!_taskHistoryDb)   _taskHistoryDb   = require('./lib/taskHistoryDb');   return _taskHistoryDb; }
+
+// Phase54-3b-1: taskHistory エントリをDBへ冪等永続化（fire-and-forget・非ブロック・失敗でWorkflowを止めない）。
+// APIレスポンス・global.__taskHistory は不変。case_id は 3b-1では常にNULL（配線は3b-2）。
+function _persistTaskHistory(entries) {
+  try {
+    const arr = Array.isArray(entries) ? entries : [entries];
+    if (arr.length === 0) return;
+    Promise.resolve()
+      .then(() => getTaskHistoryDb().upsertHistoryEntries(arr))
+      .then(r => { if (r && r.error) console.warn('[taskHistoryDb] 永続化スキップ:', r.error); })
+      .catch(e => { try { console.warn('[taskHistoryDb] 永続化例外:', e && e.message); } catch (_e) {} });
+  } catch (e) { /* 非ブロック（既存メモリ動作は継続） */ }
+}
+
+// Phase54-3b-1: taskHistory をメモリ＋DBのHybridで取得（history_idでdedup・メモリ優先＝live状態採用）。
+// DB未作成/失敗時は空を返し従来どおりメモリのみで動作。APIレスポンス形は変えない（呼び出し側で従来通り整形）。
+async function _hybridTaskHistory({ from, to } = {}) {
+  // メモリ（live・in-flight）
+  let mem = global.__taskHistory || [];
+  if (from) mem = mem.filter(h => h && h.from === from);
+  if (to)   mem = mem.filter(h => h && h.to   === to);
+  // DB（永続・再起動後の復元元）
+  let dbHist = [];
+  try {
+    const r = await getTaskHistoryDb().getHistory({ from, to });
+    if (r && Array.isArray(r.history)) dbHist = r.history;
+  } catch (e) { /* DB未作成/失敗でも従来どおりメモリで動作 */ }
+  // history_id でdedup（DBを土台にメモリで上書き＝liveを優先）。historyId無しはそのまま保持。
+  const byId = new Map();
+  for (const h of dbHist) { if (h && h.historyId) byId.set(h.historyId, h); }
+  const extras = [];
+  for (const h of mem) {
+    if (h && h.historyId) byId.set(h.historyId, h);
+    else extras.push(h);
+  }
+  return [...byId.values(), ...extras];
+}
 
 // ── personaRegistry: UIカテゴリ構造を動的提供 ──────────────
 // LINE_AGENT_PROFILES から buildCategoriesForUI() で生成するため
@@ -750,9 +788,10 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
     setTimeout(() => { if (global.__workflowProgress) delete global.__workflowProgress[_wfId]; }, 3600000);
 
     // taskHistory（タスク履歴）をサーバーメモリに蓄積
-    // 将来は Supabase の task_history テーブルへ永続化予定
     if (!global.__taskHistory) global.__taskHistory = [];
     global.__taskHistory.push(...taskHistory);
+    // Phase54-3b-1: 同じエントリをDBへも永続化（fire-and-forget・完了状態のbulk upsert・失敗でWorkflowを止めない）
+    _persistTaskHistory(taskHistory);
 
     // Supabase保存：各担当の返答を messages テーブルへ記録
     try {
@@ -860,11 +899,10 @@ app.get('/api/org-map', (req, res) => {
 // 将来：Supabase の task_history テーブルへ永続化した時点で
 //   このエンドポイントを DB 読み取りに切り替える
 // ══════════════════════════════════════════════════════════════
-app.get('/api/task-history', (req, res) => {
+app.get('/api/task-history', async (req, res) => {
   const { from, to } = req.query;
-  let history = global.__taskHistory || [];
-  if (from) history = history.filter(h => h.from === from);
-  if (to)   history = history.filter(h => h.to   === to);
+  // Phase54-3b-1: メモリ＋DBのHybrid取得（レスポンス形 {ok,history,total} は不変）。
+  const history = await _hybridTaskHistory({ from, to });
   res.json({ ok: true, history, total: history.length });
 });
 
@@ -872,8 +910,9 @@ app.get('/api/task-history', (req, res) => {
 // GET /api/workflow-dashboard
 // taskHistory を workflowId 単位でグループ化して案件一覧を返す
 // ──────────────────────────────────────────────────────────────
-app.get('/api/workflow-dashboard', (req, res) => {
-  const history = global.__taskHistory || [];
+app.get('/api/workflow-dashboard', async (req, res) => {
+  // Phase54-3b-1: メモリ＋DBのHybrid取得（再起動後もDBから復元・集約ロジック/レスポンス形は不変）。
+  const history = await _hybridTaskHistory();
 
   // workflowId ごとにエントリを集約
   const map = new Map();
@@ -980,6 +1019,7 @@ app.post('/api/consult', express.json(), async (req, res) => {
     type: 'consultation',  // 通常タスクと区別するためのtype（種別）
   };
   global.__taskHistory.push(histEntry);
+  _persistTaskHistory(histEntry);   // Phase54-3b-1: 開始(running)時にDB保存（完了時に同history_idでupsert更新）
 
   try {
     // 相談先担当のシステムプロンプト（system prompt）を使って AI 回答を生成
@@ -1020,6 +1060,7 @@ app.post('/api/consult', express.json(), async (req, res) => {
     // taskHistory（タスク履歴）を完了に更新
     histEntry.status      = 'completed';
     histEntry.completedAt = completedAt;
+    _persistTaskHistory(histEntry);   // Phase54-3b-1: 完了状態をDBへupsert（同history_id）
 
     // Supabase に相談結果を保存
     try {
@@ -1044,6 +1085,7 @@ app.post('/api/consult', express.json(), async (req, res) => {
     histEntry.status      = 'error';
     histEntry.completedAt = new Date().toISOString();
     histEntry.note        = e.message;
+    _persistTaskHistory(histEntry);   // Phase54-3b-1: エラー状態をDBへupsert（同history_id）
     console.error('/api/consult error:', e.message);
     return res.status(500).json({ ok: false, error: e.message });
   }

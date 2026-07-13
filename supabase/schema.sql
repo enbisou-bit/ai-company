@@ -70,6 +70,48 @@ CREATE TABLE IF NOT EXISTS task_logs (
 );
 
 -- ============================================================
+-- Task History テーブル（Phase54-3b-1: global.__taskHistory のDB永続化）
+-- ※ Workflow/Consult 実行履歴（Timeline/Notification/Workflow Live/Auto Task/Live Status の基盤）。
+--   従来はサーバーメモリ（global.__taskHistory・非DB・Render再起動で消失）。本テーブルで永続化。
+-- ※ task_logs（tasks.id FK・ボードTask status変更ログ）とは別物。task_id は workflow task id（クライアントgenId・tasks.id UUIDではない・FKなし）。
+-- ※ history_id UNIQUE で冪等upsert（status running→completed の同一エントリ更新に対応）。
+-- ※ status は CHECKなしTEXT（running/completed/error/skipped 等・tasks.status CHECKトラップを避ける）。
+-- ※ case_id は nullable・FKなし（Phase54-3b-2で配線予定・本工程では常にNULL＝横断）。
+-- ※ meta JSONB は可変追加field（responseMs/ruleCount/knowledgeSummary 等）を吸収。
+CREATE TABLE IF NOT EXISTS task_history (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  history_id   TEXT NOT NULL UNIQUE,
+  workflow_id  TEXT,
+  case_id      TEXT,                 -- Phase54-3b: nullable・FKなし・NULL=横断（配線は3b-2）
+  from_agent   TEXT,
+  to_agent     TEXT,
+  task_id      TEXT,                 -- workflow task id（tasks.id UUIDではない・FKなし）
+  action       TEXT,
+  instruction  TEXT,
+  status       TEXT,                 -- CHECKなし（running/completed/error/skipped 等）
+  type         TEXT,
+  note         TEXT,
+  meta         JSONB,
+  requested_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_task_history_workflow_id ON task_history (workflow_id);
+CREATE INDEX IF NOT EXISTS idx_task_history_case_id     ON task_history (case_id);
+CREATE INDEX IF NOT EXISTS idx_task_history_requested   ON task_history (requested_at DESC);
+-- RLS: 既存新テーブル群と同一方式（FOR ALL USING(true) WITH CHECK(true)）。ENABLEは冪等・ポリシーは未存在時のみ作成。
+ALTER TABLE task_history ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'task_history' AND policyname = 'task_history_all'
+  ) THEN
+    CREATE POLICY "task_history_all" ON task_history FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+-- ============================================================
 -- 初期AI社員データ（15名）
 -- ============================================================
 INSERT INTO members (id, name, role, icon, specialty, tone, is_active) VALUES
