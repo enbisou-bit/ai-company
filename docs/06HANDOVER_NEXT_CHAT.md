@@ -2,14 +2,28 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-14（**Phase54-3b-3 Notification既読永続化＋Timeline案件別＋Workflow Live復元：実装・localhost・実DB確認済み**・commit 3e3c432・**本番実機確認前＝未Completed**。次工程＝push→Render→本番PC/iPhone確認→Phase54最終統合確認。Phase54-3b-2／3b-1／3a-2／3a／Phase54-2は正式Complete）
+更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**・最終統合確認合格・tag v1.01-phase54-complete。3b-3 Completed（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。次工程＝**Phase55候補整理 または Version1.1残課題確認**・**Phase55未着手**）
 
 ---
 
-## 【現在地・最優先】Phase54-3b-3 Notification既読永続化・Timeline案件別・Workflow Live復元 — 実装・実DB確認済み（本番実機確認前＝未Completed）
+## 【現在地・最優先】Phase54 Remaining Realtime Sync — **正式Complete**（2026-07-14・最終統合確認合格）
 
 - 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
-- **現在Phase**：**Phase54-3b-3 実装・実DB確認済み・本番実機確認前**／HEAD = **3e3c432**（code）・Phase54-3b-2 は **Completed**（tag v1.01-phase54-3b-2→b5ab89d）
+- **現在Phase**：**Phase54 正式Complete**（3a→3a-2→3b-1→3b-2→3b-3→最終統合確認 すべて完了）・tag **v1.01-phase54-complete**
+- **成果＝Version1.1「PC⇔スマホ同一AI会社」の同期基盤成立**：
+  - Approval Sync（54-1系）／Output Draft＋Review State永続化（54-2系）／Task同期＋案件分離（3a/3a-2・tasks.case_id）／Task History DB永続化＋案件分離（3b-1/3b-2・task_history）／Notification既読DB同期＝PC⇔iPhone双方向（3b-3a・notification_reads）／Timeline案件別表示（3b-3b）／Workflow Live履歴フォールバック復元（3b-3c）
+- **最終統合確認（合格）**：案件A/B分離（Task/履歴/Timeline・混入なし）・NULL/空横断データ維持・Approval/Draft/Review State案件別復元・Task60件維持（重複0）・再起動直後DB復元（履歴12/既読6・dup0）・PC⇔iPhone既読双方向同期（実機）・F5/再ログイン維持・Messages復元・全consumer回帰なし・console 0・dev-check 200/200/200・本番全API正常
+- **Known Issue（継続）**：Edge（Windows・表示倍率125%）Taskスクロールバー判定ずれ（軽微・UIリファイン時再調査）
+
+### 次工程（ユーザー判断）
+- **Phase55候補整理** または **Version1.1残課題確認**。候補：Cost同期（別工程・cost系3ファイル温存方針と整合要）／Learning残in-memory buffer（Version2候補）／回答本文のtask_history保存（Workflow Live完全復元の前提）／UIリファイン（Known Issue再調査含む）／検証テスト行の整理方針
+- **Phase55実装は未着手**（着手前に設計レビュー・ユーザー承認）
+
+---
+
+## 【参考・完了済み】Phase54-3b-3 Notification既読永続化・Timeline案件別・Workflow Live復元 — **Completed**
+
+- **Phase54-3b-3 Completed**（PC→iPhone／iPhone→PC 既読同期・F5/再ログイン維持・本番表示操作 ユーザー実機確認済み）／code = **3e3c432**・tag **v1.01-phase54-3b-3**
 
 ### 実装（commit 3e3c432・4ファイル・+200/-8）
 - **3b-3a 既読DB永続化**：新規 `notification_reads`（history_id PK・case_id・seen_at・created_at）／`lib/notificationReadsDb.js`（getSeenIds{caseId,limit}／markSeen・冪等）／`GET/POST /api/notification-reads`（GET limit既定1000/上限5000）。client：showAppで既読復元・click/markAllでDB保存・即時UI維持。**単一共有アカウント(web-user)＝PC/iPhone既読同期基盤**
@@ -20,10 +34,8 @@
 - 既読POST/GET・冪等(重複0)・limit・空POST400・`_notifSeenIds`復元（F5/再ログイン相当）／Timeline A/B分離＋空/NULL横断維持／Workflow Live復元(本文空)／既存consumer回帰なし／console 0／dev-check 200/200/200
 - 検証行：`zzz-3b3-*`（既読・非活性・削除しない）
 
-### 次工程
-- **push（要承認）→ Render → 本番API確認（notification-reads GET/POST/limit/冪等・task-history・workflow-dashboard・形不変）→ 本番PC/iPhone実機確認 → 3b-3 Completed確定**
-- その後 **Phase54最終統合確認**（全同期のPC⇔スマホ・F5・再ログイン・再起動・案件分離・回帰の通し確認）。**未着手**
-- **未実施**：push・Render・本番実機
+### 本番確認済み（Completed）
+- push→Render反映→本番API確認（notification-reads GET/POST/limit/冪等・重複0・形不変）→**ユーザー実機確認済み（PC→iPhone／iPhone→PC 既読同期・F5/再ログイン維持・表示操作正常）**。Phase54最終統合確認も合格（冒頭参照）
 
 ---
 

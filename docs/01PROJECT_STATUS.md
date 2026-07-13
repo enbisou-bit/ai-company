@@ -2,20 +2,35 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-14（**Phase54-3b-3 Notification既読永続化＋Timeline案件別＋Workflow Live復元：実装・localhost・実DB確認済み**・commit 3e3c432・**本番実機確認前＝未Completed**。次工程＝push→Render→本番PC/iPhone確認→Phase54最終統合確認。Phase54-3b-2／3b-1／3a-2／3a／Phase54-2 は正式Complete）
+更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**。Phase54-3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格。Approval／Draft／Task／Task History／Notification／Timeline／Workflow Live の同期基盤完成＝Version1.1「PC⇔スマホ同一AI会社」基盤成立。tag v1.01-phase54-complete。次工程＝Phase55候補整理またはVersion1.1残課題確認・**Phase55未着手**）
 
 ---
 
-## Phase54-3b-3 Notification既読永続化・Timeline案件別・Workflow Live復元（実装・localhost・実DB確認済み・commit 3e3c432・本番実機確認前）
+## Phase54 Remaining Realtime Sync **正式Complete**（2026-07-14・最終統合確認合格・tag v1.01-phase54-complete）
 
-- **現在Phase**：**Phase54-3b-3 実装・実DB確認済み（本番実機確認前＝未Completed）** ／ HEAD = **3e3c432**（code）
+- **Phase54全体成果**：3a Task Basic Sync → 3a-2 Task Case Scoping → 3b-1 Task History Persistence → 3b-2 Task History Case Scoping → 3b-3 Notification既読永続化＋Timeline案件別＋Workflow Live復元 → **最終統合確認** すべてComplete
+- **最終統合確認結果（localhost＝サーバー再起動直後＋本番）**：
+  - **案件分離**：Task A/B分離（実オブジェクト）・Task History `?caseId`厳密（A=Aのみ/B=Bのみ）・Timeline A/B分離・**NULL/空横断データ全view維持**（Task 55件・履歴・timeline空event）
+  - **Approval/Draft**：案件別GET混入なし（approvals/output_drafts とも case_id一致行のみ）・review_state列復元・復元関数群健在（scheduleOutputDraftRestore/scheduleApprovalSync/mergeApprovalStateFromServer/_applyReviewStateFromServerRow）
+  - **Task**：DB60件維持（減少なし）・dbId重複0・状態変更/描画正常
+  - **Task History/Notification**：再起動直後（メモリ空）にDB復元12件・重複0／既読DB復元6件・重複0・**PC⇔iPhone双方向既読同期はユーザー実機確認済み**・F5/再ログイン維持
+  - **Timeline/Workflow Live**：Timeline119event描画・案件分離・横断維持／Live既存進行中経路健在（workflow-progress ok）＋progress消失時のtask_historyフォールバック復元（本文なし＝仕様どおり）
+  - **回帰**：Conversation/Messages（50件・case_id付き復元・restoreHistory ok）・loadNotifications/loadWorkflowDashboard/renderWorkflowLive/renderTaskList ok・ログイン/ログアウト/ホーム/案件切替関数健在・console 0・dev-check 200/200/200
+  - **本番**：tasks 60／task-history 12(dup0)／workflow-dashboard 7／notification-reads 6(dup0)／caseId厳密フィルタ 全正常
+- **Known Issue（継続）**：Edge（Windows・表示倍率125%）Taskスクロールバー判定ずれ（軽微・UIリファイン時再調査）
+- **次工程**：**Phase55候補整理 または Version1.1残課題確認**（Cost同期=別工程・Learning残buffer=Version2候補・回答本文のtask_history保存=候補）。**Phase55実装は未着手**
+
+---
+
+## Phase54-3b-3 Notification既読永続化・Timeline案件別・Workflow Live復元 **Completed**（PC/iPhone実機確認済み・commit 3e3c432・tag v1.01-phase54-3b-3）
+
+- **現在Phase**：**Phase54-3b-3 Completed**（PC→iPhone／iPhone→PC 既読双方向同期・F5/再ログイン維持・本番表示操作 ユーザー実機確認済み）
 - **3b-3a Notification既読DB永続化**：新規 `notification_reads`（`history_id` PK・`case_id`・`seen_at`・`created_at`）＋`lib/notificationReadsDb.js`（`getSeenIds{caseId,limit}`／`markSeen`・history_id冪等）＋`GET/POST /api/notification-reads`（GET limit対応・既定1000/上限5000）。client：`showApp`（起動/再ログイン）で既読復元→`_notifSeenIds`反映・click/markAllでDB保存（即時UI維持）。**単一共有アカウント(web-user)でPC/iPhone間既読同期基盤完成**
 - **3b-3b Timeline案件別表示**：`_timelineEventVisibleInView`＋`renderTimeline` フィルタ。現在案件event＋**NULL/空の横断event表示**／別案件case付きは非表示／ホーム・未選択は横断のみ（クライアント全event保持・表示時のみ絞る）
 - **3b-3c Workflow Live復元**：`wlProgressPoll` が progress有り時は既存Live優先／**found:false時のみ** `_wlRestoreFromHistory` で task_history から静的復元（担当・action・status・caseId・開始/完了時刻。**回答本文は対象外**）
 - **既存APIレスポンス形不変**（`{ok,history,total}`／`{ok,workflows,total}`／新規 `{ok,seenIds,total}`）／task_history Hybrid/dedup・3b-2案件分離 非接触
 - **実DB確認**：既読 POST/GET・**冪等（重複行0）**・limit・空POST400／`_notifSeenIds`復元（F5/再ログイン相当）／Timeline A/B分離＋NULL/空横断維持／Workflow Live復元（本文空）／既存consumer回帰なし（loadNotifications/loadTimeline 122event/workflowDashboard/renderWorkflowLive）／console 0／dev-check 200/200/200
-- **⚠ 未Completed**：push・Render反映・本番PC/iPhone実機確認 未実施
-- **次工程**：push → Render → 本番API/PC/iPhone確認 → 3b-3 Completed確定 → **Phase54最終統合確認**
+- **本番確認済み（Completed）**：push・Render反映・本番API（notification-reads GET/POST/limit/冪等・形不変）確認済み → **ユーザー実機確認済み（PC→iPhone／iPhone→PC 通知既読同期・F5/再ログイン後も既読維持・本番表示操作正常）** ⇒ **Phase54-3b-3 Completed**
 
 ---
 

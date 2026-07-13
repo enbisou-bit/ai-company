@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-14（Decision 057・Phase54-3b-3 Notification既読DB永続化＋Timeline案件別＋Workflow Live復元＝新規 `notification_reads`・PC/iPhone既読同期基盤・実DB確認済み・commit 3e3c432・本番実機確認前。Decision 056・Phase54-3b-2 Task History Case Scoping Completed。Decision 055・Phase54-3b-1 Task History Persistence Completed）
+更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**＝最終統合確認合格・tag v1.01-phase54-complete。Decision 057・Phase54-3b-3 **Completed**（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。Decision 056・3b-2 Completed。Decision 055・3b-1 Completed。次工程＝Phase55候補整理・未着手）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1233,6 +1233,12 @@ Phase54-3b 接続方針（比較のみ・未着手）:
 
 確認（localhost・実DB・commit 3e3c432）:
 - 既読 POST(count)/GET(`{ok,seenIds,total}`)・**冪等再POSTで重複行0**・limit・空POST400／`_notifSeenIds`をクリア→復元で既読反映（F5/再ログイン相当）／Timeline A/B分離＋空/NULL横断維持（8パターン）／Workflow Live復元(担当sns/status completed/caseId=A/本文空・履歴6件)／既存consumer回帰なし／console 0／dev-check 200/200/200。
-- 検証行（`zzz-3b3-*` 既読・非活性・DELETE未実施）。**本番実機未確認のため正式Completedではない**。
+- 検証行（`zzz-3b3-*` 既読・非活性・DELETE未実施）。
+- **本番・実機（Completed）**：push→Render反映→本番API確認（notification-reads GET/POST/limit/冪等・重複0・形不変）→**ユーザー実機確認済み（PC→iPhone／iPhone→PC 通知既読同期・F5/再ログイン後も既読維持・表示操作正常）** ⇒ **Phase54-3b-3 Completed**。
 
-追記日: 2026-07-14（Decision 057・Phase54-3b-3・実DB確認済み・commit 3e3c432・本番実機確認前）
+Phase54 最終統合確認（2026-07-14・合格＝**Phase54 Remaining Realtime Sync 正式Complete**）:
+- localhost（再起動直後＝メモリ空）＋本番の両方で、案件分離（Task/Task History/Timeline A/B・NULL横断維持）・Approval/Draft/Review State案件別復元（混入なし）・Task60件維持（重複0）・Task History DB復元（dup0）・既読DB復元（dup0・PC⊄iPhone双方向同期は実機確認済み）・Workflow Live既存経路＋historyフォールバック（本文なし＝仕様）・Messages復元・全consumer回帰なし・console 0・dev-check 200/200/200 を確認。
+- **成果＝Version1.1「PC⇔スマホ同一AI会社」の同期基盤成立**（Approval／Draft／Task／Task History／Notification／Timeline／Workflow Live）。Cost同期＝別工程・Learning残buffer＝Version2候補・回答本文のtask_history保存＝将来候補。
+- tag **v1.01-phase54-complete**（Phase54最終docs commitを指す）。
+
+追記日: 2026-07-14（Decision 057・Phase54-3b-3 **Completed**＋Phase54 正式Complete・最終統合確認合格・tag v1.01-phase54-complete）

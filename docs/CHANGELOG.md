@@ -4,14 +4,24 @@
 
 ---
 
-## Phase54-3b-3 — Notification既読永続化・Timeline案件別・Workflow Live復元（2026-07-14・**実装・localhost・実DB確認済み・commit 3e3c432・本番実機確認前＝未Completed**）
+## Phase54 — Remaining Realtime Sync **正式Complete**（2026-07-14・最終統合確認合格・tag v1.01-phase54-complete）
+
+- **Phase54全体**：3a Task Basic Sync → 3a-2 Task Case Scoping（tasks.case_id）→ 3b-1 Task History Persistence（task_history＋Hybrid）→ 3b-2 Task History Case Scoping → 3b-3 Notification既読永続化（notification_reads）＋Timeline案件別＋Workflow Live復元 → 最終統合確認 すべてComplete
+- **成果＝Version1.1「PC⇔スマホ同一AI会社」の同期基盤成立**：Approval／Output Draft＋Review State／Task（案件分離）／Task History（DB永続＋案件分離）／Notification（既読PC⇔iPhone双方向同期）／Timeline（案件別）／Workflow Live（履歴フォールバック復元）
+- **最終統合確認（localhost再起動直後＋本番）**：案件A/B分離（混入なし）・NULL/空横断データ維持・Approval/Draft/Review State案件別復元・Task60件維持（重複0）・履歴/既読DB復元（dup0）・PC⇔iPhone既読双方向同期（ユーザー実機）・F5/再ログイン維持・Messages復元・全consumer回帰なし・console 0・dev-check 200/200/200・本番全API正常
+- **Known Issue（継続）**：Edge（Windows・表示倍率125%）Taskスクロールバー判定ずれ（軽微・UIリファイン時再調査）
+- **次工程**：Phase55候補整理 または Version1.1残課題確認（Cost同期＝別工程／Learning残buffer＝Version2候補／回答本文のtask_history保存＝候補）。**Phase55未着手**
+
+---
+
+## Phase54-3b-3 — Notification既読永続化・Timeline案件別・Workflow Live復元 **Completed**（2026-07-14・push済み・Render反映済み・本番/ユーザー実機確認済み・commit 3e3c432・tag v1.01-phase54-3b-3）
 
 - **3b-3a Notification既読DB永続化**：新規 `notification_reads`（`history_id` PK・`case_id`・`seen_at`・`created_at`＋index＋冪等RLS）／新規 `lib/notificationReadsDb.js`（`getSeenIds({caseId,limit})`／`markSeen`・`onConflict:history_id`+`ignoreDuplicates`＝冪等）／`GET/POST /api/notification-reads`（GET `?limit=` 既定1000/上限5000・`?caseId=`任意・DB失敗でも表示止めない）。client：`showApp`で既読復元→`_notifSeenIds`／click・markAllでDB保存（即時UI維持）。**単一共有アカウント(web-user)＝PC/iPhone間既読同期基盤完成・回答本文復元は対象外**
 - **3b-3b Timeline案件別表示**：`_timelineEventVisibleInView`＋`renderTimeline`（wfId空/NULL=横断常時表示・case付きは現在案件のみ・ホーム/未選択は横断のみ）。**NULL/空event横断表示維持**
 - **3b-3c Workflow Live復元**：`wlProgressPoll` found:true＝既存Live優先／found:false時のみ`_wlRestoreFromHistory`でtask_historyから静的復元（担当/action/status/caseId/開始・完了時刻・**本文対象外**）
 - **保護**：既存APIレスポンス形不変（`{ok,history,total}`／`{ok,workflows,total}`／新規`{ok,seenIds,total}`）・task_history Hybrid/dedup維持・3b-2案件分離非接触・`global.__taskHistory`維持・新規SQL(notification_readsのみ)以外のDB変更なし・Approval/Output Draft/Provider/Routing/Cost 非接触
 - **実DB確認**：既読POST/GET・冪等(重複0)・limit・空POST400・`_notifSeenIds`復元／Timeline A/B分離＋横断維持／Live復元(本文空)／既存consumer回帰なし／console 0／dev-check 200/200/200
-- **⚠ 未Completed**：push・Render反映・本番PC/iPhone実機確認 未実施。次工程＝push→Render→本番確認→3b-3 Completed→**Phase54最終統合確認**
+- **本番・実機確認（Completed）**：push→Render反映→本番API確認（GET/POST/limit/冪等・重複0・形不変）→**ユーザー実機確認済み（PC→iPhone／iPhone→PC 通知既読同期・F5/再ログイン後も既読維持・表示操作正常）**
 
 ---
 
