@@ -11242,7 +11242,7 @@ async function atConsult(taskId, fromAgentId, toAgentId, btnEl) {
     const res  = await fetch('/api/consult', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromAgentId, toAgentId, question, priorResult, workflowId, knowledgeContext: getRoutedKnowledgeContext(toAgentId) }),
+      body: JSON.stringify({ fromAgentId, toAgentId, question, priorResult, workflowId, caseId: (getCurrentApprovalCaseId() || null), knowledgeContext: getRoutedKnowledgeContext(toAgentId) }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）
     });
     const data = await res.json();
 
@@ -11439,7 +11439,7 @@ async function atRunWorkflow() {
     const res  = await fetch('/api/auto-task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext() }),
+      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: (getCurrentApprovalCaseId() || null), knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext() }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）
     });
     const data = await res.json();
 
@@ -13213,11 +13213,20 @@ async function loadNotifications() {
   } catch (_) {}
 }
 
+// Phase54-3b-2: 履歴エントリが現在案件ビューで表示対象か（case_id=NULLは横断＝常時表示／case付きは現在案件のみ）。
+// クライアントは全履歴を保持し、表示時のみ案件別に絞る（サーバーGETは全件のまま）。
+function _historyVisibleInView(entry) {
+  const c = (entry && entry.caseId != null) ? entry.caseId : null;
+  if (c === null) return true;                 // NULL横断履歴は全案件・ホームで表示
+  return c === _taskViewCaseId();              // case付きは現在表示案件と一致時のみ
+}
+
 // 通知をレンダリングする（render notification list）
 function renderNotifications(entries) {
   // 不要なエントリを除外し、新着順にソート（最大60件）
   const items = entries
     .filter(e => e.status !== 'skipped' || e.action)
+    .filter(e => _historyVisibleInView(e))     // Phase54-3b-2: 案件別表示（NULL横断は常時表示・別案件は非表示）
     .sort((a, b) => (b.requestedAt || '') > (a.requestedAt || '') ? 1 : -1)
     .slice(0, 60);
 

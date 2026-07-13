@@ -480,15 +480,16 @@ function _persistTaskHistory(entries) {
 
 // Phase54-3b-1: taskHistory をメモリ＋DBのHybridで取得（history_idでdedup・メモリ優先＝live状態採用）。
 // DB未作成/失敗時は空を返し従来どおりメモリのみで動作。APIレスポンス形は変えない（呼び出し側で従来通り整形）。
-async function _hybridTaskHistory({ from, to } = {}) {
+async function _hybridTaskHistory({ from, to, caseId } = {}) {
   // メモリ（live・in-flight）
   let mem = global.__taskHistory || [];
-  if (from) mem = mem.filter(h => h && h.from === from);
-  if (to)   mem = mem.filter(h => h && h.to   === to);
+  if (from)   mem = mem.filter(h => h && h.from === from);
+  if (to)     mem = mem.filter(h => h && h.to   === to);
+  if (caseId) mem = mem.filter(h => h && h.caseId === caseId);   // Phase54-3b-2: 任意case厳密フィルタ（NULL横断はクライアント表示側で扱う）
   // DB（永続・再起動後の復元元）
   let dbHist = [];
   try {
-    const r = await getTaskHistoryDb().getHistory({ from, to });
+    const r = await getTaskHistoryDb().getHistory({ from, to, caseId });
     if (r && Array.isArray(r.history)) dbHist = r.history;
   } catch (e) { /* DB未作成/失敗でも従来どおりメモリで動作 */ }
   // history_id でdedup（DBを土台にメモリで上書き＝liveを優先）。historyId無しはそのまま保持。
@@ -751,7 +752,8 @@ app.post('/api/strategy-monitor', express.json(), async (req, res) => {
 //   ・provider（AIの種類）は現在 "openai" のみ。将来 "claude" 対応を予定
 // ══════════════════════════════════════════════════════════════
 app.post('/api/auto-task', express.json(), async (req, res) => {
-  const { userMessage, tasks, autonomousConsult = false, workflowId = null, knowledgeContext = '' } = req.body || {};
+  // Phase54-3b-2: caseId は任意（未指定でも従来動作＝NULL横断履歴）
+  const { userMessage, tasks, autonomousConsult = false, workflowId = null, caseId = null, knowledgeContext = '' } = req.body || {};
 
   // 入力バリデーション（input validation）
   if (!userMessage || !Array.isArray(tasks) || tasks.length === 0) {
@@ -787,6 +789,8 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
     global.__workflowProgress[_wfId] = { workflowTasks, taskHistory, brainResult, done: true, updatedAt: Date.now() };
     setTimeout(() => { if (global.__workflowProgress) delete global.__workflowProgress[_wfId]; }, 3600000);
 
+    // Phase54-3b-2: 生成した各履歴エントリへ現在案件を付与（未指定はNULL横断・既にcaseId保持時は尊重）
+    if (caseId != null) { for (const h of taskHistory) { if (h && h.caseId == null) h.caseId = caseId; } }
     // taskHistory（タスク履歴）をサーバーメモリに蓄積
     if (!global.__taskHistory) global.__taskHistory = [];
     global.__taskHistory.push(...taskHistory);
@@ -900,9 +904,9 @@ app.get('/api/org-map', (req, res) => {
 //   このエンドポイントを DB 読み取りに切り替える
 // ══════════════════════════════════════════════════════════════
 app.get('/api/task-history', async (req, res) => {
-  const { from, to } = req.query;
-  // Phase54-3b-1: メモリ＋DBのHybrid取得（レスポンス形 {ok,history,total} は不変）。
-  const history = await _hybridTaskHistory({ from, to });
+  // Phase54-3b-2: caseId は任意フィルタ（未指定は従来どおり全件＝クライアント全保持/横断表示を維持）。レスポンス形 {ok,history,total} は不変。
+  const { from, to, caseId } = req.query;
+  const history = await _hybridTaskHistory({ from, to, caseId });
   res.json({ ok: true, history, total: history.length });
 });
 
@@ -912,7 +916,9 @@ app.get('/api/task-history', async (req, res) => {
 // ──────────────────────────────────────────────────────────────
 app.get('/api/workflow-dashboard', async (req, res) => {
   // Phase54-3b-1: メモリ＋DBのHybrid取得（再起動後もDBから復元・集約ロジック/レスポンス形は不変）。
-  const history = await _hybridTaskHistory();
+  // Phase54-3b-2: caseId は任意フィルタ（未指定は従来どおり全件）。
+  const { caseId } = req.query;
+  const history = await _hybridTaskHistory({ caseId });
 
   // workflowId ごとにエントリを集約
   const map = new Map();
@@ -977,7 +983,8 @@ app.get('/api/workflow-dashboard', async (req, res) => {
 //   historyEntry: object  今回記録した taskHistory エントリ
 // ══════════════════════════════════════════════════════════════
 app.post('/api/consult', express.json(), async (req, res) => {
-  const { fromAgentId, toAgentId, question, priorResult, workflowId, knowledgeContext = '' } = req.body || {};
+  // Phase54-3b-2: caseId は任意（未指定でも従来動作＝NULL横断履歴）
+  const { fromAgentId, toAgentId, question, priorResult, workflowId, caseId = null, knowledgeContext = '' } = req.body || {};
 
   // 入力バリデーション（input validation）
   if (!fromAgentId || !toAgentId || !question) {
@@ -1010,6 +1017,7 @@ app.post('/api/consult', express.json(), async (req, res) => {
     from: fromAgentId,
     to: toAgentId,
     workflowId: workflowId || null,  // 同一案件の相談履歴として管理するためのID
+    caseId: caseId || null,          // Phase54-3b-2: 現在案件（未指定はNULL＝横断履歴）
     taskId: null,          // 相談タスクには固定IDなし
     instruction: question,
     status: 'running',
