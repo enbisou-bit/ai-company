@@ -2,22 +2,31 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-12（Phase54-3 Remaining Realtime Sync 正式化・Phase54-3a Task Basic Sync 実装・localhost確認済み・未commit・push/Render/本番未実施。Phase54-2は正式Complete）
+更新日: 2026-07-13（**Phase54-3a Completed（Known Issueあり）**・push済み・Render反映済み・本番実機確認済み・tag v1.01-phase54-3a。次工程＝**3a-2 Task Case Scoping** または **3b Task History Persistence**。Phase54-2は正式Complete）
 
 ---
 
-## 【現在地・最優先】Phase54-3a Task Basic Sync（実装・localhost確認済み・未commit）
+## 【現在地・最優先】Phase54-3a Task Basic Sync — Completed（Known Issueあり）
 
 - 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
-- **現在Phase**：**Phase54-3a Task Basic Sync**（Phase54-3 Remaining Realtime Sync の第1工程）
+- **現在Phase**：**Phase54-3a Completed（Known Issueあり）**／origin/main = **82674b9**・tag **v1.01-phase54-3a**（→ dc439d5）
 - **Phase54-2 Complete**（Output Draft Persistence＋Mobile Review State Persistence・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番確認済み）
-- **Phase54-3 正式化（Decision 053）**：実開発Phase54系＝**Version1.1 Realtime Sync系**。ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番。分割＝**3a Task Basic Sync（今回・全社共通Task基本同期）→ 3a-2 Task Case Scoping（案件別Task分離・`tasks.case_id`）→ 3b Task History Persistence（詳細Live Statusはここ）→ 3c Notification Unread/Workflow Live Restore → 3d 最終確認**。Cost＝別工程・Learning残＝Version2候補。**3a-2/3b/3c/3dは未着手**
+- **Phase54-3 正式化（Decision 053）**：実開発Phase54系＝**Version1.1 Realtime Sync系**。ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番。分割＝**3a Task Basic Sync（Completed）→ 3a-2 Task Case Scoping（案件別Task分離・`tasks.case_id`・未着手）→ 3b Task History Persistence（詳細Live Statusはここ・未着手）→ 3c Notification Unread/Workflow Live Restore（未着手）→ 3d 最終確認（未着手）**。Cost＝別工程・Learning残＝Version2候補
 
-### Task同期の現状と今回の対象（3a）
-- 現状：`tasks`テーブル＋`GET/POST/PATCH /api/tasks`＋`tasksDb.js` 完備。だが**クライアントは起動時 localStorage のみ読込＝GET pull未配線**。`tasks` に `case_id` 列なし＝Taskは案件横断
-- 今回（index.htmlのみ・DB/API/SQL無・新規poll無）：`syncTasksFromServer`/`_taskFromServerRow`/`_mapServerTaskStatus`（`_taskSyncInFlight`ガード）を追加し、起動時・switchCase・_homeOpenCase で pull・merge
-- merge安全規則：dbId重複排除／未存在のみ追加／サーバー `updated_at` 厳密新しい時のみ採用／localのみTask保持／失敗・空で削除しない／localStorageキャッシュ維持
-- 既知制約：client status(10種) vs server CHECK(pending/in_progress/done)。rich statusのPATCHは失敗し `updated_at` が進まないため pull時に降格しない（rich status保護）。双方向status統一は3b以降
+### Phase54-3a 完了内容（本番実機確認済み）
+- **Task Basic Sync**（dc439d5・tag v1.01-phase54-3a）：`GET /api/tasks` を起動時・switchCase・_homeOpenCase で pull・merge（`syncTasksFromServer`/`_taskFromServerRow`/`_mapServerTaskStatus`/`_taskSyncInFlight`・index.htmlのみ・DB/API/SQL無・新規poll無）。merge安全規則：dbId重複排除／未存在のみ追加／サーバー`updated_at`厳密新しい時のみ採用／localのみTask保持／失敗・空で削除しない
+- **3a-fix Task完全収束**（e96bdaa）：全Task作成経路（7724/7974/11821）を `syncTaskToServer` へ配線（`_persistNewTask`）＋起動時 `backfillLocalOnlyTasks`（ローカルのみTaskを削除せずサーバーへ押上げ・冪等・`_taskSignature`=title¦memberId¦sourceMessage¦body で重複防止・POST成功後のみdbId付与・`_taskBackfillInFlight`ガード・失敗/空で削除しない）。※11210は `atRunWorkflow` のworkflow定義配列（ボードTaskでない）ため非配線。**PC/iPhone 55件で一致・本番確認済み**
+- **UI-A Task操作性**（4e56b44/ddc1c81/af4ab80/82674b9）：選択ツールバー`N件選択中`＋短縮ボタン・**最終は標準ネイティブスクロールバー（`scrollbar-width:auto`＋`scrollbar-color`）へ一本化**（webkit擬似要素撤去＝見た目=ヒット判定統一）。index.htmlのみ・CSS中心・JS最小
+- **既知制約**：client status(10種) vs server CHECK(pending/in_progress/done)。rich statusのPATCHは失敗し`updated_at`が進まないため pull時に降格しない。双方向status統一は3b以降
+
+### ⚠ Known Issue（Phase54-3a・修正継続しない）
+- **Edge（Windows・表示倍率125%環境）でTaskスクロールバーのヒット判定が見た目より数px左へずれる場合がある**
+- ホイールスクロール／タッチパッド2本指／キーボードスクロール／Task操作／iPhone は**すべて正常**
+- 実運用への影響は軽微 → **Version1.1開発を優先し、UIリファイン時に再調査対象**とする
+
+### 次工程（ユーザー判断）
+- **3a-2 Task Case Scoping**（`tasks` へ nullable `case_id`・案件別Task分離・DB/server/lib/index・要SQL）／または
+- **3b Task History Persistence**（`global.__taskHistory` を新規 `task_history` テーブルへDB化・Timeline/Notification/Workflow Live/Auto Task の端末間・F5・再起動復元を一括解錠・server.js/lib/schema＋SQL・既存API維持のhybrid・完了履歴のみ復元）
 - localhost確認：起動pullで22件merge・dedup・空/失敗維持・in-flightガード(GET1回)・newer-wins＋rich status保護・F5復元・回帰OK・console0・dev-check 200/200/200
 - **未実施**：commit（コード/docs）・tag・push・Render・本番実機・3a Complete確定
 

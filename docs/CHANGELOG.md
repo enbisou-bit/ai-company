@@ -4,9 +4,13 @@
 
 ---
 
-## Phase54-3 — Remaining Realtime Sync 正式化／Phase54-3a Task Basic Sync（2026-07-12・実装・localhost確認済み・未commit・push/Render/本番未実施）
+## Phase54-3 — Remaining Realtime Sync 正式化／Phase54-3a **Completed（Known Issueあり）**（2026-07-13・push済み・Render反映済み・本番実機確認済み・tag v1.01-phase54-3a）
 
-- **Phase54-3正式化（Decision 053）**：実開発Phase54系＝Version1.1 Realtime Sync系。ROADMAP旧Phase54は旧計画として履歴保持・Version2再採番。分割＝3a Task Basic Sync（全社共通Task・基本status 3値・案件分離なし）／3a-2 Task Case Scoping（`tasks.case_id`・案件別Task分離）／3b Task History Persistence（詳細Live Statusはここ）／3c Notification Unread・Workflow Live Restore／3d 最終確認。Cost＝別工程・Learning残＝Version2候補。**3a-2/3b/3c/3d未着手**
+- **Phase54-3a Completed（Known Issueあり）**：origin/main=82674b9。Task Basic Sync（dc439d5）＋3a-fix Task完全収束（e96bdaa）＋UI-A Task操作性（4e56b44/ddc1c81/af4ab80/82674b9）。**PC/iPhone 55件一致・本番実機確認済み**
+  - **3a-fix**：全Task作成経路をPOST配線（`_persistNewTask`）＋起動時 `backfillLocalOnlyTasks`（ローカルのみTaskを削除せずサーバーへ押上げ・冪等・`_taskSignature`で重複防止・POST成功後のみdbId付与）
+  - **UI-A**：選択ツールバー`N件選択中`＋短縮ボタン・**標準ネイティブスクロールバー一本化**（`scrollbar-width:auto`＋`scrollbar-color`・webkit擬似要素撤去＝見た目=ヒット判定統一）。index.htmlのみ・CSS中心
+  - **⚠ Known Issue（修正継続しない）**：Edge（Windows・表示倍率125%）でTaskスクロールバーのヒット判定が見た目より数px左へずれる場合あり。ホイール/タッチパッド2本指/キーボード/Task操作/iPhone は正常。影響軽微のためVersion1.1優先・UIリファイン時に再調査
+- **Phase54-3正式化（Decision 053）**：実開発Phase54系＝Version1.1 Realtime Sync系。ROADMAP旧Phase54は旧計画として履歴保持・Version2再採番。分割＝3a Task Basic Sync（**Completed**）／3a-2 Task Case Scoping（`tasks.case_id`）／3b Task History Persistence（詳細Live Statusはここ）／3c Notification Unread・Workflow Live Restore／3d 最終確認。Cost＝別工程・Learning残＝Version2候補。**3a-2/3b/3c/3d未着手**
 - **Phase54-3a Task Basic Sync**：既存 `GET /api/tasks`（DB由来）をクライアントが起動時・案件切替時・ホーム案件を開いた時に pull・merge。**index.htmlのみ・DB/API/SQL変更なし・新規pollingなし**
   - 追加：`syncTasksFromServer`/`_taskFromServerRow`/`_mapServerTaskStatus`＋`_taskSyncInFlight`ガード
   - merge安全規則：dbId重複排除／未存在のみ追加／サーバー `updated_at` 厳密新しい時のみ採用／localのみTask保持／失敗・空で削除しない／localStorageキャッシュ維持

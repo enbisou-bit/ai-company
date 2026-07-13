@@ -2,14 +2,21 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-12（Phase54-3 Remaining Realtime Sync 正式化・**Phase54-3a Task Basic Sync 実装・localhost確認済み**・index.htmlのみ・未commit・push/Render/本番未実施。Phase54-2は正式Complete）
+更新日: 2026-07-13（**Phase54-3a Task Basic Sync ＋ 3a-fix ＋ UI-A：Completed（Known Issueあり）**・push済み・Render反映済み・本番実機確認済み。tag v1.01-phase54-3a。次工程＝3a-2 / 3b。Phase54-2は正式Complete）
 
 ---
 
 ## Phase54-3 Remaining Realtime Sync（残Realtime Sync完成工程・Version1.1「PC⇔スマホ同一AI会社」直結）
 
-- **現在Phase**：**Phase54-3a Task Basic Sync**（実装・localhost確認済み・未commit）
+- **現在Phase**：**Phase54-3a Completed（Known Issueあり）** ／ 次は **3a-2 Task Case Scoping**（未着手）
 - **Phase54-2 Complete**（Output Draft Persistence＋Mobile Review State Persistence・commit f0f382f・tag v1.01-phase54-2f・push済み・Render反映済み・本番確認済み）
+
+### Phase54-3a 結果：Completed（Known Issueあり）
+- **Task Basic Sync**（commit dc439d5・tag v1.01-phase54-3a）：`GET /api/tasks` を pull・merge。PC⇔スマホでTask集合が一致
+- **3a-fix Task完全収束**（commit e96bdaa）：全Task作成経路を `syncTaskToServer` へ配線＋起動時 `backfillLocalOnlyTasks`（ローカルのみTaskを削除せずサーバーへ押上げ・冪等・署名重複防止）。**PC/iPhone 55件で一致・本番実機確認済み**
+- **UI-A Task操作性改善**（commit 4e56b44 / ddc1c81 / af4ab80 / 82674b9）：PCスクロールバー改善・選択ツールバーコンパクト化（`N件選択中`＋短縮ボタン）・**最終は標準ネイティブスクロールバー（`scrollbar-width:auto`＋`scrollbar-color`）へ一本化**（見た目=ヒット判定の統一）。index.htmlのみ・CSS中心
+- **Known Issue（修正継続しない）**：**Edge（Windows・表示倍率125%環境）でTaskスクロールバーのヒット判定が見た目より数px左へずれる場合がある**。ホイール／タッチパッド2本指／キーボードスクロール／Task操作／iPhone は**すべて正常**。実運用への影響は軽微のため **Version1.1開発を優先し、UIリファイン時に再調査対象**とする
+- 非接触：Task同期/バックフィル/並び順/本文表示条件/Approval/Draft/review_state/Conversation/Case/Messages/server.js/lib/DB/API/cost
 - **目的**：Task/Status/Auto Task/Timeline/Notification/Workflow Live の端末間同期を完成し、Version1.1「PC/iPhoneで同じAI会社」を満たす
 - **Phase分割**：
   - **3a Task Basic Sync**（今回・実装済み・localhost確認済み）＝**全社共通Taskの基本同期**（`tasks` 全件pull・基本status 3値・案件分離なし）
@@ -20,14 +27,14 @@
   - **Cost同期＝別工程**（cost系3ファイル温存・server-globalで端末非依存に共有済み・Version1.1必須ではない）
   - **Learning残部分（in-memory buffer）＝Version2候補**（主要はDB化済み）
 
-### Phase54-3a Task Basic Sync（実装済み・localhost確認済み・未commit）
+### Phase54-3a Task Basic Sync（Completed・push済み・Render反映済み・本番確認済み／詳細実装記録）
 - **スコープ**：**全社共通Taskの基本同期のみ**（`tasks.status` は基本3値 pending/in_progress/done）。**案件別Task分離は含めない → 3a-2 Task Case Scoping で扱う**。**詳細Live Status（working/reviewing等）は task_history 側（3b）で扱う**
 - **内容**：既存 `GET /api/tasks`（DB由来）をクライアントが起動時・案件切替時・ホーム案件を開いた時に pull・merge。**index.htmlのみ・DB/API/SQL変更なし・新規pollingなし**
 - **追加関数**：`syncTasksFromServer`／`_taskFromServerRow`／`_mapServerTaskStatus`（`_taskSyncInFlight` ガード）
 - **merge安全規則**：dbId(サーバーUUID)で重複排除／未存在Taskのみ追加（他端末作成Task表示）／同一Taskはサーバー `updated_at` が厳密に新しい時のみ採用／localのみ(dbIdなし)Task保持／取得失敗・空レスポンスで既存を削除しない／localStorageはキャッシュ維持
 - **重要制約（既知）**：クライアントstatus語彙（todo/working/reviewing等10種）と `tasks.status` CHECK（pending/in_progress/done 3種）が不一致。rich statusのPATCHはCHECK違反で失敗＝`updated_at` が進まないため、pull時に**rich statusを降格しない**（＝既存を壊さない）。完全な双方向status統一は 3b 以降で扱う
 - **localhost確認**：起動pullでサーバー22件merge（pending→todo/done→done写像）・dedup重複なし・空/失敗で既存維持・in-flightガードで重複GET 1回・newer-wins採用＋rich status保護・F5後22件復元・回帰（Approval/Draft/review_state/Case/Notification関数健在）・console 0・dev-check 200/200/200
-- **未実施**：本番実機・push・Render・commit（コード/docs）・Complete確定
+- **完了**：commit dc439d5＋3a-fix e96bdaa＋UI-A(4e56b44/ddc1c81/af4ab80/82674b9)・tag v1.01-phase54-3a・push済み・Render反映済み・本番実機確認済み（**Known Issue: Edge125%スクロールバー判定ずれ・軽微・再調査対象**）
 
 ## Phase54-2 Output Draft Persistence **Complete**（Output Draftのサーバ永続化＝リロード復元・案件切替復元・Mobile Review状態永続化・B案／2b/2c/2d/2f・push済み・Render反映済み・本番確認済み）
 
