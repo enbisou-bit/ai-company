@@ -1,7 +1,7 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-14（Phase54-3b-2 Task History Case Scoping **Completed**・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2・origin/main=3a95691。次工程＝Phase54-3b-3。Phase54-3b-1／3a-2／3a／Phase54-2は正式Complete）
+> 更新日: 2026-07-14（Phase54-3b-3 Notification既読永続化＋Timeline案件別＋Workflow Live復元 **実装・localhost・実DB確認済み**・commit 3e3c432・本番実機確認前＝未Completed。Phase54-3b-2／3b-1／3a-2／3a／Phase54-2は正式Complete）
 
 ---
 
@@ -39,7 +39,15 @@
 - **実DB確認**：round-trip＋meta復元／`history_id` 冪等upsert(重複行0)／Hybrid(memory+DB) dedup(appearCount=1・live優先)／**サーバー再起動2回後もDB復元**(2件・dupInGet 0)／DB未作成でもgraceful(throwなし)／既存consumer回帰なし／console 0／dev-check 200/200/200
 - **保護**：`global.__taskHistory`維持／status改善せず(CHECKなし)／case_idは常にNULL(横断・配線は3b-2)／polling/WebSocket追加なし／Approval・Output Draft・tasks.case_id・Workflow・Provider・Routing 非接触
 - **本番反映・確認（Completed）**：push `47d7417..6d1f5b6`（cost非混入）→ Render自動デプロイ（新Hybridコード稼働＝本番GETがDB履歴返却）→ 本番API確認（task-history/workflow-dashboard 200・レスポンス形不変・DB履歴取得・重複0・console 0）→ **Render再デプロイ後の新規インスタンス（メモリ空）もDB履歴復元**（本番再起動復元成立）
-- **3c Notification Unread / Workflow Live Restore**：通知未読(`_notifSeenIds`・非永続)の永続化＋完了Workflowの復元。**未着手**
+- **3c Notification Unread / Workflow Live Restore**：通知未読(`_notifSeenIds`・非永続)の永続化＋完了Workflowの復元。※実装は **Phase54-3b-3** で先行実施（下記）
+
+#### Phase54-3b-3 Notification既読永続化・Timeline案件別・Workflow Live復元（commit 3e3c432・+200/-8・4ファイル・実DB確認済み・本番実機確認前）
+- **3b-3a Notification既読DB永続化**：新規 `notification_reads`（`history_id` PK・`case_id`・`seen_at`・`created_at`＋index＋冪等RLS）／新規 `lib/notificationReadsDb.js`（`getSeenIds({caseId,limit})`／`markSeen(historyIds,caseId)`・`onConflict:history_id`＋`ignoreDuplicates`＝冪等）／`GET/POST /api/notification-reads`（GET `?limit=` 既定1000/上限5000・`?caseId=`任意・DB失敗でも空返却で表示止めない）。client：`showApp`（起動/再ログイン）で`restoreNotifSeenFromServer`→`_notifSeenIds`反映／click・markAllで`_persistNotifSeen`（即時UI＋fire-and-forget DB保存）。**単一共有アカウント(web-user)＝user_id列なし＝PC/iPhone間既読同期基盤**
+- **3b-3b Timeline案件別表示**：`_timelineEventVisibleInView`（wfId空/NULL=横断常時表示・case付きは現在案件のみ）を`renderTimeline`に適用。ホーム/未選択は横断のみ。**空/NULL event維持（過剰フィルタ防止）**
+- **3b-3c Workflow Live復元**：`wlProgressPoll` found:true＝既存Live優先／found:false時のみ`_wlRestoreFromHistory`でtask_historyから静的復元（担当/action/status/caseId/開始・完了時刻・**本文対象外**）＋復元後ポーリング停止
+- **保護**：既存APIレスポンス形不変・task_history Hybrid/dedup維持・3b-2案件分離非接触・`global.__taskHistory`維持・新規SQL(notification_readsのみ・実行済)以外のDB変更なし・Approval/Output Draft/Provider/Routing/Cost 非接触
+- **実DB確認**：既読POST/GET・冪等(重複0)・limit・空POST400・`_notifSeenIds`復元／Timeline A/B分離＋横断維持／Live復元(本文空)／既存consumer回帰なし／console 0／dev-check 200/200/200
+- **未実施**：push・Render・本番PC/iPhone実機・Completed確定
 - **3d Version1.1 Sync Final Verification**：全同期のPC⇔スマホ・F5・再ログイン・案件分離・回帰の通し確認。**未着手**
 - **Cost同期＝別工程**（cost系3ファイル温存・server-globalで端末非依存共有済み・Version1.1必須外）
 - **Learning残（in-memory buffer）＝Version2候補**（主要DB化済み）

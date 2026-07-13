@@ -4,6 +4,17 @@
 
 ---
 
+## Phase54-3b-3 — Notification既読永続化・Timeline案件別・Workflow Live復元（2026-07-14・**実装・localhost・実DB確認済み・commit 3e3c432・本番実機確認前＝未Completed**）
+
+- **3b-3a Notification既読DB永続化**：新規 `notification_reads`（`history_id` PK・`case_id`・`seen_at`・`created_at`＋index＋冪等RLS）／新規 `lib/notificationReadsDb.js`（`getSeenIds({caseId,limit})`／`markSeen`・`onConflict:history_id`+`ignoreDuplicates`＝冪等）／`GET/POST /api/notification-reads`（GET `?limit=` 既定1000/上限5000・`?caseId=`任意・DB失敗でも表示止めない）。client：`showApp`で既読復元→`_notifSeenIds`／click・markAllでDB保存（即時UI維持）。**単一共有アカウント(web-user)＝PC/iPhone間既読同期基盤完成・回答本文復元は対象外**
+- **3b-3b Timeline案件別表示**：`_timelineEventVisibleInView`＋`renderTimeline`（wfId空/NULL=横断常時表示・case付きは現在案件のみ・ホーム/未選択は横断のみ）。**NULL/空event横断表示維持**
+- **3b-3c Workflow Live復元**：`wlProgressPoll` found:true＝既存Live優先／found:false時のみ`_wlRestoreFromHistory`でtask_historyから静的復元（担当/action/status/caseId/開始・完了時刻・**本文対象外**）
+- **保護**：既存APIレスポンス形不変（`{ok,history,total}`／`{ok,workflows,total}`／新規`{ok,seenIds,total}`）・task_history Hybrid/dedup維持・3b-2案件分離非接触・`global.__taskHistory`維持・新規SQL(notification_readsのみ)以外のDB変更なし・Approval/Output Draft/Provider/Routing/Cost 非接触
+- **実DB確認**：既読POST/GET・冪等(重複0)・limit・空POST400・`_notifSeenIds`復元／Timeline A/B分離＋横断維持／Live復元(本文空)／既存consumer回帰なし／console 0／dev-check 200/200/200
+- **⚠ 未Completed**：push・Render反映・本番PC/iPhone実機確認 未実施。次工程＝push→Render→本番確認→3b-3 Completed→**Phase54最終統合確認**
+
+---
+
 ## Phase54-3b-2 — Task History Case Scoping **Completed**（案件別履歴分離完成・2026-07-14・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2・origin/main=3a95691）
 
 - **目的**：Task History を案件単位で保存・取得・表示分離（案件A履歴が案件Bに出ない・NULL横断は両案件表示）。Phase54-3b-1（永続化基盤）は Completed

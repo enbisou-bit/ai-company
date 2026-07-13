@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping **Completed**＝case_id を auto-task/consult へclient配線・生成履歴各行へ保存・GET任意caseIdフィルタ・Notification案件別表示・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2。Decision 055・Phase54-3b-1 Task History Persistence Completed＝`task_history`＋DB/メモリHybrid）
+更新日: 2026-07-14（Decision 057・Phase54-3b-3 Notification既読DB永続化＋Timeline案件別＋Workflow Live復元＝新規 `notification_reads`・PC/iPhone既読同期基盤・実DB確認済み・commit 3e3c432・本番実機確認前。Decision 056・Phase54-3b-2 Task History Case Scoping Completed。Decision 055・Phase54-3b-1 Task History Persistence Completed）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1212,3 +1212,27 @@ Phase54-3b 接続方針（比較のみ・未着手）:
 - **本番（Render）**：push→自動デプロイ反映（本番`?caseId=`フィルタ動作＝新コード稼働）→ 本番API確認（レスポンス形不変・caseId付き履歴DB取得・重複0・`?caseId`厳密・console 0）→ **ユーザー実機確認済み（案件A専用履歴が他案件へ混入しないことを確認）** ⇒ **Phase54-3b-2 Completed**。F5/再ログイン/再起動後もDB永続・NULL横断維持・Notification案件分離確認・Workflow Live/Timeline回帰なし。
 
 追記日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping・**Completed**・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2）
+
+---
+
+# Decision 057
+## Phase54-3b-3 Notification既読DB永続化（B案）＋Timeline案件別表示＋Workflow Live履歴フォールバック復元
+
+背景:
+- `_notifSeenIds`（in-memory Set・非永続）は F5/再ログイン/再起動で消失＝全通知が再未読化。Timelineは案件混在表示。Workflow Live（`__workflowProgress`・メモリ・1時間TTL）は再起動で消失。
+
+決定（追加のみ・非破壊）:
+- **Notification既読＝B案（DB永続）採用**（A案 localStorage単独は不採用）。理由＝Version1.1「PC/iPhoneで同じAI会社」の**端末間既読一致**が要件。**Web認証は単一共有パスワード＝単一論理アカウント(web-user)** のため `notification_reads` は **user_id列なしのグローバル**で自然に端末間一致。
+- `notification_reads(history_id PK, case_id, seen_at, created_at)`。**`history_id` PK＋`onConflict:history_id`＋`ignoreDuplicates`** で冪等（重複行なし・created_at初回値保持）。`GET ?limit=`（既定1000/上限5000・`created_at DESC`）で将来の大量データに対応・`?caseId=`任意。
+- `_notifSeenIds` はクライアントキャッシュとして維持（即時UI）＋ DBを真実源として起動/再ログイン時に復元。保存はfire-and-forget（**DB失敗でもNotification表示を止めない**）。
+- **Timeline案件別**：`_timelineEventVisibleInView`＝wfId空/NULLは横断（常時表示）・case付きは現在案件のみ。**空/NULL eventを消さない**（過剰フィルタ防止・learning/health/system/case無task維持）。client表示フィルタのみ（server/DB変更なし）。
+- **Workflow Live復元**：`__workflowProgress`有り＝既存Live優先。**found:false時のみ** task_historyから静的復元（担当/action/status/caseId/開始・完了時刻）。**回答本文は復元対象外**（task_historyに本文列なし）。
+
+保護・非対象:
+- 既存APIレスポンス形不変・task_history Hybrid/dedup維持・3b-2案件分離非接触・`global.__taskHistory`維持・per-user識別なし（単一アカウント）・status改善なし・polling/WebSocket追加なし。回答本文復元・Phase54最終統合は範囲外。
+
+確認（localhost・実DB・commit 3e3c432）:
+- 既読 POST(count)/GET(`{ok,seenIds,total}`)・**冪等再POSTで重複行0**・limit・空POST400／`_notifSeenIds`をクリア→復元で既読反映（F5/再ログイン相当）／Timeline A/B分離＋空/NULL横断維持（8パターン）／Workflow Live復元(担当sns/status completed/caseId=A/本文空・履歴6件)／既存consumer回帰なし／console 0／dev-check 200/200/200。
+- 検証行（`zzz-3b3-*` 既読・非活性・DELETE未実施）。**本番実機未確認のため正式Completedではない**。
+
+追記日: 2026-07-14（Decision 057・Phase54-3b-3・実DB確認済み・commit 3e3c432・本番実機確認前）

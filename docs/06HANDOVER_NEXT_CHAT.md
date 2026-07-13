@@ -2,13 +2,33 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-14（**Phase54-3b-2 Task History Case Scoping：Completed**・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2・origin/main=3a95691。次工程＝**Phase54-3b-3**。Phase54-3b-1／3a-2／3a／Phase54-2は正式Complete）
+更新日: 2026-07-14（**Phase54-3b-3 Notification既読永続化＋Timeline案件別＋Workflow Live復元：実装・localhost・実DB確認済み**・commit 3e3c432・**本番実機確認前＝未Completed**。次工程＝push→Render→本番PC/iPhone確認→Phase54最終統合確認。Phase54-3b-2／3b-1／3a-2／3a／Phase54-2は正式Complete）
 
 ---
 
-## 【現在地・最優先】Phase54-3b-2 Task History Case Scoping — **Completed**（案件別履歴分離完成・push済み・Render反映済み・本番/ユーザー実機確認済み）
+## 【現在地・最優先】Phase54-3b-3 Notification既読永続化・Timeline案件別・Workflow Live復元 — 実装・実DB確認済み（本番実機確認前＝未Completed）
 
 - 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54-3b-3 実装・実DB確認済み・本番実機確認前**／HEAD = **3e3c432**（code）・Phase54-3b-2 は **Completed**（tag v1.01-phase54-3b-2→b5ab89d）
+
+### 実装（commit 3e3c432・4ファイル・+200/-8）
+- **3b-3a 既読DB永続化**：新規 `notification_reads`（history_id PK・case_id・seen_at・created_at）／`lib/notificationReadsDb.js`（getSeenIds{caseId,limit}／markSeen・冪等）／`GET/POST /api/notification-reads`（GET limit既定1000/上限5000）。client：showAppで既読復元・click/markAllでDB保存・即時UI維持。**単一共有アカウント(web-user)＝PC/iPhone既読同期基盤**
+- **3b-3b Timeline案件別**：`_timelineEventVisibleInView`＋renderTimeline（空/NULL横断常時表示・case付きは現在案件のみ・ホームは横断のみ）
+- **3b-3c Workflow Live復元**：wlProgressPoll found:false時のみ`_wlRestoreFromHistory`でtask_historyから静的復元（担当/action/status/caseId/時刻・本文対象外）
+
+### 実DB確認済み（commit 3e3c432）
+- 既読POST/GET・冪等(重複0)・limit・空POST400・`_notifSeenIds`復元（F5/再ログイン相当）／Timeline A/B分離＋空/NULL横断維持／Workflow Live復元(本文空)／既存consumer回帰なし／console 0／dev-check 200/200/200
+- 検証行：`zzz-3b3-*`（既読・非活性・削除しない）
+
+### 次工程
+- **push（要承認）→ Render → 本番API確認（notification-reads GET/POST/limit/冪等・task-history・workflow-dashboard・形不変）→ 本番PC/iPhone実機確認 → 3b-3 Completed確定**
+- その後 **Phase54最終統合確認**（全同期のPC⇔スマホ・F5・再ログイン・再起動・案件分離・回帰の通し確認）。**未着手**
+- **未実施**：push・Render・本番実機
+
+---
+
+## 【参考・完了済み】Phase54-3b-2 Task History Case Scoping — **Completed**（案件別履歴分離完成・push済み・Render反映済み・本番/ユーザー実機確認済み）
+
 - **現在Phase**：**Phase54-3b-2 Completed**／origin/main = **3a95691**（code b5ab89d＋docs 3a95691）・tag **v1.01-phase54-3b-2**（→ b5ab89d）
 - **目的達成**：Task History を案件単位で保存・取得・表示分離（**案件A専用履歴が他案件へ混入しないことをユーザー実機確認済み**・NULL横断は両案件表示）
 
