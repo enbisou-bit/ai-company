@@ -459,11 +459,12 @@ app.post('/api/login', express.json(), (req, res) => {
 // ─────────────────────────────────────────────────
 
 // ── Supabase連携ライブラリ（遅延ロード）───────────────
-let _membersDb, _tasksDb, _customMembersDb, _taskHistoryDb;
+let _membersDb, _tasksDb, _customMembersDb, _taskHistoryDb, _notificationReadsDb;
 function getMembersDb()       { if (!_membersDb)       _membersDb       = require('./lib/membersDb');       return _membersDb; }
 function getTasksDb()         { if (!_tasksDb)         _tasksDb         = require('./lib/tasksDb');         return _tasksDb; }
 function getCustomMembersDb() { if (!_customMembersDb) _customMembersDb = require('./lib/customMembersDb'); return _customMembersDb; }
 function getTaskHistoryDb()   { if (!_taskHistoryDb)   _taskHistoryDb   = require('./lib/taskHistoryDb');   return _taskHistoryDb; }
+function getNotificationReadsDb() { if (!_notificationReadsDb) _notificationReadsDb = require('./lib/notificationReadsDb'); return _notificationReadsDb; }
 
 // Phase54-3b-1: taskHistory エントリをDBへ冪等永続化（fire-and-forget・非ブロック・失敗でWorkflowを止めない）。
 // APIレスポンス・global.__taskHistory は不変。case_id は 3b-1では常にNULL（配線は3b-2）。
@@ -958,6 +959,36 @@ app.get('/api/workflow-dashboard', async (req, res) => {
   }).sort((a, b) => (b.createdAt || '') > (a.createdAt || '') ? 1 : -1);
 
   res.json({ ok: true, workflows, total: workflows.length });
+});
+// ─────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// Phase54-3b-3a: Notification既読 API（端末間一致・単一共有アカウント web-user）
+// GET  /api/notification-reads?caseId=&limit=  → 既読 history_id 一覧（created_at DESC・limit件）
+// POST /api/notification-reads {historyIds:[...], caseId?} → 一括既読保存（history_id 冪等・重複なし）
+// DB失敗でもNotification表示を止めない（GETは空配列・POSTはfire-and-forget想定）。既存レスポンスは変更しない。
+// ══════════════════════════════════════════════════════════════
+app.get('/api/notification-reads', async (req, res) => {
+  try {
+    const { caseId, limit } = req.query;   // limit未指定時はlib側の既定値(1000)・上限クランプ(5000)
+    const result = await getNotificationReadsDb().getSeenIds({ caseId, limit });
+    res.json({ ok: true, seenIds: result.seenIds || [], total: result.total || 0 });
+  } catch (e) {
+    res.json({ ok: true, seenIds: [], total: 0, error: e.message });   // 失敗でも表示を止めない
+  }
+});
+
+app.post('/api/notification-reads', express.json(), async (req, res) => {
+  const { historyIds, caseId = null } = req.body || {};
+  if (!Array.isArray(historyIds) || historyIds.length === 0) {
+    return res.status(400).json({ ok: false, error: 'historyIds（配列）は必須です' });
+  }
+  try {
+    const result = await getNotificationReadsDb().markSeen(historyIds, caseId);
+    res.json({ ok: !result.error, count: result.count || 0, error: result.error || null });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 // ─────────────────────────────────────────────────
 

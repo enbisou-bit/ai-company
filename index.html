@@ -8342,6 +8342,8 @@ function showApp(showLogout = true) {
   // Company Memory: ログイン後にKnowledgeをDB復元
   _keItems = generateKnowledge();
   restoreKnowledgeFromDb().catch(() => {});
+  // Phase54-3b-3a: 起動/再ログイン時に既読IDをDBから復元（端末間一致・失敗しても表示継続）
+  restoreNotifSeenFromServer().catch(() => {});
 }
 
 async function submitLogin() {
@@ -13213,6 +13215,32 @@ async function loadNotifications() {
   } catch (_) {}
 }
 
+// Phase54-3b-3a: 既読 history_id をDBから復元して _notifSeenIds へ反映（端末間一致・起動/再ログイン時）。
+// _notifSeenIds はクライアントキャッシュとして維持（DB値をmerge・既存の即時既読は消さない）。失敗しても表示継続。
+async function restoreNotifSeenFromServer() {
+  try {
+    const res  = await fetch('/api/notification-reads');   // limit未指定＝サーバー既定(1000)
+    const data = await res.json();
+    if (!data || !data.ok || !Array.isArray(data.seenIds)) return;
+    data.seenIds.forEach(function (id) { if (id) _notifSeenIds.add(id); });
+    try { if (Array.isArray(_notifItems) && _notifItems.length) renderNotifications(_notifItems); } catch (_e) {}
+    try { updateSidebarNotifs && updateSidebarNotifs(); } catch (_e) {}
+  } catch (_) { /* DB失敗でも表示を止めない（メモリ既読で継続） */ }
+}
+
+// Phase54-3b-3a: 既読を history_id で一括DB保存（fire-and-forget・非ブロック・冪等）。UI即時反映は呼び出し側で実施済み。
+function _persistNotifSeen(historyIds) {
+  try {
+    var ids = (Array.isArray(historyIds) ? historyIds : [historyIds]).filter(Boolean);
+    if (ids.length === 0) return;
+    fetch('/api/notification-reads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ historyIds: ids }),
+    }).catch(function () { /* 失敗はメモリ既読で継続（次回操作/起動で再送・冪等） */ });
+  } catch (_) { /* 非ブロック */ }
+}
+
 // Phase54-3b-2: 履歴エントリが現在案件ビューで表示対象か（case_id=NULLは横断＝常時表示／case付きは現在案件のみ）。
 // クライアントは全履歴を保持し、表示時のみ案件別に絞る（サーバーGETは全件のまま）。
 function _historyVisibleInView(entry) {
@@ -13327,7 +13355,7 @@ function buildNotifCard(e, isUnread) {
 
   // クリックで既読にして Workflow パネルを開く
   card.onclick = () => {
-    if (e.historyId) _notifSeenIds.add(e.historyId);
+    if (e.historyId) { _notifSeenIds.add(e.historyId); _persistNotifSeen([e.historyId]); }   // Phase54-3b-3a: 即時UI＋DB保存（端末間一致）
     renderNotifications(_notifItems);
     const wp = document.getElementById('workflow-panel');
     if (wp && !wp.classList.contains('open')) toggleWorkflowPanel();
@@ -13338,8 +13366,10 @@ function buildNotifCard(e, isUnread) {
 
 // 全通知を既読にする（mark all as read）
 function markAllNotifRead() {
-  _notifItems.forEach(e => { if (e.historyId) _notifSeenIds.add(e.historyId); });
+  const ids = [];
+  _notifItems.forEach(e => { if (e.historyId) { _notifSeenIds.add(e.historyId); ids.push(e.historyId); } });
   renderNotifications(_notifItems);
+  if (ids.length) _persistNotifSeen(ids);   // Phase54-3b-3a: 一括DB保存（history_id冪等・端末間一致）
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -18814,13 +18844,22 @@ async function loadTimeline() {
   renderTimeline();
 }
 
+// Phase54-3b-3b: Timeline event が現在案件ビューで表示対象か。
+// wfId(=caseId相当) が空/NULL は横断event＝常時表示（learning/health/system/case無task等を消さない）。
+// case付きは現在表示案件（_taskViewCaseId）と一致時のみ表示（別案件は非表示）。ホーム/未選択は横断のみ。
+function _timelineEventVisibleInView(ev) {
+  const c = (ev && ev.wfId != null && ev.wfId !== '') ? ev.wfId : null;
+  if (c === null) return true;
+  return c === _taskViewCaseId();
+}
+
 function renderTimeline() {
   const body = document.getElementById('timeline-body');
 
-  // フィルタリング（filtering）
-  let filtered = _tlEvents;
+  // Phase54-3b-3b: 案件別表示（クライアントは全event保持・表示時のみ絞る）。空/NULL横断は常時表示。
+  let filtered = _tlEvents.filter(_timelineEventVisibleInView);
   if (_tlFilter !== 'all') {
-    filtered = _tlEvents.filter(ev => {
+    filtered = filtered.filter(ev => {
       if (_tlFilter === 'error')    return ev.isError || ev.type === 'error';
       if (_tlFilter === 'learning') return ev.type === 'learning';
       if (_tlFilter === 'workflow') return ev.filter === 'workflow' || ev.type === 'workflow';
@@ -20896,13 +20935,55 @@ function wlProgressStopPolling() {
   _wlProgressWorkflowId = null;
 }
 
+// Phase54-3b-3c: progress消失時（サーバー再起動等）に task_history から Workflow Live を静的復元。
+// 復元対象：担当(to)・action・status・caseId・開始/完了時刻。回答本文は対象外（task_historyに未保存）。
+// __workflowProgress（進行中Live）が有る場合は既存表示を優先し、本関数は呼ばない。
+async function _wlRestoreFromHistory(workflowId) {
+  try {
+    if (!workflowId) return false;
+    const res  = await fetch('/api/task-history');                       // 全件（Hybrid：メモリ＋DB）
+    const data = await res.json();
+    if (!data || !data.ok || !Array.isArray(data.history)) return false;
+    const hist = data.history
+      .filter(function (e) { return e && e.workflowId === workflowId; })
+      .sort(function (a, b) { return (a.requestedAt || '') > (b.requestedAt || '') ? 1 : -1; });
+    if (hist.length === 0) return false;
+    // 通常タスク実行行（action空・to=担当）から workflowTasks を再構築（本文は空＝復元対象外）
+    const tasks = hist
+      .filter(function (e) { return (!e.action || e.action === '') && e.to; })
+      .map(function (e, i) {
+        return {
+          id:          e.taskId || ('wlrht-' + i),
+          agentId:     e.to,
+          instruction: e.instruction || '',
+          status:      (e.status === 'completed' || e.status === 'error') ? e.status : (e.status || 'completed'),
+          result:      '',                        // 回答本文は復元対象外
+          startedAt:   e.requestedAt || null,
+          completedAt: e.completedAt || null,
+          caseId:      (e.caseId != null ? e.caseId : null),
+          _restored:   true,
+        };
+      });
+    _wlLastResults = tasks.length ? tasks : _wlLastResults;
+    _wlLastHistory = hist;                                                // 相談/レビュー/戦略/最終等も含む全履歴
+    renderWorkflowLive();
+    return true;
+  } catch (_) { return false; }
+}
+
 async function wlProgressPoll(workflowId) {
   if (!workflowId) return;
   try {
     const res  = await fetch('/api/workflow-progress?workflowId=' + encodeURIComponent(workflowId));
     const data = await res.json();
-    if (!data.ok || !data.found) return;
-    // Phase43-2: 実データとプリポピュレートカードをマージして更新
+    if (!data.ok) return;
+    if (!data.found) {
+      // Phase54-3b-3c: progress無し（再起動等）→ task_historyから静的復元（成功したらポーリング停止＝1回）
+      const restored = await _wlRestoreFromHistory(workflowId);
+      if (restored) wlProgressStopPolling();
+      return;
+    }
+    // Phase43-2: 実データとプリポピュレートカードをマージして更新（既存Live優先）
     if (Array.isArray(data.workflowTasks)) {
       _wlLastResults = _wlMergeWithPrePopulated(data.workflowTasks, _wlLastResults);
     }

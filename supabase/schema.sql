@@ -112,6 +112,30 @@ BEGIN
 END $$;
 
 -- ============================================================
+-- Notification既読テーブル（Phase54-3b-3a: 通知既読の永続化＝端末間一致）
+-- ※ 通知＝task_historyエントリ（historyId）と1対1。単一共有アカウント(web-user)前提で user_id列なし。
+-- ※ history_id PRIMARY KEY＋ON CONFLICT DO NOTHING で冪等（重複行なし・created_at初回値保持）。
+-- ※ seen_at=既読日時／created_at=行作成日時（プルーニング/取得順の基準）。case_id任意（NULL横断）。
+CREATE TABLE IF NOT EXISTS notification_reads (
+  history_id TEXT PRIMARY KEY,          -- 通知＝task_historyエントリのhistoryId（1対1・冪等）
+  case_id    TEXT,                      -- 任意（案件識別・NULL横断）
+  seen_at    TIMESTAMPTZ DEFAULT NOW(), -- 既読日時
+  created_at TIMESTAMPTZ DEFAULT NOW()  -- 行作成日時（初回既読・プルーニング/取得順の基準）
+);
+CREATE INDEX IF NOT EXISTS idx_notification_reads_case_id    ON notification_reads (case_id);
+CREATE INDEX IF NOT EXISTS idx_notification_reads_created_at ON notification_reads (created_at DESC);
+ALTER TABLE notification_reads ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'notification_reads' AND policyname = 'notification_reads_all'
+  ) THEN
+    CREATE POLICY "notification_reads_all" ON notification_reads FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+END $$;
+
+-- ============================================================
 -- 初期AI社員データ（15名）
 -- ============================================================
 INSERT INTO members (id, name, role, icon, specialty, tone, is_active) VALUES
