@@ -4,7 +4,7 @@
 
 ---
 
-## Phase54-3b-2 — Task History Case Scoping（案件別分離・2026-07-14・**実装・localhost・実DB確認済み（Auto Task実ワークフロー確認済み）・commit b5ab89d・本番確認前＝未Completed**）
+## Phase54-3b-2 — Task History Case Scoping **Completed**（案件別履歴分離完成・2026-07-14・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2・origin/main=3a95691）
 
 - **目的**：Task History を案件単位で保存・取得・表示分離（案件A履歴が案件Bに出ない・NULL横断は両案件表示）。Phase54-3b-1（永続化基盤）は Completed
 - **client（index.html）**：`/api/auto-task`・`/api/consult` POST に `caseId: getCurrentApprovalCaseId() || null` 送信／`_historyVisibleInView`（NULL横断常時表示・case付きは現在案件のみ）＋`renderNotifications` に案件別表示フィルタ
@@ -12,7 +12,7 @@
 - **仕様**：**引数なしGET＝全件**（クライアント全保持・Hybrid/dedup維持）／`?caseId=X`＝該当案件のみ厳密（NULL含まず）／NULL横断はクライアント表示側で担保＝案件画面＝該当案件＋NULL横断・ホーム/未選択＝NULL横断のみ
 - **保護**：既存APIレスポンス形不変（`{ok,history,total}`／`{ok,workflows,total}`）・3b-1 Hybrid/dedup維持・`global.__taskHistory`維持・Learning据え置き・Workflow Live(aiLivePoll workflowId scoped)大幅変更なし・**新規SQL/DB構造変更なし**・Approval/Output Draft/tasks.case_id/Provider/Routing/Cost 非接触
 - **確認（commit b5ab89d）**：consult(caseId)保存／**Auto Task実ワークフロー1回（案件A・実AI）＝生成6行全て case_id=A・history_id重複0・GET`?caseId=A`6件/`?caseId=B`0件・NULL横断存続・Notification実描画A=6/B=0・workflow-dashboard形不変＋caseIdフィルタ**／再起動後case_id維持・既存consumer回帰なし・console 0・dev-check 200/200/200
-- **⚠ 未Completed**：push・Render反映・本番API確認・ユーザー実機確認 未実施。次工程＝push→Render→本番確認→3b-2 Completed→**Phase54-3b-3**
+- **本番反映・確認（Completed）**：push `6d1f5b6..3a95691`（cost非混入）→ Render自動デプロイ反映（本番`?caseId=`フィルタ動作＝新コード稼働）→ 本番API確認（レスポンス形不変・caseId付き履歴DB取得・重複0・console 0）→ **ユーザー実機確認済み（案件A専用履歴が他案件へ混入しない）**・F5/再ログイン/再起動後もDB永続・NULL横断維持・Notification案件分離・Workflow Live/Timeline回帰なし。次工程＝**Phase54-3b-3**（Timeline案件別最終確認／Notification未読永続化／Workflow Live Restore・未着手）
 
 ---
 

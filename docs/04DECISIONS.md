@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping＝case_id を auto-task/consult へclient配線・生成履歴各行へ保存・GET任意caseIdフィルタ・Notification案件別表示・実DB/Auto Task確認済み・commit b5ab89d・本番確認前。Decision 055・Phase54-3b-1 Task History Persistence Completed＝`task_history`＋DB/メモリHybrid）
+更新日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping **Completed**＝case_id を auto-task/consult へclient配線・生成履歴各行へ保存・GET任意caseIdフィルタ・Notification案件別表示・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2。Decision 055・Phase54-3b-1 Task History Persistence Completed＝`task_history`＋DB/メモリHybrid）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1209,6 +1209,6 @@ Phase54-3b 接続方針（比較のみ・未着手）:
 - consult(caseId)：entry.caseId保存・GET`?caseId`厳密・appearOnce=1。
 - **Auto Task実ワークフロー1回（案件A・実AI）**：生成6行全て `case_id=A`・history_id重複0・GET`?caseId=A`→6/`?caseId=B`→0・NULL横断存続・**Notification実描画 案件A=6件/案件B=0件**・workflow-dashboard形不変＋`?caseId`フィルタ（Aに出現/Bに非出現）。
 - サーバー再起動後も case_id 維持（DB復元・dup 0）／既存consumer回帰なし／console 0／dev-check 200/200/200。
-- **本番未確認のため正式Completedではない**。
+- **本番（Render）**：push→自動デプロイ反映（本番`?caseId=`フィルタ動作＝新コード稼働）→ 本番API確認（レスポンス形不変・caseId付き履歴DB取得・重複0・`?caseId`厳密・console 0）→ **ユーザー実機確認済み（案件A専用履歴が他案件へ混入しないことを確認）** ⇒ **Phase54-3b-2 Completed**。F5/再ログイン/再起動後もDB永続・NULL横断維持・Notification案件分離確認・Workflow Live/Timeline回帰なし。
 
-追記日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping・実DB/Auto Task確認済み・commit b5ab89d・本番確認前）
+追記日: 2026-07-14（Decision 056・Phase54-3b-2 Task History Case Scoping・**Completed**・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2）

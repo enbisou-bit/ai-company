@@ -2,15 +2,15 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-14（**Phase54-3b-2 Task History Case Scoping：実装・localhost・実DB確認済み（Auto Task実ワークフロー確認済み）**・commit b5ab89d・**本番確認前＝未Completed**。次工程＝push→Render→本番確認。Phase54-3b-1 Completed・Phase54-3a-2 Completed・Phase54-3a／Phase54-2は正式Complete）
+更新日: 2026-07-14（**Phase54-3b-2 Task History Case Scoping：Completed**・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2・origin/main=3a95691。次工程＝**Phase54-3b-3**。Phase54-3b-1／3a-2／3a／Phase54-2は正式Complete）
 
 ---
 
-## 【現在地・最優先】Phase54-3b-2 Task History Case Scoping — 実装・実DB確認済み（Auto Task確認済み・本番確認前＝未Completed）
+## 【現在地・最優先】Phase54-3b-2 Task History Case Scoping — **Completed**（案件別履歴分離完成・push済み・Render反映済み・本番/ユーザー実機確認済み）
 
 - 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
-- **現在Phase**：**Phase54-3b-2 実装・実DB確認済み・本番確認前**／HEAD = **b5ab89d**（code）・Phase54-3b-1 は **Completed**（tag v1.01-phase54-3b-1→2e4b0fc）
-- **目的**：Task History を案件単位で保存・取得・表示分離（案件A履歴が案件Bに出ない・NULL横断は両案件表示）
+- **現在Phase**：**Phase54-3b-2 Completed**／origin/main = **3a95691**（code b5ab89d＋docs 3a95691）・tag **v1.01-phase54-3b-2**（→ b5ab89d）
+- **目的達成**：Task History を案件単位で保存・取得・表示分離（**案件A専用履歴が他案件へ混入しないことをユーザー実機確認済み**・NULL横断は両案件表示）
 
 ### 実装（commit b5ab89d・2ファイル・+29/-12）
 - `index.html`：auto-task・consult POST に `caseId: getCurrentApprovalCaseId() || null` 送信／`_historyVisibleInView`＋`renderNotifications` 案件別フィルタ
@@ -24,10 +24,12 @@
 - **Auto Task実ワークフロー1回（案件A・実AI）**：生成6行全て case_id=A・history_id重複0・GET`?caseId=A`6件/`?caseId=B`0件・NULL横断存続・**Notification実描画 案件A=6/案件B=0**・workflow-dashboard形不変＋caseIdフィルタ／再起動後case_id維持・既存consumer回帰なし・console 0・dev-check 200/200/200
 - 検証テスト行：`zzz-3b2-A/B/NULL`＋実consult/実Auto Task行（識別可能・非活性・削除しない）
 
-### 次工程
-- **push（要承認）→ Render反映 → 本番 `/api/task-history`・`/api/workflow-dashboard` 確認 → 3b-2 Completed確定**
-- その後 **Phase54-3b-3**（Notification未読永続化／Workflow Live Restore／Timeline案件別化 等）。**未着手**
-- **未実施**：push・Render・本番確認・ユーザー実機
+### 本番確認済み（Completed）
+- push `6d1f5b6..3a95691`（cost非混入）→ Render自動デプロイ反映（本番`?caseId=`フィルタ動作＝新コード稼働）→ 本番API確認（task-history/workflow-dashboard 200・レスポンス形不変・caseId付き履歴DB取得・重複0・console 0）→ **ユーザー実機確認済み（案件A専用履歴が他案件へ混入しない）**・F5/再ログイン/再起動後もDB永続・NULL横断維持・Notification案件分離・Workflow Live/Timeline回帰なし
+
+### 次工程 — Phase54-3b-3（未着手）
+- 候補：**Timeline案件別表示の最終確認／Notification未読永続化（`_notifSeenIds` 非永続の解消）／Workflow Live Restore／必要範囲の仕上げ**
+- **実装は未開始**（着手前に設計レビュー・影響範囲・必要ならSQL提示・ユーザー承認）
 - **目的**：`global.__taskHistory`（サーバーメモリ・非DB・**Render再起動で消失**）を新規 `task_history` テーブルへ永続化 → Timeline/Notification/Workflow Live/Auto Task/Live Status の再起動復元基盤。**今回は永続化基盤のみ（case_id配線・UI変更は3b-2以降）**
 - **SQL実行済み（ユーザー）**：`CREATE TABLE task_history`（`history_id TEXT NOT NULL UNIQUE`・`case_id TEXT` nullable/FKなし・`status TEXT` CHECKなし・`meta JSONB`）＋3 index＋冪等RLS。Supabase作成成功
 

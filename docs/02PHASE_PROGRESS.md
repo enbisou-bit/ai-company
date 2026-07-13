@@ -1,7 +1,7 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-14（Phase54-3b-2 Task History Case Scoping **実装・localhost・実DB確認済み（Auto Task実ワークフロー確認済み）**・commit b5ab89d・本番確認前＝未Completed。Phase54-3b-1 Completed・Phase54-3a-2 Completed・Phase54-3a／Phase54-2は正式Complete）
+> 更新日: 2026-07-14（Phase54-3b-2 Task History Case Scoping **Completed**・push済み・Render反映済み・本番/ユーザー実機確認済み・commit b5ab89d・tag v1.01-phase54-3b-2・origin/main=3a95691。次工程＝Phase54-3b-3。Phase54-3b-1／3a-2／3a／Phase54-2は正式Complete）
 
 ---
 
@@ -21,15 +21,15 @@
 - **保護**：`_taskSignature` 不変・GET既定全件・既存local-only TaskへcaseId強制付与なし・status CHECK非対象・Approval/Output Draft/Review State/Conversation/Messages/Workflow/Timeline/Notification/Learning/Cost/Phase53 非接触
 - **localhost確認**：SQL反映（case_id実在）・caseId付き/NULL保存・GET全件/フィルタ・案件A/B分離（実DOM）・NULL横断（既存55件全view）・F5維持・**実再ログイン分離（実DOM）**・backfill重複0・dbId重複0・既存55件減少0・DB60件（テスト5件）・console 0・dev-check 200/200/200
 - **本番反映・確認（Completed）**：push `a71ca79..4372576`（fast-forward・cost非混入）→ Render自動デプロイ反映（新server.js＝GET`?caseId=`サーバーフィルタ稼働・新index.html＝新関数稼働・GET正常・エラーなし・Render設定/環境変数変更なし）→ **本番PC確認済み**（案件A/B分離・NULL横断・F5・再ログイン維持・重複なし・既存減少なし・console 0）→ **ユーザー実機確認済み**
-- **3b Task History Persistence**：`global.__taskHistory`（server memory・非DB・volatile）を新規 `task_history` テーブルへDB化 → Timeline/Notification/Workflow Live/Auto Task の端末間・F5・再起動復元を一括解錠。**詳細Live Status（working/reviewing等）はここで扱う**。server.js/lib/schema＋SQL。**3b-1（永続化基盤）Completed** ／ **3b-2（case_id配線・案件別分離）実装・実DB確認済み・本番確認前** ／ 3b-3以降未着手
+- **3b Task History Persistence**：`global.__taskHistory`（server memory・非DB・volatile）を新規 `task_history` テーブルへDB化 → Timeline/Notification/Workflow Live/Auto Task の端末間・F5・再起動復元を一括解錠。**詳細Live Status（working/reviewing等）はここで扱う**。server.js/lib/schema＋SQL。**3b-1（永続化基盤）Completed** ／ **3b-2（case_id配線・案件別分離）Completed（push済み・Render反映済み・本番/ユーザー実機確認済み）** ／ 3b-3以降未着手
 
-#### Phase54-3b-2 Task History Case Scoping（案件別分離・commit b5ab89d・+29/-12・2ファイル・実DB/Auto Task確認済み・本番確認前）
+#### Phase54-3b-2 Task History Case Scoping **Completed**（案件別分離・commit b5ab89d・tag v1.01-phase54-3b-2・+29/-12・2ファイル・push済み・Render反映済み・本番/ユーザー実機確認済み）
 - **client**：`/api/auto-task`・`/api/consult` POST に `caseId: getCurrentApprovalCaseId() || null` 送信／`_historyVisibleInView`（NULL横断常時表示・case付きは現在案件のみ）＋`renderNotifications` に案件別フィルタ
 - **server**：auto-task・consult で `caseId` 受領→生成履歴各行へ保存（`h.caseId==null`のときのみ＝既存値尊重）／`_hybridTaskHistory` 任意caseIdフィルタ／GET 2本に任意 `?caseId=`
 - **仕様**：引数なしGET＝全件（クライアント全保持・Hybrid/dedup維持）／`?caseId=X`＝該当案件のみ厳密（NULL含まず）／NULL横断はクライアント表示側で担保
 - **保護**：レスポンス形不変・3b-1 Hybrid/dedup維持・`global.__taskHistory`維持・Learning据え置き・Workflow Live(aiLivePoll workflowId scoped)大幅変更なし・新規SQL/DB変更なし・Approval/Output Draft/tasks.case_id/Provider/Routing/Cost 非接触
 - **確認**：consult(caseId)保存／**Auto Task実ワークフロー1回（案件A・実AI）＝生成6行全てcase_id=A・history_id重複0・GET`?caseId=A`6件/`?caseId=B`0件・NULL横断存続・Notification実描画A=6/B=0・workflow-dashboard形不変＋caseIdフィルタ**／再起動後case_id維持・既存consumer回帰なし・console 0・dev-check 200/200/200
-- **未実施**：push・Render・本番API確認・ユーザー実機・Completed確定
+- **本番反映・確認（Completed）**：push `6d1f5b6..3a95691`（cost非混入）→ Render自動デプロイ（本番`?caseId=`フィルタ動作＝新コード稼働）→ 本番API確認（task-history/workflow-dashboard 200・レスポンス形不変・caseId付き履歴DB取得・重複0・console 0）→ **ユーザー実機確認済み（案件A専用履歴が他案件へ混入しないことを確認）**・F5/再ログイン/再起動後もDB永続・NULL横断維持・Workflow Live/Timeline回帰なし
 
 #### Phase54-3b-1 Task History Persistence **Completed**（永続化基盤・commit 2e4b0fc・tag v1.01-phase54-3b-1・+195/-8・3ファイル・push済み・Render反映済み・本番API確認済み）
 - **目的**：`global.__taskHistory`（サーバーメモリ・非DB・Render再起動で消失）を `task_history` テーブルへ永続化。**今回は永続化基盤のみ（case_id配線・UI変更なし）**
