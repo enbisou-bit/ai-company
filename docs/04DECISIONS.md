@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-12（Decision 053・Phase54番号整合＝実開発Phase54系はVersion1.1 Realtime Sync系／ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番。Phase54-3 Remaining Realtime Sync着手＝3a Task Basic Sync 実装・localhost確認済み・未commit）
+更新日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping A案採用＝`tasks` へ nullable `case_id`・案件別Task分離・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映。Decision 053・Phase54番号整合＝実開発Phase54系はVersion1.1 Realtime Sync系／ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1121,3 +1121,34 @@ Phase54-3a の設計判断（今回実装・localhost確認済み・未commit）
 - 保護：output_approvals/Approval Sync/Approval POST Queue/mergeApprovalStateFromServer/pushApprovalToServer/Phase54-1f/1g/output_drafts/review_state/Conversation/Case/Messages/Workflow Live/Notification/Cost/Learning 非接触。
 
 追記日: 2026-07-12（Decision 053・Phase54番号整合＋Phase54-3 Remaining Realtime Sync 分割・3a Task Basic Sync 実装・localhost確認済み・未commit）
+
+---
+
+# Decision 054
+## Phase54-3a-2 Task Case Scoping ＝ A案（`tasks` へ nullable `case_id`・messages.case_id 踏襲・NULL横断フォールバック）
+
+背景:
+- Phase54-3a で Task の端末間 pull・merge は完成したが、Task は **案件横断（`tasks.case_id` 列なし）**。Version1.1「PC/iPhoneで同じ案件を開くと同じTaskが見える」には案件別分離が必要。
+- 既存55件のTaskは案件情報を持たない（`case_id=NULL`相当）。厳密分離すると既存Taskが全案件から消える＝既存機能破壊リスク。
+
+決定（A案・追加のみ・非破壊）:
+- `tasks` へ **nullable `case_id TEXT`（FKなし・既存行NULL維持）** を追加。**`messages.case_id`（Phase52-12.2）と同一設計思想**（null時は列を送らずNULL維持・後方互換）。
+- **NULL横断フォールバック**：`case_id=NULL` のTaskは「横断Task」として **全案件・ホーム・未選択の全viewで常時表示**。既存55件を温存し非表示・強制分類しない。
+- **case付きTask**：現在表示案件と一致する時のみ表示（別案件・未選択時は非表示）。表示フィルタは `renderTaskList`（`_taskViewCaseId()`）で表示時のみ適用し、クライアントは全Taskを内部保持（今後のHistory/Notification/Workflow Liveが全Task利用可）。
+- **B案（即時厳密分離＋未分類専用ビュー）は不採用**（既存表示の挙動変更＝破壊リスク・UI追加大）。将来UIリファイン時の任意拡張として温存。
+
+保護・契約維持:
+- **`_taskSignature` は変更しない**（title¦memberId¦sourceMessage¦body）。case_idを署名へ足すと既存同期済みTaskと照合不一致→backfill重複POSTのため据え置き。
+- **GET `/api/tasks` 既定は全件取得**（caseIdフィルタは任意のみ）。`backfillLocalOnlyTasks` の全件重複照合契約を維持。
+- **caseId解決**：新規Task作成時のみ `_ensureTaskCaseId`（caseId未設定=undefinedのときだけ `getCurrentApprovalCaseId()` 付与・null明示/既存値は尊重）。**既存local-only Taskの再保存では現在案件を強制付与しない**（NULLのまま横断維持）。
+- 保護：Approval/Output Draft/Review State/Conversation/Messages構造/Workflow/Timeline/Notification/Learning/Cost/Phase53 非接触。status CHECK問題は本Phase非対象（3b以降）。
+
+Phase54-3b 接続方針（比較のみ・未着手）:
+- **推奨＝案A（`task_history` 自身に nullable `case_id` を保持）**。理由＝履歴は「その時点の事実」であり、Task削除・欠損に独立して案件判定可（復元耐性・取得効率・同期単純さで有利）。`messages.case_id` と同一思想で一貫。案B（`task_id` のみ・`tasks.case_id` 参照）はデータ重複が少ない反面、tasks欠損時に案件不明化（FKなし方針）。
+
+確認（localhost・SQL実行済み・commit bc98455）:
+- SQL反映（`tasks.case_id` 実在）／caseId付き保存・NULL保存・GET全件・GET?caseId=フィルタ／案件A/B分離（実DOM）／NULL横断（既存55件全view表示）／F5維持／**実ログアウト→再ログイン→案件A/B分離（実DOM）**／backfill重複POST 0・dbId重複0／既存55件減少なし／console 0／dev-check 200/200/200。
+- 検証テスト行5件（`ZZZ-TEST3a2-A/B/NULL`＋`ZZZ-RELOGIN-A/B`・識別可能・非活性・DELETE未実施＝削除禁止順守）でDB60件。
+- **本番PC/iPhone未確認のため正式Completeではない**。
+
+追記日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping A案採用・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映）

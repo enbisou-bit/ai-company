@@ -1,7 +1,7 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-12（Phase54-3 Remaining Realtime Sync 正式化・Phase54-3a Task Basic Sync 実装・localhost確認済み・未commit。Phase54-2は正式Complete）
+> 更新日: 2026-07-13（Phase54-3a-2 Task Case Scoping 実装・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映＝未Complete。Phase54-3a／Phase54-2は正式Complete）
 
 ---
 
@@ -11,7 +11,16 @@
 
 ### Phase分割（工程＋分離）
 - **3a Task Basic Sync**：既存 `GET /api/tasks` を pull・merge＝**全社共通Taskの基本同期**（基本status 3値・案件分離なし）。index.htmlのみ・DB/API/SQL無・新規poll無。**実装済み・localhost確認済み・未commit**
-- **3a-2 Task Case Scoping**：案件別Task分離（`tasks` へ nullable `case_id`＝A案・messages.case_id踏襲）。DB/server/lib/index。**未着手**
+- **3a-2 Task Case Scoping**：案件別Task分離（`tasks` へ nullable `case_id`＝A案・messages.case_id踏襲）。DB/server/lib/index。**実装済み・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映（push/Render/実機未実施）＝未Complete**
+
+#### Phase54-3a-2 実装内容（A案・commit bc98455・+72/-20・4ファイル）
+- **DB**：`tasks.case_id TEXT`（nullable・FKなし・既存行NULL維持）＋`idx_tasks_case_id`。SQL実行済み（ユーザー）：`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS case_id TEXT;` / `CREATE INDEX IF NOT EXISTS idx_tasks_case_id ON tasks (case_id);`
+- **lib/tasksDb.js**：`createTask` caseId受領（`if (caseId != null) row.case_id = caseId`＝非null時のみ列送信）／`getTasks` 任意caseIdフィルタ（未指定は全件）
+- **server.js**：POST caseId受領→createTask／GET 任意caseId query（**既定全件維持＝backfill契約保護**）／PATCH不変
+- **index.html**：`syncTaskToServer` caseId送信（現在案件フォールバックしない＝backfill安全）／`_taskFromServerRow` `case_id`→`caseId` map／merge newer-wins時にcaseId反映／`_ensureTaskCaseId`（新規のみ・undefined時だけ`getCurrentApprovalCaseId()`付与・null/既存値尊重）／`_taskViewCaseId`／全Task作成経路配線（leader_dispatch既存caseId尊重・suggestion・delegation・auto next・submitTask・auto_chain・leader_template。workflow定義配列は非配線）／`renderTaskList` 案件別フィルタ（NULL横断は常時表示）／switchCase・_homeOpenCase・goHome にパネル開時再描画フック
+- **保護**：`_taskSignature` 不変・GET既定全件・既存local-only TaskへcaseId強制付与なし・status CHECK非対象・Approval/Output Draft/Review State/Conversation/Messages/Workflow/Timeline/Notification/Learning/Cost/Phase53 非接触
+- **localhost確認**：SQL反映（case_id実在）・caseId付き/NULL保存・GET全件/フィルタ・案件A/B分離（実DOM）・NULL横断（既存55件全view）・F5維持・**実再ログイン分離（実DOM）**・backfill重複0・dbId重複0・既存55件減少0・DB60件（テスト5件）・console 0・dev-check 200/200/200
+- **未Complete**：push・Render・本番PC/iPhone実機 未実施
 - **3b Task History Persistence**：`global.__taskHistory`（server memory・非DB・volatile）を新規 `task_history` テーブルへDB化 → Timeline/Notification/Workflow Live/Auto Task の端末間・F5・再起動復元を一括解錠。**詳細Live Status（working/reviewing等）はここで扱う**。server.js/lib/schema＋SQL。**未着手**
 - **3c Notification Unread / Workflow Live Restore**：通知未読(`_notifSeenIds`・非永続)の永続化＋完了Workflowの復元。**未着手**
 - **3d Version1.1 Sync Final Verification**：全同期のPC⇔スマホ・F5・再ログイン・案件分離・回帰の通し確認。**未着手**

@@ -2,7 +2,36 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-13（**Phase54-3a Completed（Known Issueあり）**・push済み・Render反映済み・本番実機確認済み・tag v1.01-phase54-3a。次工程＝**3a-2 Task Case Scoping** または **3b Task History Persistence**。Phase54-2は正式Complete）
+更新日: 2026-07-13（**Phase54-3a-2 Task Case Scoping：実装済み・SQL実行済み・localhost確認済み・commit bc98455・tag v1.01-phase54-3a-2・本番未反映（push/Render/実機未実施）＝未Complete**。次工程＝push→Render→PC/iPhone本番確認→その後 **3b Task History Persistence**。Phase54-3a／Phase54-2は正式Complete）
+
+---
+
+## 【現在地・最優先】Phase54-3a-2 Task Case Scoping — 実装済み・localhost確認済み（本番未確認＝未Complete）
+
+- 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54-3a-2 実装済み・localhost確認済み・本番未反映**／HEAD = **bc98455**・tag **v1.01-phase54-3a-2**（→ bc98455）・origin/main = a71ca79（**未push 2commit＝コード bc98455＋docs**）
+- **採用＝A案（Decision 054）**：`tasks` へ nullable `case_id`（FKなし・既存行NULL維持・`messages.case_id`踏襲・追加のみ非破壊）
+- **確定仕様**：案件画面＝該当案件Task＋NULL横断Task／ホーム・未選択＝NULL横断Taskのみ／既存55件はNULL温存／GET既定全件／`_taskSignature`不変／3bは`task_history`自身にnullable case_idを持つ案A推奨
+
+### SQL（ユーザー実行済み）
+```sql
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS case_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_tasks_case_id ON tasks (case_id);
+```
+
+### 変更（commit bc98455・4ファイル・+72/-20）
+- `supabase/schema.sql`：tasks CREATEに`case_id TEXT`＋ALTER/index冪等コメント
+- `lib/tasksDb.js`：`createTask` caseId（非null時のみ列送信）・`getTasks` 任意caseIdフィルタ（既定全件）
+- `server.js`：POST caseId受領／GET 任意caseId（既定全件）／PATCH不変
+- `index.html`：caseId送信/map/merge反映・`_ensureTaskCaseId`/`_taskViewCaseId`・全作成経路配線・`renderTaskList`案件別フィルタ・switchCase/_homeOpenCase/goHome再描画フック
+
+### localhost確認済み（SQL実行済み・commit bc98455）
+- `tasks.case_id`実在／caseId付き保存・NULL保存・GET全件・GET?caseId=フィルタ／案件A/B分離（実DOM）／NULL横断（既存55件全view表示）／F5維持／**実ログアウト→再ログイン→案件A/B分離（実DOM）**／backfill重複POST 0・dbId重複0／既存55件減少0・DB60件（テスト5件）／console 0／dev-check 200/200/200
+- 検証テスト行5件（`ZZZ-TEST3a2-A/B/NULL`＋`ZZZ-RELOGIN-A/B`・識別可能・非活性・DELETE未実施）
+
+### 次工程
+- **push（要承認）→ Render反映 → 本番PC/iPhone実機確認 → 3a-2 Complete確定 → Phase54-3b Task History Persistence（推奨=案A）**
+- **未実施**：push・Render・本番実機（＝localhost確認のみではCompleteにしない）
 
 ---
 
