@@ -4677,12 +4677,14 @@
   #task-list::-webkit-scrollbar { width: 3px; }
   #task-list::-webkit-scrollbar-thumb { background: var(--border); }
   /* Phase54-3a UI-A: PC（マウス環境=pointer:fine）は縦スクロールバーを掴みやすく拡張。スマホ(coarse)は上記3px/慣性スクロール維持 */
+  /* UI-A微修正: 幅15px・thumb最小高40px・コントラスト強化・track境界を明確化（ノートPCタッチパッドでも掴みやすく） */
   @media (pointer: fine) {
-    #task-list { scrollbar-width: thin; scrollbar-color: rgba(120,180,255,0.55) transparent; }
-    #task-list::-webkit-scrollbar { width: 10px; }
-    #task-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); border-radius: 8px; }
-    #task-list::-webkit-scrollbar-thumb { background: rgba(120,180,255,0.45); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
-    #task-list::-webkit-scrollbar-thumb:hover { background: rgba(120,180,255,0.8); background-clip: padding-box; }
+    #task-list { scrollbar-width: auto; scrollbar-color: rgba(130,190,255,0.75) rgba(255,255,255,0.06); }
+    #task-list::-webkit-scrollbar { width: 15px; }
+    #task-list::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-left: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
+    #task-list::-webkit-scrollbar-thumb { background: rgba(130,190,255,0.6); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; min-height: 40px; }
+    #task-list::-webkit-scrollbar-thumb:hover { background: rgba(140,200,255,0.95); background-clip: padding-box; }
+    #task-list::-webkit-scrollbar-thumb:active { background: rgba(160,210,255,1); background-clip: padding-box; }
   }
 
   #task-empty {
@@ -4841,13 +4843,14 @@
   #task-bulk-toolbar {
     display: none;
     align-items: center;
-    gap: 6px;
+    gap: 7px;   /* UI-A微修正: ボタン間隔を少し確保（押しやすさ） */
     padding: 6px 10px;
     background: rgba(100, 180, 255, 0.08);
     border: 1px solid rgba(100, 180, 255, 0.2);
     border-radius: 8px;
     margin: 4px 12px 0;
-    flex-wrap: wrap;   /* Phase54-3a UI-A: 基本1行・狭幅のみ最小折返し */
+    flex-wrap: wrap;   /* Phase54-3a UI-A: 基本1行・狭幅のみ安全に折返し */
+    row-gap: 6px;      /* UI-A微修正: 折返し時の行間 */
   }
   #task-bulk-toolbar.visible { display: flex; }
   .task-bulk-count {
