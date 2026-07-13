@@ -2,7 +2,30 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-13（**Phase54-3a-2 Task Case Scoping：Completed**・push済み・Render反映済み・本番PC確認済み・ユーザー実機確認済み・commit bc98455・tag v1.01-phase54-3a-2。次工程＝**Phase54-3b Task History Persistence**（案A：`task_history`にnullable case_id）。Phase54-3a／Phase54-2は正式Complete）
+更新日: 2026-07-14（**Phase54-3b-1 Task History Persistence：実装・実DB確認済み**・commit 2e4b0fc・tag v1.01-phase54-3b-1・**本番確認前＝未Completed**。次工程＝push→Render→本番API確認→Phase54-3b-2 case_id配線。Phase54-3a-2 Completed・Phase54-3a／Phase54-2は正式Complete）
+
+---
+
+## 【現在地・最優先】Phase54-3b-1 Task History Persistence — 実装・実DB確認済み（本番確認前＝未Completed）
+
+- 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54-3b-1 実装・実DB確認済み・本番確認前**／HEAD = **2e4b0fc**（code）・tag **v1.01-phase54-3b-1**（→ 2e4b0fc）
+- **目的**：`global.__taskHistory`（サーバーメモリ・非DB・**Render再起動で消失**）を新規 `task_history` テーブルへ永続化 → Timeline/Notification/Workflow Live/Auto Task/Live Status の再起動復元基盤。**今回は永続化基盤のみ（case_id配線・UI変更は3b-2以降）**
+- **SQL実行済み（ユーザー）**：`CREATE TABLE task_history`（`history_id TEXT NOT NULL UNIQUE`・`case_id TEXT` nullable/FKなし・`status TEXT` CHECKなし・`meta JSONB`）＋3 index＋冪等RLS。Supabase作成成功
+
+### 変更（commit 2e4b0fc・3ファイル・+195/-8）
+- `supabase/schema.sql`：`task_history` 正式定義（CREATE＋index＋冪等RLS）
+- `lib/taskHistoryDb.js`（新規）：`upsertHistoryEntry`／`upsertHistoryEntries`／`getHistory`（`history_id` 冪等upsert・app↔DBマッピング・meta退避/復元）
+- `server.js`：`_persistTaskHistory`（fire-and-forget・DB失敗でWorkflow停止しない）＋`_hybridTaskHistory`（メモリ＋DB・history_id dedup・メモリlive優先）＋push時DB保存＋GET 2本Hybrid化（**レスポンス形不変**）
+
+### 実DB確認済み（commit 2e4b0fc）
+- round-trip＋meta復元／`history_id` 冪等upsert（running→completed **重複行0**）／Hybrid(memory+DB) dedup（実consult1回・appearCount=1・live優先）／**サーバー再起動2回後もDB復元**（2件・dupInGet 0・workflow-dashboard集約）／DB未作成でもgraceful／既存consumer回帰なし／console 0／dev-check 200/200/200
+- 検証テスト行2件（`zzz-3b1-rt-*`／`consult-1783955050504-p53pn`・識別可能・非活性・削除しない）
+
+### 次工程
+- **push（要承認）→ Render反映 → 本番 `/api/task-history`・`/api/workflow-dashboard` 確認・再起動後DB残存確認 → 3b-1 Completed確定**
+- その後 **Phase54-3b-2**：`case_id` を auto-task/consult へclient配線（`getCurrentApprovalCaseId()`）→ server が各エントリへ保存 → GET `?caseId` 任意フィルタ → 消費側(Timeline/Notification/Workflow Live)の案件別表示（NULL横断）。**未着手**
+- **未実施**：push・Render・本番確認（＝localhost/実DB確認のみではCompletedにしない）
 
 ---
 

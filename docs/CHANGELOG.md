@@ -4,6 +4,18 @@
 
 ---
 
+## Phase54-3b-1 — Task History Persistence（永続化基盤・2026-07-14・**実装・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前＝未Completed**）
+
+- **目的**：`global.__taskHistory`（サーバーメモリ・非DB・**Render再起動で消失**）を新規 `task_history` テーブルへ永続化＝Timeline/Notification/Workflow Live/Auto Task/Live Status の再起動復元基盤。**今回は永続化基盤のみ（case_id配線・UI変更は3b-2以降）**
+- **SQL実行済み（ユーザー）**：`CREATE TABLE task_history`（`history_id TEXT NOT NULL UNIQUE`／`workflow_id`／`case_id TEXT`(nullable/FKなし)／`from_agent`/`to_agent`/`task_id`(FKなし)／`action`/`instruction`/`type`/`note`／`status TEXT`(**CHECKなし**)／`meta JSONB`／`requested_at`/`completed_at`/`created_at`）＋3 index＋冪等RLS
+- **変更（commit 2e4b0fc・3ファイル・+195/-8）**：`supabase/schema.sql`（task_history正式定義）／`lib/taskHistoryDb.js`（新規：upsertHistoryEntry/upsertHistoryEntries/getHistory・`history_id` 冪等upsert・meta退避復元）／`server.js`（`_persistTaskHistory` fire-and-forget＋`_hybridTaskHistory` メモリ＋DB dedup・メモリlive優先＋push時DB保存＋GET 2本Hybrid化）
+- **既存APIレスポンス形 不変**：`{ok,history,total}`／`{ok,workflows,total}`・from/to filter維持・新規エンドポイントなし・既存API削除/置換なし
+- **保護**：`global.__taskHistory` 維持／status改善せず(CHECKなし)／case_idは本工程常にNULL(横断・配線は3b-2)／**DB保存失敗でWorkflow停止しない**／polling/WebSocket追加なし／Approval・Output Draft・tasks.case_id・Workflow・Provider・Routing 非接触
+- **実DB確認**：round-trip＋meta復元／`history_id` 冪等upsert(重複行0)／Hybrid(memory+DB) dedup(appearCount=1・live優先)／**サーバー再起動2回後もDB復元**(2件・dupInGet 0)／DB未作成でもgraceful／既存consumer回帰なし／console 0／dev-check 200/200/200
+- **⚠ 未Completed**：push・Render反映・本番API確認 未実施。次工程＝push→Render→本番確認→3b-1 Completed→**Phase54-3b-2（case_id client配線・案件別履歴）**
+
+---
+
 ## Phase54-3a-2 — Task Case Scoping **Completed**（案件別Task分離完成・A案・2026-07-13・push済み・Render反映済み・本番PC確認済み・ユーザー実機確認済み・commit bc98455・tag v1.01-phase54-3a-2）
 
 - **採用＝A案（Decision 054）**：`tasks` へ **nullable `case_id TEXT`（FKなし・既存行NULL維持）**。`messages.case_id`（Phase52-12.2）踏襲・追加のみ・非破壊。**Task Case Scoping 完成＝案件別Task分離完成・NULL横断Task維持・既存Task非破壊**

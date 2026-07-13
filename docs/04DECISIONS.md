@@ -2,7 +2,7 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping **Completed**＝`tasks` へ nullable `case_id`・案件別Task分離完成・SQL実行済み・commit bc98455・tag v1.01-phase54-3a-2・push済み・Render反映済み・本番PC/ユーザー実機確認済み。Decision 053・Phase54番号整合＝実開発Phase54系はVersion1.1 Realtime Sync系／ROADMAP旧Phase54は旧計画として履歴保持・Version2は再採番）
+更新日: 2026-07-14（Decision 055・Phase54-3b-1 Task History Persistence 永続化基盤＝新規 `task_history` テーブル＋DB/メモリHybrid・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前。Decision 054・Phase54-3a-2 Task Case Scoping Completed＝`tasks` へ nullable `case_id`・案件別Task分離完成）
 
 ## 目的
 このファイルは「何を作ったか」ではなく、
@@ -1152,3 +1152,31 @@ Phase54-3b 接続方針（比較のみ・未着手）:
 - 検証テスト行5件（`ZZZ-TEST3a2-A/B/NULL`＋`ZZZ-RELOGIN-A/B`・識別可能・非活性・温存＝削除しない）。
 
 追記日: 2026-07-13（Decision 054・Phase54-3a-2 Task Case Scoping A案採用・**Completed**・SQL実行済み・commit bc98455・tag v1.01-phase54-3a-2・push済み・Render反映済み・本番PC/ユーザー実機確認済み）
+
+---
+
+# Decision 055
+## Phase54-3b-1 Task History Persistence ＝ 新規 `task_history` テーブル＋DB/メモリHybrid（永続化基盤先行・case_id配線は3b-2）
+
+背景:
+- Timeline/Notification/Workflow Live/Auto Task/Live Status はすべて `global.__taskHistory`（**サーバーメモリ・非DB・Render再起動/再デプロイ/スリープ復帰で全消失**）から派生。F5・再ログインでは消えないが**サーバー再起動で消える**のが本質課題。
+- Phase54-3b を段階分割し、**3b-1＝永続化基盤（case_id配線・UI変更なし）** を先行実装。
+
+決定（案A・追加のみ・非破壊）:
+- **新規 `task_history` テーブル**へ永続化。**`case_id` は `task_history` 自身に nullable保持**（案A）。**案B（`task_history.task_id`→`tasks.case_id` 参照/JOIN）は不可**＝`task_history.taskId` は workflow task id（クライアントgenId）で `tasks.id` UUIDと一致せず信頼できるJOINキーが無いため。
+- **`history_id TEXT NOT NULL UNIQUE`**：`onConflict: history_id` の冪等upsert（status running→completed の同一エントリ更新を単一行で反映・重複行を作らない）。
+- **`status` はCHECKなしTEXT**（running/completed/error/skipped 等）＝tasks.status CHECKトラップを回避（本工程でstatus改善はしない）。
+- **`meta JSONB`**：エントリの可変追加field（responseMs/ruleCount/knowledgeSummary 等）を吸収し、スキーマを安定化。
+- **DB/メモリHybrid取得**：`GET /api/task-history`・`/api/workflow-dashboard` を「DB＋メモリを `history_id` でdedup・メモリlive優先」に変更。**レスポンス形は不変**（`{ok,history,total}`／`{ok,workflows,total}`）。再起動後はメモリ空→DBから復元。
+- **保存はfire-and-forget**（`_persistTaskHistory`・非ブロック）＝**DB保存失敗でもWorkflowを止めない**／`global.__taskHistory` は従来どおり維持（メモリを正としつつDBを永続層に併設）。
+
+保護・非対象:
+- `case_id` は本工程では常にNULL（横断）＝実配線は**3b-2**。Timeline/Notification/Workflow Live の案件別表示・Notification永続化・status改善・polling/WebSocket追加は本工程外。
+- Approval・Output Draft・tasks.case_id・NULL横断Task・Workflow・Provider・Routing・Cost 非接触。新規エンドポイントなし・既存API削除/置換なし。
+
+確認（localhost・実DB・commit 2e4b0fc）:
+- SQL実行済み（`task_history` 作成成功）／round-trip＋meta復元／`history_id` 冪等upsert（running→completed で**重複行0**）／Hybrid(memory+DB) dedup（実consult1回・appearCount=1・live優先）／**サーバー再起動2回後もDBから履歴復元**（lib挿入＋実consultの2件・dupInGet 0・workflow-dashboard集約）／DB未作成でもgraceful（throwなし・従来動作）／既存consumer回帰なし／console 0／dev-check 200/200/200。
+- 検証テスト行2件（`zzz-3b1-rt-*`／`consult-1783955050504-p53pn`・識別可能・非活性・DELETE未実施）。
+- **本番未確認のため正式Completedではない**。
+
+追記日: 2026-07-14（Decision 055・Phase54-3b-1 Task History Persistence 永続化基盤・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前）

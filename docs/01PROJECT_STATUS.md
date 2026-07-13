@@ -2,7 +2,29 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-13（**Phase54-3a-2 Task Case Scoping：Completed**・push済み・Render反映済み・本番PC確認済み・ユーザー実機確認済み・commit bc98455・tag v1.01-phase54-3a-2。次工程＝**Phase54-3b Task History Persistence**（案A：task_historyにnullable case_id）。Phase54-3a／Phase54-2 は正式Complete）
+更新日: 2026-07-14（**Phase54-3b-1 Task History Persistence：実装・実DB確認済み**・commit 2e4b0fc・tag v1.01-phase54-3b-1・**本番確認前＝正式Completedではない**。`task_history` テーブル永続化＋DB/メモリHybrid。次工程＝push→Render→本番確認→Phase54-3b-2 case_id配線。Phase54-3a-2／3a／Phase54-2 は正式Complete）
+
+---
+
+## Phase54-3b-1 Task History Persistence（Task History永続化基盤・実装・実DB確認済み・commit 2e4b0fc・tag v1.01-phase54-3b-1・本番確認前）
+
+- **現在Phase**：**Phase54-3b-1 実装・実DB確認済み（本番未確認＝未Completed）** ／ HEAD = **2e4b0fc**・tag **v1.01-phase54-3b-1**（→ 2e4b0fc）
+- **目的**：`global.__taskHistory`（サーバーメモリ・非DB・Render再起動で消失）を新規 `task_history` テーブルへ永続化 → Timeline/Notification/Workflow Live/Auto Task/Live Status の再起動復元基盤。**今回は永続化基盤のみ（case_id配線・UI変更は3b-2以降）**
+- **SQL実行済み（ユーザー）**：`CREATE TABLE task_history`（`history_id TEXT NOT NULL UNIQUE`・`case_id TEXT` nullable/FKなし・`status TEXT` CHECKなし・`meta JSONB`）＋3 index＋冪等RLS。Supabase作成成功
+- **変更ファイル（commit 2e4b0fc・3ファイル・+195/-8）**：
+  - `supabase/schema.sql`：`task_history` 正式定義（CREATE＋3 index＋冪等RLS DO$$）追記
+  - `lib/taskHistoryDb.js`（新規）：`upsertHistoryEntry`／`upsertHistoryEntries`／`getHistory`（`history_id` 冪等upsert・app↔DBマッピング・可変fieldは `meta JSONB` 退避/復元）
+  - `server.js`：遅延require＋`_persistTaskHistory`（fire-and-forget・非ブロック・失敗でWorkflow停止しない）＋`_hybridTaskHistory`（メモリ＋DB・`history_id` dedup・メモリlive優先）／auto-task・consult push時にDB保存／`GET /api/task-history`・`/api/workflow-dashboard` をHybrid化
+- **既存APIレスポンス形 不変**：`{ok,history,total}`／`{ok,workflows,total}`・from/to filter維持・新規エンドポイントなし・既存API削除/置換なし
+- **保護**：`global.__taskHistory` 従来維持／status改善せず（CHECKなしTEXT）／case_idは本工程常にNULL（横断）／polling/WebSocket追加なし／Approval・Output Draft・tasks.case_id・NULL横断Task・Workflow・Provider・Routing 非接触
+- **実DB確認済み（SQL実行済み・commit 2e4b0fc）**：
+  - round-trip（保存→取得→**meta復元** responseMs/ruleCount）／`history_id` 冪等upsert（running→completed で**重複行0・単一行更新**）
+  - Hybrid(DB+Memory)：実consult1回でmemory＋DB dedup（**appearCount=1**・memory live優先）
+  - **サーバー再起動復元**：2回再起動後もDBから履歴復元（lib挿入＋実consultの2件・dupInGet 0・workflow-dashboard集約）
+  - DB未作成でも従来動作（graceful・throwなし）／既存consumer回帰なし（loadNotifications ok）／console 0／dev-check 200/200/200
+- **検証テスト行（DB残存・識別可能・非活性・DELETE未実施＝削除禁止順守）**：`zzz-3b1-rt-*`（wf-3b1test）＋`consult-1783955050504-p53pn`（wf-3b1consult）
+- **⚠ 未Completed**：push・Render反映・本番API確認 未実施。localhost・実DB確認のみでは Completed としない
+- **次工程**：push → Render反映 → 本番 `/api/task-history`・`/api/workflow-dashboard` 確認・再起動後DB残存確認 → **3b-1 Completed確定** → **Phase54-3b-2**（`case_id` client配線・案件別履歴）
 
 ---
 
