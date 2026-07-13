@@ -7145,6 +7145,9 @@ async function syncTaskToServer(task) {
         createdBy: 'web-user',
         sourceMessage: task.sourceMessage || null,
         priority: task.priority || 'mid',
+        // Phase54-3a-2: Taskオブジェクトのcase_idのみ送信（未設定/NULLはNULL＝横断Task）。
+        // ここでは現在案件フォールバックしない＝backfillの既存local-only TaskをNULLのまま保存する契約を維持。
+        caseId: (task && task.caseId != null) ? task.caseId : null,
       }),
     });
     const data = await res.json();
@@ -7200,11 +7203,36 @@ function _taskFromServerRow(row) {
     memberName:    m ? (((m.icon ? m.icon + ' ' : '') + (m.name || '')).trim() || null) : null,
     priority:      row.priority || 'mid',
     status:        _mapServerTaskStatus(row.status),
+    caseId:        row.case_id != null ? row.case_id : null,           // Phase54-3a-2: 案件別分離（NULL=横断Task）
     createdAt:     row.created_at || new Date().toISOString(),
     updatedAt:     row.updated_at || row.created_at || new Date().toISOString(),
     sourceMessage: row.source_message || '',
     _fromServer:   true,
   };
+}
+
+// Phase54-3a-2: 新規Task用 caseId解決（caseId未設定=undefinedのときだけ現在案件を付与）。
+// null明示（横断Task）・既存値は尊重して付け替えない。既存Task再保存では呼ばない（作成経路のみ）。
+function _ensureTaskCaseId(t) {
+  try {
+    if (t && t.caseId === undefined) {
+      var cid = null;
+      try { cid = getCurrentApprovalCaseId() || null; } catch (e) { cid = null; }
+      t.caseId = cid;                                                   // 現在案件確定時のみ案件Task／未確定はnull=横断Task
+    }
+  } catch (e) { /* 非ブロック */ }
+  return t;
+}
+
+// Phase54-3a-2: Task表示フィルタ用の現在案件ID（表示中案件・latest/一覧/ホーム/未選択はnull=横断のみ表示）。
+function _taskViewCaseId() {
+  try {
+    if (currentMember) {
+      var active = _ncActiveCaseId(currentMember.id);
+      if (active) return active;
+    }
+  } catch (e) { /* 取得不可 */ }
+  return null;
 }
 
 // GET /api/tasks を pull し merge（非ブロック・失敗握り潰し・既存表示維持・新規polling追加なし）。
@@ -7236,6 +7264,7 @@ async function syncTasksFromServer() {
           existing.body      = mapped.body;
           existing.priority  = mapped.priority;
           existing.memberId  = mapped.memberId;
+          existing.caseId    = mapped.caseId;                          // Phase54-3a-2: 案件別分離をmergeで反映（NULL=横断Task）
           existing.updatedAt = mapped.updatedAt;
           changed = true;
         }
@@ -7277,6 +7306,7 @@ function _taskSignature(t) {
 function _persistNewTask(t) {
   try {
     if (!t || t.dbId) return;                                          // 既にdbIdあり→再POSTしない
+    _ensureTaskCaseId(t);                                              // Phase54-3a-2: 新規Taskへ現在案件を付与（未確定/null明示は横断のまま）
     syncTaskToServer(t).then(function (dbId) {
       if (dbId) { t.dbId = dbId; try { saveTasks(); } catch (e) {} }  // 成功時のみ dbId 付与＋キャッシュ更新
     }).catch(function () { /* 失敗はローカルに残す（削除しない） */ });
@@ -11654,6 +11684,7 @@ async function atCreateNextTasksFromItems(items) {
     tasks.unshift(task);
     created.push({ task, memberId, memberName: task.memberName });
     // Supabaseにも同期（sync to Supabase）— 失敗してもローカルは継続
+    _ensureTaskCaseId(task);   // Phase54-3a-2: 作成時に現在案件を付与（未確定は横断Task）
     syncTaskToServer(task).catch(() => {});
   }
   saveTasks();
@@ -12400,7 +12431,8 @@ function switchCase(memberId, caseId) {
   }
   scheduleOutputDraftRestore('caseSwitch');   // Phase54-2d: 案件切替時に切替先の最新Draftを復元（承認より先）
   scheduleApprovalSync('caseSwitch');    // Phase54-1c: 案件切替時に承認/公開状態をpull
-  syncTasksFromServer();   // Phase54-3a: 案件切替時にもTaskをpull・merge（in-flightガードで重複GET抑止・Taskは案件横断）
+  syncTasksFromServer();   // Phase54-3a: 案件切替時にもTaskをpull・merge（in-flightガードで重複GET抑止）
+  try { const _tp = document.getElementById('task-panel'); if (_tp && _tp.classList.contains('open')) renderTaskList(); } catch (e) {}   // Phase54-3a-2: パネル表示中は案件別に再描画
 }
 // Phase52-11.8c: 案件の最終更新日時を更新（先頭へ並べ替え用・localStorage cases のみ・履歴は不変）
 function touchCase(caseId) {
@@ -12568,6 +12600,7 @@ function _homeOpenCase(caseId) {
   scheduleOutputDraftRestore('caseSwitch');   // Phase54-2d: ホームから案件を開いた時に最新Draftを復元（承認より先）
   scheduleApprovalSync('caseSwitch');   // Phase54-1c: ホームから案件を開いた時に承認/公開状態をpull
   syncTasksFromServer();   // Phase54-3a: ホームから案件を開いた時にもTaskをpull・merge（in-flightガードで重複GET抑止）
+  try { const _tp = document.getElementById('task-panel'); if (_tp && _tp.classList.contains('open')) renderTaskList(); } catch (e) {}   // Phase54-3a-2: パネル表示中は案件別に再描画
 }
 function _homeOpenCaseList() {
   const leaderM = _ncFindMember('leader');
@@ -12829,6 +12862,7 @@ function goHome() {
   const inp = document.getElementById('msg-input'); if (inp) { inp.value = ''; inp.disabled = true; inp.placeholder = 'ホームでは入力できません。案件を選択するか、新規案件を作成してください。'; }
   const sb = document.getElementById('send-btn');   if (sb) sb.disabled = true;
   try { closeSidebar(); } catch {}
+  try { const _tp = document.getElementById('task-panel'); if (_tp && _tp.classList.contains('open')) renderTaskList(); } catch (e) {}   // Phase54-3a-2: ホーム復帰時、パネル表示中は横断Taskのみへ再描画
 }
 function getFilteredHistory(memberId) {
   const all = chatHistory[memberId] || [];
@@ -19875,6 +19909,7 @@ function submitTask() {
   renderTaskList();
   updateTaskBadge();
   // DB同期（失敗してもローカル保存は継続）
+  _ensureTaskCaseId(tasks[0]);   // Phase54-3a-2: 手動作成Taskへ現在案件を付与（未確定は横断Task）
   syncTaskToServer(tasks[0]).then(dbId => {
     if (dbId) { tasks[0].dbId = dbId; saveTasks(); }
   });
@@ -19953,6 +19988,7 @@ function changeTaskStatus(id, newStatus) {
       });
       saveToStorage();
       saveTasks();
+      _ensureTaskCaseId(nextTask);   // Phase54-3a-2: 自動連携で生成したTaskへ現在案件を付与（未確定は横断Task）
       syncTaskToServer(nextTask).then(dbId => {
         if (dbId) { nextTask.dbId = dbId; saveTasks(); }
       });
@@ -20161,8 +20197,13 @@ function renderTaskList() {
   const list = document.getElementById('task-list');
   renderMemberFilterBar();
   const isArchivedView = taskFilters.status === 'archived';
+  // Phase54-3a-2: 案件別表示。現在表示案件（null=ホーム/未選択/一覧）。NULL Taskは横断として常時表示。
+  const _viewCase = _taskViewCaseId();
   // アーカイブビュー時は archived のみ表示。通常時は archived を除外。
   let filtered = tasks.filter(t => {
+    // Phase54-3a-2: case付きTaskは現在案件と一致する時のみ表示（別案件・未選択時は非表示）。NULL=横断Taskは常に表示。
+    const _tcase = (t.caseId != null) ? t.caseId : null;
+    if (_tcase !== null && _tcase !== _viewCase) return false;
     if (isArchivedView) {
       return t.status === 'archived';
     }
@@ -20319,9 +20360,9 @@ function applyLeaderTemplate(templateKey) {
   saveToStorage();
   saveTasks();
   updateTaskBadge();
-  newTasks.forEach(t => syncTaskToServer(t).then(dbId => {
+  newTasks.forEach(t => { _ensureTaskCaseId(t); return syncTaskToServer(t).then(dbId => {   // Phase54-3a-2: テンプレート生成Taskへ現在案件を付与（未確定は横断Task）
     if (dbId) { t.dbId = dbId; saveTasks(); }
-  }));
+  }); });
   // タスクパネルを開いて結果を表示
   const panel = document.getElementById('task-panel');
   panel.classList.add('open');

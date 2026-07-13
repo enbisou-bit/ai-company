@@ -520,8 +520,9 @@ app.delete('/api/admin/members/:id', (req, res) => {
 // ── タスク一覧取得 ────────────────────────────────
 app.get('/api/tasks', async (req, res) => {
   try {
-    const { memberId, status } = req.query;
-    const result = await getTasksDb().getTasks({ memberId, status });
+    // Phase54-3a-2: caseId は任意フィルタ（未指定時は従来どおり全件取得＝クライアント全保持/backfill契約を維持）
+    const { memberId, status, caseId } = req.query;
+    const result = await getTasksDb().getTasks({ memberId, status, caseId });
     res.json({ ok: true, ...result });
   } catch (e) {
     res.json({ ok: true, tasks: [], source: 'error', error: e.message });
@@ -530,10 +531,11 @@ app.get('/api/tasks', async (req, res) => {
 
 // ── タスク作成 ────────────────────────────────────
 app.post('/api/tasks', express.json(), async (req, res) => {
-  const { title, description, assignedMemberId, createdBy, sourceMessage, priority } = req.body || {};
+  // Phase54-3a-2: caseId は任意（未指定でも従来どおり作成＝後方互換）
+  const { title, description, assignedMemberId, createdBy, sourceMessage, priority, caseId } = req.body || {};
   if (!title) return res.status(400).json({ ok: false, error: 'title は必須です' });
   try {
-    const result = await getTasksDb().createTask({ title, description, assignedMemberId, createdBy, sourceMessage, priority });
+    const result = await getTasksDb().createTask({ title, description, assignedMemberId, createdBy, sourceMessage, priority, caseId });
     res.json({ ok: !result.error, ...result });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });

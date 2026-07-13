@@ -51,9 +51,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   assigned_member_id TEXT REFERENCES members(id),
   created_by         TEXT DEFAULT 'web-user',
   source_message     TEXT,
+  case_id            TEXT,                 -- Phase54-3a-2: 案件別Task分離（nullable・FKなし・既存はNULL＝横断Task）
   created_at         TIMESTAMPTZ DEFAULT NOW(),
   updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
+-- Phase54-3a-2: 既存DBへは以下のALTERで case_id を追加（非破壊・nullable・既存行はNULL維持＝横断Task）
+--   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS case_id TEXT;
+--   CREATE INDEX IF NOT EXISTS idx_tasks_case_id ON tasks (case_id);
 
 -- タスクログテーブル
 CREATE TABLE IF NOT EXISTS task_logs (
