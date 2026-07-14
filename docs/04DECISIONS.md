@@ -2,7 +2,26 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**＝最終統合確認合格・tag v1.01-phase54-complete。Decision 057・Phase54-3b-3 **Completed**（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。Decision 056・3b-2 Completed。Decision 055・3b-1 Completed。次工程＝Phase55候補整理・未着手）
+更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**＝最終統合確認合格・tag v1.01-phase54-complete。Decision 057・Phase54-3b-3 **Completed**（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。Decision 056・3b-2 Completed。Decision 055・3b-1 Completed。次工程＝Phase55候補整理・未着手。**追記：Decision 058・Phase54 Hotfix（削除同期 deleted_at／アーカイブ同期 archived_at／backfill安全化／Task生成上限20／件数統一）本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync**）
+
+---
+
+# Decision 058
+## Phase54 Hotfix — 削除/アーカイブ同期・backfill安全化・Task生成上限・件数統一（Phase54完了後Known Issue対応）
+
+**背景**：Phase54 正式Complete 後、ユーザー実機で Task同期の Known Issue（削除がPC⇔iPhoneで同期されない・削除がF5等で復活・一覧/Progress/バッジの件数不一致・backfill重複）が顕在化。調査で backfillによるTask急増（75→354）と Task生成10件制限も判明。**Phase54 Completed と既存 tag は維持し、Hotfix として対応**（Phase55 未着手も維持）。
+
+**決定（なぜその設計か）**：
+- **削除は物理DELETEせず論理削除（`deleted_at`）**：Supabase保存維持・履歴削除禁止の原則に整合。復元可能・監査可能。**Task History・Learningは連動削除しない**（`task_history.task_id` と `tasks.id` は別体系＝JOIN連動削除しない）。
+- **アーカイブは削除と分離し `archived_at` で管理**：「通常一覧から一時的に外す・後で戻せる」操作を端末間同期。削除（最終）と役割を分ける。
+- **同期は dbId限定 Server-Authoritative Reconciliation**：全件GETのみauthoritative・`deletedIds`/`deletedSignatures`で削除伝播・**local-only（dbIdなし）Taskは保護**・GET失敗時はlocal不変。
+- **backfillは安全ガード（B案）**：起動時フラッド（今回の急増主因）を防ぐため、server同期後1回・local重複除外・POST上限20超過で自動停止＋通知。**A案（自動停止）ではなくB案採用**＝未同期Taskの保存機会は残しつつ暴走を防止。
+- **Task生成上限とbackfill上限は別管理**：`/api/auto-task` は 10→20（Instagram運用考慮・無限ループ防止は維持）、backfillは安全上限20。混同しない。
+- **件数は一覧/Progress/バッジを同一可視集合（現在案件＋NULL・deleted除外・archived除外）**で統一＝同一画面内の不一致を解消。
+
+**データ整理**：重複候補123件は **JSON/CSV退避後に id限定 `deleted_at` 論理削除**（物理削除しない）。生存233・deletedIds125。元75・正当156は保護。正当156の個別整理は未実施。
+
+**Git/反映**：commit **d512bad**・tag **v1.01-phase54-hotfix-task-sync**・**HEAD=origin/main=tag=d512bad**・Render反映済み・本番確認済み。**ユーザー実機確認は未実施**。`backup-dup-candidates-20260714/` はローカル退避・Git対象外。cost関連3ファイルは対象外・未操作。
 
 ## 目的
 このファイルは「何を作ったか」ではなく、

@@ -2,11 +2,33 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**・最終統合確認合格・tag v1.01-phase54-complete。3b-3 Completed（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。次工程＝**Phase55候補整理 または Version1.1残課題確認**・**Phase55未着手**）
+更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**・最終統合確認合格・tag v1.01-phase54-complete。3b-3 Completed（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。**追記：Phase54 Hotfix 本番反映済み（commit d512bad・tag v1.01-phase54-hotfix-task-sync）**。次工程＝**Phase55候補整理 または Version1.1残課題確認**・**Phase55未着手**）
 
 ---
 
-## 【現在地・最優先】Phase54 Remaining Realtime Sync — **正式Complete**（2026-07-14・最終統合確認合格）
+## 【現在地・最優先】Phase54 Hotfix — Task同期/削除/アーカイブ/backfill安全化/Task生成上限 **本番反映済み**（2026-07-14・Phase54完了後Known Issue対応）
+
+- **位置づけ**：**Phase54 正式Complete 維持**（tag `v1.01-phase54-complete` 不変）・**Phase55 未着手 維持**。Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue への Hotfix。
+- **Git**：commit **d512bad**（`Phase54 hotfix task sync archive and backfill safety`・4ファイル）・tag **v1.01-phase54-hotfix-task-sync**・**HEAD = origin/main = tag = d512bad**・**Render反映済み・本番確認済み**。
+- **Known Issue（対応済み）**：Task削除がPC⇔iPhoneで非同期／削除がF5等で復活／一覧・Progress・バッジの件数不一致／backfill重複。調査で **backfillによるTask急増（75→354）**・**Task生成10件制限** も判明。
+- **実装**：
+  - **削除同期** `tasks.deleted_at`（論理削除・物理削除なし）＋`PATCH {deleted:true}`／dbId限定 reconciliation／local-only保護
+  - **アーカイブ同期** `tasks.archived_at`＋`PATCH {archived:true|false}`（復元可・PC⇔iPhone・Task History/Learning温存）
+  - **backfill安全化（B案）**：server同期後1回・in-flight lock・dbIdなしのみ・deletedSignatures照合・archived除外・**local重複除外**・成功後即dbId・失敗再試行なし・**POST上限20超過で自動停止＋通知**
+  - **件数統一**：一覧/Progress/バッジ＝現在案件＋NULL・deleted除外・archived除外
+  - **Task生成上限 10→20**（`MAX_AUTO_TASKS=20`・backfill上限とは別管理）
+- **本番DBデータ整理**：重複候補 **123件を JSON/CSV 退避 → id限定 `deleted_at` 論理削除**。**生存233件／deletedIds125件**。**元75件・正当候補156件は保護（全生存）**。検証用 **arch-1=通常／arch-2=アーカイブ** 残置。**正当候補156件の個別整理は未実施**。
+- **退避/除外**：`backup-dup-candidates-20260714/`（123件JSON/CSV）は**ローカル退避・Git対象外**。**cost関連3ファイルは対象外・未操作**。
+- **確認状況（区別）**：
+  - **実装済み**：コード4ファイル（index.html/server.js/lib/tasksDb.js/supabase/schema.sql）
+  - **localhost確認済み**：dev-check 200/200/200・console 0・削除/アーカイブ/冪等/404/400・件数一致・backfillフラッド防止・F5維持
+  - **本番確認済み**：Render top200・GET total233/deletedIds125・archived_at含む・arch-1 NULL/arch-2 NOT NULL・21件→400「最大20件」・console 0
+  - **ユーザー実機確認：未実施**（PC⇔iPhone双方向の削除/アーカイブ/復元 同期の実機確認は今後）
+- **次工程の残課題（未着手）**：正当候補156件の個別整理／PC⇔iPhoneユーザー実機確認／`backup-dup-candidates-20260714/` の最終処理方針。**Phase55は未着手**。
+
+---
+
+## 【参考・完了済み】Phase54 Remaining Realtime Sync — **正式Complete**（2026-07-14・最終統合確認合格）
 
 - 現在Version：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
 - **現在Phase**：**Phase54 正式Complete**（3a→3a-2→3b-1→3b-2→3b-3→最終統合確認 すべて完了）・tag **v1.01-phase54-complete**

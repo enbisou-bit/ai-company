@@ -2,7 +2,28 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**。Phase54-3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格。Approval／Draft／Task／Task History／Notification／Timeline／Workflow Live の同期基盤完成＝Version1.1「PC⇔スマホ同一AI会社」基盤成立。tag v1.01-phase54-complete。次工程＝Phase55候補整理またはVersion1.1残課題確認・**Phase55未着手**）
+更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**。Phase54-3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格。Approval／Draft／Task／Task History／Notification／Timeline／Workflow Live の同期基盤完成＝Version1.1「PC⇔スマホ同一AI会社」基盤成立。tag v1.01-phase54-complete。次工程＝Phase55候補整理またはVersion1.1残課題確認・**Phase55未着手**。**追記：Phase54完了後Known Issue対応の Phase54 Hotfix（Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限20）を本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync**）
+
+---
+
+## Phase54 Hotfix — Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限 **本番反映済み**（2026-07-14・Phase54完了後Known Issue対応・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+
+- **位置づけ**：**Phase54 正式Complete は維持**（既存 tag `v1.01-phase54-complete` 不変）・**Phase55 未着手 は維持**。本件は Phase54 完了後にユーザー実機で顕在化した **Task同期 Known Issue** への Hotfix。
+- **Known Issue（記録）**：Task削除がPC⇔iPhoneで同期されない／削除がF5・再ログイン・案件切替で復活／Task一覧・Progress・バッジの件数定義不一致／backfillによる重複再登録。調査中に **backfillによるTask急増（75→354）** と **Task生成10件制限** も判明。
+- **Git**：commit **d512bad**（`Phase54 hotfix task sync archive and backfill safety`・4ファイル：`index.html`/`server.js`/`lib/tasksDb.js`/`supabase/schema.sql`）・tag **v1.01-phase54-hotfix-task-sync**。**HEAD = origin/main = tag = d512bad**・**Render反映済み・本番確認済み**。
+- **実装内容**：
+  - 削除同期：`tasks.deleted_at`（論理削除・**物理削除しない**）＋`PATCH {deleted:true}`／dbId限定 Server-Authoritative Reconciliation／local-only保護
+  - アーカイブ同期：`tasks.archived_at`＋`PATCH {archived:true|false}`（復元可・PC⇔iPhone同期・**Task History/Learningは残す**）
+  - backfill安全化（B案）：server同期完了後1回・in-flight lock・dbIdなしのみ・deletedSignatures照合・archived除外・local重複除外・成功後即dbId反映・失敗再試行なし・**POST安全上限20（超過は自動停止＋通知＝フラッド防止）**
+  - 件数統一：一覧／Progress／バッジを **同一可視集合（現在案件＋NULL・deleted除外・archived除外）** で計算
+  - Task生成上限：`/api/auto-task` **10→20**（`MAX_AUTO_TASKS=20`・無限ループ防止は維持）・**backfill上限とは別管理**
+- **データ整理（本番DB）**：重複候補 **123件を JSON/CSV 退避後に `deleted_at` で論理削除**（id限定・物理削除なし）。**生存Task 233件／deletedIds 125件**。**元75件・正当候補156件は保護（全生存）**。検証用 **arch-1=通常／arch-2=アーカイブ** 状態で残置。**正当候補156件の個別整理は未実施**。
+- **退避・除外**：`backup-dup-candidates-20260714/`（123件JSON/CSV）は **ローカル退避・Git対象外**。**cost関連3ファイル（cost-logs.json/claude-cost-logs.json/claude-quality-history.json）は対象外・未操作**。
+- **確認状況（区別）**：
+  - **実装済み**：上記コード4ファイル
+  - **localhost確認済み**：dev-check 200/200/200・console 0・削除/アーカイブ/冪等/404/400・件数一致・backfillフラッド防止・F5維持
+  - **本番確認済み**：Render（top 200・GET /api/tasks 200・total 233・deletedIds 125・archived_at含む・arch-1 NULL/arch-2 NOT NULL・21件→400「最大20件」・console 0）
+  - **ユーザー実機確認：未実施**（PC⇔iPhone双方向の削除/アーカイブ/復元 同期の実機確認は今後）
 
 ---
 

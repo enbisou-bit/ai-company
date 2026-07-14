@@ -1,7 +1,25 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**。3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格・tag v1.01-phase54-complete。次工程＝Phase55候補整理／Version1.1残課題確認・Phase55未着手）
+> 更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**。3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格・tag v1.01-phase54-complete。次工程＝Phase55候補整理／Version1.1残課題確認・Phase55未着手。**追記：Phase54 Hotfix（Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限20）本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync**）
+
+---
+
+## Phase54 Hotfix（Phase54完了後Known Issue対応・本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+
+> 記録日: 2026-07-14。**Phase54 正式Complete 維持・Phase55 未着手 維持**。Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue への Hotfix（別機能を1コミットに集約）。
+
+- **Known Issue**：Task削除がPC⇔iPhoneで同期されない／削除がF5・再ログイン・案件切替で復活／Task一覧・Progress・バッジの件数不一致／backfill重複再登録／backfillによるTask急増（75→354）／Task生成10件制限。
+- **実装（4ファイル・+404/-61）**：
+  - `supabase/schema.sql`：`tasks.deleted_at` / `tasks.archived_at`（nullable・非破壊・**ユーザーSQL実行済み**・物理削除しない）
+  - `lib/tasksDb.js`：`getTasks`（生存のみ＝deleted除外・archived含む＋`deletedIds`/`deletedSignatures`/`total`）・`softDeleteTask`・`setTaskArchived`・`_rowSignature`
+  - `server.js`：`PATCH {deleted}`/`{archived}` 分岐（status/archived/deleted 同時指定400・404・冪等）／`/api/auto-task` `MAX_AUTO_TASKS=20`（10→20）
+  - `index.html`：削除・アーカイブ同期（成功後のみlocal反映・失敗時保護）・dbId限定reconciliation・backfill B案安全ガード（POST上限20）・件数統一（一覧=Progress=バッジ）・起動をsync→backfill直列化
+- **backfill安全化（B案）**：server同期後1回・in-flight lock・dbIdなしのみ・deletedSignatures照合・archived除外・**local重複除外**・成功後即dbId反映・失敗再試行なし・**POST上限20超過で自動停止＋通知**（フラッド防止）。**backfill上限とTask生成上限は別管理**。
+- **件数統一**：一覧／Progress／バッジ＝現在案件＋NULL・deleted除外・archived除外の同一可視集合。
+- **本番DBデータ整理**：重複候補 **123件を JSON/CSV 退避 → id限定 `deleted_at` 論理削除**。**生存233件／deletedIds125件**。元75・正当156は保護（全生存）。検証 arch-1=通常/arch-2=アーカイブ。**正当156の個別整理は未実施**。
+- **退避/除外**：`backup-dup-candidates-20260714/` はローカル退避・**Git対象外**。cost関連3ファイルは**対象外・未操作**。
+- **確認状況（区別）**：**実装済み**（4ファイル）／**localhost確認済み**（dev-check 200/200/200・console0・削除/アーカイブ/冪等/404/400・件数一致・F5維持・backfillフラッド防止）／**本番確認済み**（Render top200・GET total233/deletedIds125・archived_at・arch-1 NULL/arch-2 NOT NULL・21件→400・console0）／**ユーザー実機確認：未実施**（PC⇔iPhone双方向 削除/アーカイブ/復元）。
 
 ---
 

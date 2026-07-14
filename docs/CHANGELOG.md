@@ -4,6 +4,23 @@
 
 ---
 
+## Phase54 Hotfix — Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限20 **本番反映済み**（2026-07-14・Phase54完了後Known Issue対応・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+
+- **位置づけ**：**Phase54 正式Complete 維持**（tag `v1.01-phase54-complete` 不変）・**Phase55 未着手 維持**。Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue への Hotfix。
+- **Known Issue**：Task削除がPC⇔iPhoneで同期されない／削除がF5・再ログイン・案件切替で復活／一覧・Progress・バッジの件数不一致／backfill重複。調査で **backfillによるTask急増（75→354）**・**Task生成10件制限** も判明。
+- **実装（4ファイル・+404/-61）**：
+  - **削除同期**：`tasks.deleted_at`（論理削除・**物理削除なし**）＋`PATCH {deleted:true}`／dbId限定 Server-Authoritative Reconciliation／local-only保護
+  - **アーカイブ同期**：`tasks.archived_at`＋`PATCH {archived:true|false}`（復元可・PC⇔iPhone同期・**Task History/Learning温存**）
+  - **backfill安全化（B案）**：server同期後1回・in-flight lock・dbIdなしのみ・deletedSignatures照合・archived除外・**local重複除外**・成功後即dbId反映・失敗再試行なし・**POST上限20超過で自動停止＋通知（フラッド防止）**
+  - **件数統一**：一覧／Progress／バッジ＝現在案件＋NULL・deleted除外・archived除外の同一可視集合
+  - **Task生成上限 10→20**（`/api/auto-task` `MAX_AUTO_TASKS=20`・無限ループ防止維持・**backfill上限とは別管理**）
+- **本番DBデータ整理**：重複候補 **123件を JSON/CSV 退避 → id限定 `deleted_at` 論理削除**。**生存233件／deletedIds125件**。**元75件・正当候補156件は保護（全生存）**。検証 **arch-1=通常／arch-2=アーカイブ**。**正当候補156件の個別整理は未実施**。
+- **Git/反映**：commit **d512bad**・tag **v1.01-phase54-hotfix-task-sync**・**HEAD=origin/main=tag=d512bad**・Render反映済み・本番確認済み。
+- **退避/除外**：`backup-dup-candidates-20260714/`（123件JSON/CSV）は**ローカル退避・Git対象外**。**cost関連3ファイルは対象外・未操作**。
+- **確認状況**：**実装済み**（4ファイル）／**localhost確認済み**（dev-check 200/200/200・console 0・削除/アーカイブ/冪等/404/400・件数一致・F5維持・フラッド防止）／**本番確認済み**（Render top200・GET total233/deletedIds125・archived_at・arch-1 NULL/arch-2 NOT NULL・21件→400・console 0）／**ユーザー実機確認：未実施**。
+
+---
+
 ## Phase54 — Remaining Realtime Sync **正式Complete**（2026-07-14・最終統合確認合格・tag v1.01-phase54-complete）
 
 - **Phase54全体**：3a Task Basic Sync → 3a-2 Task Case Scoping（tasks.case_id）→ 3b-1 Task History Persistence（task_history＋Hybrid）→ 3b-2 Task History Case Scoping → 3b-3 Notification既読永続化（notification_reads）＋Timeline案件別＋Workflow Live復元 → 最終統合確認 すべてComplete
