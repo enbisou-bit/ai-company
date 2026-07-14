@@ -7172,6 +7172,50 @@ async function syncTaskStatusToServer(dbId, status) {
   }
 }
 
+// Phase54 Hotfix: dbId付きTaskの論理削除をサーバーへ送信（PATCH { deleted:true }）。
+//   成功(ok) または 404（サーバーに既に無い＝削除済み扱い・冪等）で true を返し、呼び出し側が local から除去してよい。
+//   HTTP失敗・非ok・通信エラーは false＝local を削除しない（保護）。任意の deleted_at 時刻は送らない。
+async function softDeleteTaskOnServer(dbId) {
+  if (!dbId) return false;
+  try {
+    var res = await fetch('/api/tasks/' + dbId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deleted: true }),
+    });
+    if (!res) return false;
+    if (res.status === 404) return true;                 // サーバーに無い＝既に削除済み扱い（冪等）→localからも除去可
+    if (!res.ok) return false;                           // 5xx等→local維持
+    var data = await res.json().catch(function () { return null; });
+    return !!(data && data.ok);
+  } catch (e) {
+    try { console.warn('[DB sync] 論理削除スキップ（local維持）:', e && e.message); } catch (_e) {}
+    return false;                                        // 通信失敗→local維持
+  }
+}
+
+// Phase54 Hotfix: dbId付きTaskのアーカイブ/復元をサーバーへ送信（PATCH { archived:true|false }）。
+//   成功(ok) または 404（サーバーに無い）で true＝呼び出し側が local を変更してよい。
+//   HTTP失敗・非ok・通信エラーは false＝local を変更しない（保護）。時刻は server 側で確定。
+async function setTaskArchivedOnServer(dbId, archived) {
+  if (!dbId) return false;
+  try {
+    var res = await fetch('/api/tasks/' + dbId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archived: !!archived }),
+    });
+    if (!res) return false;
+    if (res.status === 404) return true;                 // サーバーに無い＝以降local操作を許容
+    if (!res.ok) return false;                           // 5xx等→local維持
+    var data = await res.json().catch(function () { return null; });
+    return !!(data && data.ok);
+  } catch (e) {
+    try { console.warn('[DB sync] アーカイブ同期スキップ（local維持）:', e && e.message); } catch (_e) {}
+    return false;                                        // 通信失敗→local維持
+  }
+}
+
 // ══════════════════════════════════════════════════════════════
 // Phase54-3a: Task / Status Sync（既存 GET /api/tasks を pull・merge・index.htmlのみ・追加のみ）
 // 目的: サーバー(tasks)をクライアントへ pull し、PC⇔スマホでTask一覧・状態を共有。DB/API/SQL変更なし・新規pollingなし。
@@ -7182,6 +7226,9 @@ async function syncTaskStatusToServer(dbId, status) {
 //   取得失敗・空レスポンスで既存Taskを削除しない。tasksは案件横断（tasks.case_id列なし）＝案件混入の概念なし。
 // ══════════════════════════════════════════════════════════════
 let _taskSyncInFlight = false;   // pull多重実行防止（新規setIntervalは追加しない）
+// Phase54 Hotfix: reconciliation の「生存集合に無いdbId付きTask除去」で、直近作成Taskを誤除去しないための猶予。
+//   （POST完了→dbId付与 と 全件GETスナップショットの取得タイミングのレース対策。削除本体はdeletedIdsで確実に伝播）。
+const TASK_RECONCILE_GRACE_MS = 30000;
 
 // サーバーstatus(pending/in_progress/done) → クライアントTASK_STATUS_MAPキーへ写像（未知はtodo）。
 function _mapServerTaskStatus(s) {
@@ -7194,6 +7241,9 @@ function _mapServerTaskStatus(s) {
 function _taskFromServerRow(row) {
   if (!row || !row.id) return null;
   var m = row.members || null;
+  // Phase54 Hotfix: archived_at 非NULL＝アーカイブ済み。既存の view/件数フィルタ（status==='archived'）と整合させるため
+  //   archived時は status を 'archived' に写像（base status は DB status 列に保持され、復元時に再取得できる）。
+  var archivedAt = row.archived_at != null ? row.archived_at : null;
   return {
     id:            'srv_' + row.id,                                   // サーバー由来task用のローカルid（安定・既存localと衝突しない）
     dbId:          row.id,                                            // 重複排除キー（DB UUID）
@@ -7202,7 +7252,8 @@ function _taskFromServerRow(row) {
     memberId:      row.assigned_member_id || null,
     memberName:    m ? (((m.icon ? m.icon + ' ' : '') + (m.name || '')).trim() || null) : null,
     priority:      row.priority || 'mid',
-    status:        _mapServerTaskStatus(row.status),
+    status:        archivedAt != null ? 'archived' : _mapServerTaskStatus(row.status),
+    archivedAt:    archivedAt,                                         // Phase54 Hotfix: アーカイブ状態の端末間同期
     caseId:        row.case_id != null ? row.case_id : null,           // Phase54-3a-2: 案件別分離（NULL=横断Task）
     createdAt:     row.created_at || new Date().toISOString(),
     updatedAt:     row.updated_at || row.created_at || new Date().toISOString(),
@@ -7235,27 +7286,49 @@ function _taskViewCaseId() {
   return null;
 }
 
-// GET /api/tasks を pull し merge（非ブロック・失敗握り潰し・既存表示維持・新規polling追加なし）。
+// Phase54 Hotfix: 件数統一のための「現在の可視Task集合」判定。
+//   可視＝現在案件のTask＋case_id=NULLの横断Task（別案件のcase付きTaskは不可視）。
+//   一覧・Progress・Taskバッジをこの同一集合で計算し、同一画面内の件数不一致を解消する。
+//   ※deleted Taskは削除同期で local から除去済み・archived は各計算側で扱う。
+function _taskInCurrentView(t) {
+  var _viewCase = _taskViewCaseId();
+  var _tcase = (t && t.caseId != null) ? t.caseId : null;
+  if (_tcase !== null && _tcase !== _viewCase) return false;   // 別案件のcase付きは不可視
+  return true;
+}
+
+// GET /api/tasks（引数なし＝全件 authoritative snapshot）を pull し merge＋reconciliation（非ブロック・新規polling追加なし）。
+// Phase54 Hotfix: dbId限定 Server-Authoritative Reconciliation。
+//   authoritative条件（全て満たす時のみ照合実行）: HTTP成功 / JSON成功 / ok===true / tasksが配列 / 引数なし全件GET。
+//     → この時は tasks:[]（空）でも「正常な全件0件snapshot」として扱い、全Task削除も収束できる（従来の「空なら常に維持」は撤廃）。
+//   スキップ条件（localを一切変更しない）: HTTP失敗 / JSON失敗 / ok!==true / tasksが非配列 / 通信エラー。
+//   ※この関数は必ず引数なし '/api/tasks'（全件GET）を使う。案件限定GET(?caseId=)の結果で全体照合してはならない。
+//   処理順: ①生存merge ②deletedIds削除 ③生存dbId照合 ④dbIdなしlocal-only保護 ⑤POST中Task保護 ⑥save/render。
 async function syncTasksFromServer() {
   if (_taskSyncInFlight) return;                                      // 多重GET防止（案件高速切替でも重複GET過剰を防ぐ）
   _taskSyncInFlight = true;
   try {
-    var res = await fetch('/api/tasks');
-    if (!res || !res.ok) return;                                      // 取得失敗→既存localStorage表示を維持
+    var res = await fetch('/api/tasks');                             // 引数なし＝全件 authoritative snapshot
+    if (!res || !res.ok) return;                                      // HTTP失敗→localを変更しない
     var data = await res.json();
-    if (!data || !data.ok || !Array.isArray(data.tasks)) return;      // 異常レスポンス→既存維持
-    if (data.tasks.length === 0) return;                              // 空レスポンスで既存Taskを全削除しない
+    if (!data || data.ok !== true || !Array.isArray(data.tasks)) return; // 異常レスポンス→localを変更しない
     if (!Array.isArray(tasks)) return;
+    // ここまで満たせば tasks:[] でも正常な全件snapshot（全Task削除同期を許可）
+    var serverRows  = data.tasks;
+    var deletedIds  = Array.isArray(data.deletedIds) ? data.deletedIds : [];
     var changed = false;
-    data.tasks.forEach(function (row) {
+
+    // ① 生存merge（dbId基準・未存在追加／サーバー updated_at が厳密に新しい時のみ更新＝rich status降格防止）
+    var survivorDbIds = {};
+    serverRows.forEach(function (row) {
       var mapped = _taskFromServerRow(row);
       if (!mapped) return;
+      survivorDbIds[mapped.dbId] = true;
       var existing = tasks.find(function (t) { return t.dbId && t.dbId === mapped.dbId; });
       if (!existing) {
         tasks.push(mapped);                                          // 未存在→追加（他端末作成Taskを表示）
         changed = true;
       } else {
-        // 同一Task(dbId一致): サーバー updated_at が厳密に新しい時のみ採用（rich status降格防止・既存を壊さない）
         var st = Date.parse(mapped.updatedAt) || 0;
         var lt = Date.parse(existing.updatedAt) || 0;
         if (st > lt) {
@@ -7265,12 +7338,35 @@ async function syncTasksFromServer() {
           existing.priority  = mapped.priority;
           existing.memberId  = mapped.memberId;
           existing.caseId    = mapped.caseId;                          // Phase54-3a-2: 案件別分離をmergeで反映（NULL=横断Task）
+          existing.archivedAt = mapped.archivedAt;                     // Phase54 Hotfix: アーカイブ状態を端末間で同期
           existing.updatedAt = mapped.updatedAt;
           changed = true;
         }
-        // localのみ(dbIdなし)Taskは対象外＝未送信ローカルTaskを失わない
       }
     });
+
+    // ② deletedIds に一致する dbId付きlocal Task を除去（他端末の削除を反映）
+    if (deletedIds.length) {
+      var delSet = {};
+      deletedIds.forEach(function (id) { delSet[id] = true; });
+      var before2 = tasks.length;
+      tasks = tasks.filter(function (t) { return !(t.dbId && delSet[t.dbId]); });
+      if (tasks.length !== before2) changed = true;
+    }
+
+    // ③ 生存dbId集合に無い dbId付きTask を除去（DBから消えたものを収束）。
+    //    ④ dbIdなし local-only は保護（絶対に除去しない）／⑤ 直近作成Task（POST→dbId付与とGETスナップショットのレース）は猶予で保護。
+    var before3 = tasks.length;
+    tasks = tasks.filter(function (t) {
+      if (!t.dbId) return true;                                       // ④ local-only（POST中含む）保護
+      if (survivorDbIds[t.dbId] === true) return true;                // 生存＝残す
+      var ct = Date.parse(t.createdAt) || 0;                          // ⑤ 直近作成は誤除去防止（deletedIdsでの削除は②で確定済み）
+      if (ct && (Date.now() - ct) < TASK_RECONCILE_GRACE_MS) return true;
+      return false;                                                   // 生存にも無く猶予外＝除去（収束）
+    });
+    if (tasks.length !== before3) changed = true;
+
+    // ⑥ save/render（変更時のみ）
     if (changed) {
       try { saveTasks(); } catch (e) {}                              // localStorageはキャッシュとして維持
       try { renderTaskList(); } catch (e) {}                         // 既存描画関数を再利用
@@ -7291,6 +7387,10 @@ async function syncTasksFromServer() {
 //       多重バックフィル防止フラグ／失敗Taskはローカル保持（削除しない）／空・失敗で既存を消さない。
 // ══════════════════════════════════════════════════════════════
 let _taskBackfillInFlight = false;   // 初回/多重バックフィル防止（新規setIntervalは追加しない）
+let _taskBackfillDone = false;       // Phase54 Hotfix: 同一セッション1回のみ（このページセッションで完了したら再実行しない）
+// Phase54 Hotfix: backfill の1回あたりPOST安全上限（Task急増75→354の再発防止）。
+//   ※ Task生成上限（/api/auto-task の10→緩和）とは【別管理】。混同しない。
+const BACKFILL_MAX_POST = 20;
 
 // 重複判定署名（title単独では判定しない・複数フィールド組合せ）。localとサーバー行の両方から同形で生成。
 function _taskSignature(t) {
@@ -7313,18 +7413,30 @@ function _persistNewTask(t) {
   } catch (e) { /* 非ブロック */ }
 }
 
-// ローカルのみ(dbIdなし)Taskをサーバーへ初回バックフィル（冪等・重複防止・多重防止・削除しない）。
+// ローカルのみ(dbIdなし)Taskをサーバーへ初回バックフィル（B案・安全ガード付き）。
+// Phase54 Hotfix（Task急増75→354 再発防止）。必須ガード：
+//   ①server同期完了後に実行（呼び出し側で await syncTasksFromServer 後に起動）／②同一セッション1回のみ／③in-flight lock／
+//   ④dbIdなしのみ対象／⑤deletedSignatures照合（復活防止）／⑥archived Task除外／⑦local重複除外（同一署名は1回のみPOST）／
+//   ⑧POST成功後は即dbId反映／⑨POST失敗は無限再試行禁止（1回で諦めlocal保持）。
+//   加えて：POST安全上限 BACKFILL_MAX_POST 超過時は【自動POSTせず停止】しユーザー確認（dry-run件数を通知）＝フラッド防止。
 async function backfillLocalOnlyTasks() {
-  if (_taskBackfillInFlight) return { skipped: true };                 // 多重バックフィル防止
+  if (_taskBackfillInFlight) return { skipped: 'in_flight' };          // ③ in-flight lock
+  if (_taskBackfillDone)     return { skipped: 'already_done' };       // ② 同一セッション1回のみ（メモリ）
+  try { if (sessionStorage.getItem('aic-backfill-done-v1') === '1') { _taskBackfillDone = true; return { skipped: 'session_done' }; } } catch (e) {}
   _taskBackfillInFlight = true;
-  var posted = 0, matched = 0, failed = 0;
+  var posted = 0, matched = 0, failed = 0, skippedDeleted = 0, skippedDup = 0;
   try {
     if (!Array.isArray(tasks)) return { posted, matched, failed };
-    // 1. 重複判定の基準として最新サーバーTaskを取得
+    // 1. 重複判定の基準として最新サーバーTaskを取得（全件GET＝生存Task＋deletedSignatures）
     var serverTasks = [];
+    var deletedSignatures = [];
     try {
       var res = await fetch('/api/tasks');
-      if (res && res.ok) { var d = await res.json(); if (d && d.ok && Array.isArray(d.tasks)) serverTasks = d.tasks; }
+      if (res && res.ok) {
+        var d = await res.json();
+        if (d && d.ok && Array.isArray(d.tasks)) serverTasks = d.tasks;
+        if (d && Array.isArray(d.deletedSignatures)) deletedSignatures = d.deletedSignatures;
+      }
       else { return { posted, matched, failed, aborted: 'get_failed' }; }  // GET失敗→バックフィルしない（安全側・既存維持）
     } catch (e) { return { posted, matched, failed, aborted: 'get_error' }; }
     // サーバー署名→dbId（先勝ち）＋既に確保済みdbId
@@ -7333,31 +7445,73 @@ async function backfillLocalOnlyTasks() {
       var sig = _taskSignature({ title: row.title, memberId: row.assigned_member_id, sourceMessage: row.source_message, body: row.description });
       if (!serverSigToId[sig]) serverSigToId[sig] = row.id;
     });
+    var deletedSigSet = {};
+    deletedSignatures.forEach(function (s) { deletedSigSet[s] = true; });   // ⑤ 削除済み署名（復活防止）
     var claimedDbIds = {};
     tasks.forEach(function (t) { if (t && t.dbId) claimedDbIds[t.dbId] = true; });
-    // 2. dbIdなし・サーバー由来でないローカルTaskを順に処理（逐次POST・floodしない）
-    var targets = tasks.filter(function (t) { return t && !t.dbId && !t._fromServer; });
-    for (var i = 0; i < targets.length; i++) {
-      var t = targets[i];
-      if (t.dbId) continue;                                            // 途中でdbId付与済みならスキップ
-      var sig = _taskSignature(t);
-      // 2a. サーバーに同署名が既存 かつ 未確保 → 再POSTせず dbId 採用（重複防止・冪等）
-      if (serverSigToId[sig] && !claimedDbIds[serverSigToId[sig]]) {
-        t.dbId = serverSigToId[sig]; claimedDbIds[t.dbId] = true; matched++;
+
+    // ④⑥ 対象：dbIdなし・サーバー由来でない・archivedでない（archivedはbackfill対象外）
+    var targets = tasks.filter(function (t) {
+      return t && !t.dbId && !t._fromServer && t.status !== 'archived' && t.archivedAt == null;
+    });
+
+    // Pass A（POSTなし・データ増加なし）：サーバーに同署名が既存 かつ 未確保 → dbId 採用（重複防止・冪等）
+    for (var a = 0; a < targets.length; a++) {
+      var ta = targets[a];
+      if (ta.dbId) continue;
+      var sigA = _taskSignature(ta);
+      if (serverSigToId[sigA] && !claimedDbIds[serverSigToId[sigA]]) {
+        ta.dbId = serverSigToId[sigA]; claimedDbIds[ta.dbId] = true; matched++;
         try { saveTasks(); } catch (e) {}
-        continue;
-      }
-      // 2b. サーバーに無い → POST（成功時のみ dbId 付与・失敗はローカル保持）
-      var newId = await syncTaskToServer(t);
-      if (newId) {
-        t.dbId = newId; claimedDbIds[newId] = true; serverSigToId[sig] = newId; posted++;
-        try { saveTasks(); } catch (e) {}
-      } else {
-        failed++;                                                      // 失敗→ローカルに残す（削除しない）
       }
     }
+
+    // Pass B：POST候補を確定（⑤削除署名除外・⑦local重複除外＝同一署名は1件のみ）
+    var localSigSeen = {};
+    var toPost = [];
+    for (var b = 0; b < targets.length; b++) {
+      var tb = targets[b];
+      if (tb.dbId) continue;                                           // Pass Aで採用済み
+      var sigB = _taskSignature(tb);
+      if (deletedSigSet[sigB]) { skippedDeleted++; continue; }         // ⑤ 復活防止（POSTしない・localは保持）
+      if (localSigSeen[sigB]) { skippedDup++; continue; }              // ⑦ local重複→2件目以降はPOSTしない（フラッド主因の是正）
+      localSigSeen[sigB] = true;
+      toPost.push(tb);
+    }
+
+    // 安全上限：POST候補が上限超過 → 自動POSTせず停止しユーザー確認（フラッド防止）
+    if (toPost.length > BACKFILL_MAX_POST) {
+      var already = false;
+      try { already = sessionStorage.getItem('aic-backfill-oversize-v1') === '1'; } catch (e) {}
+      if (!already) {
+        try { sessionStorage.setItem('aic-backfill-oversize-v1', '1'); } catch (e) {}
+        try {
+          alert('未同期タスクが ' + toPost.length + ' 件あります（安全上限 ' + BACKFILL_MAX_POST + ' 件を超過）。\n'
+              + '自動同期を停止しました。重複や意図しない大量登録を防ぐため、内容を確認のうえ手動同期をご検討ください。');
+        } catch (e) {}
+      }
+      try { console.warn('[Task backfill] over_limit: wouldPost=' + toPost.length + ' > ' + BACKFILL_MAX_POST + '（自動POST停止）'); } catch (e) {}
+      return { posted, matched, failed, skippedDeleted, skippedDup, aborted: 'over_limit', wouldPost: toPost.length };  // doneにしない＝解消後に再評価可
+    }
+
+    // Pass C：POST（逐次・上限内・⑧成功後は即dbId反映・⑨失敗は再試行しない）
+    for (var c = 0; c < toPost.length; c++) {
+      var tc = toPost[c];
+      if (tc.dbId) continue;
+      var sigC = _taskSignature(tc);
+      var newId = await syncTaskToServer(tc);
+      if (newId) {
+        tc.dbId = newId; claimedDbIds[newId] = true; serverSigToId[sigC] = newId; posted++;   // ⑧ 即反映
+        try { saveTasks(); } catch (e) {}
+      } else {
+        failed++;                                                      // ⑨ 失敗→localに残す・再試行しない
+      }
+    }
+
     if (posted > 0 || matched > 0) { try { renderTaskList(); } catch (e) {} try { updateTaskBadge(); } catch (e) {} }
-    return { posted, matched, failed };
+    _taskBackfillDone = true;                                          // ② 正常完了→このセッションで再実行しない
+    try { sessionStorage.setItem('aic-backfill-done-v1', '1'); } catch (e) {}
+    return { posted, matched, failed, skippedDeleted, skippedDup };
   } catch (e) {
     try { console.warn('[Task backfill] スキップ:', e && e.message); } catch (_e) {}
     return { posted, matched, failed, error: true };
@@ -11661,7 +11815,7 @@ function atExtractNextTasks(text) {
     if (cleaned.endsWith('：') || cleaned.endsWith(':')) continue; // ヘッダー行除外
     items.push(cleaned);
   }
-  return items.slice(0, 10); // 最大10件
+  return items.slice(0, 20); // Phase54 Hotfix: Task生成上限緩和（10→20・server MAX_AUTO_TASKS と整合）
 }
 
 // 抽出アイテムをタスク管理（task management）に追加
@@ -20054,9 +20208,16 @@ function changeTaskStatus(id, newStatus) {
   }
 }
 
-function deleteTask(id) {
+// Phase54 Hotfix: dbIdありは サーバー論理削除（PATCH {deleted:true}）成功後に local 除去（失敗時は local 維持＝保護）。
+//   dbIdなし local-only は従来どおり local のみ除去（サーバー未登録のため）。
+async function deleteTask(id) {
   if (!confirm('このタスクを削除しますか？')) return;
-  tasks = tasks.filter(t => t.id !== id);
+  var t = tasks.find(function (x) { return x.id === id; });
+  if (t && t.dbId) {
+    var okDel = await softDeleteTaskOnServer(t.dbId);
+    if (!okDel) { try { alert('サーバーへの削除に失敗しました。通信状態を確認してください（ローカルは保持されます）。'); } catch (e) {} return; }
+  }
+  tasks = tasks.filter(function (x) { return x.id !== id; });
   saveTasks();
   renderTaskList();
   updateTaskBadge();
@@ -20067,7 +20228,9 @@ function deleteTask(id) {
 // 選択中の archived（アーカイブ済み）タスクを完全削除する（permanent delete）
 // 対象：archived タスクのみ。通常タスクは削除不可。
 // Supabase・会話履歴は削除しない。localStorage 上のタスク管理データのみ削除。
-function taskPermanentDeleteSelected() {
+// Phase54 Hotfix: 一括削除も端末間同期。dbIdありは サーバー論理削除（PATCH {deleted:true}）成功時のみ local 除去。
+//   dbIdなし local-only は従来どおり local 除去。サーバー削除失敗分は local に維持（保護）＝他端末とも整合。
+async function taskPermanentDeleteSelected() {
   if (_taskSelection.size === 0) return;
   // archived 以外が混入していないか確認
   const targets = [..._taskSelection].filter(id => {
@@ -20083,33 +20246,54 @@ function taskPermanentDeleteSelected() {
   if (!confirm(
     `選択中の ${n} 件を完全削除します。\n\n` +
     `⚠️ この操作は元に戻せません。\n` +
-    `（Supabase・会話履歴は削除されません）\n\n` +
+    `（Task History・会話履歴は削除されません）\n\n` +
     `続行しますか？`
   )) return;
 
-  // localStorage 上のタスクリストから削除（physical delete）
-  const deleteSet = new Set(targets);
-  tasks = tasks.filter(t => !deleteSet.has(t.id));
+  // dbIdあり→サーバー論理削除、成功したもの＋local-onlyのみ local から除去（失敗は local 維持）
+  const toRemove = new Set();
+  let failedCount = 0;
+  for (const id of targets) {
+    const t = tasks.find(x => x.id === id);
+    if (!t) continue;
+    if (t.dbId) {
+      const okDel = await softDeleteTaskOnServer(t.dbId);
+      if (okDel) toRemove.add(id); else failedCount++;   // 失敗は local 維持（保護）
+    } else {
+      toRemove.add(id);                                   // local-only は従来どおり
+    }
+  }
+  tasks = tasks.filter(t => !toRemove.has(t.id));
   _taskSelection.clear();
   saveTasks();
   renderTaskList();
   updateTaskBadge();
   updateTaskBulkToolbar();
+  if (failedCount > 0) { try { alert(`${failedCount} 件はサーバー削除に失敗したため保持しました（通信状態を確認してください）。`); } catch (e) {} }
 }
 
 // 選択中の archived（アーカイブ済み）タスクを復元する（restore）
 // previousStatus があればそれに戻す。なければ 'todo'（未着手）に戻す。
 // 物理削除なし・Supabase変更なし・会話履歴変更なし
-function taskRestoreSelected() {
+// Phase54 Hotfix: アーカイブ解除を端末間同期。dbIdあり→PATCH {archived:false} 成功時のみ通常一覧へ戻す（失敗は archived 維持）。
+//   dbIdなし local-only は従来どおり local のみ。base status は previousStatus から復元（DB status 列は archive中も保持）。
+async function taskRestoreSelected() {
   if (_taskSelection.size === 0) return;
   const n = _taskSelection.size;
   if (!confirm(`選択中の ${n} 件を復元（restore）します。\nよろしいですか？`)) return;
   const now = new Date().toISOString();
-  _taskSelection.forEach(id => {
-    const t = tasks.find(t => t.id === id);
-    if (!t || t.status !== 'archived') return;
+  const ids = [..._taskSelection];
+  let failed = 0;
+  for (const id of ids) {
+    const t = tasks.find(x => x.id === id);
+    if (!t || t.status !== 'archived') continue;
+    if (t.dbId) {
+      const ok = await setTaskArchivedOnServer(t.dbId, false);
+      if (!ok) { failed++; continue; }                 // サーバー失敗→archived維持
+    }
     const restoredStatus = t.previousStatus || 'todo';
     t.status = restoredStatus;
+    t.archivedAt = null;
     t.updatedAt = now;
     if (!t.logs) t.logs = [];
     t.logs.push({
@@ -20118,12 +20302,13 @@ function taskRestoreSelected() {
       message: `restore（復元）→ ${restoredStatus}`,
       timestamp: now,
     });
-  });
+  }
   _taskSelection.clear();
   saveTasks();
   renderTaskList();
   updateTaskBadge();
   updateTaskBulkToolbar();
+  if (failed > 0) { try { alert(`${failed} 件はサーバー同期に失敗したため保持しました（通信状態を確認してください）。`); } catch (e) {} }
 }
 
 // ツールバーの selected（選択中）件数を更新する
@@ -20191,17 +20376,26 @@ function taskDeselectAll() {
 
 // 選択中のタスクを archive（アーカイブ）にする（soft delete・ソフト削除）
 // Supabaseデータは削除しない。status を 'archived' に変えて画面から非表示にするだけ。
-function taskArchiveSelected() {
+// Phase54 Hotfix: アーカイブを端末間同期。dbIdあり→PATCH {archived:true} 成功時のみ local 反映（失敗は local 維持）。
+//   dbIdなし local-only は従来どおり local のみ。status(base)は DB status 列に保持・archived_at で管理（Task History/Learningは残す）。
+async function taskArchiveSelected() {
   if (_taskSelection.size === 0) return;
   const n = _taskSelection.size;
   if (!confirm(`選択中の ${n} 件をアーカイブ（archive）します。\n画面から非表示になりますが、データは保持されます。\nよろしいですか？`)) return;
   const now = new Date().toISOString();
-  _taskSelection.forEach(id => {
-    const t = tasks.find(t => t.id === id);
-    if (!t) return;
+  const ids = [..._taskSelection];
+  let failed = 0;
+  for (const id of ids) {
+    const t = tasks.find(x => x.id === id);
+    if (!t) continue;
+    if (t.dbId) {
+      const ok = await setTaskArchivedOnServer(t.dbId, true);
+      if (!ok) { failed++; continue; }                 // サーバー失敗→local維持（アーカイブしない）
+    }
     // previousStatus（復元用の元ステータス）を保存してから archived に変更
     t.previousStatus = t.status;
     t.status = 'archived';
+    t.archivedAt = now;
     t.updatedAt = now;
     if (!t.logs) t.logs = [];
     t.logs.push({
@@ -20210,12 +20404,13 @@ function taskArchiveSelected() {
       message: '一括アーカイブ（bulk archive）で非表示に設定',
       timestamp: now,
     });
-  });
+  }
   _taskSelection.clear();
   saveTasks();
   renderTaskList();
   updateTaskBadge();
   updateTaskBulkToolbar();
+  if (failed > 0) { try { alert(`${failed} 件はサーバー同期に失敗したため保持しました（通信状態を確認してください）。`); } catch (e) {} }
 }
 
 function renderMemberFilterBar() {
@@ -20265,7 +20460,8 @@ function renderTaskList() {
   updateTaskBulkToolbar();
 
   // 進捗バー更新（archived は集計から除外）
-  const activeTasks = tasks.filter(t => t.status !== 'archived');
+  // Phase54 Hotfix: 一覧・バッジと同一可視集合（現在案件＋NULL横断・archived除外）で計算＝同一画面内の件数不一致を解消。
+  const activeTasks = tasks.filter(t => t.status !== 'archived' && _taskInCurrentView(t));
   const done = activeTasks.filter(t => t.status === 'done').length;
   const total = activeTasks.length;
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
@@ -20436,7 +20632,8 @@ function applyLeaderTemplate(templateKey) {
 function updateTaskBadge() {
   const badge = document.getElementById('task-badge');
   // archived（アーカイブ済み）は集計対象外（Leader集計対象外）
-  const undone = tasks.filter(t => t.status !== 'done' && t.status !== 'archived').length;
+  // Phase54 Hotfix: 一覧・Progressと同一可視集合（現在案件＋NULL横断）で計算＝同一画面内の件数不一致を解消。
+  const undone = tasks.filter(t => t.status !== 'done' && t.status !== 'archived' && _taskInCurrentView(t)).length;
   if (undone > 0) {
     badge.textContent = undone;
     badge.style.display = 'inline-block';
@@ -20456,8 +20653,12 @@ document.addEventListener('keydown', e => {
 
 // 起動時初期化
 loadTasks();
-syncTasksFromServer();   // Phase54-3a: 起動時にサーバーTaskをpull・merge（loadTasks後・非ブロック・失敗時localStorage継続）
-backfillLocalOnlyTasks();   // Phase54-3a-fix: ローカルのみTaskをサーバーへ初回バックフィル（冪等・重複防止・削除しない）
+// Phase54 Hotfix（ガード①）: server同期(reconciliation)の完了を待ってから backfill を実行する
+//   （旧来は並列発火＝未マージ状態でbackfillが走りフラッドの一因）。いずれも失敗時はlocal維持・非ブロック。
+(async function () {
+  try { await syncTasksFromServer(); } catch (e) {}   // 起動時にサーバーTaskをpull・merge・reconciliation
+  try { await backfillLocalOnlyTasks(); } catch (e) {} // 同期完了後に安全ガード付きbackfill（B案）
+})();
 initMemberSelect();
 updateTaskBadge();
 

@@ -52,12 +52,20 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_by         TEXT DEFAULT 'web-user',
   source_message     TEXT,
   case_id            TEXT,                 -- Phase54-3a-2: 案件別Task分離（nullable・FKなし・既存はNULL＝横断Task）
+  deleted_at         TIMESTAMPTZ,          -- Phase54 Hotfix: 論理削除（nullable・NULL=生存／非NULL=削除済み・行は物理削除しない＝Supabase保存維持）
+  archived_at        TIMESTAMPTZ,          -- Phase54 Hotfix: アーカイブ（nullable・NULL=通常／非NULL=アーカイブ済み・通常一覧から外すが削除ではない・PC/iPhone同期）
   created_at         TIMESTAMPTZ DEFAULT NOW(),
   updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 -- Phase54-3a-2: 既存DBへは以下のALTERで case_id を追加（非破壊・nullable・既存行はNULL維持＝横断Task）
 --   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS case_id TEXT;
 --   CREATE INDEX IF NOT EXISTS idx_tasks_case_id ON tasks (case_id);
+-- Phase54 Hotfix: 既存DBへは以下のALTERで deleted_at を追加（非破壊・nullable・既存行はNULL維持＝生存扱い・物理削除しない）
+--   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+--   CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks (deleted_at);
+-- Phase54 Hotfix: 既存DBへは以下のALTERで archived_at を追加（非破壊・nullable・既存行はNULL維持＝通常Task）
+--   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+--   CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks (archived_at);
 
 -- タスクログテーブル
 CREATE TABLE IF NOT EXISTS task_logs (

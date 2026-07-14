@@ -582,9 +582,48 @@ app.post('/api/tasks', express.json(), async (req, res) => {
   }
 });
 
-// ── タスク ステータス更新 ─────────────────────────
+// ── タスク ステータス更新 / アーカイブ / 論理削除 ───────
+// Phase54 Hotfix: 1つの PATCH で status更新 / アーカイブ(archived) / 論理削除(deleted) を扱う。
+//   { archived: true }  → archived_at=NOW()（通常一覧から外す・PC/iPhone同期・後で戻せる）
+//   { archived: false } → archived_at=NULL（復元＝通常一覧へ戻す）
+//   { deleted: true }   → deleted_at=NOW()（アーカイブ済み等の最終削除・物理削除しない）
+//   status/archived/deleted の同時指定は禁止（400）。存在しない id は 404。
+//   再アーカイブ・再削除・再復元は冪等成功。DB失敗は 5xx（client は local を変更しない＝保護）。
+//   DELETE メソッドの route は追加しない（既存 update RLS で完結）。Task History・Learning は連動して消さない。
 app.patch('/api/tasks/:id', express.json(), async (req, res) => {
-  const { status } = req.body || {};
+  const { status, archived, deleted } = req.body || {};
+
+  // status / archived / deleted の同時指定は禁止（曖昧な混在を排除）
+  const provided = [status !== undefined, archived !== undefined, deleted !== undefined].filter(Boolean).length;
+  if (provided > 1) return res.status(400).json({ ok: false, error: 'status / archived / deleted は同時指定できません' });
+
+  // 論理削除
+  if (deleted !== undefined) {
+    if (deleted !== true) return res.status(400).json({ ok: false, error: 'deleted は true のみ受け付けます' });
+    try {
+      const result = await getTasksDb().softDeleteTask(req.params.id);
+      if (result.notFound) return res.status(404).json({ ok: false, error: 'not_found' });
+      if (result.error)    return res.status(500).json({ ok: false, error: result.error });
+      return res.json({ ok: true, ...result });   // alreadyDeleted フラグは冪等時に付与
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
+  // アーカイブ / 復元
+  if (archived !== undefined) {
+    if (typeof archived !== 'boolean') return res.status(400).json({ ok: false, error: 'archived は true / false のみ受け付けます' });
+    try {
+      const result = await getTasksDb().setTaskArchived(req.params.id, archived);
+      if (result.notFound) return res.status(404).json({ ok: false, error: 'not_found' });
+      if (result.error)    return res.status(500).json({ ok: false, error: result.error });
+      return res.json({ ok: true, ...result });   // alreadyArchived / alreadyActive フラグは冪等時に付与
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+
+  // 既存: status 更新
   if (!status) return res.status(400).json({ ok: false, error: 'status は必須です' });
   try {
     const result = await getTasksDb().updateTaskStatus(req.params.id, status);
@@ -764,11 +803,14 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
     });
   }
 
-  // タスク数の上限チェック（上限10タスク。無限ループ防止）
-  if (tasks.length > 10) {
+  // タスク数の上限チェック（無限ループ防止）。
+  // Phase54 Hotfix: Instagram運用（1案件で複数投稿・複数媒体）を考慮し 10→20 へ緩和。
+  //   ※ backfill の安全上限（BACKFILL_MAX_POST）とは【別管理】。混同しない。無限ループ防止のため撤廃はしない。
+  const MAX_AUTO_TASKS = 20;
+  if (tasks.length > MAX_AUTO_TASKS) {
     return res.status(400).json({
       ok: false,
-      error: 'タスクは最大10件までです',
+      error: `タスクは最大${MAX_AUTO_TASKS}件までです`,
     });
   }
 
