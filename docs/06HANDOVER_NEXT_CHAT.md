@@ -2,7 +2,22 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**・最終統合確認合格・tag v1.01-phase54-complete。3b-3 Completed（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。**追記：Phase54 Hotfix 本番反映済み（commit d512bad・tag v1.01-phase54-hotfix-task-sync）**。次工程＝**Phase55候補整理 または Version1.1残課題確認**・**Phase55未着手**）
+更新日: 2026-07-16（**Phase54 正式Complete維持**・**Phase54 Known Issue Closed**。HEAD=origin/main=**a5bbe27**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-known-issue-c2**・PhaseD-1 commit=**a5bbe27**（tagなし）。PC/iPhone Task view69/badge69一致。**Phase55未着手**・次工程はユーザー承認後に決定）
+
+---
+
+## 【現在地・最優先】Phase54 Known Issue（PC⇔iPhone Task表示不一致）— **Closed**（2026-07-16・archived/caseId Server正本化・本番反映済み）
+
+- **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54 正式Complete維持**／**Phase54 Known Issue Closed**／**Phase55 未着手**
+- **Git**：**HEAD = origin/main = `a5bbe27`**（PhaseD-1）。本docs更新commitが以降の最新HEAD。**最新code tag = `v1.01-phase54-known-issue-c2`**。
+  - 主要commit：`5f23cf1`(A-0)／`76d0582`(A-1)／`0ed68e4`(C-1)／`6f0816a`(C-2)／`a5bbe27`(D-1・tagなし)
+  - 主要tag：`v1.01-phase54-known-issue-a0`/`-a1`/`-c1`/`-c2`
+- **成果**：Task field merge を**項目別Server正本化**（dbId一致の `archivedAt`/`caseId` を Server正本・rich status/その他は newer-wins維持・local-only保護）。**PC=iPhone で view69/badge69 一致**。
+- **最終確認（本番・実機）**：total233・archived1・todo232・NULL caseId70・caseIdあり163・**PC/iPhone view69・badge69**・Task件数減少なし・backfill POST増加なし・Render API正常・診断は `DEBUG_TASK_SYNC=false` で本番非表示（ロジックは温存）。
+- **原因（PhaseA-2確定）**：merge が単一 `updatedAt` の newer-wins で archived/caseId/rich status を一括処理していたため、iPhone localStorage の古い archived52件・端末caseId が同期後も温存され不一致。→ **Decision 059** 参照。
+- **保護・不変**：local-only Task／rich status／newer-wins本体／deleted同期／Server-Authoritative Reconciliation／backfill安全化／件数統一／Task History／Learning／server.js/lib/DB/API/SQL/Supabase。
+- **次工程（ユーザー承認後に決定・未着手）**：Phase55候補整理 または Version1.1残課題確認。診断は再調査時 `DEBUG_TASK_SYNC=true` で復活可。orphan caseId（tasks.case_id と cases表の不整合）整理は任意・別工程。**Phase55は別承認まで開始しない**。
 
 ---
 

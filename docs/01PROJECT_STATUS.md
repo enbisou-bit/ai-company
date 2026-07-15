@@ -2,7 +2,23 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-14（**Phase54 Remaining Realtime Sync：正式Complete**。Phase54-3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格。Approval／Draft／Task／Task History／Notification／Timeline／Workflow Live の同期基盤完成＝Version1.1「PC⇔スマホ同一AI会社」基盤成立。tag v1.01-phase54-complete。次工程＝Phase55候補整理またはVersion1.1残課題確認・**Phase55未着手**。**追記：Phase54完了後Known Issue対応の Phase54 Hotfix（Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限20）を本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync**）
+更新日: 2026-07-16（**Phase54 正式Complete維持**。**Phase54 Known Issue（PC⇔iPhone Task表示不一致）Closed**＝archived/caseId を Server正本化しPC/iPhoneとも view69・badge69 で一致・本番反映済み。HEAD = origin/main = **a5bbe27**（docs更新後は本更新commitが最新HEAD）。最新code tag = **v1.01-phase54-known-issue-c2**。**Phase55未着手**。以前の記録：Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix 本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+
+---
+
+## Phase54 Known Issue（PC⇔iPhone Task表示不一致）**Closed**（2026-07-16・archived/caseId Server正本化・本番反映済み・HEAD a5bbe27）
+
+- **位置づけ**：**Phase54 正式Complete は維持**（tag `v1.01-phase54-complete` 不変）・**Phase55 未着手**。Phase54完了後にユーザー実機で顕在化した **Task同期 Known Issue** への恒久対応（PhaseA-0〜D-1）。
+- **修正前**：PC badge47/ホーム案件11・iPhone badge13/ホーム案件1（GET /api/tasks=233・GET /api/cases=1）。
+- **原因**：Task field merge が単一 `updatedAt` の newer-wins だったため、iPhone localStorage の古い `archived`（52件）と端末ローカル `caseId` が Server同期後も温存され、PCとiPhoneで可視Task集合が不一致。
+- **修正**：
+  - **PhaseC-1**：dbId一致Taskの `archivedAt` を **Server正本化**（newer-wins非依存）・commit **0ed68e4**・tag `v1.01-phase54-known-issue-c1`
+  - **PhaseC-2**：dbId一致Taskの `caseId` を **Server正本化**・commit **6f0816a**・tag `v1.01-phase54-known-issue-c2`
+  - **local-only Task（dbIdなし）は保護**／rich status・newer-wins本体・deleted同期・backfill・件数統一は維持
+  - **PhaseD-1**：診断コードは削除せず `DEBUG_TASK_SYNC=false` で本番非表示化・commit **a5bbe27**（tagなし）
+- **最終確認（本番・実機）**：total**233**・archived**1**・todo**232**・NULL caseId**70**・caseIdあり**163**・**PC view/badge 69/69**・**iPhone view/badge 69/69**（PC=iPhone一致）・Task件数減少なし・backfill POST増加なし・Render API正常・診断表示は本番UIで非表示。
+- **調査工程**：PhaseA-0（同期診断＋showApp同期・commit 5f23cf1）→ PhaseA-1（分布診断・commit 76d0582）→ PhaseA-2（原因確定・設計）→ PhaseC-1 → PhaseC-2 → PhaseD-1。
+- **次工程**：**Phase55未着手**。次工程はユーザー承認後に決定。
 
 ---
 

@@ -4,6 +4,25 @@
 
 ---
 
+## Phase54 Known Issue（PC⇔iPhone Task表示不一致）**Closed**（2026-07-16・archived/caseId Server正本化・本番反映済み）
+
+Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue（PC badge47/iPhone badge13）を、Task field merge の Server正本化で恒久解決（時系列・新しい順）。
+
+- **PhaseD-1 診断表示 非表示化**（commit **a5bbe27**・tagなし）
+  - 目的：原因解決後、診断表示を本番UIから隠す。変更：`DEBUG_TASK_SYNC=false` 追加・`renderTaskSyncDiag` 表示のみ抑制（診断ロジック/変数/関数/localStorage記録は削除せず温存）。検証：dev-check 200/200/200・console 0・診断非表示・view69/badge69維持・本番反映確認。
+- **PhaseC-2 caseId Server正本化**（commit **6f0816a**・tag **v1.01-phase54-known-issue-c2**）
+  - 目的：dbId一致Taskの caseId 端末温存を解消。変更：merge で `existing.caseId = mapped.caseId` を newer-wins非依存で常時採用（+3行・追加のみ）。local-only（dbなし）保護。検証：dev-check 200/200/200・console 0・PC view69/badge69維持・backfill POST 0・本番 total233/archived1/NULL70/deletedIds125。
+- **PhaseC-1 archived Server正本化**（commit **0ed68e4**・tag **v1.01-phase54-known-issue-c1**）
+  - 目的：iPhone localStorage の古い archived 52件（Server同期後も温存）を解消。変更：merge で archivedAt を Server正本化（newer-wins非依存・stale archived解除／rich status温存／status は archived⇄非archivedのみ・previousStatus等の新項目追加なし・+16行）。検証：dev-check 200/200/200・console 0・PC無回帰(view69)・un-archiveロジック実証・本番 archived1維持。
+- **PhaseA-1 分布診断**（commit **76d0582**・tag **v1.01-phase54-known-issue-a1**）
+  - 目的：233→13/69 の絞り込み箇所を数値確定。変更：診断に caseId/status/archived/deleted 分布を追加（観測のみ）。結果：excl[case163 arch1 done0]＝**caseId が支配的**と確定。
+- **PhaseA-0 同期診断＋showApp同期**（commit **5f23cf1**・tag **v1.01-phase54-known-issue-a0**）
+  - 目的：iPhoneでの同期停止段階を画面で可視化＋再ログイン時の同期ギャップ解消。変更：build marker・Task同期診断（HTTP/received/merge/save/render）・`showApp()`後のsync 1回保証（in-flight時1回再試行・backfill非呼出）。結果：iPhone recv233/complete＝同期は正常と確定（原因は表示側caseId/archived）。
+- **原因（PhaseA-2で確定）**：Task field merge が単一 `updatedAt` の newer-wins だったため、archived/caseId が端末ローカル値で温存され PC⇔iPhone不一致。
+- **最終確認（Closed）**：total233・archived1・todo232・NULL70・case163・**PC=iPhone view69/badge69**・件数減少なし・backfill POST増加なし・Render API正常・診断本番非表示。
+
+---
+
 ## Phase54 Hotfix — Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限20 **本番反映済み**（2026-07-14・Phase54完了後Known Issue対応・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
 
 - **位置づけ**：**Phase54 正式Complete 維持**（tag `v1.01-phase54-complete` 不変）・**Phase55 未着手 維持**。Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue への Hotfix。

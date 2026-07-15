@@ -2,7 +2,27 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**＝最終統合確認合格・tag v1.01-phase54-complete。Decision 057・Phase54-3b-3 **Completed**（PC⇔iPhone既読双方向同期・ユーザー実機確認済み）。Decision 056・3b-2 Completed。Decision 055・3b-1 Completed。次工程＝Phase55候補整理・未着手。**追記：Decision 058・Phase54 Hotfix（削除同期 deleted_at／アーカイブ同期 archived_at／backfill安全化／Task生成上限20／件数統一）本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync**）
+更新日: 2026-07-16（**Phase54 正式Complete維持**。**Decision 059・Phase54 Known Issue（PC⇔iPhone Task表示不一致）Closed**＝Task field mergeの項目別Server正本化・本番反映済み・HEAD a5bbe27。**Phase55未着手**。以前：Decision 058・Phase54 Hotfix 本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync／Decision 057・3b-3 Completed／tag v1.01-phase54-complete）
+
+---
+
+# Decision 059
+## Phase54 Known Issue — Task field merge の項目別 Server正本化（PC⇔iPhone Task表示一致）
+
+**背景**：Phase54完了後、ユーザー実機で PC badge47/iPhone badge13 の Task表示不一致が顕在化。診断（PhaseA-0/A-1）で **GET /api/tasks=233・同期正常**を確認し、原因は Task field merge が単一 `updatedAt` の newer-wins で archived/caseId/rich status を一括処理していたため、端末ローカルの archived（iPhone 52件）・caseId が Server同期後も温存されていた（PhaseA-2で確定）。
+
+**決定（正式・merge項目の責務分離）**：
+- **Task存在・deleted は既存どおり Server正本**（deletedIds/deletedSignatures/reconciliation・変更なし）。
+- **dbId一致Taskの `archivedAt` は Server正本**（newer-wins非依存・PhaseC-1）。stale archived を解除し端末間一致。
+- **dbId一致Taskの `caseId` は Server正本**（newer-wins非依存・PhaseC-2）。
+- **dbIdなし local-only Task は local保護**（merge対象外・Serverへ勝手に消さない/変えない）。
+- **rich status（working/reviewing/consulting/strategy等）とその他フィールド（title/body/priority/member/updatedAt）は既存 newer-wins 維持**（進行状態を降格しない）。archived収束時も status は archived⇄非archivedのみで、`previousStatus` 等の新項目は追加しない。
+- **診断コードは削除せず `DEBUG_TASK_SYNC=false` で温存**（本番非表示・再調査時 true で復活・PhaseD-1）。
+- **Phase55 は別承認まで開始しない**。
+
+**なぜこの設計か**：archived/caseId は「端末共通の事実（DB列で管理）」＝Server正本が正しい。rich status は server語彙（pending/in_progress/done）に無くlocalの進行状態＝newer-wins保護。項目別に責務を分けることで、PC/iPhone収束・local-only保護・rich status保護・件数233維持・backfill非再発・F5/再ログイン後の再発防止を同時に満たす（A案の全項目Server正本＝rich status降格は不採用）。
+
+**Git/反映**：PhaseC-1 commit 0ed68e4・tag v1.01-phase54-known-issue-c1／PhaseC-2 commit 6f0816a・tag v1.01-phase54-known-issue-c2／PhaseD-1 commit a5bbe27（tagなし）。本番確認：PC=iPhone view69/badge69・total233/archived1/todo232・件数減少なし・診断本番非表示。index.htmlのみ・server.js/lib/DB/API/SQL/Supabase 非接触。
 
 ---
 

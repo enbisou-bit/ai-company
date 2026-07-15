@@ -1,7 +1,23 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-14（**Phase54 Remaining Realtime Sync 正式Complete**。3b-3 Completed（PC/iPhone既読双方向同期・ユーザー実機確認済み）＋最終統合確認合格・tag v1.01-phase54-complete。次工程＝Phase55候補整理／Version1.1残課題確認・Phase55未着手。**追記：Phase54 Hotfix（Task同期/削除同期/アーカイブ同期/backfill安全化/Task生成上限20）本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync**）
+> 更新日: 2026-07-16（**Phase54 正式Complete維持**。**Phase54 Known Issue（PC⇔iPhone Task表示不一致）Complete**＝archived/caseId Server正本化でPC=iPhone view69/badge69一致・本番反映済み・HEAD a5bbe27。**Phase55未着手**。以前：Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix 本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+
+---
+
+## Phase54 Known Issue（PC⇔iPhone Task表示不一致）**Complete**（2026-07-16・Phase54完了後・archived/caseId Server正本化・本番反映済み）
+
+> 記録日: 2026-07-16。Phase54 正式Complete維持・Phase55未着手。Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue（PC badge47/iPhone badge13）への恒久対応。**GET /api/tasks=233 は正常・API/DB/Render/同期実行は正常**で、原因は Task field merge が単一 `updatedAt` の newer-wins だったため端末ローカルの archived/caseId が温存され PC⇔iPhone不一致。
+
+#### 完了工程（時系列）
+- **PhaseA-0 診断追加**（commit **5f23cf1**・tag **v1.01-phase54-known-issue-a0**）：Task同期診断（build marker・HTTP status・received・merge・save/render）＋`showApp()`後sync 1回保証（in-flight時1回再試行・backfill非呼出）。iPhone recv233/complete＝**同期は正常**を確定。
+- **PhaseA-1 分布診断**（commit **76d0582**・tag **v1.01-phase54-known-issue-a1**）：caseId/status/archived/deleted 分布を診断へ追加（観測のみ）。excl[case163 arch1 done0]＝**caseId支配的**を数値確定。
+- **PhaseA-2 原因確定・設計**：merge が単一 `updatedAt` newer-wins で archived/caseId/rich status を一括処理（責務未分離）＝温存原因。Server-Authoritative は削除・存在のみでフィールド値は newer-wins だったと確定。項目別Server正本（B案）を推奨・段階分割を設計。
+- **PhaseC-1 archived Server正本化**（commit **0ed68e4**・tag **v1.01-phase54-known-issue-c1**・index.html +16）：dbId一致Taskの `archivedAt` を newer-wins非依存でServer正本化（stale archived解除／rich status温存／status は archived⇄非archivedのみ・新項目追加なし）。
+- **PhaseC-2 caseId Server正本化**（commit **6f0816a**・tag **v1.01-phase54-known-issue-c2**・index.html +3）：dbId一致Taskの `caseId` を newer-wins非依存でServer正本化。local-only（dbなし）保護。
+- **PhaseD-1 診断表示 非表示化**（commit **a5bbe27**・tagなし・index.html +7/-1）：`DEBUG_TASK_SYNC=false` で本番非表示。**診断ロジック/変数/関数/localStorage記録は削除せず温存**（再調査時 true で復活）。
+- **保護（不変）**：local-only Task保護／rich status／newer-wins本体（title/body/priority/member/updatedAt）／deleted同期（deletedIds/deletedSignatures）／Server-Authoritative Reconciliation／backfill安全化（POST上限20・1回制限）／件数統一／Task History／Learning／server.js/lib/DB/API/SQL/Supabase。
+- **最終確認（本番・実機）＝Known Issue Complete**：total**233**・archived**1**・todo**232**・NULL caseId**70**・caseIdあり**163**・**PC view/badge 69/69**・**iPhone view/badge 69/69**（一致）・Task件数減少なし・backfill POST増加なし・Render API正常・診断本番非表示・console 0・dev-check 200/200/200。
 
 ---
 
