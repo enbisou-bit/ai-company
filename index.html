@@ -7444,6 +7444,22 @@ async function syncTasksFromServer(caller) {
         tasks.push(mapped);                                          // 未存在→追加（他端末作成Taskを表示）
         changed = true; _added++;
       } else {
+        // PhaseC-1: archivedAt を Server正本化（newer-wins非依存・dbId一致時のみ）。
+        //   caseId / rich status / その他フィールドの newer-wins は不変。新項目(previousStatus等)は追加しない。
+        //   変更するのは archived 表示に関係する部分（status の archived⇄非archived のみ）。
+        var _srvArchived = (mapped.archivedAt != null);
+        var _locArchived = (existing.status === 'archived') || (existing.archivedAt != null);
+        if (_srvArchived && !_locArchived) {
+          existing.archivedAt = mapped.archivedAt;                    // server=archived → 表示archivedへ収束
+          existing.status     = 'archived';
+          changed = true;
+        } else if (!_srvArchived && _locArchived) {
+          existing.archivedAt = null;                                 // server=非archived / local=archived(stale) → 解除
+          existing.status     = mapped.status;                        // server base（archivedAt=null時のみ・rich status温存対象外）
+          changed = true;
+        } else {
+          existing.archivedAt = mapped.archivedAt;                    // 両者一致 → archivedAt値のみserver正本へ（status不変＝rich status保護）
+        }
         var st = Date.parse(mapped.updatedAt) || 0;
         var lt = Date.parse(existing.updatedAt) || 0;
         if (st > lt) {
