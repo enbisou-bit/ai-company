@@ -7460,6 +7460,9 @@ async function syncTasksFromServer(caller) {
         } else {
           existing.archivedAt = mapped.archivedAt;                    // 両者一致 → archivedAt値のみserver正本へ（status不変＝rich status保護）
         }
+        // PhaseC-2: caseId を Server正本化（newer-wins非依存・dbId一致時のみ）。
+        //   local-only(dbIdなし)Taskはこの分岐に到達しない＝対象外・保護。rich status/archived/その他は不変。
+        if (existing.caseId !== mapped.caseId) { existing.caseId = mapped.caseId; changed = true; }
         var st = Date.parse(mapped.updatedAt) || 0;
         var lt = Date.parse(existing.updatedAt) || 0;
         if (st > lt) {
