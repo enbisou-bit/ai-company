@@ -12650,18 +12650,43 @@ async function syncCasesFromServer() {
     }
   } catch (e) { /* localStorageで継続（既存挙動維持） */ }
 }
-function pushCaseToServer(caseId) {
-  const c = cases[caseId];
-  if (!c) return;
-  const body = _caseLocalToServer(c);
-  if (!body) return;
+// Case成功確認契約: POST 1回分の送信と成否判定。
+// サーバは Supabase 失敗時も HTTP 200 + { ok:false } を返すため、**HTTP status と data.ok の両方**を検証する。
+//   成功  = res.ok === true かつ JSON解析成功 かつ data.ok === true
+//   client(4xx) = 再送しない（id/title欠落などは再送しても直らない）
+//   server(5xx / 200+ok:false) / network = 再送対象
+async function _postCaseOnce(body) {
   try {
-    fetch('/api/cases', {
+    const res = await fetch('/api/cases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).catch(() => {});
-  } catch (e) { /* 失敗握り潰し・localStorageは保存済み */ }
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }   // JSON解析失敗＝成功と見なさない
+    if (res.ok && data && data.ok === true) return { ok: true, status: res.status };
+    if (res.status >= 400 && res.status < 500) return { ok: false, status: res.status, reason: 'client' };
+    return { ok: false, status: res.status, reason: (data && data.ok === false) ? 'server_ok_false' : 'server' };
+  } catch (e) {
+    return { ok: false, status: 0, reason: 'network' };
+  }
+}
+// Case成功確認契約: 失敗を握り潰さず成否を返す（deleteCaseFromServer と同じ { ok, status, reason } 形）。
+//   ・local案件は成否に関わらず**常に保持**（作成はユーザーの意図した事実。POST結果で消さない）
+//   ・5xx / 通信失敗 / 200+ok:false は**最大1回だけ再送**（合計2回まで・無限再試行禁止）／4xxは再送しない
+//   ・opts.notifyOnFail=true のときのみ通知（案件作成時＝createCase のみ。touchCase 経由は毎メッセージ発火のため通知しない）
+//   ・await しない設計＝UIをブロックしない。createCase は同期関数のまま維持する
+async function pushCaseToServer(caseId, opts) {
+  const c = cases[caseId];
+  if (!c) return { ok: false, status: 0, reason: 'no_case' };
+  const body = _caseLocalToServer(c);
+  if (!body) return { ok: false, status: 0, reason: 'bad_body' };
+  let r = await _postCaseOnce(body);
+  if (!r.ok && r.reason !== 'client') r = await _postCaseOnce(body);   // 最大1回だけ再送
+  if (!r.ok && opts && opts.notifyOnFail) {
+    try { _notifyCasePushFailed(c.title || c.userText || '案件'); } catch (e) { /* 通知失敗でも案件は保持済み */ }
+  }
+  return r;
 }
 // Phase52-12.1: 案件削除をSupabaseへ同期（DELETE /api/cases/:id・id完全一致1件のみ・messages/conversationsは削除しない）
 // 不具合②-A: fire-and-forget をやめ、成否を返す契約へ変更（削除4経路はこの結果に従ってのみ local を削除する）。
@@ -12672,8 +12697,15 @@ async function deleteCaseFromServer(caseId) {
   if (!caseId) return { ok: false, status: 0, reason: 'no_id' };
   try {
     const res = await fetch('/api/cases/' + encodeURIComponent(caseId), { method: 'DELETE' });
-    if (res.ok || res.status === 404) return { ok: true, status: res.status };
-    return { ok: false, status: res.status, reason: 'server' };
+    // 404 = DBに行なし（＝push未達のlocal-only案件）→ 整合するため local削除可。※404の本文は ok:false のため data.ok 判定より先に返す
+    if (res.status === 404) return { ok: true, status: 404 };
+    // P5対策: サーバは Supabase 失敗時も HTTP 200 + { ok:false } を返すため、HTTP status だけでは成否を判定できない。
+    //   成功 = res.ok === true かつ JSON解析成功 かつ data.ok === true の3条件を満たす場合のみ。
+    //   HTTP 200 + ok:false / 5xx / 通信失敗 は失敗扱い＝localを残す（黙って消えて次回同期で復活する事故を防ぐ）
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (res.ok && data && data.ok === true) return { ok: true, status: res.status };
+    return { ok: false, status: res.status, reason: (data && data.ok === false) ? 'server_ok_false' : 'server' };
   } catch (e) {
     return { ok: false, status: 0, reason: 'network' };   // localStorageは削除しない＝次回同期で不整合が起きない
   }
@@ -12686,6 +12718,11 @@ async function _deleteCaseWithContract(caseId) {
   if (!r || !r.ok) return false;
   if (cases[caseId]) delete cases[caseId];
   return true;
+}
+// Case成功確認契約: 案件作成時の同期失敗をユーザーへ通知（作成は意図的操作＝低頻度のため都度通知。
+// touchCase 経由は毎メッセージ発火するため通知しない＝通知スパム防止）。案件はlocalに保持済み。
+function _notifyCasePushFailed(name) {
+  alert(`案件『${name}』はこの端末に保存しましたが、サーバーへの同期に失敗しました。\n通信状況を確認してください。\n同期されるまで他の端末には表示されません。`);
 }
 // 不具合②-A: 削除失敗のユーザー通知（既存の alert/confirm と同じ方式で統一）
 function _notifyCaseDeleteFailed(names) {
@@ -12729,7 +12766,7 @@ function createCase(userText, memberIds) {
   const _now = new Date().toISOString();
   cases[id] = { id, title, ts: _now, updatedAt: _now, memberIds: allIds, userText }; // Phase52-11.8c: updatedAt追加
   saveCases();
-  pushCaseToServer(id);   // Phase52-11.9: 作成した案件をSupabaseへ同期（失敗握り潰し）
+  pushCaseToServer(id, { notifyOnFail: true });   // Phase52-11.9: 作成した案件をSupabaseへ同期／Case成功確認契約: 作成時の同期失敗のみ通知（awaitしない＝createCaseは同期関数のまま・localは常に保持）
   resetApprovalStatesToDefault();   // Phase54-1e: 新規案件は必ず未承認から開始（既存へのdedup時は上の早期returnでここに来ないためリセットしない）
   return id;
 }
