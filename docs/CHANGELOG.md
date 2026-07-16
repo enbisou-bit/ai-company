@@ -4,6 +4,23 @@
 
 ---
 
+## Case Success Contract（2026-07-17・本番反映済み・commit **aed5f7d**・tag **v1.01-phase54-case-sync-contract**）
+
+案件の作成・削除を「成功確認型」へ統一。**index.htmlのみ（+48/-11）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 063）。
+
+- **POST success contract**：`_postCaseOnce()` 追加＋`pushCaseToServer()` を async 契約化（`{ ok, status, reason }`＝`deleteCaseFromServer` と同形）。従来の `fetch(...).catch(() => {})` による**失敗の握り潰しを解消**。
+- **data.ok validation**：サーバは Supabase 失敗時も **HTTP 200 + `{ ok:false }`** を返すため（P4）、成功判定を **`res.ok` かつ JSON解析成功 かつ `data.ok === true`** の3条件へ。JSON解析失敗は成功と見なさない。
+- **retry**：5xx・通信失敗・`200+ok:false` のみ**最大1回だけ再送**（合計2回・**無限再試行禁止**）。**4xxは再送しない**。
+- **notification**：**案件作成時の同期失敗のみ通知**（`createCase` → `{ notifyOnFail:true }`／`_notifyCasePushFailed`）。**`touchCase` 経由は通知しない**（毎メッセージ発火＝通知スパム防止）。
+- **local protection**：**作成は成否に関わらず local案件を常に保持**（POST結果でユーザーの案件を消さない）。`createCase()` は**同期関数のまま**（await しない＝UIブロックなし）、`touchCase()` は**無変更**。
+- **DELETE success contract（P5解消）**：`deleteCaseFromServer` が HTTP status のみで判定していたため、Supabase障害時に `200+ok:false` を成功と誤判定し「localから消えたのにDBは未削除→次回同期で復活」する穴があった。**404 を先に判定**（本文が `ok:false` のため）→ local-only として local削除可／それ以外は3条件のみ成功／**`200+ok:false`・5xx・通信失敗は失敗＝localを保持して既存通知**。
+- **確認**：fetchスタブで localhost・本番とも全ケース合格（POST 200+ok:true=1回/通知0・200+ok:false=2回/通知1・**400=1回（再送なし）**・500=2回・通信失敗=2回・**touchCase経由=通知0**／DELETE 200+ok:true=成功・**200+ok:false=失敗でlocal残存**・404=成功・5xx/通信失敗=失敗でlocal残存）・**最大試行2回以内**・`node --check` 0エラー・**dev-check 200/200/200**・**console 0**・本番トップ200・旧 fire-and-forget／旧DELETE判定は**残存0件**。
+- **データ保護**：**実DBへのテストデータ作成なし**・本番DB **生存1/削除済み2/合計3行**＝無変更・localStorage 復元一致。
+- **効果**：一過性の通信断は自動再送で救済／恒久的失敗はユーザーが即座に認知／**local-only案件の再発防止**／P5解消。
+- **残存項目（別工程）**：① Task側 PC⇔iPhone 実機確認／② Case同期契機の改善（現在は起動時1回のみ）／③ Phase55判断。
+
+---
+
 ## 案件系Known Issue **Close**（2026-07-17・Case同期系Complete・本番反映済み・tag v1.01-phase54-known-issue-case-closed）
 
 Phase54完了後にユーザー本番実機で顕在化した**案件（Case）系**Known Issueを恒久解決し、正式Close（時系列・新しい順）。**Phase54 Complete維持・Phase55未着手**。**Task同期系とは別工程**。

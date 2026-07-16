@@ -2,14 +2,26 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**・**案件系Known Issue 全Close＝Case同期系Complete**。HEAD=origin/main=**7c7d6ff**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-known-issue-case-closed**。PC/iPhone/DB とも案件1件で一致・local-only 0。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-17（**Phase54 正式Complete維持**・**Case同期 Complete**・**Case Known Issue Complete**・**Case成功確認契約 完了**。HEAD=origin/main=**aed5f7d**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-case-sync-contract**。PC/iPhone/DB とも案件1件で一致・local-only 0。**Phase55未着手**・次工程はユーザー承認後に決定）
 
 ---
 
-## 【現在地・最優先】案件系Known Issue — **全Close**（2026-07-17・**Case同期系Complete**・本番反映済み・PC⇔iPhone実機確認済み）
+## 【現在地・最優先】Case成功確認契約 — **完了**（2026-07-17・本番反映済み・commit aed5f7d・tag v1.01-phase54-case-sync-contract）
 
 - **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
-- **現在Phase**：**Phase54 Complete維持**／**案件系Known Issue 全Close（Case同期系Complete）**／**Phase55 未着手**
+- **現在Phase**：**Phase54 Complete維持**／**Case同期 Complete**／**Case Known Issue Complete**／**Phase55 未着手**
+- **Git**：**HEAD = origin/main = `aed5f7d`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-case-sync-contract`**。
+- **内容**：案件の**作成・削除を「成功確認型」へ統一**（Decision 063・**index.htmlのみ +48/-11**・server.js/lib/DB/API/SQL **無変更**）。
+  - **POST成功確認**：`_postCaseOnce()` 追加＋`pushCaseToServer()` async契約化（`{ ok, status, reason }`）。従来の `fetch(...).catch(() => {})` の**失敗握り潰しを解消**
+  - **`data.ok` 検証**：サーバは Supabase 失敗時も **HTTP 200 + `{ ok:false }`** を返すため（P4）、成功＝**`res.ok` かつ JSON解析成功 かつ `data.ok === true`** の3条件
+  - **再送1回**：5xx・通信失敗・`200+ok:false` のみ最大1回（合計2回・無限再試行禁止）／**4xxは再送しない**
+  - **通知**：**案件作成時の同期失敗のみ**（`touchCase` 経由は通知しない＝毎メッセージ発火のスパム防止）
+  - **local保持**：作成は成否に関わらず**常にlocal保持**／`createCase()` は**同期関数のまま**（UIブロックなし）／`touchCase()` **無変更**
+  - **DELETE側（P5解消）**：404を先に判定→local-onlyとして削除可／それ以外は3条件のみ成功／**200+`ok:false`・5xx・通信失敗は失敗＝localを保持して通知**（Supabase障害時に「削除したのに復活する」事故を防止）
+- **確認**：fetchスタブで localhost・本番とも全ケース合格・最大試行2回以内・dev-check 200/200/200・console 0・本番トップ200・旧配線 残存0件・**本番DB無変更（生存1/削除済み2/計3行）**・**テストデータ作成なし**
+- **効果**：**local-only案件の再発防止**（一過性の通信断は自動再送で救済・恒久的失敗は即時に認知）＋P5解消
+
+### 【参考】先行して完了：案件系Known Issue 全Close（2026-07-17・tag v1.01-phase54-known-issue-case-closed）
 - **Git**：**HEAD = origin/main = `7c7d6ff`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-known-issue-case-closed`**。
   - 主要commit：`f36762c`（案件自動生成停止）／`ad83544`（Case削除同期）／`7c7d6ff`（案件診断パネル）
   - 主要tag：`v1.01-phase54-known-issue-case-auto-create` / `-case-delete-sync` / `-case-diagnosis` / `-case-closed`
@@ -22,11 +34,14 @@
 - **`DEBUG_CASE_DIAG = false`**（本番の「🔍 診断」ボタン非表示）／**診断ロジックは削除せず温存**（再調査時 `true` で復活・PhaseD-1 の `DEBUG_TASK_SYNC` と同方式）
 - **SQL（ユーザー実行済み・非破壊）**：`ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;` ＋ `CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);`
 - **保護・不変**：**物理削除なし**（可逆な論理削除）／**`messages`・`conversations`・`task_history`・Learning は非連動・非削除**／local-only案件保護／`createCase()` 本体／`createNewCaseFromForm()`／**Task同期・Task History・Notification・Timeline・Approval・Output Draft・Provider・Routing・Cost・Phase53 非接触**／cost関連3ファイル・退避フォルダ 未操作
-- **次工程（ユーザー承認後に決定・未着手）**：
-  1. **`pushCaseToServer` 成功確認化** — **作成側は現在も fire-and-forget（失敗握り潰し）**。②-Aで「削除」は成功確認型にしたが「作成(push)」は未対策で、**POST失敗時に local-only 案件が再発し得る**。index.htmlのみ・小規模
-  2. **Phase54 Hotfix の Task側 PC⇔iPhone 実機確認**（未実施・下記【参考】参照。今回Closeしたのは**Case側**であり**Task側は別**）
-  3. その後 **Phase55 判断**
-- **その他の残存項目は別工程**：Case同期契機の追加（現在は起動時1回のみ＝他端末の削除反映に相手端末のF5が必要）／Edge(Windows 125%)Taskスクロールバー判定ずれ／正当候補156件のTask整理／`backup-dup-candidates-20260714/` の最終処理方針／検証テスト行の整理／Cost同期・Learning残buffer・回答本文のtask_history保存（Version2候補）。**Phase55は別承認まで開始しない**
+- **✅ `pushCaseToServer` 成功確認化は完了**（2026-07-17・commit `aed5f7d`・Decision 063・本ファイル冒頭参照）
+
+### 残タスク（ユーザー承認後に決定・未着手）
+1. **Phase54 Hotfix の Task側 PC⇔iPhone 実機確認** — 未実施（下記【参考】参照）。Close済みなのは**Case側**であり**Task側は別**。コード変更不要の可能性が高い
+2. **Case同期契機の改善**（`visibilitychange` 等）— 現在は**起動時1回のみ**のため、他端末の削除反映に**相手端末のF5が必要**
+3. **Phase55 判断**
+
+- **その他の残存項目は別工程**：Edge(Windows 125%)Taskスクロールバー判定ずれ／正当候補156件のTask整理／`backup-dup-candidates-20260714/` の最終処理方針／検証テスト行の整理／Cost同期・Learning残buffer・回答本文のtask_history保存（Version2候補）。**Phase55は別承認まで開始しない**
 
 ---
 

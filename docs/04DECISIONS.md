@@ -2,7 +2,35 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**。**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**・本番反映済み・HEAD 7c7d6ff。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed・HEAD a5bbe27／Decision 058・Phase54 Hotfix・commit d512bad／Decision 057・3b-3 Completed）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**Decision 063・Case成功確認契約 完了**・本番反映済み・HEAD **aed5f7d**・tag v1.01-phase54-case-sync-contract。先行して **Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 063
+## Case Success Contract — 案件の作成・削除を「成功確認型」へ統一する（`data.ok` 検証・再送1回・local保持）
+
+**背景**：案件系Known Issue Close後も、`pushCaseToServer` は `fetch(...).catch(() => {})` で**失敗を完全に握り潰し**、`res.ok` も `data.ok` も検証していなかった。POST失敗が無音のため **local-only案件が再発し得る**構造が残っていた（②-Aで「削除」は成功確認型にしたが「**作成(push)」は未対策**）。調査でさらに2点が判明：
+- **P4**：サーバは Supabase 失敗時も **HTTP 200 + `{ ok:false }`** を返す（`res.json({ ok: !result.error, error })`）。→ **HTTP status だけでは成否を判定できない**。
+- **P5**：`deleteCaseFromServer`（②-A実装）が **HTTP status のみ**で判定していたため、Supabase障害時に `200 + ok:false` を**成功と誤判定 → localから削除 → DBは未削除 → 次回同期の merge で案件が復活**する穴があった（「削除したのに復活する」＝Close済み不具合の再現条件）。
+
+**決定（採用＝A案・作成と削除の両方に適用）**：
+- **POST成功確認**：`pushCaseToServer` を成功確認契約へ変更し、`{ ok, status, reason }` を返す（`deleteCaseFromServer` と同形）。
+- **`data.ok` 確認**：成功判定は **`res.ok === true` かつ JSON解析成功 かつ `data.ok === true`** の3条件（P4対策）。JSON解析失敗は成功と見なさない。
+- **local保持**：**作成は成否に関わらず local案件を常に保持**する。POST結果でユーザーの案件を消さない（＝削除とは意味論が反転する。削除は「成功後のみlocal反映」、作成は「localは常に残す・同期は事後確認」）。
+- **再送1回**：5xx・通信失敗・`200+ok:false` のみ**最大1回だけ再送**（合計2回・**無限再試行禁止**＝Task backfill方針を踏襲）。**4xxは再送しない**（`id`/`title` 欠落等は再送しても直らない）。
+- **通知は案件作成のみ**：`createCase` から `{ notifyOnFail:true }`。**`touchCase` 経由では通知しない**。
+- **`touchCase` 通知禁止の理由**：`touchCase` は**メッセージ送信のたびに発火**するため、オフライン時に通知が連発し**通知スパム**になる。案件作成は低頻度の意図的操作なので都度通知が適切、`updatedAt` 同期の失敗は軽微で次回成功時に収束する。
+- **delete側も同契約**：P5を同工程で解消。**404 は `data.ok` 判定より先に返す**（404の本文は `ok:false` のため）＝local-only として local削除可。それ以外は3条件のみ成功。**`200+ok:false`・5xx・通信失敗は失敗＝localを保持して既存通知**。
+- **DB変更なし・API変更なし**：既存 `POST /api/cases`＋`upsertCase`（`onConflict:'id'` で冪等）をそのまま利用。SQLなし・新規エンドポイントなし。
+
+**なぜこの設計か（却下案）**：
+- **B案（`_unsynced` フラグ＋起動時backfill）は却下**。②-B backfill（対象なしでClose済み・Decision 062）の機構（上限・in-flightロック・セッション1回・復活防止）を丸ごと再導入することになり、**Close判断と矛盾**する。加えて `touchCase` による自己修復パス（メッセージ送信ごとに同一idを冪等再POST）が既に存在し、恒久的にlocal-onlyで残るのは「作成後に一度もメッセージを送っていない案件」に限られるため、追加の複雑さに見合わない。
+- **C案（通知のみ・再送なし）は却下**。一過性の通信ブリップを救えない（再送1回で大半は救える）。
+- **`createCase` の async 化は不採用**。呼び出し元 `createNewCaseFromForm` の同期的な `cases[caseId]` 参照が壊れるリスクを避け、変更を最小に保つ。`await` しない設計により**UIをブロックしない**（案件作成の体感速度は不変）。
+
+**効果**：一過性の通信断は**自動再送で救済**、恒久的失敗は**ユーザーが即座に認知**でき、**local-only案件の再発を防止**。あわせてP5解消により、Supabase障害時に削除が黙って失敗して案件が復活する事故を防ぐ。
+
+**Git/反映**：commit **aed5f7d**・tag **v1.01-phase54-case-sync-contract**・**index.htmlのみ（+48/-11）**。`_postCaseOnce` 追加／`pushCaseToServer` async契約化／`_notifyCasePushFailed` 追加／`createCase` の呼び出しへ `{ notifyOnFail:true }`／`deleteCaseFromServer` に `data.ok` 検証追加。server.js・lib・DB・API・SQL・`createCase` の同期性・`createNewCaseFromForm`・`touchCase`・Case merge/prune・Task同期・Task History・Notification・Timeline・Approval・Output Draft・Cost・Phase53 は**すべて無変更**。確認：dev-check 200/200/200・console 0・localhost/本番とも fetchスタブで全ケース合格（最大試行2回以内）・**本番DB無変更（生存1/削除済み2/計3行）**。**Phase54 Complete維持・Phase55未着手**。
 
 ---
 

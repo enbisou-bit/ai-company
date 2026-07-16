@@ -1,7 +1,42 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**案件系Known Issue 全Close＝Case同期系Complete**・本番反映済み・HEAD 7c7d6ff・最新tag v1.01-phase54-known-issue-case-closed。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Case成功確認契約 完了**・本番反映済み・**HEAD aed5f7d**・最新tag **v1.01-phase54-case-sync-contract**。先行して**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## Case成功確認契約（Case Success Contract）**完了**（2026-07-17・本番反映済み・commit aed5f7d・tag v1.01-phase54-case-sync-contract）
+
+> 記録日: 2026-07-17。**Phase54 正式Complete維持・Phase55未着手**。案件系Known Issue Close後の残課題（`pushCaseToServer` の失敗握り潰し構造）への恒久対応。**index.htmlのみ（+48/-11）**／server.js・lib・DB・API・SQL・docs以外は**無変更**。Decision 063。
+
+### 時系列
+- **aed5f7d — Case Success Contract**（tag **v1.01-phase54-case-sync-contract**）
+
+### 背景（調査で確定した問題点）
+- `pushCaseToServer` は `fetch(...).catch(() => {})` で**失敗を完全に握り潰し**、`res.ok`・`data.ok` とも**未検証**。POST失敗が無音のため **local-only案件が再発し得る**構造だった。
+- **P4**：サーバは Supabase 失敗時も **HTTP 200 + `{ ok:false }`** を返す（`res.json({ ok: !result.error })`）→ **HTTP status だけでは成否判定不可**。
+- **P5（②-Aの潜在ギャップ）**：`deleteCaseFromServer` が **HTTP status のみ**で判定 → Supabase障害時に `200 + ok:false` を成功と誤判定 → **localから削除・DBは未削除 → 次回同期のmergeで案件が復活**。
+- 自己修復パス（`touchCase` がメッセージ送信ごとに同一idを再POST＝`onConflict:'id'` で冪等）が存在するため、恒久的にlocal-onlyで残るのは**「作成後に一度もメッセージを送っていない案件」**に限られる（深刻度は中〜低）が、構造的な穴として実在。
+
+### 実装（index.htmlのみ）
+- **`_postCaseOnce(body)` 追加**：POST 1回分。**成功 = `res.ok` かつ JSON解析成功 かつ `data.ok === true`**（**POST成功確認**／**data.ok検証**）。4xx=`client`（**再送しない**）／5xx・200+`ok:false`=`server_ok_false`／通信失敗=`network`。JSON解析失敗は成功と見なさない。
+- **`pushCaseToServer(caseId, opts)` async契約化**：`{ ok, status, reason }` を返す（`deleteCaseFromServer` と同形）。**再送は最大1回**（合計2回・無限再試行禁止）／**localは成否に関わらず常に保持**／`opts.notifyOnFail` 時のみ通知。
+- **`_notifyCasePushFailed(name)` 追加**：**通知は案件作成時のみ**（`createCase` → `{ notifyOnFail:true }`）。**`touchCase` 経由は通知しない**（毎メッセージ発火＝スパム防止）。
+- **DELETE成功確認（P5解消）**：**404 を先に判定**（本文が `ok:false` のため）→ local-only として成功／それ以外は **3条件（`res.ok`＋JSON解析成功＋`data.ok===true`）** のみ成功／**200+`ok:false`・5xx・通信失敗＝失敗＝localを保持して既存通知**。
+- **保護**：`createCase()` は**同期関数のまま**（await しない＝UIブロックなし）／`touchCase()` は**無変更**（local更新処理・呼び出しとも）／`createCase` 本体ロジック・dedup／`createNewCaseFromForm`／Case merge・prune／Task同期／Task History／Notification／Timeline／Approval／Output Draft／Cost／Phase53 **非接触**。
+
+### 確認
+- **localhost確認**（fetchスタブ・**実DBへテストデータ作成なし**）：
+  - POST：200+ok:true=**1回**/通知0 ／ 200+ok:false=**2回**/通知1 ／ **400=1回（再送なし）**/通知1 ／ 500=**2回**/通知1 ／ 通信失敗=**2回**/通知1 ／ **touchCase経由=通知0** ／ 再送で成功（500→200）=ok。**全ケースで local保持**。
+  - DELETE：200+ok:true=成功 ／ **200+ok:false=失敗・local残存** ／ 404=成功（local-only） ／ 500・通信失敗=失敗・local残存。
+  - **最大試行回数2回以内**（POST最大2／DELETE最大1）／`node --check` 0エラー／**dev-check 200/200/200**／**console 0**。
+- **Render確認**：自動デプロイ反映・**本番トップ HTTP 200**・本番配信コードが実装と一致（`_postCaseOnce`／async契約／`data.ok===true` 検証／再送分岐／404先行判定 すべて配信済み・**旧 fire-and-forget と旧DELETE判定は残存0件**）・本番でも全ケース再検証合格。
+- **console 0**（localhost・本番とも）。
+- **データ保護**：本番DB **生存1／削除済み2／合計3行**＝Close時点と一致＝**無変更**（テスト案件の作成・本番案件の削除なし）。localStorage は raw文字列で復元一致。
+
+### 状態
+- **Phase54 Complete維持**／**Phase55未着手**／Case同期系＝**成功確認契約 適用済み**。
+- **残存項目は別工程**：① Phase54 Hotfix の **Task側** PC⇔iPhone 実機確認（未実施）／② **Case同期契機の改善**（現在は起動時1回のみ・`visibilitychange` 等）／③ Phase55判断。
 
 ---
 
