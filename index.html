@@ -13049,6 +13049,219 @@ async function _homeBulkDelete() {
   goHome();                          // ホーム再描画
   if (failed.length) _notifyCaseDeleteFailed(failed);
 }
+// ══════════════════════════════════════════════════════════════
+// 不具合②-B-1: 案件診断（読み取り専用・診断のみ・②-C残骸整理の判断材料）
+//   絶対条件（構造的に担保）:
+//     ・localStorage を変更しない（saveCases を呼ばない / cases へ代入・delete しない）
+//     ・DB を変更しない（発行するHTTPは GET /api/cases の1本のみ・POST/PATCH/DELETEなし）
+//     ・syncCasesFromServer / mergeServerCases は使わない（merge+prune+saveCases＝mutationのため）
+//     ・自動backfill / 自動削除 / 自動整理をしない（UIに実行系ボタンを置かない＝コピーと閉じるのみ）
+//     ・推定は「疑い」「可能性」と表示し、確定として扱わない（signal内訳とscoreを必ず併記）
+//   ②-C完了後は DEBUG_CASE_DIAG=false で非表示化（ロジックは温存＝PhaseD-1 の DEBUG_TASK_SYNC と同方式）
+// ══════════════════════════════════════════════════════════════
+const DEBUG_CASE_DIAG = true;
+let _lastCaseDiagnosis = null;
+const _DIAG_SIGNAL_LABELS = {
+  noTemplate: 'template無', multiMembers: '担当2件以上', titleTruncated: '…で切詰',
+  longUserText: '長文', conversational: '会話文らしい',
+};
+
+function _diagDevice() {
+  let label = 'PC', ua = '', platform = '', scr = '';
+  try {
+    ua = navigator.userAgent || '';
+    platform = navigator.platform || '';
+    scr = (window.screen ? screen.width + 'x' + screen.height : '');
+    if (/iPhone|iPod/.test(ua)) label = 'iPhone';
+    else if (/iPad/.test(ua)) label = 'iPad';
+    else if (/Android/.test(ua)) label = 'Android';
+  } catch (e) { /* 取得不可でも診断は続行 */ }
+  return { label, ua, platform, screen: scr };
+}
+
+// 推奨アクション（local-onlyは「正常案件の可能性」でもKeepにしない＝物理削除残骸の可能性を単独端末では排除できないため）
+function _diagAction(dbState, guess) {
+  if (dbState === '生存')     return 'Keep';
+  if (dbState === '削除済み') return 'Remove候補';
+  if (guess === '不具合①由来の疑い') return 'Remove候補';
+  return 'Review';
+}
+
+function _diagnoseOneCase(c, survivorSet, deletedSet) {
+  const dbState = survivorSet.has(c.id) ? '生存' : (deletedSet.has(c.id) ? '削除済み' : 'local-only');
+  const ut = String(c.userText || '');
+  // すべて状況証拠（確定判定ではない）
+  const signals = {
+    noTemplate:     c.template === undefined,                                       // createCase(bug①)はtemplateを付与しない
+    multiMembers:   Array.isArray(c.memberIds) && c.memberIds.length >= 2,          // 新規案件ボタンは['leader']のみ
+    titleTruncated: typeof c.title === 'string' && c.title.endsWith('…'),           // 20字超の切り詰め＝会話文由来の疑い
+    longUserText:   ut.length > 20,
+    conversational: /[。、？?！!]|ください|したい|して|教えて|作りたい/.test(ut),
+  };
+  const score = Object.keys(signals).filter(k => signals[k]).length;   // 0〜5
+  const guess = score >= 3 ? '不具合①由来の疑い' : (score <= 1 ? '正常案件の可能性' : '判定不能');
+  let msgCount = 0;
+  try { msgCount = (chatHistory['leader'] || []).filter(h => h && h.caseId === c.id).length; } catch (e) {}
+  return {
+    id: c.id, title: c.title || '', userText40: ut.slice(0, 40),
+    ts: c.ts || null, updatedAt: c.updatedAt || null,
+    memberIds: Array.isArray(c.memberIds) ? c.memberIds.slice() : [],
+    hasTemplate: c.template !== undefined, template: (c.template === undefined ? null : c.template),
+    msgCount, dbState, signals, score, guess, action: _diagAction(dbState, guess),
+  };
+}
+
+function _diagSummary(rows) {
+  const s = { local: rows.length, alive: 0, deletedState: 0, localOnly: 0,
+              suspectBug1: 0, likelyNormal: 0, unknown: 0, keep: 0, review: 0, removeCandidate: 0 };
+  rows.forEach(r => {
+    if (r.dbState === '生存') s.alive++; else if (r.dbState === '削除済み') s.deletedState++; else s.localOnly++;
+    if (r.guess === '不具合①由来の疑い') s.suspectBug1++; else if (r.guess === '正常案件の可能性') s.likelyNormal++; else s.unknown++;
+    if (r.action === 'Keep') s.keep++; else if (r.action === 'Review') s.review++; else s.removeCandidate++;
+  });
+  return s;
+}
+
+// 読み取り専用。GET /api/cases のみ発行し、local は参照するだけ（保存しない）。
+async function diagnoseCases() {
+  let survivorSet = new Set(), deletedSet = new Set(), server = { ok: false };
+  try {
+    const res = await fetch('/api/cases');   // 全件GET（deletedIds/total が返る）。sync系は使わない＝localを書き換えない
+    if (!res.ok) return { ok: false, reason: 'get_failed' };
+    const d = await res.json();
+    if (!d || !d.ok || !Array.isArray(d.cases)) return { ok: false, reason: 'bad_response' };
+    survivorSet = new Set(d.cases.map(c => c.id));
+    deletedSet  = new Set(Array.isArray(d.deletedIds) ? d.deletedIds : []);
+    server = { ok: true, survivors: d.cases.length, deleted: deletedSet.size,
+               total: (typeof d.total === 'number' ? d.total : null) };
+  } catch (e) { return { ok: false, reason: 'get_error' }; }
+
+  const rows = Object.values(cases).map(c => _diagnoseOneCase(c, survivorSet, deletedSet));   // 参照のみ
+  return { schema: 'case-diagnosis/v1', ok: true, generatedAt: new Date().toISOString(),
+           device: _diagDevice(), server, summary: _diagSummary(rows), rows };
+}
+
+function _diagCopyFallback(json) {
+  // clipboard API 不可環境（旧iOS Safari等）：パネル内にtextareaを出して手動コピーさせる（閉じるでパネルごと消える）
+  const host = document.querySelector('.case-diag-screen') || document.getElementById('chat-area');
+  if (!host) return;
+  let ta = document.getElementById('diag-json-ta');
+  if (!ta) {
+    ta = document.createElement('textarea');
+    ta.id = 'diag-json-ta';
+    ta.style.cssText = 'width:100%;height:40vh;margin-top:10px;font-size:11px;background:rgba(0,0,0,0.4);color:#ddd;border:1px solid rgba(255,255,255,0.2);border-radius:6px;';
+    host.appendChild(ta);
+  }
+  ta.value = json;
+  try { ta.focus(); ta.select(); } catch (e) {}
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  alert(ok ? '診断JSONをコピーしました。'
+           : '自動コピーできませんでした。表示されたテキストを長押し→全選択→コピーしてください。');
+}
+
+function _diagCopyJson() {
+  if (!_lastCaseDiagnosis) { alert('診断結果がありません。'); return; }
+  const json = JSON.stringify(_lastCaseDiagnosis, null, 2);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json)
+        .then(() => alert('診断JSONをコピーしました。'), () => _diagCopyFallback(json));
+    } else { _diagCopyFallback(json); }
+  } catch (e) { _diagCopyFallback(json); }
+}
+
+const _DIAG_ACTION_STYLE = {
+  'Keep':        { icon: '🟢', color: '#4cffb0' },
+  'Review':      { icon: '🟡', color: '#ffc832' },
+  'Remove候補':  { icon: '🔴', color: '#ff7090' },
+};
+
+async function renderCaseDiagnosis() {
+  const chat = document.getElementById('chat-area');
+  if (!chat) return;
+  chat.innerHTML = '<div class="case-diag-screen case-list-screen"><div class="case-list-head">🔍 案件診断 — 読み込み中…</div></div>';
+
+  const r = await diagnoseCases();
+  _lastCaseDiagnosis = r;
+
+  chat.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'case-diag-screen case-list-screen';
+
+  if (!r || !r.ok) {
+    const err = document.createElement('div');
+    err.className = 'case-list-head';
+    err.textContent = '🔍 案件診断 — サーバーから案件情報を取得できませんでした（' + ((r && r.reason) || 'unknown') + '）。'
+                    + '通信状況を確認して、もう一度お試しください。※データは変更していません。';
+    wrap.appendChild(err);
+    const back = document.createElement('button');
+    back.className = 'case-sel-btn'; back.textContent = '閉じる'; back.onclick = () => goHome();
+    wrap.appendChild(back);
+    chat.appendChild(wrap);
+    return;
+  }
+
+  const s = r.summary, sv = r.server;
+  const head = document.createElement('div');
+  head.className = 'case-list-head';
+  head.innerHTML =
+    `🔍 案件診断（読み取り専用・データは変更しません）<br>` +
+    `<span style="font-weight:400;font-size:11px;color:rgba(255,255,255,0.7)">` +
+    `端末: ${escapeHtml(r.device.label)} / ${escapeHtml(r.device.screen)} ・ 生成: ${escapeHtml(_ncFormatTime(r.generatedAt))}<br>` +
+    `DB: 生存${sv.survivors} / 削除済み${sv.deleted} ‖ この端末のlocal: ${s.local}件<br>` +
+    `内訳: 生存${s.alive}・削除済み${s.deletedState}・local-only${s.localOnly}<br>` +
+    `推奨: 🟢Keep ${s.keep} / 🟡Review ${s.review} / 🔴Remove候補 ${s.removeCandidate}` +
+    `</span>`;
+  wrap.appendChild(head);
+
+  const bar = document.createElement('div');
+  bar.className = 'case-select-bar';
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'case-sel-btn';
+  copyBtn.textContent = '📋 JSONをコピー';
+  copyBtn.onclick = () => _diagCopyJson();
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'case-sel-btn';
+  closeBtn.textContent = '閉じる';
+  closeBtn.onclick = () => goHome();
+  bar.appendChild(copyBtn); bar.appendChild(closeBtn);
+  wrap.appendChild(bar);   // ※実行系ボタン（削除/backfill）は置かない
+
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.6);margin:6px 0 10px;line-height:1.6;';
+  note.textContent = '※「疑い」「可能性」は状況証拠にもとづく推定です。確定ではありません。'
+                   + 'この画面では案件の削除・保存は一切行いません。PCとiPhoneの両方でJSONをコピーし、突き合わせてご判断ください。';
+  wrap.appendChild(note);
+
+  // 表示順: Remove候補 → Review → Keep（判断が必要なものを上に）
+  const order = { 'Remove候補': 0, 'Review': 1, 'Keep': 2 };
+  const rows = r.rows.slice().sort((a, b) =>
+    (order[a.action] - order[b.action]) || (b.score - a.score) || String(a.title).localeCompare(String(b.title)));
+
+  rows.forEach(row => {
+    const st = _DIAG_ACTION_STYLE[row.action] || { icon: '⚪', color: '#ccc' };
+    const sig = Object.keys(row.signals).filter(k => row.signals[k]).map(k => _DIAG_SIGNAL_LABELS[k] || k).join('・');
+    const card = document.createElement('div');
+    card.className = 'case-card';
+    card.innerHTML =
+      `<div class="case-card-title"><span style="color:${st.color}">${st.icon} ${escapeHtml(row.action)}</span> — ${escapeHtml(row.title || '(無題)')}</div>` +
+      `<div class="case-card-meta" style="display:block;line-height:1.8;">` +
+        `<span class="case-card-tpl">DB: ${escapeHtml(row.dbState)}</span> ` +
+        `<span class="case-card-tpl">会話 ${row.msgCount}件</span> ` +
+        `<span class="case-card-tpl">template: ${row.hasTemplate ? escapeHtml(String(row.template)) : 'なし'}</span> ` +
+        `<span class="case-card-tpl">担当: ${escapeHtml(row.memberIds.join(',') || '—')}</span><br>` +
+        `<span style="color:rgba(255,255,255,0.55)">userText: ${escapeHtml(row.userText40)}${row.userText40.length >= 40 ? '…' : ''}</span><br>` +
+        `<span style="color:rgba(255,255,255,0.5)">作成: ${escapeHtml(_ncFormatTime(row.ts))} ／ 更新: ${escapeHtml(_ncFormatTime(row.updatedAt))}</span><br>` +
+        `<span style="color:rgba(255,255,255,0.5)">id: ${escapeHtml(row.id)}</span><br>` +
+        `<span style="color:${st.color}">推定: ${escapeHtml(row.guess)}（score ${row.score}/5${sig ? ' — ' + escapeHtml(sig) : ''}）※推定です。確定ではありません</span>` +
+      `</div>`;
+    wrap.appendChild(card);
+  });
+
+  chat.appendChild(wrap);
+}
+
 function renderHomeCaseList() {
   const chat = document.getElementById('chat-area');
   if (!chat) return false;
@@ -13071,6 +13284,19 @@ function renderHomeCaseList() {
     onDeselectAll: () => _homeDeselectAll(),
     onBulkDelete: () => _homeBulkDelete(),
   }));
+
+  // 不具合②-B-1: 案件診断ボタン（DEBUG_CASE_DIAG=true の間のみ表示・読み取り専用・②-C完了後は false で非表示）
+  if (DEBUG_CASE_DIAG) {
+    const diagBar = document.createElement('div');
+    diagBar.className = 'case-select-bar';
+    const diagBtn = document.createElement('button');
+    diagBtn.className = 'case-sel-btn';
+    diagBtn.textContent = '🔍 診断';
+    diagBtn.title = '案件の同期状態を診断します（読み取り専用・データは変更しません）';
+    diagBtn.onclick = () => renderCaseDiagnosis();
+    diagBar.appendChild(diagBtn);
+    wrap.appendChild(diagBar);
+  }
 
   // 最新一覧（全案件ビューへ）
   wrap.appendChild(_homeMakeCard('🕒 最新一覧', 'すべての案件を最終更新順で表示', () => _homeOpenCaseList()));
