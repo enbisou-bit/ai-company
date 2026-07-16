@@ -2,7 +2,34 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-16（**Phase54 正式Complete維持**。**Phase54 Known Issue（PC⇔iPhone Task表示不一致）Closed**＝archived/caseId を Server正本化しPC/iPhoneとも view69・badge69 で一致・本番反映済み。HEAD = origin/main = **a5bbe27**（docs更新後は本更新commitが最新HEAD）。最新code tag = **v1.01-phase54-known-issue-c2**。**Phase55未着手**。以前の記録：Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix 本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**案件系Known Issue（案件自動増殖／Case削除同期／PC⇔iPhone案件数不一致）全Close**＝**Case同期系Complete**。HEAD = origin/main = **7c7d6ff**（docs更新後は本更新commitが最新HEAD）。最新code tag = **v1.01-phase54-known-issue-case-closed**。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・HEAD a5bbe27・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## 案件系Known Issue **全Close**（2026-07-17・Case同期系Complete・本番反映済み・PC⇔iPhone実機確認済み）
+
+- **位置づけ**：**Phase54 正式Complete は維持**（tag `v1.01-phase54-complete` 不変）・**Phase55 未着手**。Phase54完了後にユーザー本番実機で顕在化した**案件（Case）系**Known Issueへの恒久対応。**Task同期系とは別工程**。
+- **不具合① 案件自動増殖 — 解消済み**（commit **f36762c**・tag `v1.01-phase54-known-issue-case-auto-create`・index.htmlのみ4行）
+  - 原因：`handleLeaderDispatch()` が振り分けのたびに無条件で `createCase(userText,…)` を呼び、dedupキーが送信本文だったため**会話1ターンごとに新案件が生成**されていた。
+  - 修正：`_ncActiveCaseId('leader') || null` へ変更＝**案件選択中は現在案件を継続／未選択・最新一覧・案件一覧は `caseId=null` の横断扱い・自動生成しない**（Decision 060）。併せて横断Taskタイトルの `[undefined]` 防止、案件未選択時の `saveCaseMemory` 先頭案件フォールバック停止、`touchCase` 先頭案件フォールバック停止。
+  - **案件作成は「新規案件」操作（`createNewCaseFromForm`）のみ**。`createCase()` 本体は無変更。
+- **不具合②-A Case削除同期 — Complete**（commit **ad83544**・tag `v1.01-phase54-known-issue-case-delete-sync`・4ファイル）
+  - 原因：物理DELETEでDB行が消えるため tombstone が無く、`mergeServerCases` が他端末の削除を知る手段がなかった（＝削除が永久に伝播しない）。
+  - 修正：**`cases.deleted_at` による論理削除＋`deletedIds` によるServer正本化**（Decision 061）。**物理削除禁止**・**local-only案件保護**・**削除は成功後のみlocal反映**（200/冪等200/404=local削除可／5xx・通信失敗はlocal保持＋通知）・削除4経路すべて同一契約へ統一。
+  - **SQL（ユーザー実行済み・非破壊）**：`ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;` ＋ `CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);`
+  - **PC⇔iPhone双方向の削除伝播をユーザー実機確認済み**。
+- **②-B-1 案件診断 — 実施済み**（commit **7c7d6ff**・tag `v1.01-phase54-known-issue-case-diagnosis`・index.htmlのみ+226・読み取り専用）
+  - `GET /api/cases` のみ発行（POST/PATCH/DELETE 0件）・localStorage 不変・実行系ボタンなし。**PC・iPhone双方で実施済み**。
+- **実機確認の実測値（PC・iPhone双方で完全一致）**：
+  - **DB 生存 1 件／DB 論理削除済み 2 件**（合計3行が残存＝**物理削除なし**）
+  - **PC local 1 件／iPhone local 1 件** ＝ **DB生存 = PC = iPhone の三者一致**
+  - **local-only 0 件／Review 0 件／Remove候補 0 件**
+- **②-B-2 Backfill：対象なしのため未実装Close**（local-only 0件＝backfill不要・Decision 062）
+- **②-C 残骸整理：対象なしのためClose**（Remove候補 0件＝整理対象なし）
+- **`DEBUG_CASE_DIAG = false`**（本番の「🔍 診断」ボタン非表示）／**診断ロジックは削除せず温存**（再調査時は `true` で復活・PhaseD-1 の `DEBUG_TASK_SYNC` と同方式）
+- **保護（不変）**：`messages`／`conversations`／`task_history`／Learning は**非連動・非削除**（履歴保護維持）／`createCase()` 本体／`createNewCaseFromForm()`／Task同期・Task History・Notification・Timeline・Approval・Output Draft・Provider・Routing・Cost・Phase53 **非接触**。
+- **状態**：**Case同期系Complete**・**Phase54 Complete維持**・**Phase55未着手**。
+- **次工程候補（未着手・別工程）**：① `pushCaseToServer` 成功確認化（作成側は現在も fire-and-forget＝POST失敗時に local-only 案件が再発し得る）／② Phase54 Hotfix の **Task側** PC⇔iPhone 実機確認（未実施）。その後 Phase55 判断。
 
 ---
 

@@ -2,11 +2,35 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-16（**Phase54 正式Complete維持**・**Phase54 Known Issue Closed**。HEAD=origin/main=**a5bbe27**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-known-issue-c2**・PhaseD-1 commit=**a5bbe27**（tagなし）。PC/iPhone Task view69/badge69一致。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-17（**Phase54 正式Complete維持**・**案件系Known Issue 全Close＝Case同期系Complete**。HEAD=origin/main=**7c7d6ff**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-known-issue-case-closed**。PC/iPhone/DB とも案件1件で一致・local-only 0。**Phase55未着手**・次工程はユーザー承認後に決定）
 
 ---
 
-## 【現在地・最優先】Phase54 Known Issue（PC⇔iPhone Task表示不一致）— **Closed**（2026-07-16・archived/caseId Server正本化・本番反映済み）
+## 【現在地・最優先】案件系Known Issue — **全Close**（2026-07-17・**Case同期系Complete**・本番反映済み・PC⇔iPhone実機確認済み）
+
+- **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54 Complete維持**／**案件系Known Issue 全Close（Case同期系Complete）**／**Phase55 未着手**
+- **Git**：**HEAD = origin/main = `7c7d6ff`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-known-issue-case-closed`**。
+  - 主要commit：`f36762c`（案件自動生成停止）／`ad83544`（Case削除同期）／`7c7d6ff`（案件診断パネル）
+  - 主要tag：`v1.01-phase54-known-issue-case-auto-create` / `-case-delete-sync` / `-case-diagnosis` / `-case-closed`
+- **成果（案件＝Case系のみ。Task系とは別工程）**：
+  - **不具合① 案件自動増殖：解消済み** — `handleLeaderDispatch()` の無条件 `createCase()` を停止。**案件作成は「新規案件」操作のみ**／案件選択中は現在案件を継続／未選択・最新一覧・案件一覧は `caseId=null` の**横断**（Decision 060）
+  - **不具合②-A Case削除同期：Complete** — `cases.deleted_at` 論理削除＋`deletedIds` によるServer正本化。**物理削除禁止**・**local-only案件保護**・**削除は成功後のみlocal反映**（200/冪等200/404=local削除可・5xx/通信失敗はlocal保持＋通知）・削除4経路を同一契約へ統一（Decision 061）。**PC⇔iPhone双方向の削除伝播を実機確認済み**
+  - **②-B-1 診断：PC・iPhone双方で実施済み**（読み取り専用・`GET /api/cases` のみ）
+  - **②-B-2 Backfill：対象なしのため未実装Close** ／ **②-C 残骸整理：対象なしのためClose**（Decision 062）
+- **実機実測（PC・iPhone双方で完全一致）**：**DB生存 1／DB論理削除済み 2（合計3行＝物理削除なし）／PC local 1／iPhone local 1 ＝ DB生存 = PC = iPhone の三者一致／local-only 0／Review 0／Remove候補 0**
+- **`DEBUG_CASE_DIAG = false`**（本番の「🔍 診断」ボタン非表示）／**診断ロジックは削除せず温存**（再調査時 `true` で復活・PhaseD-1 の `DEBUG_TASK_SYNC` と同方式）
+- **SQL（ユーザー実行済み・非破壊）**：`ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;` ＋ `CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);`
+- **保護・不変**：**物理削除なし**（可逆な論理削除）／**`messages`・`conversations`・`task_history`・Learning は非連動・非削除**／local-only案件保護／`createCase()` 本体／`createNewCaseFromForm()`／**Task同期・Task History・Notification・Timeline・Approval・Output Draft・Provider・Routing・Cost・Phase53 非接触**／cost関連3ファイル・退避フォルダ 未操作
+- **次工程（ユーザー承認後に決定・未着手）**：
+  1. **`pushCaseToServer` 成功確認化** — **作成側は現在も fire-and-forget（失敗握り潰し）**。②-Aで「削除」は成功確認型にしたが「作成(push)」は未対策で、**POST失敗時に local-only 案件が再発し得る**。index.htmlのみ・小規模
+  2. **Phase54 Hotfix の Task側 PC⇔iPhone 実機確認**（未実施・下記【参考】参照。今回Closeしたのは**Case側**であり**Task側は別**）
+  3. その後 **Phase55 判断**
+- **その他の残存項目は別工程**：Case同期契機の追加（現在は起動時1回のみ＝他端末の削除反映に相手端末のF5が必要）／Edge(Windows 125%)Taskスクロールバー判定ずれ／正当候補156件のTask整理／`backup-dup-candidates-20260714/` の最終処理方針／検証テスト行の整理／Cost同期・Learning残buffer・回答本文のtask_history保存（Version2候補）。**Phase55は別承認まで開始しない**
+
+---
+
+## 【参考・完了済み】Phase54 Known Issue（PC⇔iPhone Task表示不一致）— **Closed**（2026-07-16・archived/caseId Server正本化・本番反映済み）
 
 - **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
 - **現在Phase**：**Phase54 正式Complete維持**／**Phase54 Known Issue Closed**／**Phase55 未着手**

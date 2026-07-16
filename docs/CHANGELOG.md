@@ -4,6 +4,35 @@
 
 ---
 
+## 案件系Known Issue **Close**（2026-07-17・Case同期系Complete・本番反映済み・tag v1.01-phase54-known-issue-case-closed）
+
+Phase54完了後にユーザー本番実機で顕在化した**案件（Case）系**Known Issueを恒久解決し、正式Close（時系列・新しい順）。**Phase54 Complete維持・Phase55未着手**。**Task同期系とは別工程**。
+
+- **Case Known Issue Close**（本commit・`DEBUG_CASE_DIAG=false`＋docs更新）
+  - 目的：案件系Known Issueの正式Close記録。変更：`index.html` の `DEBUG_CASE_DIAG` を `false`（本番の「🔍 診断」ボタン非表示）。**診断ロジック・変数・関数は削除せず温存**（再調査時 `true` で復活・PhaseD-1 の `DEBUG_TASK_SYNC` と同方式）。docs 5ファイル更新（01/02/04DECISIONS/06HANDOVER/CHANGELOG）＋**Decision 060/061/062**。
+  - **実機実測（PC・iPhone双方で完全一致）**：**DB生存1／DB論理削除済み2（合計3行＝物理削除なし）／PC local 1／iPhone local 1＝DB生存 = PC = iPhone の三者一致／local-only 0／Review 0／Remove候補 0**。
+  - **②-B-2 Backfill：対象なしのため未実装Close**／**②-C 残骸整理：対象なしのためClose**（Decision 062）。
+- **Case diagnosis panel**（commit **7c7d6ff**・tag **v1.01-phase54-known-issue-case-diagnosis**・index.htmlのみ **+226**・読み取り専用）
+  - 目的：各端末のlocal案件を DB状態（生存／削除済み／local-only）・推定区分（正常案件の可能性／不具合①由来の疑い／判定不能）・推奨アクション（Keep／Review／Remove候補）へ分類し、②-C判断材料を作る（C案・診断先行）。
+  - 内容：`DEBUG_CASE_DIAG`／`diagnoseCases`／`_diagnoseOneCase`／`_diagAction`／`_diagSummary`／`_diagDevice`／`renderCaseDiagnosis`／`_diagCopyJson`／`_diagCopyFallback`＋ホーム一覧の「🔍 診断」ボタン。JSON schema `case-diagnosis/v1`（`msgCount`・signals・score 併記）。
+  - **絶対条件を構造的に担保**：発行HTTPは **`GET /api/cases` 1本のみ**（POST/PATCH/DELETE **0件**）／**localStorage不変**／`syncCasesFromServer`・`mergeServerCases` 不使用（mutationのため）／**実行系ボタンなし**（コピーと閉じるのみ）／推定は「疑い」「可能性」と明示。
+  - 確認：dev-check 200/200/200・console 0・本番トップ200・iPhone幅(390×844)で横スクロールなし・**PC・iPhone双方で実施済み**。
+- **Case deletion sync**（commit **ad83544**・tag **v1.01-phase54-known-issue-case-delete-sync**・**4ファイル**）
+  - 目的：PC⇔iPhoneで案件削除が伝播しない問題の恒久解決（原因＝物理DELETEでtombstoneが残らず、`mergeServerCases` が他端末の削除を知る手段が無かった）。
+  - **SQL（ユーザー実行済み・非破壊）**：`ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;` ＋ `CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);`（nullable・既存行NULL＝生存・移行なし）
+  - 実装：`supabase/schema.sql`（`cases.deleted_at` 定義）／`lib/casesDb.js`（`getCases` 生存フィルタ＋**全件GET時のみ `deletedIds`**＋`total`・**`softDeleteCase` 新規**〔notFound／`alreadyDeleted` 冪等〕・物理 `deleteCase` は残置未配線・`upsertCase` 無変更＝**削除済み行は復活しない**）／`server.js`（`GET` に `deletedIds`/`total` 追加＝**`cases` 配列は形不変・後方互換**／`DELETE /api/cases/:id` を `softDeleteCase` へ委譲＝**404／200冪等・パス・IF不変**）／`index.html`（`mergeServerCases(serverCases, deletedIds)` で **deletedIds に明示されたidだけprune**＝「GET結果に無い＝削除」とは推論しない＝**local-only案件保護**／`deleteCaseFromServer` を成否契約へ／`_deleteCaseWithContract`・`_notifyCaseDeleteFailed` 新規／**削除4経路を同一契約へ統一**＝200・冪等200・**404=local削除可**／**5xx・通信失敗はlocal保持＋通知**・一括は順次でフラッド防止）。
+  - **物理削除禁止**（可逆な論理削除）／**`messages`・`conversations`・`task_history`・Learning は非連動・非削除**。
+  - 確認：dev-check 200/200/200・console 0・本番 `deletedIds`/`total` 返却・生存のみ返却・**合計3行＝物理削除なし**・DELETE 404・旧DELETE配線0件／**PC⇔iPhone双方向の削除伝播をユーザー実機確認済み**（Decision 061）。
+- **Case auto-create stop**（commit **f36762c**・tag **v1.01-phase54-known-issue-case-auto-create**・**index.htmlのみ4行**）
+  - 目的：既存案件で会話するたび新案件が増える不具合の停止。原因＝`handleLeaderDispatch()` @8081 が**無条件で `createCase(userText, assignedIds)`** を実行し、`createCase` の dedup が**送信本文基準**のため会話ターンごとに新案件を生成（`pushCaseToServer` でDBにも流出）。**`createCase` の呼出は全コードで2か所のみ**で増殖源を1つに特定・二重定義なし。
+  - 変更：@8081 `_ncActiveCaseId('leader') || null`（**案件選択中は継続／未選択・最新一覧・案件一覧は `null`＝横断・自動生成しない**）／@8149 横断Taskタイトル `[横断]`（`[undefined]` 防止）／@10116 `saveCaseMemory` を `_ncActiveCaseId(_mid)` へ（**未選択時は保存しない＝先頭案件への誤保存防止**）／@10050 `touchCase` の先頭案件フォールバック停止（**横断時は既存案件の `updatedAt`・並び順・`pushCaseToServer` を発火させない**）。
+  - **案件作成は「新規案件」操作のみ**（`createNewCaseFromForm`）。`createCase()` 本体・server.js/lib/DB/API/SQL は**無変更**（Decision 060）。
+  - ⚠️ 当初の実機再現は**本番が旧コード配信のまま**（push未実施）だったことが `curl` 実測で確定。本番反映後に増殖停止を確認。
+- **状態**：**Case同期系Complete**／**Phase54 Complete維持**／**Phase55未着手**。
+- **残存項目（別工程・未着手）**：① `pushCaseToServer` の成功確認化（**作成側は現在も fire-and-forget**＝POST失敗時に local-only 案件が再発し得る）／② Phase54 Hotfix の **Task側** PC⇔iPhone 実機確認（未実施）／③ Case同期契機の追加（現在は起動時1回のみ＝他端末の削除反映に相手端末のF5が必要）。
+
+---
+
 ## Phase54 Known Issue（PC⇔iPhone Task表示不一致）**Closed**（2026-07-16・archived/caseId Server正本化・本番反映済み）
 
 Phase54完了後にユーザー実機で顕在化した Task同期 Known Issue（PC badge47/iPhone badge13）を、Task field merge の Server正本化で恒久解決（時系列・新しい順）。

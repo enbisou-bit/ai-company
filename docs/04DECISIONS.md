@@ -2,7 +2,74 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-16（**Phase54 正式Complete維持**。**Decision 059・Phase54 Known Issue（PC⇔iPhone Task表示不一致）Closed**＝Task field mergeの項目別Server正本化・本番反映済み・HEAD a5bbe27。**Phase55未着手**。以前：Decision 058・Phase54 Hotfix 本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync／Decision 057・3b-3 Completed／tag v1.01-phase54-complete）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**・本番反映済み・HEAD 7c7d6ff。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed・HEAD a5bbe27／Decision 058・Phase54 Hotfix・commit d512bad／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 060
+## 案件の作成は「新規案件」操作のみ — Leader Dispatchでは自動作成しない・未選択時は横断
+
+**背景**：Phase54完了後の本番実機で、既存案件で会話中に**会話1ターンごとに新案件が増える**現象が発生。原因は `handleLeaderDispatch()` が振り分けのたび**無条件で `createCase(userText, assignedIds)`** を呼び、かつ `createCase` の重複判定が**送信本文（userText）基準**だったため、本文が変わるたび別案件として生成されていた（生成分は `pushCaseToServer` でDBにも流出）。一方ユーザー発言・AI返答は `_ncActiveCaseId` 基準で元案件に保存されるため、「同じ会話が元案件と新規案件の両方にある」ように見えていた。
+
+**決定（正式・案件作成ルールの固定）**：
+- **案件は「新規案件」操作（`createNewCaseFromForm`）を行った場合だけ作成する**。
+- **既存案件を開いている場合**、Leaderへの追加指示・修正・再生成は**現在の案件を継続使用**する。
+- **「最新一覧」「案件一覧」「案件未選択」でLeaderに話しかけても新規案件を自動生成しない**。その会話は **`caseId=null` の横断チャット**として扱う（＝(b)案採用。(a)「未選択時のみ1件自動生成」は不採用）。
+- **会話文・依頼文・成果物タイトル・dispatch を理由に案件を自動作成しない**。
+- 併せて、**案件未選択時に既存案件へ勝手に書き込まない**ことを徹底：`saveCaseMemory` の「先頭案件フォールバック」を停止（未選択時は保存しない＝他案件への誤保存防止）／`touchCase` の「先頭案件フォールバック」を停止（横断時は既存案件の `updatedAt`・並び順・`pushCaseToServer` を発火させない）。
+- 横断Taskのタイトルは `[横断]` 表示（`[undefined]` 防止）。横断Taskの `caseId` は `null`＝Task Case Scoping の「NULL=横断」と整合。
+
+**なぜこの設計か**：案件は「ユーザーが意図して立てる単位」であり、会話本文という**変動する値をキーに自動生成するのは構造的に誤り**。横断（null）は Messages（`messages.case_id`）・Task（`tasks.case_id`）で既に「case固有処理をしない」意味として確立しており、案件未選択時の会話をNULL扱いにするのが既存設計と一貫する。case memory は case固有構造で横断（null）の受け皿が無いため、**横断時は保存しない**を選択（新たな横断Memory基盤は追加しない）。
+
+**Git/反映**：commit **f36762c**・tag **v1.01-phase54-known-issue-case-auto-create**。**index.htmlのみ4行**（@8081/@8149/@10050/@10116）。`createCase()` 本体・`createNewCaseFromForm()`・server.js/lib/DB/API/SQL は**無変更**。本番反映後に増殖停止を確認（当初の再現は本番が旧コード配信のままだったことが `curl` 実測で判明）。
+
+---
+
+# Decision 061
+## Case削除同期は A案 — `deleted_at` 論理削除＋`deletedIds` によるServer正本化
+
+**背景**：PCとiPhoneで案件数が一致しない（実測当時 DB=2／PC=15／iPhone=5 の三者不一致）。原因は、削除4経路はDBへ同期していたものの**物理DELETE**のため tombstone が残らず、`mergeServerCases` が他端末の削除を知る手段を持たなかったこと（＝削除が永久に伝播しない）。加えて `pushCaseToServer` の失敗握り潰しで local-only 案件が堆積していた。
+
+**決定（採用＝A案）**：
+- **`cases.deleted_at`（nullable）による論理削除**。**物理削除は禁止**（行は残す・`deleted_at=NULL` で復元可）。
+- **全件GET（memberId未指定）時のみ `deletedIds` を返す**（部分GETは常に空＝誤prune防止）。`cases` は生存のみ返す。
+- クライアントは **`deletedIds` に明示されたidだけ local から除去**する。**「GET結果に無い＝削除」とは推論しない**。
+- **local-only案件は保護**（DBに行が無い＝tombstoneも生成されない＝構造的にprune対象になり得ない）。
+- **削除は成功後のみ local へ反映**：200（冪等の `alreadyDeleted` 含む）＝local削除／**404＝DBに行なし（local-only）につきlocal削除可**／**5xx・通信失敗＝localを残す＋ユーザー通知**。**削除4経路すべて同一契約へ統一**。
+- `upsertCase` は `deleted_at` を書かない＝**削除済み行へ他端末の `touchCase` が来ても復活しない**。
+- **`messages`／`conversations`／`task_history`／Learning は非連動・非削除**（履歴保護）。
+
+**なぜA案か（B案・C案の却下理由）**：
+- **B案（物理DELETE維持＋GET結果に無い案件をlocalから除去）は却下**。実測 DB=2／PC=15 の状況で適用すると**PCの約13件が即時消失**し、「local-only案件を失わない」に真っ向から反する。「削除された」と「まだpushされていない」を**区別する手段が無い**ため構造的に不可。
+- **C案（別テーブル／別レスポンスで削除IDを配信）は却下**。同じ効果に新規テーブル＋index＋RLSが必要でコストが高く、`cases` と tombstone の**二重管理による整合リスク**を負う。
+- A案は **Task削除同期（Decision 058）の実績パターン**（`tasks.deleted_at`＋`deletedIds`＋Server-Authoritative Reconciliation＋local-only保護）を踏襲でき、`lib/tasksDb.js:getTasks` が参照実装として既存。**可逆**で「Supabase保存維持・物理削除しない・履歴削除禁止」の既存方針と完全に整合する。
+- `cases` は **client生成の id がそのままDBのPK**（Taskの local id / dbId 分裂が無い）ため、prune・重複防止が id 一致で完結し、Taskより単純かつ安全。
+
+**Git/反映**：commit **ad83544**・tag **v1.01-phase54-known-issue-case-delete-sync**・4ファイル（`supabase/schema.sql`／`lib/casesDb.js`／`server.js`／`index.html`）。**SQL（ユーザー実行済み・非破壊）**：`ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;`＋`CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);`。`GET /api/cases` は `cases` 配列の形不変＝後方互換／`DELETE /api/cases/:id` はパス・IF不変・新規エンドポイントなし。**PC⇔iPhone双方向の削除伝播をユーザー実機確認済み**。
+
+---
+
+# Decision 062
+## Case Backfill は診断先行方式（C案）— 実測0件につきBackfill未実装Close・診断は温存
+
+**背景**：local-only案件をDBへ登録（backfill）する必要があるかを判断するには、各端末のlocalStorageの中身を知る必要があった。しかし**②-A以前に物理削除された案件には tombstone が存在しない**ため、「(a)一度もpushされていない正常案件」「(b)他端末で物理削除された残骸」「(c)不具合①由来のゴミ」が**まったく同一の状態（survivorsにもdeletedIdsにも無い）**となり、データから区別できなかった。
+
+**決定（採用＝C案・診断先行）**：
+- **A案（起動時に自動backfill）は却下**。(b)を判別できないため**削除済み案件を復活させる**ことが確実で、「区別できない状態で自動実行しない」に違反する。起動時フラッドの再発リスク（Task 75→354 の前例）もある。
+- **B案（確認画面で選択実行）も先行させない**。判断材料（診断結果）が無い状態でユーザーに選ばせることになる。
+- **C案を採用**：**読み取り専用の診断のみ**を実装し、DB状態（生存／削除済み／local-only）・推定区分（正常案件の可能性／不具合①由来の疑い／判定不能）・推奨アクション（Keep／Review／Remove候補）・`msgCount` を提示。**発行HTTPは `GET /api/cases` の1本のみ**（POST/PATCH/DELETE 0件）・**localStorage不変**・**実行系ボタンを置かない**・**推定は「疑い」「可能性」と明示**（signal内訳と score を併記）。
+- **PC×iPhone の突き合わせを判断の要**とする：never-pushed案件は**作成した端末にしか存在し得ない**ため、「両端末にlocal-onlyで存在＝過去にDB経由で伝播した＝物理削除残骸の可能性が高い」「片端末のみ＝push未達＝backfill候補」と推論できる。単独端末では解けない曖昧さが2端末比較で解消する。
+
+**実測結果（PC・iPhone双方・完全一致）**：**DB生存1／DB論理削除済み2（合計3行＝物理削除なし）／PC local 1／iPhone local 1／local-only 0／Review 0／Remove候補 0**。**DB生存 = PC = iPhone の三者一致**。
+
+**結論**：
+- **②-B-2 Backfill は対象なしのため未実装Close**（local-only 0件＝登録すべき案件が存在しない。**1件もDBへ書き込まずに結論に到達**）。
+- **②-C 残骸整理は対象なしのためClose**（Remove候補 0件）。残骸は、不具合①修正で増殖が停止し、②-Aの削除契約（DB行ありは論理削除→`deletedIds`で両端末prune／DB行なしの local-only 残骸は 404→local削除可）により**②-Aの設計が先に解消**した。
+- **`DEBUG_CASE_DIAG = false` で本番非表示とし、診断ロジックは削除せず温存**（再調査時 `true` で復活）。PhaseD-1 の `DEBUG_TASK_SYNC`（Decision 059）と同一方式に揃える。読み取り専用＝リスクゼロの再調査資産として残す。
+
+**残存リスク（別工程）**：`pushCaseToServer` は現在も **fire-and-forget（失敗握り潰し）** のままであり、POST失敗時に local-only 案件が**再発し得る**。②-Aで「削除」は成功確認型にしたが「**作成（push）」は未対策**。次工程候補とする。
+
+**Git/反映**：診断 commit **7c7d6ff**・tag **v1.01-phase54-known-issue-case-diagnosis**（index.htmlのみ+226・読み取り専用）。Close処理は `DEBUG_CASE_DIAG=false`＋docs更新。
 
 ---
 

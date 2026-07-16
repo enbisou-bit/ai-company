@@ -13059,7 +13059,7 @@ async function _homeBulkDelete() {
 //     ・推定は「疑い」「可能性」と表示し、確定として扱わない（signal内訳とscoreを必ず併記）
 //   ②-C完了後は DEBUG_CASE_DIAG=false で非表示化（ロジックは温存＝PhaseD-1 の DEBUG_TASK_SYNC と同方式）
 // ══════════════════════════════════════════════════════════════
-const DEBUG_CASE_DIAG = true;
+const DEBUG_CASE_DIAG = false;   // 案件系Known Issue Close（②-B/②-C 対象なし）につき本番非表示。診断ロジックは削除せず温存＝再調査時は true で復活
 let _lastCaseDiagnosis = null;
 const _DIAG_SIGNAL_LABELS = {
   noTemplate: 'template無', multiMembers: '担当2件以上', titleTruncated: '…で切詰',

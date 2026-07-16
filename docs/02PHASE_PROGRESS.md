@@ -1,7 +1,60 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-16（**Phase54 正式Complete維持**。**Phase54 Known Issue（PC⇔iPhone Task表示不一致）Complete**＝archived/caseId Server正本化でPC=iPhone view69/badge69一致・本番反映済み・HEAD a5bbe27。**Phase55未着手**。以前：Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix 本番反映済み・commit d512bad・tag v1.01-phase54-hotfix-task-sync）
+> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**案件系Known Issue 全Close＝Case同期系Complete**・本番反映済み・HEAD 7c7d6ff・最新tag v1.01-phase54-known-issue-case-closed。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## 案件系Known Issue **全Close**（2026-07-17・Case同期系Complete・Phase54完了後・本番反映済み）
+
+> 記録日: 2026-07-17。**Phase54 正式Complete維持・Phase55未着手**。Phase54完了後にユーザー本番実機で顕在化した**案件（Case）系**Known Issueへの恒久対応。**Task同期系とは別工程**（Task側の残課題は別記のとおり継続）。
+
+### 完了工程（時系列）
+
+- **不具合① 案件自動増殖の停止**（commit **f36762c**・tag **v1.01-phase54-known-issue-case-auto-create**・**index.htmlのみ4行**）
+  - 原因確定：`sendMessage()` →（leader・dispatch有）→ `handleLeaderDispatch()` @8081 が**無条件で `createCase(userText, assignedIds)`** を実行。`createCase` の dedup が**送信本文（userText）基準**のため、本文が異なる会話ターンごとに新案件が生成されていた。生成案件は `pushCaseToServer` でDBにも流出。**`createCase` の呼出は全コードで2か所のみ**（8081／`createNewCaseFromForm` 13167）で、増殖源は前者に限定。二重定義なし。
+  - 変更4行：@8081 `_ncActiveCaseId('leader') || null`（案件選択中は継続・未選択/最新一覧/案件一覧は `null`＝横断・自動生成なし）／@8149 横断Taskタイトル `[横断]`（`[undefined]` 防止）／@10116 `saveCaseMemory` の caseId を `_ncActiveCaseId(_mid)` へ（未選択時は保存しない＝先頭案件への誤保存防止）／@10050 `touchCase` の先頭案件フォールバック停止（横断時は既存案件の `updatedAt`・並び順・`pushCaseToServer` を発火させない）
+  - **Decision 060**。`createCase()` 本体・`createNewCaseFromServerForm` 経路・server.js/DB/API/SQL は**無変更**。
+  - ⚠️ 当初の実機再現は**本番が旧コード配信のまま**（push未実施）だったことが原因と `curl` 実測で確定。本番反映後に増殖停止を確認。
+
+- **不具合②-A Case削除同期**（commit **ad83544**・tag **v1.01-phase54-known-issue-case-delete-sync**・**4ファイル**）
+  - 原因確定：削除4経路はDBへ同期していたが**物理DELETE**のため tombstone が残らず、`mergeServerCases` は「サーバに無い＝削除」を推論しない設計（local限定案件保護のため）＝**削除が他端末へ永久に伝播しない**。加えて `pushCaseToServer` の失敗握り潰しで local-only 案件が堆積。
+  - **SQL（ユーザー実行済み・非破壊）**：`ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;` ＋ `CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);`（nullable・既存行NULL＝生存・移行なし）
+  - `supabase/schema.sql`：`cases.deleted_at` 定義＋ALTER/indexコメント追記
+  - `lib/casesDb.js`：`getCases` を生存フィルタ＋**全件GET時のみ `deletedIds`**＋`total`／**`softDeleteCase(id)` 新規**（notFound／`alreadyDeleted` 冪等）／`deleteCase()`（物理）は**残置・未配線**／`upsertCase` 無変更＝**削除済み行へのupsertで復活しない**
+  - `server.js`：`GET /api/cases` に `deletedIds`/`total` 追加（`cases` 配列は形不変＝後方互換）／`DELETE /api/cases/:id` を `softDeleteCase` へ委譲（404／200冪等・**パス・IF不変・新規エンドポイントなし**）
+  - `index.html`：`mergeServerCases(serverCases, deletedIds)` へ拡張し **deletedIds に明示されたidだけprune**（「GET結果に無い＝削除」とは推論しない＝**local-only案件保護**）／`deleteCaseFromServer` を成否を返す契約へ／`_deleteCaseWithContract`・`_notifyCaseDeleteFailed` 新規／**削除4経路（`deleteCase`・`_homeDeleteCase`・`_clBulkDelete`・`_homeBulkDelete`）を同一契約へ統一**＝**200/冪等200/404=local削除可・5xx/通信失敗はlocal保持＋通知**・一括は1件ずつ順次（フラッド防止）
+  - **Decision 061**。**PC⇔iPhone双方向の削除伝播をユーザー実機確認済み**。
+
+- **②-B-1 案件診断**（commit **7c7d6ff**・tag **v1.01-phase54-known-issue-case-diagnosis**・**index.htmlのみ +226・読み取り専用**）
+  - `DEBUG_CASE_DIAG` フラグ／`diagnoseCases`／`_diagnoseOneCase`／`_diagAction`／`_diagSummary`／`_diagDevice`／`renderCaseDiagnosis`／`_diagCopyJson`／`_diagCopyFallback`／ホーム一覧の「🔍 診断」ボタン
+  - **絶対条件を構造的に担保**：発行HTTPは **`GET /api/cases` 1本のみ**（POST/PATCH/DELETE **0件**）／`saveCases` を呼ばず `cases` へ代入・deleteしない（**localStorage不変**）／`syncCasesFromServer`・`mergeServerCases` は**不使用**（merge+prune+saveCases＝mutationのため）／**実行系ボタンを置かない**（「📋 JSONをコピー」「閉じる」のみ）／推定は「疑い」「可能性」と表示し signal内訳と score を併記
+  - 分類：DB状態（生存／削除済み／local-only）・推定区分（正常案件の可能性／不具合①由来の疑い／判定不能）・推奨アクション（Keep／Review／Remove候補）・`msgCount`。JSON schema `case-diagnosis/v1`
+  - **PC・iPhone双方で実施済み**
+
+- **②-B-2 Backfill：対象なしのため未実装Close** ／ **②-C 残骸整理：対象なしのためClose**（**Decision 062**）
+
+### 実機確認の実測値（PC・iPhone双方で完全一致）
+- **DB 生存 1 ／ DB 論理削除済み 2 ／ 合計3行が残存＝物理削除なし**
+- **PC local 1 ／ iPhone local 1** ＝ **DB生存 = PC = iPhone の三者一致**
+- **local-only 0 ／ Review 0 ／ Remove候補 0**
+- 残骸が解消した経緯：不具合①修正で新規増殖が停止 → ②-Aでユーザーが実機削除（DB行ありは**論理削除**され `deletedIds` で両端末prune／DB行なしの local-only 残骸は **404→local削除可** の契約で除去）＝**②-Aの設計が②-Cの整理を先に完了させた**
+
+### Close処理（本記録のcommit）
+- `index.html`：**`DEBUG_CASE_DIAG = false`**（本番の診断ボタン非表示）。**診断ロジック・変数・関数は削除せず温存**（再調査時 `true` で復活・PhaseD-1 の `DEBUG_TASK_SYNC` と同方式）
+- docs：01/02/04DECISIONS/06HANDOVER/CHANGELOG 更新
+
+### 保護（不変）
+- **物理削除なし**（`cases` は `deleted_at` による可逆な論理削除）／**`messages`・`conversations`・`task_history`・Learning は非連動・非削除**（履歴保護維持）／**local-only案件保護**／`createCase()` 本体／`createNewCaseFromForm()`／**Task同期・Task History・Notification・Timeline・Approval・Output Draft・Review State・Provider・Routing・Cost・Phase53 非接触**／cost関連3ファイル・退避フォルダ **未操作**
+
+### 確認
+- `node --check`（server.js／lib/casesDb.js）0エラー／**dev-check 200/200/200**／console 0
+- localhost：GET形不変＋`deletedIds`/`total`・部分GETは`deletedIds`空・DELETE 404・**物理削除なし**・prune規則7件（deletedIds対象のみ／local-only保護／非配列・undefined・空配列でpruneしない／未知idはno-op）・削除契約4件（200/404→local削除・5xx/通信失敗→local保持）・`messages` 50件不変
+- 本番：トップ200・`deletedIds`/`total` 返却・生存のみ返却・**合計3行＝物理削除なし**・DELETE 404・旧DELETE配線0件・クライアントprune配信済み・console 0・iPhone幅(390×844)で横スクロールなし
+
+### 状態
+- **Case同期系Complete**／**Phase54 Complete維持**／**Phase55未着手**
+- **残存項目は別工程**：① `pushCaseToServer` の成功確認化（**作成側は現在も fire-and-forget**＝POST失敗時に local-only 案件が再発し得る）／② Phase54 Hotfix の **Task側** PC⇔iPhone 実機確認（未実施）／③ Case同期契機の追加（現在は起動時1回のみ＝他端末の削除反映に相手端末のF5が必要）
 
 ---
 
