@@ -8077,8 +8077,8 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
   const assignedMembers = assignedIds.map(id => ALL_MEMBERS[id]).filter(Boolean);
   if (assignedMembers.length === 0) return;
 
-  // 案件作成
-  const caseId = createCase(userText, assignedIds);
+  // 案件作成（不具合①修正: 無条件createCaseを停止。案件選択中は現在案件を継続、未選択/最新一覧/案件一覧はnull=横断。自動で新規案件を作らない）
+  const caseId = _ncActiveCaseId('leader') || null;
 
   const shortTitle = userText.length > 30 ? userText.slice(0, 30) + '…' : userText;
   const dispatchTs = new Date().toISOString();
@@ -8146,7 +8146,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
     if (!chatHistory[m.id]) chatHistory[m.id] = [];
     chatHistory[m.id].push({ role: 'user', content: instruction, timestamp: dispatchTs, fromLeader: true, caseId });
     tasks.unshift({
-      id: genId(), title: `[${cases[caseId]?.title}] ${instruction.slice(0, 40)}`, body: instruction.slice(0, 60),
+      id: genId(), title: `[${cases[caseId]?.title || '横断'}] ${instruction.slice(0, 40)}`, body: instruction.slice(0, 60),
       memberId: m.id, memberName: `${m.emoji} ${m.name}`,
       priority: 'mid', status: 'doing',
       createdAt: dispatchTs, updatedAt: dispatchTs,
@@ -10047,7 +10047,7 @@ async function sendMessage() {
   chatHistory[currentMember.id].push({ role: 'user', content: text, timestamp: userTs, caseId: _ncActiveCaseId(currentMember.id) });
   saveToStorage();
   // Phase52-11.8c: 送信した案件を最終更新日時で先頭へ並べ替え
-  const _activeCaseOnSend = _ncActiveCaseId(currentMember.id) || (getCasesForMember(currentMember.id)[0] || {}).id;
+  const _activeCaseOnSend = _ncActiveCaseId(currentMember.id);   // 不具合①修正: 未選択/最新一覧/案件一覧では先頭案件へフォールバックしない（横断時に既存案件のupdatedAt/並び順/pushCaseToServerを発火させない）
   if (_activeCaseOnSend) { touchCase(_activeCaseOnSend); renderCaseNav(currentMember.id); }
   updateDeleteBtn();
   addBubble('user', text, currentMember, false, false, userTs);
@@ -10113,7 +10113,7 @@ async function sendMessage() {
         .catch(() => {});
 
       // 案件記憶：現在案件に提案を保存
-      const activeCaseId = memberCaseView[_mid] || (getCasesForMember(_mid)[0] || {}).id;
+      const activeCaseId = _ncActiveCaseId(_mid);   // 不具合①修正: 案件選択中のみ保存。未選択/最新一覧/案件一覧はundefined=横断=保存しない（先頭案件への誤保存を防止）
       if (activeCaseId) {
         saveCaseMemory(activeCaseId, {
           purpose: text,
