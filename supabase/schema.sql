@@ -177,8 +177,13 @@ CREATE TABLE IF NOT EXISTS cases (
   proposals   TEXT[]    DEFAULT '{}',
   result      TEXT,
   ts          TIMESTAMPTZ DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ DEFAULT NOW()
+  updated_at  TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at  TIMESTAMPTZ           -- 不具合②-A: 論理削除（nullable・NULL=生存／非NULL=削除済み・行は物理削除しない＝Supabase保存維持）
 );
+
+-- 不具合②-A: 既存DBへは以下のALTERで deleted_at を追加（非破壊・nullable・既存行はNULL維持＝生存扱い・物理削除しない）
+--   ALTER TABLE cases ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+--   CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases (deleted_at);
 
 -- ============================================================
 -- 承認/公開状態テーブル（Phase54-1b 新規作成 / Phase54-1f output_id 追加）

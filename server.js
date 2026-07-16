@@ -1277,8 +1277,9 @@ app.get('/api/cases', async (req, res) => {
   const { memberId } = req.query;
   try {
     const result = await getCasesDb().getCases({ memberId });
-    res.json({ ok: true, cases: result.cases, source: result.source });
-  } catch (e) { res.json({ ok: false, cases: [], error: e.message }); }
+    // 不具合②-A: cases（生存のみ）は形不変＝後方互換。deletedIds/total を追加（deletedIdsは全件GET時のみ非空）
+    res.json({ ok: true, cases: result.cases, deletedIds: result.deletedIds || [], total: result.total || 0, source: result.source });
+  } catch (e) { res.json({ ok: false, cases: [], deletedIds: [], total: 0, error: e.message }); }
 });
 
 // POST /api/cases  { id, title, userText, genre, memberIds }
@@ -1309,13 +1310,17 @@ app.post('/api/case-memory/:caseId', express.json(), async (req, res) => {
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 
-// DELETE /api/cases/:id  （Phase52-12.1: 案件削除同期。id完全一致1件のみcases行を削除。messages/conversationsは削除しない）
+// DELETE /api/cases/:id  （Phase52-12.1: 案件削除同期。id完全一致1件のみ。messages/conversationsは削除しない）
+// 不具合②-A: 物理削除 → 論理削除（softDeleteCase）へ変更。パス/メソッド/IFは不変・新規エンドポイントなし。
+//   存在しないid=404 / 既に削除済み=200（冪等）/ id未指定=400 / 行は物理削除しない（復元可）
 app.delete('/api/cases/:id', async (req, res) => {
   const { id } = req.params;
   if (!id) return res.status(400).json({ ok: false, error: 'id は必須です' });
   try {
-    const result = await getCasesDb().deleteCase(id);
-    res.json({ ok: !result.error, error: result.error });
+    const result = await getCasesDb().softDeleteCase(id);
+    if (result.notFound) return res.status(404).json({ ok: false, error: 'not_found' });
+    if (result.error)    return res.json({ ok: false, error: result.error });
+    res.json({ ok: true, alreadyDeleted: !!result.alreadyDeleted });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 // ─────────────────────────────────────────────────

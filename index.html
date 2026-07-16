@@ -12604,7 +12604,10 @@ function _caseLocalToServer(c) {
     memberIds: c.memberIds || ['leader'],
   };
 }
-function mergeServerCases(serverCases) {
+// 不具合②-A: 第2引数 deletedIds（全件GET時のみサーバから届く削除済みid配列）を受け取り、
+// 「deletedIdsに明示されたidだけ」localから除去する。GET結果に無い＝削除、とは推論しない
+// （＝push未達のlocal-only案件は保護される）。deletedIds未指定/非配列ならpruneしない。
+function mergeServerCases(serverCases, deletedIds) {
   if (!Array.isArray(serverCases)) return;
   let changed = false;
   serverCases.forEach(row => {
@@ -12621,6 +12624,13 @@ function mergeServerCases(serverCases) {
       changed = true;
     }
   });
+  // 不具合②-A: deletedIds prune（他端末の削除を反映）。明示されたidのみ・local-only案件は対象外・
+  // localに無いidはno-op。messages/conversations/履歴には触れない。
+  if (Array.isArray(deletedIds)) {
+    deletedIds.forEach(id => {
+      if (id && cases[id]) { delete cases[id]; changed = true; }
+    });
+  }
   if (changed) saveCases();
 }
 async function syncCasesFromServer() {
@@ -12628,8 +12638,8 @@ async function syncCasesFromServer() {
     const res = await fetch('/api/cases');
     if (!res.ok) return;
     const data = await res.json();
-    if (!data || !data.ok || !Array.isArray(data.cases)) return;
-    mergeServerCases(data.cases);
+    if (!data || !data.ok || !Array.isArray(data.cases)) return;   // GET失敗・不正レスポンスはpruneしない（既存local維持）
+    mergeServerCases(data.cases, data.deletedIds);   // 不具合②-A: deletedIds（全件GET時のみ非空）で他端末の削除を反映
     if (currentMember) {
       renderCaseNav(currentMember.id);
     } else {
@@ -12653,12 +12663,35 @@ function pushCaseToServer(caseId) {
     }).catch(() => {});
   } catch (e) { /* 失敗握り潰し・localStorageは保存済み */ }
 }
-// Phase52-12.1: 案件削除をSupabaseへ同期（DELETE /api/cases/:id・id完全一致1件のみ・messages/conversationsは削除しない・失敗握り潰し）
-function deleteCaseFromServer(caseId) {
-  if (!caseId) return;
+// Phase52-12.1: 案件削除をSupabaseへ同期（DELETE /api/cases/:id・id完全一致1件のみ・messages/conversationsは削除しない）
+// 不具合②-A: fire-and-forget をやめ、成否を返す契約へ変更（削除4経路はこの結果に従ってのみ local を削除する）。
+//   200        = 論理削除成功（既に削除済みの冪等成功を含む）→ local削除可
+//   404        = DBに行なし（＝push未達のlocal-only案件）→ 整合するため local削除可
+//   5xx/通信失敗 = 不明 → local を残す（誤消失防止・呼び出し側でユーザー通知）
+async function deleteCaseFromServer(caseId) {
+  if (!caseId) return { ok: false, status: 0, reason: 'no_id' };
   try {
-    fetch('/api/cases/' + encodeURIComponent(caseId), { method: 'DELETE' }).catch(() => {});
-  } catch (e) { /* 失敗握り潰し・localStorageは削除済み。リロード時のmerge復活はサーバ削除成功後に解消 */ }
+    const res = await fetch('/api/cases/' + encodeURIComponent(caseId), { method: 'DELETE' });
+    if (res.ok || res.status === 404) return { ok: true, status: res.status };
+    return { ok: false, status: res.status, reason: 'server' };
+  } catch (e) {
+    return { ok: false, status: 0, reason: 'network' };   // localStorageは削除しない＝次回同期で不整合が起きない
+  }
+}
+
+// 不具合②-A: 削除契約の共通処理（4経路統一）。サーバ削除が成功(200/冪等)または404(local-only)のときだけ local から除去する。
+// 失敗時は local を残し false を返す（呼び出し側で通知）。messages/conversations/履歴には一切触れない。
+async function _deleteCaseWithContract(caseId) {
+  const r = await deleteCaseFromServer(caseId);
+  if (!r || !r.ok) return false;
+  if (cases[caseId]) delete cases[caseId];
+  return true;
+}
+// 不具合②-A: 削除失敗のユーザー通知（既存の alert/confirm と同じ方式で統一）
+function _notifyCaseDeleteFailed(names) {
+  const list = (names || []).slice(0, 5).join('\n・');
+  const more = (names || []).length > 5 ? `\n…他${names.length - 5}件` : '';
+  alert(`案件の削除に失敗しました（サーバーに接続できませんでした）。\n削除は行われず、案件はそのまま残っています。\n通信状況を確認してもう一度お試しください。\n\n・${list}${more}`);
 }
 function normalizeCaseTitle(text) {
   if (!text) return '';
@@ -12778,14 +12811,14 @@ function touchCase(caseId) {
   if (cases[caseId]) { cases[caseId].updatedAt = new Date().toISOString(); saveCases(); pushCaseToServer(caseId); }
 }
 // Phase52-11.8c: 案件削除（ユーザー操作のみ・確認ダイアログ付き・会話履歴は削除しない）
-function deleteCase(memberId, caseId) {
+async function deleteCase(memberId, caseId) {
   if (!caseId || caseId === 'latest') return;   // 全案件ビューは削除不可
   const c = cases[caseId];
   const nm = c ? (c.title || c.userText || '案件') : '案件';
   if (!confirm(`案件「${nm}」を削除しますか？\nこの操作は元に戻せません。`)) return;
-  delete cases[caseId];                          // 案件メタデータのみ削除（chatHistory/Supabaseの履歴は保持）
-  saveCases();
-  deleteCaseFromServer(caseId);                  // Phase52-12.1: Supabase cases も同期削除（messages/conversationsは削除しない）
+  // 不具合②-A: サーバ削除(論理)が成功したときだけ local を削除。失敗時は local を残して通知（誤消失・復活を防止）
+  if (!await _deleteCaseWithContract(caseId)) { _notifyCaseDeleteFailed([nm]); return; }
+  saveCases();                                   // 案件メタデータのみ削除（chatHistory/Supabaseの履歴は保持）
   // Phase52-12.0(修正): 案件が残っていれば毎回ホームへ戻さず連続削除しやすくする。0件時のみホーム/empty-state。
   const _remaining = Object.keys(cases).length;
   if (_remaining === 0) { goHome(); return; }     // 最後の1件を削除 → ホーム/empty-state（renderHomeCaseListが0件でempty-state分岐）
@@ -12844,16 +12877,22 @@ function _clToggleSelected(caseId, checked) {
   const b = document.getElementById('case-bulk-del-btn');
   if (b) b.textContent = `🗑 選択削除（${_clSelectedIds.size}件）`;
 }
-function _clBulkDelete(memberId) {
+async function _clBulkDelete(memberId) {
   const ids = Array.from(_clSelectedIds);
   if (ids.length === 0) { alert('削除する案件を選択してください。'); return; }
   if (!confirm(`選択した ${ids.length} 件の案件を削除しますか？\nこの操作は元に戻せません。`)) return;
-  ids.forEach(id => { if (cases[id]) { delete cases[id]; deleteCaseFromServer(id); } });   // local + Supabase削除（messages非削除）
+  // 不具合②-A: 1件ずつ順次（フラッド防止）。成功した案件のみ local から削除し、失敗分は残して通知
+  const failed = [];
+  for (const id of ids) {
+    const nm = cases[id] ? (cases[id].title || cases[id].userText || '案件') : '案件';
+    if (!await _deleteCaseWithContract(id)) failed.push(nm);
+  }
   saveCases();
   _clSelectedIds.clear();
   _clSelectMode = false;
   renderCaseNav(memberId);
   renderCaseListScreen(memberId);
+  if (failed.length) _notifyCaseDeleteFailed(failed);
 }
 function renderCaseListScreen(memberId) {
   const chat = document.getElementById('chat-area');
@@ -12966,13 +13005,13 @@ function _homeMakeCard(titleHtml, snippet, onOpen, openLabel) {
 // 削除対象は cases(localStorage) と Supabase(cases行) のみ。messages/conversations は削除しない。
 let _homeSelectMode = false;
 const _homeSelectedIds = new Set();
-function _homeDeleteCase(caseId) {
+async function _homeDeleteCase(caseId) {
   const c = cases[caseId];
   const nm = c ? (c.title || c.userText || '案件') : '案件';
   if (!confirm(`案件「${nm}」を削除しますか？\nこの操作は元に戻せません。`)) return;
-  delete cases[caseId];
+  // 不具合②-A: サーバ削除(論理)成功時のみ local を削除（messages/conversationsは削除しない）
+  if (!await _deleteCaseWithContract(caseId)) { _notifyCaseDeleteFailed([nm]); return; }
   saveCases();
-  deleteCaseFromServer(caseId);      // Supabase cases も同期削除（messages/conversationsは削除しない）
   _homeSelectedIds.delete(caseId);
   goHome();                          // ホーム再描画（0件はempty-state・案件タブも更新）
 }
@@ -12994,17 +13033,21 @@ function _homeDeselectAll() {
   _homeSelectedIds.clear();
   goHome();                          // ホーム再描画
 }
-function _homeBulkDelete() {
+async function _homeBulkDelete() {
   const ids = Array.from(_homeSelectedIds);
   if (ids.length === 0) { alert('削除する案件を選択してください。'); return; }
   if (!confirm(`選択した ${ids.length} 件の案件を削除しますか？\nこの操作は元に戻せません。`)) return;
-  ids.forEach(id => {
-    if (cases[id]) { delete cases[id]; deleteCaseFromServer(id); }   // local + Supabase削除（messages非削除）
-  });
+  // 不具合②-A: 1件ずつ順次（フラッド防止）。成功した案件のみ local から削除し、失敗分は残して通知
+  const failed = [];
+  for (const id of ids) {
+    const nm = cases[id] ? (cases[id].title || cases[id].userText || '案件') : '案件';
+    if (!await _deleteCaseWithContract(id)) failed.push(nm);
+  }
   saveCases();
   _homeSelectedIds.clear();
   _homeSelectMode = false;
   goHome();                          // ホーム再描画
+  if (failed.length) _notifyCaseDeleteFailed(failed);
 }
 function renderHomeCaseList() {
   const chat = document.getElementById('chat-area');
