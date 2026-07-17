@@ -4,6 +4,22 @@
 
 ---
 
+## Task Create dbId Hotfix（2026-07-17・本番反映済み・**localhost確認済み**・commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）
+
+Task新規作成時の **`dbId` 取り込み失敗＝二重表示**を解消。**index.htmlのみ（+15/-9）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手**。
+
+- **原因（クライアント単独。サーバー・API・DBは正常）**：POST は成功し `{ ok:true, task:{id} }` を返しているのに、クライアントが `dbId` を取り込めず local-only のまま残存 → リロード時の merge（照合キーは `dbId` のみ）で**サーバーコピーが別途 push され二重表示**。backfill の署名照合（Pass A）は、起動順が `sync` → `backfill` のため**同期済みコピーが既に dbId を確保済み**となり採用できず、**二重化は自動解消されない**。
+- **① `submitTask()` の dbId 誤代入**：非同期コールバック内で**配列先頭を再評価**していたため、POST往復（本番RTT実測 約0.9秒）の間に他経路の先頭挿入（7か所）が割り込むと**dbId が別Taskへ代入**され、本来のTaskは永久に local-only 化。**条件付き発生**。→ 作成Taskを**捕捉変数**で保持し `_persistNewTask()` へ統一。
+- **② `atCreateNextTasksFromItems()` の握り潰し**：POST を投げっぱなしにして**返却された dbId を常に破棄**していたため、この経路のTaskは**必ず** local-only 化。**Decision 063（Case成功確認契約）と同型**。→ `_persistNewTask()` へ統一。
+- **結果**：**全7つの作成経路が安全な方式に統一**（`_persistNewTask` ×5／`.then` 捕捉変数 ×2）。`tasks[0].dbId` / `syncTaskToServer(task).catch` / `syncTaskToServer(tasks[0])` の残存は**本番配信コードで0件**を確認。
+- **確認**：fetchスタブ（実DB非接触）で、連続作成の全Taskが**自分自身の dbId** を取得（**解決順を逆転させた条件でも誤代入0**＝潜在リスクも解消）／自動次Task 3件とも dbId 取得・重複0／**同期後も local 3件 = server 3行・重複0＝二重表示なし**。**対照実験**で旧実装を局所再現すると同一条件で**local 4件・重複1件を再現**（修正が原因に効くことの直接証拠）。**console 0**・**dev-check 200/200/200**・インラインJS 2ブロック構文OK・本番配信コードがローカルと**完全一致**。
+- **非接触**：`syncTaskToServer()` 本体（正常）／**`syncTasksFromServer()` の merge・reconciliation は無変更**／Server正本契約（`archivedAt` / `deletedIds`）／backfill／一括操作Hotfix（`_taskBulkRunPooled` 等）／Decision 063・064・065。
+- **DB実測（確認時点・無変更）**：生存tasks **253**／archived **167**／deletedIds **127**／cases 生存**2**・削除済**2**。検証用Taskの混入**0件**。
+- **未整理（別途判断）**：本番DBの**重複署名16グループ・余剰16行**（すべて2行重複）は**今回触っていない**。本Hotfixは**新規発生の停止**のみで、**既存の二重化データは自動解消されない**。
+- **残**：**本番実機確認**（PC）。
+
+---
+
 ## Task Bulk Action Hotfix（2026-07-17・本番反映済み・**localhost実機確認済み**・commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）
 
 Task一括操作（**アーカイブ／復元／完全削除**）を**同時5並列化**し、**進捗表示・二重実行防止・成功ごとの保存**を追加。**index.htmlのみ（+200/-65）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手**。

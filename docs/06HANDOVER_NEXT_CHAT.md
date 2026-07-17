@@ -2,7 +2,27 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**・**Task一括操作 Hotfix 完了**（同時5並列化・進捗表示・二重実行防止・成功ごとの保存）・**localhost実機確認済み**・**本番反映済み**。HEAD=origin/main=**deba2ed**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-bulk-parallel**。先行して Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-17（**Phase54 正式Complete維持**・**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+
+---
+
+## 【現在地・最優先】Task新規作成 二重化 Hotfix — **完了**（2026-07-17・本番反映済み・**localhost確認済み**）
+
+- **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54 Complete維持**／**Phase55 未着手**
+- **Git**：**HEAD = origin/main = `39b44d0`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-task-create-dbid`**。
+- **内容**：Task新規作成時の **`dbId` 取り込み失敗＝二重表示**を解消（A案）。**index.htmlのみ（+15/-9）**・server.js/lib/DB/API/SQL **無変更**。
+  - **原因（クライアント単独。サーバー・API・DBは正常）**：POST は成功し `{ ok:true, task:{id} }` を返しているのに dbId を取り込めず local-only 化 → merge の照合キーが **`dbId` のみ**のため、リロード時にサーバーコピーが別途 push され**二重表示**。backfill の署名照合は起動順（`sync`→`backfill`）により**採用できず自動解消しない**。
+  - **① `submitTask()`**：非同期コールバック内で**配列先頭を再評価**（POST往復 約0.9秒の間に先頭が入れ替わると dbId が別Taskへ）＝**条件付き**。→ **捕捉変数**＋`_persistNewTask()` へ統一。
+  - **② `atCreateNextTasksFromItems()`**：POST 投げっぱなしで**dbId を常に破棄**＝**常時発生**。**Decision 063 と同型**。→ `_persistNewTask()` へ統一。
+  - **結果**：**全7作成経路が安全な方式に統一**（`_persistNewTask` ×5／`.then` 捕捉変数 ×2）。
+- **確認**：fetchスタブ（実DB非接触）で連続作成の全Taskが**自分自身の dbId** を取得（**解決順逆転でも誤代入0**）・自動次Task 3件とも dbId 取得・**同期後 local 3件 = server 3行＝二重表示なし**／**対照実験で旧実装は local 4件・重複1件を再現**（修正が効く直接証拠）／console 0／dev-check 200/200/200／本番配信コードが**ローカルと完全一致**・欠陥パターン残存0件／一括操作Hotfix・Decision 064/065 **非回帰**。
+- **DB無変更**：生存tasks **253**／archived **167**／deletedIds **127**／cases 生存**2**・削除済**2**・検証用Taskの混入**0件**。
+
+### 次工程（ユーザー承認後に決定・未着手）
+1. **本番実機確認（PC）** — 今回Hotfix（Task作成→リロードで二重表示されないこと）／先行の一括操作Hotfix（一括アーカイブ・復元・進捗表示・件数/バッジ一致・console 0）
+2. **既存重複データの整理判断（未整理）** — 本番DBに**重複署名16グループ・余剰16行**（すべて2行重複・Leader依頼系が中心）。**本Hotfixは新規発生の停止のみ**で既存分は解消されない。整理には対象特定・削除方針・Server正本契約（`deletedIds`）への影響検討が必要
+3. **Phase55へ進むか判断**／**Version1.1 の範囲確定**
 
 ---
 

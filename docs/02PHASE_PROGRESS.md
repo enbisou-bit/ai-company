@@ -1,7 +1,43 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task新規作成 二重化 Hotfix 完了**・本番反映済み・**localhost確認済み**・**HEAD 39b44d0**・tag **v1.01-phase54-task-create-dbid**＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一。既存の重複16グループは**未整理・別途判断**。**Phase55未着手**。以前：**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## Task新規作成 二重化 Hotfix **完了**（2026-07-17・本番反映済み・localhost確認済み）
+
+> 記録日: 2026-07-17。**Phase54 Complete後に発見された Known Issue の Hotfix**（A案採用）。**Phase54 正式Complete維持・Phase55未着手**。**index.htmlのみ（+15/-9）**／server.js・lib・DB・API・SQL・`syncTasksFromServer()` の merge は**無変更**。commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**。
+
+### 現象
+Task作成後、Server保存は成功しているのに local側Taskは `dbId` 未設定のまま残る。リロードすると Server側Taskが同期され、**local-only Task と Server Task が同時表示＝二重化**する。
+
+### 原因（調査で確定・クライアント単独）
+- **サーバー・API・DBは正常**：`POST /api/tasks` は `{ ok:true, task:{ id } }` を返却（`createTask` は `.select().single()` で行を返す）。`syncTaskToServer()` も `data.ok && data.task?.id` を検証して正しく id を返す。
+- **① `submitTask()` の dbId 誤代入（条件付き）**：非同期コールバック内で**配列先頭を再評価**していた。POST往復（本番RTT実測 約0.9秒）の間に他経路の**先頭挿入（7か所）**が割り込むと先頭が入れ替わり、**dbId が別Taskへ代入**され、本来のTaskは永久に `dbId` なし＝local-only 化。
+- **② `atCreateNextTasksFromItems()` の握り潰し（常時）**：POST を投げっぱなしにして**返却された dbId を常に破棄**。この経路のTaskは**必ず** local-only 化。**Decision 063（Case成功確認契約）と同型**。
+- **二重化までの経路**：local-only Task（DBには行が存在）→ リロード → merge の照合は **`dbId` のみ**（`tasks.find(t => t.dbId && t.dbId === mapped.dbId)`）→ dbIdなしは構造的に一致し得ず `tasks.push(mapped)` → **二重表示**。
+- **自動解消しない理由**：backfill の署名照合（Pass A）は起動順が **`sync` → `backfill`** のため、到達時には**同期済みコピーが既にその dbId を確保済み**（`claimedDbIds`）→ 採用条件 `!claimedDbIds[...]` が偽 → **採用できず二重化が永続化**。
+- **全7作成経路の調査結果**：安全5経路（`_persistNewTask` ×4／`.then` 捕捉変数 ×2 のうち既存分）と**欠陥2経路**（①②）。安全経路は**捕捉した変数**へ代入していた。`_persistNewTask(tasks[0])` は**引数が同期評価**されるため安全（問題は `.then` 内部での再評価）。
+
+### 実装（A案・index.htmlのみ・2箇所）
+- **`submitTask()`**：Taskを `const newTask` で**捕捉変数**として保持 → `tasks.unshift(newTask)` → **`_persistNewTask(newTask)`** へ統一。
+- **`atCreateNextTasksFromItems()`**：投げっぱなしPOSTを廃止し **`_persistNewTask(task)`** へ統一（返却 dbId を必ず対象Taskへ反映）。
+- **結果**：**全7作成経路が安全な方式に統一**（`_persistNewTask` ×5／`.then` 捕捉変数 ×2）。
+- **補足**：コメントに旧コードを literal 引用すると、本プロジェクトの**grepマーカー検証**で誤検知するため、説明文へ書き換えた。
+
+### 確認
+- **fetchスタブ（実DB非接触・テストデータ作成なし）**：連続作成の全Taskが**自分自身の dbId** を取得・local-only残存**0**／**解決順を逆転させた条件**（1件目500ms・2件目100ms）でも**誤代入0**＝調査で指摘した「別TaskのdbIdでDB行を誤更新する潜在リスク」も解消／自動次Task **3件作成・3件POST・全件dbId・重複0**／**同期後も local 3件 = server 3行・重複0＝二重表示なし**。
+- **対照実験**：同一ハーネスで旧実装（先頭再評価）を局所再現 → **dbId未取得1件・同期後 local 4件（server 3行）・重複1件**を再現。**修正が原因に効くことの直接証拠**。
+- **本番**：トップ**200**・**配信コードがローカルと完全一致**・`tasks[0].dbId` / `syncTaskToServer(task).catch` / `syncTaskToServer(tasks[0])` の残存**0件**・`submitTask` の捕捉変数＋`_persistNewTask` 反映確認・`atCreateNextTasksFromItems` の `_persistNewTask` 反映確認。
+- **非回帰**：一括操作Hotfix（`_taskBulkRunPooled` / `_TASK_BULK_CONCURRENCY = 5`）・Decision 065（`filtered.sort`）・Decision 064（`_taskIsHomeView`）・`tasks.sort(` 0件。
+- **console 0**／**dev-check 200/200/200**／インラインJS **2ブロックとも構文OK**。
+- **DB無変更**：生存tasks **253**／archived **167**／deletedIds **127**／cases 生存**2**・削除済**2**。**検証用Taskの混入0件**。
+
+### 状態
+- **Phase54 Complete維持**／**Phase55未着手**
+- **残**：**本番実機確認（PC）**
+- **未整理（別途判断）**：本番DBの**重複署名16グループ・余剰16行**（すべて2行重複・Leader依頼系が中心）。本Hotfixは**新規発生の停止のみ**で、**既存の二重化データは自動解消されない**。整理には対象特定・削除方針・Server正本契約（`deletedIds`）への影響検討が必要。
 
 ---
 
