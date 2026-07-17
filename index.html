@@ -8704,6 +8704,9 @@ function showApp(showLogout = true) {
   document.getElementById('login-screen').classList.add('hidden');
   const btn = document.getElementById('logout-btn');
   if (btn) btn.style.display = showLogout ? 'block' : 'none';
+  // 工程A: ユーザー設定（Auto Task / 自律相談）を端末内保存から復元。
+  //   復元するのは値と表示のみ＝ここから Workflow / API は一切起動しない（課金防止の従来方針を維持）。
+  try { restoreAgentSettings(); } catch (e) { /* 復元失敗でもログイン処理を止めない */ }
   // Company Memory: ログイン後にKnowledgeをDB復元
   _keItems = generateKnowledge();
   restoreKnowledgeFromDb().catch(() => {});
@@ -10228,10 +10231,39 @@ document.getElementById('msg-input').addEventListener('input', function() {
 // ══════════════════════════════════════════════════
 // 課金防止システム
 // ══════════════════════════════════════════════════
-// ── Auto Task 自動開始（autoStart）設定 ──────────────────────────
-// 初期値は必ず OFF（false）。localStorageには保存しない（起動毎にリセット）。
+// ── Auto Task 自動開始（autoStart）/ 自律相談（autonomousConsult）設定 ──────────
+// 工程A: ユーザーが選んだ設定を localStorage で「端末内のみ」保持する（端末間同期はしない）。
+//   保存値なし/不正値は従来どおり初期値 false（Auto Task=手動 / 自律相談=OFF）へフォールバックする。
+//
+// 【課金防止（重要・従来方針を維持）】
+//   復元するのは「設定値と表示」だけであり、起動時に Workflow / API を自動実行しない。
+//   autoStart を参照して実行するのは atAutoStartWorkflow() のみで、同関数は handleLeaderDispatch
+//   完了後（＝ユーザーがLeaderへ依頼した後）にしか呼ばれない。起動経路からは呼ばれない。
+//   billingLock ガード（atAutoStartWorkflow 内 `autoStart && !billingLock`）も従来どおり有効。
+const AUTO_START_KEY         = 'enbisou_auto_start_v1';
+const AUTONOMOUS_CONSULT_KEY = 'enbisou_autonomous_consult_v1';
 let autoStart = false;
 let autonomousConsult = false; // 自律相談フラグ（Autonomous Consult flag）— 初期値 OFF
+
+// 工程A: 設定の保存/復元（端末内のみ・localStorage不可でも起動を止めない）
+function _saveAgentSetting(key, val) {
+  try { localStorage.setItem(key, val ? '1' : '0'); } catch (e) { /* 保存不可でも動作継続 */ }
+}
+function _loadAgentSetting(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === '1') return true;
+    if (v === '0') return false;
+    return fallback;                    // 未保存・不正値 → 既存初期値へフォールバック
+  } catch (e) { return fallback; }
+}
+// 起動時/ログイン時に設定を復元する（値と表示のみ。自動実行はしない）
+function restoreAgentSettings() {
+  autoStart         = _loadAgentSetting(AUTO_START_KEY, false);
+  autonomousConsult = _loadAgentSetting(AUTONOMOUS_CONSULT_KEY, false);
+  updateAutoStartBtn();                 // 内部値と画面表示を必ず一致させる
+  updateAutonomousConsultBtn();
+}
 
 function updateAutoStartBtn() {
   const btn = document.getElementById('auto-start-btn');
@@ -10249,6 +10281,7 @@ function updateAutoStartBtn() {
 
 function toggleAutoStart() {
   autoStart = !autoStart;
+  _saveAgentSetting(AUTO_START_KEY, autoStart);   // 工程A: 選択直後に端末内へ保存
   updateAutoStartBtn();
   const msg = autoStart
     ? '⚙ Auto Task 自動開始 ON — Leader振り分け完了後に自動でワークフローを実行します'
@@ -10256,13 +10289,18 @@ function toggleAutoStart() {
   showSystemNotice(msg);
 }
 
+// 工程A: 表示更新を関数化（updateAutoStartBtn と同形。復元処理との重複実装を避けるため切り出し。表示内容は従来と同一）
+function updateAutonomousConsultBtn() {
+  const btn = document.getElementById('autonomous-consult-btn');
+  if (!btn) return;
+  btn.textContent = autonomousConsult ? '🤝 自律相談：ON' : '🤝 自律相談：OFF';
+  btn.classList.toggle('on', autonomousConsult);
+}
+
 function toggleAutonomousConsult() {
   autonomousConsult = !autonomousConsult;
-  const btn = document.getElementById('autonomous-consult-btn');
-  if (btn) {
-    btn.textContent = autonomousConsult ? '🤝 自律相談：ON' : '🤝 自律相談：OFF';
-    btn.classList.toggle('on', autonomousConsult);
-  }
+  _saveAgentSetting(AUTONOMOUS_CONSULT_KEY, autonomousConsult);   // 工程A: 選択直後に端末内へ保存
+  updateAutonomousConsultBtn();
   showSystemNotice(autonomousConsult
     ? '🤝 自律相談 ON — 各担当が collaborators（相談可能担当）に自動で相談します'
     : '🤝 自律相談 OFF — 手動相談ボタンのみ有効です'
