@@ -4,6 +4,21 @@
 
 ---
 
+## Task Bulk Action Hotfix（2026-07-17・本番反映済み・**localhost実機確認済み**・commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）
+
+Task一括操作（**アーカイブ／復元／完全削除**）を**同時5並列化**し、**進捗表示・二重実行防止・成功ごとの保存**を追加。**index.htmlのみ（+200/-65）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手**。
+
+- **原因**：1件ずつ直列 `await`（本番RTT実測 約0.9秒 × 133件 ≒ **約2分**）で、その間UI無反応・`saveTasks()` もループ完了後の1回のみ。待ちきれず画面更新すると処理が中断し、**PATCH完了分のみ Server正本から復元**されるため「全選択しても一部しかアーカイブされない」ように見えていた（**サーバー・DB・Task同期・件数制限はいずれも正常＝クライアント単独の問題**）。
+- **対策**：`_taskBulkRunPooled()`（共有カーソル方式・同時**5**固定・`Promise.all` の無制限展開は不使用・重複処理なし・1件の例外で全体を止めない）／`_taskBulkSetBusy()`（フラグ・ボタンdisable・`beforeunload` を一元管理・`finally` で確実解除）／`_taskBulkProgress()`（進捗のみ更新）。
+- **成功確認契約は不変**：`setTaskArchivedOnServer` / `softDeleteTaskOnServer` は**無変更**。**Server成功後のみlocal反映**・失敗はlocal維持＋**選択を維持**（再試行が容易）・**成功Taskのみ選択解除**。
+- **逐次保存**：成功確定ごとに `saveTasks()`（中断されても成功分が残る）。**本描画（`renderTaskList` / `updateTaskBadge`）は完了後に1回だけ**。
+- **確認**：localhost実機で**アーカイブ3件→復元3件（原状回復）／完全削除3件**（サーバー経路2＋local-only経路1）・進捗表示「アーカイブ処理中 0 / 3件」等・処理中の全ボタンdisable・失敗0時の全選択解除・件数/バッジ一致（86→83→86）・**console 0**・**dev-check 200/200/200**・インラインJS 2ブロック構文OK・本番配信コードがローカルと**完全一致**・Decision 064/065 非回帰。
+- **非接触**：Server正本契約（`archivedAt` / `deletedIds`）／Task同期・backfill／並び順（Decision 065）／Home表示仕様（Decision 064）／Timeline・Notification・Task History・Approval・Output Draft・Case・Conversation・Message／Case系一括削除（`_clBulkDelete` / `_homeBulkDelete` は対象外・未変更）。
+- **DB実測（2026-07-17 確認時点）**：生存tasks **253**／archived **167**／deletedIds **127**／cases 生存**2**・削除済**2**。※`deletedIds` は 125 → **127**（確認用テストTask 2件を作成・完全削除したため。既存Taskの喪失なし）。
+- **残**：本番でのPC実機確認／**Task新規作成時の2重化（本Hotfixとは無関係の既存問題・別Known Issueとして次工程で原因調査）**。
+
+---
+
 ## Task Sort Order（2026-07-17・本番反映済み・**PC/iPhone実機確認済み**・commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）
 
 Task一覧の並び順を **`createdAt` 降順（上が最新・下が過去）** で PC・iPhone 統一。**index.htmlのみ（+10・追加のみ）**（Decision 065）。

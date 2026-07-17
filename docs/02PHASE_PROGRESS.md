@@ -1,7 +1,43 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## Task一括操作 Hotfix **完了**（2026-07-17・本番反映済み・localhost実機確認済み）
+
+> 記録日: 2026-07-17。**Phase54 Complete後に発見された Known Issue の Hotfix**。**Phase54 正式Complete維持・Phase55未着手**。**index.htmlのみ（+200/-65）**／server.js・lib・DB・API・SQL・Timeline・Notification・Task History は**無変更**。commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**。
+
+### 現象
+ホームで全選択（133件）→アーカイブ→更新すると **109件**（＝24件しか減らない）。繰り返すと 109→94→86 と**徐々にしか減らない**。選択件数・確認ダイアログの件数は正しい。
+
+### 原因（調査で確定・クライアント単独）
+- `taskArchiveSelected()` は**1件ずつ直列 `await`**（`PATCH /api/tasks/:id` を133回）。**本番RTT実測 約0.9秒**（ウォーム）× 133件 ≒ **約120秒**。コールドスタート時は13.3秒実測。
+- その間 **UI更新は皆無**（`renderTaskList` / `updateTaskBadge` / `saveTasks` はすべてループ完了後に1回だけ）。
+- サーバーは PATCH 成功のたび `archived_at` を**1件ずつ確定**する一方、クライアントは**最後にまとめて保存**する非対称があった。
+- ユーザーが待ちきれず**更新するとループが中断** → `saveTasks()` に到達せず local変更は全損 → リロード後に **`syncTasksFromServer` が Server正本の `archivedAt` を適用**し、**PATCH完了分だけがアーカイブ済みとして復元**される。
+- **減少幅の逆算が症状と一致**：24件≒22秒・15件≒14秒・8件≒7秒（＝待ち時間が回ごとに短くなったことと整合）。
+- **サーバー・DBは無罪**：`server.js` / `lib/tasksDb.js` に `.limit()` / `.range()` は**0件**（ページング・件数制限なし）。PATCH は冪等で 404/5xx も適切。例外による中断もなし（失敗時は `continue`）。
+
+### 実装（A案採用・index.htmlのみ）
+- **`_taskBulkRunPooled(ids, worker, onProgress)` 新規**：**共有カーソル方式**で同時実行数を **5** に固定。カーソルは取り出し時に即進めるため**同一IDの二重処理なし**。worker内の**予期しない例外も失敗扱い**で全体を停止しない。全対象の完了を待って `{ ok, ng, done }` を返す。**無制限 `Promise.all` は不使用**（`Promise.all` はワーカー5本の待機にのみ使用）。
+- **`_taskBulkSetBusy(on)` 新規**：`_taskBulkBusy` フラグ・一括ボタン5種の `disabled`・`beforeunload` の登録/解除を一元管理。**`finally` から必ず解除**（成功・一部失敗・例外いずれも）。
+- **`_taskBulkProgress()` 新規**＋**`#task-bulk-progress`**：`textContent` のみ（HTML挿入なし・`white-space: pre-line`）。**`renderTaskList` / `updateTaskBadge` は呼ばない**。
+- **対象3関数**（`taskArchiveSelected` / `taskRestoreSelected` / `taskPermanentDeleteSelected`）を同一設計へ統一：**Server成功後のみlocal反映**／**成功確定ごとに `saveTasks()`**／**成功Taskのみ選択解除・失敗は選択維持**／**本描画は完了後1回**。
+- **ガード追加**（各1行）：`taskSelectAll` / `taskDeselectAll` / `toggleTaskSelection` / `changeTaskStatus` / `deleteTask`。`updateTaskBulkToolbar()` に処理中分岐（選択0でもツールバー＝進捗の親を隠さない）。
+- **保護（不変）**：**`setTaskArchivedOnServer` / `softDeleteTaskOnServer` は無変更**／Server正本契約（`archivedAt` の Server正本化・`deletedIds` による削除伝播。**local側で `deletedIds` を生成・改変しない**）／Task同期・backfill／`_taskInCurrentView()`・`_taskIsHomeView()`・`_taskViewCaseId()`／Decision 064・065／**Case系一括削除（`_clBulkDelete` / `_homeBulkDelete`）は対象外・未変更**。
+
+### 確認
+- **スタブ検証**（fetchスタブ・実DB非接触）：133件で**最大同時実行数5・重複0・ユニーク133**／成功119・失敗14で**選択残14**／`saveTasks` **119回＝成功数**／**ループ中の `renderTaskList` 0回・完了後1回**／復元60件・完全削除40件も同結果／**処理途中で既に31件がlocalStorageへ永続化済み**（＝**中断耐性を実証**。旧構造では0件）／二重起動しても**同時実行5のまま・fetch 30回のまま**。
+- **localhost実機**：アーカイブ**3件**（86→83・バッジ83）→ 復元**3件**（83→86・**原状回復**）／完全削除**3件**（**サーバー経路2＋local-only経路1**）／進捗表示「アーカイブ処理中 0 / 3件／成功0件・失敗0件／画面を閉じずにお待ちください」・操作名は復元・完全削除でも正しく切替／処理中は全ボタンdisable・`beforeunload` 登録／完了後は進捗非表示・ボタン再有効化・`beforeunload` 解除／**失敗0のため選択全解除・alertなし**／**console 0**／**dev-check 200/200/200**／インラインJS **2ブロックとも構文OK**。
+- **本番**：Render自動デプロイ反映・トップ**200**・**配信コードがローカル `index.html` と完全一致**・`_taskBulkRunPooled` / `_TASK_BULK_CONCURRENCY = 5` / `#task-bulk-progress` / `beforeunload` を配信コードで確認・Task3関数に**旧直列ループ0件**・`filtered.sort`（Decision 065）維持・`_taskIsHomeView`（Decision 064）維持・`tasks.sort(` **0件**。
+- **DB実測（確認時点）**：生存tasks **253**／archived **167**／**deletedIds 127**／cases 生存**2**・削除済**2**。※`deletedIds` は 125→**127**（確認用テストTask 2件を作成し完全削除したため。ユーザー承認済み）。**既存Taskの喪失なし**。
+
+### 状態
+- **Phase54 Complete維持**／**Phase55未着手**
+- **残**：**本番でのPC実機確認**（一括アーカイブ・復元・進捗表示・件数/バッジ一致・console 0）
+- **別Known Issue（次工程で原因調査のみ・実装禁止）**：**Task新規作成時の2重化**。POST は成功しているのにクライアントが `dbId` を取り込めず local-only のまま残り、リロード後にサーバーコピーと**同一Taskが2件表示**される。**本Hotfixとは無関係の既存問題**（`submitTask()` / `createTask()` は本Hotfixのdiffに非該当）。調査対象＝`submitTask()` / `createTask()` / `POST /api/tasks` の返却値 / `dbId` 取り込み / local-only TaskとServer Taskのmerge / **Decision 063（Case成功確認契約）と同型か**。
 
 ---
 

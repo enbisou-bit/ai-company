@@ -2,7 +2,28 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## Task一括操作 Hotfix **完了**（2026-07-17・本番反映済み・localhost実機確認済み・commit deba2ed・tag v1.01-phase54-task-bulk-parallel）
+
+- **位置づけ**：**Phase54 Complete後に発見された Known Issue の Hotfix**。**Phase54 正式Complete は維持**・**Phase55 未着手**。**index.htmlのみ（+200/-65）**／server.js・lib・DB・API・SQL は**無変更**。
+- **現象**：ホームで全選択（133件）→アーカイブしても、更新すると一部（24件など）しか減らない。繰り返すと徐々に減る。
+- **原因**：**クライアント単独**の問題。1件ずつ直列 `await`（本番RTT実測 約0.9秒 × 133件 ≒ **約2分**）で、その間UI無反応・`saveTasks()` はループ完了後の1回のみ。ユーザーが待ちきれず更新すると処理が中断し、**PATCH完了分のみ Server正本（`archivedAt`）から復元**されていた。**サーバー・DB・Task同期・件数制限はすべて正常**（`.limit()` / `.range()` は0件）。
+- **対策（A案）**：**同時5並列**（`_taskBulkRunPooled()`・共有カーソル方式・重複処理なし・1件の例外で全体停止なし）／**進捗表示**（`_taskBulkProgress()`）／**二重実行防止**（`_taskBulkBusy`・`finally` で確実解除）／**離脱警告**（処理中のみ `beforeunload`）／**成功ごとの `saveTasks()`**（中断されても成功分が残る）。
+- **不変**：`setTaskArchivedOnServer` / `softDeleteTaskOnServer` **無変更**・**Server成功後のみlocal反映**・失敗はlocal維持＋**選択維持**・**本描画は完了後1回のみ**・Server正本契約（`archivedAt` / `deletedIds`）・Decision 064／065。
+- **効果**：133件で**約120秒 → 約24秒**（同時5並列）。処理中の進捗可視化と逐次保存により、**中断による「一部しか消えない」現象を解消**。
+
+### 確認
+- **localhost実機**：アーカイブ3件 → 復元3件（**原状回復**）／完全削除3件（サーバー経路2＋local-only経路1）／件数・バッジ一致（86→83→86）／失敗0時の全選択解除／処理中の全ボタンdisable／**console 0**／**dev-check 200/200/200**／インラインJS 2ブロック構文OK
+- **本番**：Render自動デプロイ反映・トップ200・**配信コードがローカルと完全一致**・Decision 064/065 非回帰
+- **DB実測（確認時点）**：生存tasks **253**／archived **167**／**deletedIds 127**／cases 生存**2**・削除済**2**（※`deletedIds` は 125→127。確認用テストTask 2件の作成・完全削除による。**既存Taskの喪失なし**）
+
+### 状態・次工程
+- **Phase54 Complete維持**／**Phase55未着手**
+- **残**：**本番でのPC実機確認**（一括アーカイブ・復元・進捗表示・件数/バッジ一致・console 0）
+- **別Known Issue（次工程で原因調査のみ・実装禁止）**：**Task新規作成時の2重化**。POSTは成功しているがクライアントが `dbId` を取り込めず local-only のまま残り、リロード後にサーバーコピーと**2件表示**になる。**本Hotfixとは無関係の既存問題**（`submitTask()` / `createTask()` は本Hotfixのdiffに含まれない）。**Decision 063（Case成功確認契約）と同型か**を含め調査予定
 
 ---
 

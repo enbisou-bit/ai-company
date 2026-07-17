@@ -2,7 +2,30 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**・**Taskホーム表示改善 完了**・**Task並び順統一 完了**・**PC/iPhone実機確認完了**。HEAD=origin/main=**bbfbc73**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-sort-newest**。先行して Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-17（**Phase54 正式Complete維持**・**Task一括操作 Hotfix 完了**（同時5並列化・進捗表示・二重実行防止・成功ごとの保存）・**localhost実機確認済み**・**本番反映済み**。HEAD=origin/main=**deba2ed**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-bulk-parallel**。先行して Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+
+---
+
+## 【現在地・最優先】Task一括操作 Hotfix — **完了**（2026-07-17・本番反映済み・**localhost実機確認済み**）
+
+- **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54 Complete維持**／**Phase55 未着手**
+- **Git**：**HEAD = origin/main = `deba2ed`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-task-bulk-parallel`**。
+- **内容**：Task一括操作（**アーカイブ／復元／完全削除**）を**同時5並列化**。**index.htmlのみ（+200/-65）**・server.js/lib/DB/API/SQL **無変更**。
+  - **原因（確定）**：1件ずつ直列 `await`（本番RTT実測 約0.9秒 × 133件 ≒ **約2分**）＋UI無反応＋`saveTasks()` がループ完了後の1回のみ → **更新で中断** → PATCH完了分のみ Server正本から復元＝「全選択しても一部しか減らない」。**サーバー・DB・同期・件数制限はすべて正常**。
+  - **対策**：`_taskBulkRunPooled()`（共有カーソル・同時5固定・重複0・1件の例外で停止しない）／進捗表示／`_taskBulkBusy` による二重実行防止（`finally` で確実解除）／処理中のみ `beforeunload`／**成功ごとの `saveTasks()`**（中断耐性）／**本描画は完了後1回**。
+  - **不変**：`setTaskArchivedOnServer` / `softDeleteTaskOnServer` **無変更**・**Server成功後のみlocal反映**・失敗はlocal維持＋**選択維持**・Server正本契約（`archivedAt` / `deletedIds`）・Decision 064／065・Case系一括削除は対象外。
+  - **効果**：133件で**約120秒 → 約24秒**。
+- **確認**：localhost実機でアーカイブ3件→復元3件（原状回復）・完全削除3件（サーバー経路2＋local-only経路1）・件数/バッジ一致（86→83→86）・**console 0**・**dev-check 200/200/200**・本番トップ200・**配信コードがローカルと完全一致**。
+- **DB実測（確認時点）**：生存tasks **253**／archived **167**／**deletedIds 127**／cases 生存**2**・削除済**2**（`deletedIds` は 125→127＝確認用テストTask2件の作成・完全削除による。**既存Taskの喪失なし**）。
+
+### 次工程（ユーザー承認後に決定・未着手）
+1. **本番でのPC実機確認**（一括アーカイブ・復元・進捗表示・件数/バッジ一致・console 0）
+2. **【別Known Issue】Task新規作成時の2重化 — 原因調査のみ（実装禁止）**
+   - **現象**：POST は成功しているのにクライアントが `dbId` を取り込めず local-only のまま残り、リロード後にサーバーコピーと**同一Taskが2件表示**される
+   - **本Hotfixとは無関係の既存問題**（`submitTask()` / `createTask()` は本Hotfixのdiffに非該当）
+   - **調査対象**：`submitTask()` / `createTask()` / `POST /api/tasks` の返却値 / `dbId` 取り込み / local-only TaskとServer Taskのmerge / **Decision 063（Case成功確認契約）と同型か**
+3. **Phase55へ進むか判断**／**Version1.1 の範囲確定**
 
 ---
 
