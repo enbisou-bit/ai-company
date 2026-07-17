@@ -7401,7 +7401,18 @@ function _taskViewCaseId() {
 //   可視＝現在案件のTask＋case_id=NULLの横断Task（別案件のcase付きTaskは不可視）。
 //   一覧・Progress・Taskバッジをこの同一集合で計算し、同一画面内の件数不一致を解消する。
 //   ※deleted Taskは削除同期で local から除去済み・archived は各計算側で扱う。
+// Decision 064: ホーム判定。currentMember===null のときだけホーム（goHome が currentMember=null を設定）。
+// ※ _taskViewCaseId()===null は「ホーム」と「担当選択中＋案件未選択（最新一覧/案件一覧）」の両方で真になるため、
+//    それだけでは判定しない（最新一覧で他案件Taskを出さない＝案件別分離を壊さないため）。
+function _taskIsHomeView() {
+  try { return !currentMember; } catch (e) { return false; }
+}
+// Decision 064: Task可視判定の単一の真実の源（一覧・Progress・バッジ・診断はすべて本関数を使う＝件数不一致を構造的に防止）。
+//   ホーム            = 全案件Task＋NULL横断Task（会社全体の俯瞰）
+//   案件画面          = 選択案件Task＋NULL横断Task（他案件は不可視）
+//   最新一覧/案件一覧 = NULL横断Taskのみ（現状維持）
 function _taskInCurrentView(t) {
+  if (_taskIsHomeView()) return true;                          // ホームは全案件Taskを俯瞰
   var _viewCase = _taskViewCaseId();
   var _tcase = (t && t.caseId != null) ? t.caseId : null;
   if (_tcase !== null && _tcase !== _viewCase) return false;   // 別案件のcase付きは不可視
@@ -20929,13 +20940,12 @@ function renderTaskList() {
   try { renderTaskSyncDiag(); } catch (e) {}   // PhaseA-0: パネル描画時に同期診断を最新表示（表示のみ）
   renderMemberFilterBar();
   const isArchivedView = taskFilters.status === 'archived';
-  // Phase54-3a-2: 案件別表示。現在表示案件（null=ホーム/未選択/一覧）。NULL Taskは横断として常時表示。
-  const _viewCase = _taskViewCaseId();
   // アーカイブビュー時は archived のみ表示。通常時は archived を除外。
   let filtered = tasks.filter(t => {
-    // Phase54-3a-2: case付きTaskは現在案件と一致する時のみ表示（別案件・未選択時は非表示）。NULL=横断Taskは常に表示。
-    const _tcase = (t.caseId != null) ? t.caseId : null;
-    if (_tcase !== null && _tcase !== _viewCase) return false;
+    // Decision 064: 案件別表示の判定は _taskInCurrentView() へ統一（インライン重複を廃止＝
+    //   一覧・Progress・バッジ・診断が同一の可視集合になり、件数不一致を構造的に防止）。
+    //   ホーム=全案件Task＋NULL横断 ／ 案件画面=当該案件＋NULL横断（他案件は非表示） ／ 最新一覧・案件一覧=NULL横断のみ
+    if (!_taskInCurrentView(t)) return false;
     if (isArchivedView) {
       return t.status === 'archived';
     }
