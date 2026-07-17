@@ -20955,6 +20955,16 @@ function renderTaskList() {
     if (taskFilters.member !== 'all' && t.memberId !== taskFilters.member) return false;
     return true;
   });
+  // Task一覧 並び順統一: 表示順を createdAt 降順（上が最新・下が過去）で確定させる。
+  //   背景: 一覧は tasks 配列の順序をそのまま描画していたため、自端末作成Task(unshift=先頭)と
+  //   他端末作成Taskの同期受信(syncTasksFromServer の push=末尾)が混在し、PCとiPhoneで並び順が逆転していた。
+  //   本ソートは【表示用 filtered のみ】が対象。tasks 配列本体・同期・backfill・localStorage・DB は一切変更しない。
+  //   同一 createdAt は id を第2キーにして順序を固定（安定化）。updatedAt は使用しない（状態変更で順序が動かないため）。
+  filtered.sort((a, b) => {
+    const c = String(b.createdAt || '').localeCompare(String(a.createdAt || ''));   // 降順＝新しいものが上
+    return c !== 0 ? c : String(a.id || '').localeCompare(String(b.id || ''));      // 同着は id で固定
+  });
+
   // アーカイブビュー切り替え時にツールバーのボタン表示を更新
   updateTaskBulkToolbar();
 
