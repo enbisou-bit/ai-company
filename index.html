@@ -12053,8 +12053,11 @@ async function atCreateNextTasksFromItems(items) {
     tasks.unshift(task);
     created.push({ task, memberId, memberName: task.memberName });
     // Supabaseにも同期（sync to Supabase）— 失敗してもローカルは継続
-    _ensureTaskCaseId(task);   // Phase54-3a-2: 作成時に現在案件を付与（未確定は横断Task）
-    syncTaskToServer(task).catch(() => {});
+    // Phase54 Known Issue Hotfix: 旧実装は POST を投げっぱなしにして返却された dbId を常に破棄しており、
+    //   この経路のTaskは必ず local-only のまま残っていた（サーバーには保存済み → リロード時のmergeで二重表示）。
+    //   Decision 063（Case成功確認契約）と同型の握り潰し。
+    //   他の作成経路と同じ `_persistNewTask()` へ統一（内部で _ensureTaskCaseId → 成功時のみ dbId 付与・冪等）。
+    _persistNewTask(task);
   }
   saveTasks();
   updateTaskBadge();
@@ -20612,7 +20615,11 @@ function submitTask() {
   const memberId = document.getElementById('tf-member').value;
   const member = memberId ? ALL_MEMBERS[memberId] : null;
   const now = new Date().toISOString();
-  tasks.unshift({
+  // Phase54 Known Issue Hotfix: 作成Taskを捕捉変数で保持する。
+  //   旧実装は非同期コールバックの中で配列先頭を再評価していたため、POST往復（本番RTT実測 約0.9秒）の間に
+  //   他経路の先頭挿入（7か所）が割り込むと先頭が入れ替わり、dbId が別Taskへ代入され、
+  //   本来のTaskは永久に dbId なし＝local-only のまま残っていた（→リロード時のmergeで二重表示）。
+  const newTask = {
     id: genId(),
     title,
     body: document.getElementById('tf-body').value.trim(),
@@ -20624,16 +20631,15 @@ function submitTask() {
     createdAt: now,
     updatedAt: now,
     sourceMessage: '',
-  });
+  };
+  tasks.unshift(newTask);
   saveTasks();
   closeTaskForm();
   renderTaskList();
   updateTaskBadge();
-  // DB同期（失敗してもローカル保存は継続）
-  _ensureTaskCaseId(tasks[0]);   // Phase54-3a-2: 手動作成Taskへ現在案件を付与（未確定は横断Task）
-  syncTaskToServer(tasks[0]).then(dbId => {
-    if (dbId) { tasks[0].dbId = dbId; saveTasks(); }
-  });
+  // DB同期（失敗してもローカル保存は継続）。他の作成経路と同じ `_persistNewTask()` へ統一
+  //   （内部で _ensureTaskCaseId → syncTaskToServer → 成功時のみ捕捉変数へ dbId 付与・冪等）。
+  _persistNewTask(newTask);
   // パネルを開く
   document.getElementById('task-panel').classList.add('open');
 }
