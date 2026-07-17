@@ -4,6 +4,23 @@
 
 ---
 
+## Agent Settings Persistence（工程A）（2026-07-17・**localhost確認済み**・commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）
+
+**Auto Task（autoStart）／自律相談（autonomousConsult）の選択状態を localStorage で端末内保持**。**index.htmlのみ（+45/-7）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手・工程B以降は未着手**。
+
+- **原因**：永続化処理が存在せず、起動毎に初期値 `let autoStart = false` / `let autonomousConsult = false`（＝「手動」「OFF」）へ戻っていた。**なお、これは実装漏れではなく「課金防止システム」節の意図的な設計**（旧コメント：`localStorageには保存しない（起動毎にリセット）`）であり、方針変更としてユーザー承認のうえ実施。
+- **追加キー**（既存の設定系規則 `enbisou_*_v1` に準拠）：`enbisou_auto_start_v1` / `enbisou_autonomous_consult_v1`（値は `'1'`/`'0'`）。
+- **保存**：`toggleAutoStart()` / `toggleAutonomousConsult()` のトグル直後に `_saveAgentSetting()`。
+- **復元**：`restoreAgentSettings()` を新規追加し **`showApp()` 冒頭**から呼ぶ（初回ロード・再ログインの両経路を通る唯一の入口）。保存値なし・不正値は**既存初期値 `false` へフォールバック**（localStorage不可でも起動を止めない）。
+- **UI同期**：復元時に `updateAutoStartBtn()` / `updateAutonomousConsultBtn()` を必ず呼び、**内部値と表示を一致**させる。自律相談の表示更新はトグル内インラインだったため、`updateAutoStartBtn()` と同形の関数へ切り出し（重複実装の回避・表示内容と挙動は従来と同一）。
+- **【課金防止の維持（最重要）】**：**復元するのは設定値と表示のみで、起動時に Workflow / AI / API を自動実行しない**。`autoStart` を参照して実行するのは `atAutoStartWorkflow()` のみで、その呼び出し元は `handleLeaderDispatch` 内の3箇所（＝ユーザーがLeaderへ依頼した後）のみ。**起動経路からの呼び出しは存在しない**。`if (!autoStart) return;` と `autoStart && !billingLock` のガードも従来どおり有効。
+- **確認（localhost）**：自動→F5→「自動」維持／手動→F5→「手動」維持／ON→F5→「ON」維持／OFF→F5→「OFF」維持／案件切替・ホーム移動・**ログアウト→再ログイン**でも維持（再ログイン前に内部値を意図的に `false` へ落として復元を実証）／内部値と表示の一致を全ケースで確認／**起動時リクエストはすべてGET・AI実行系POSTは0件**（`chat|dispatch|auto-task|workflow|consult|openai|claude` 一致0件・`_atCurrentWorkflowId` は `null`）／**console 0**／**dev-check 200/200/200**／インラインJS 2ブロック構文OK。
+- **非対象**：**端末間同期（DB列がなくSQL変更が必要なため別判断）**／Auto Task・自律相談の処理内容／Workflow成果物改善／Leader要約／テンプレート混入修正／Publishing／並列化／Learning・Compare／**工程B以降**。
+- **非接触**：`LEADER_FINAL_PROMPT` / `extractSlides` / `imagePrompts` / `_taskBulkRunPooled` / `_persistNewTask` / `syncTasksFromServer`（diffに非該当を実測確認）。
+- **保留**：**前工程（Task作成dbId Hotfix）の本番実機確認は未実施のまま**。
+
+---
+
 ## Task Create dbId Hotfix（2026-07-17・本番反映済み・**localhost確認済み**・commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）
 
 Task新規作成時の **`dbId` 取り込み失敗＝二重表示**を解消。**index.htmlのみ（+15/-9）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手**。

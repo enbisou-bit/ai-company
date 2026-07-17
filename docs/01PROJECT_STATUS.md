@@ -2,7 +2,31 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## 改善案件 工程A — 設定保持 **完了**（2026-07-17・localhost確認済み・commit 8c9ed58・tag v1.01-phase54-agent-settings-persistence）
+
+- **位置づけ**：**Version1 Final Complete ／ Version1.1 開発中**。Phase54 Complete後に確認された「運用品質・表示・設定保持の改善案件」の**工程A**。**Phase54 正式Complete維持**・**Phase55 未着手**・**工程B以降は未着手**。**index.htmlのみ（+45/-7）**／server.js・lib・DB・API・SQL は**無変更**。
+- **現象**：ページ更新後に Auto Task「自動→手動」・自律相談「ON→OFF」へ戻る。
+- **原因**：永続化処理が存在せず、起動毎に初期値 `false` へ戻っていた。**ただしこれは実装漏れではなく「課金防止システム」節の意図的な設計**（旧コメント：`localStorageには保存しない（起動毎にリセット）`）。方針変更としてユーザー承認のうえ実施。
+- **実装**：`enbisou_auto_start_v1` / `enbisou_autonomous_consult_v1` へ保存（既存の設定系規則 `enbisou_*_v1` に準拠）。トグル直後に `_saveAgentSetting()` で保存し、`restoreAgentSettings()` を **`showApp()` 冒頭**（初回ロード・再ログインの両経路を通る唯一の入口）から呼んで復元。保存値なし・不正値は**既存初期値 `false` へフォールバック**。復元時は `updateAutoStartBtn()` / `updateAutonomousConsultBtn()` で**内部値と表示を必ず一致**させる。
+- **【課金防止の維持（最重要）】**：**復元するのは設定値と表示のみ。起動時に Workflow・AI・API を自動実行しない。** `autoStart` を消費するのは `atAutoStartWorkflow()` のみで、呼び出し元は `handleLeaderDispatch` 内の3箇所（ユーザーがLeaderへ依頼した後）のみ＝**起動経路からの呼び出しは存在しない**。`if (!autoStart) return;` と `autoStart && !billingLock` ガードも従来どおり有効。
+
+### 確認（localhost）
+- 自動→F5→「自動」維持／手動→F5→「手動」維持／ON→F5→「ON」維持／OFF→F5→「OFF」維持
+- 案件切替・ホーム移動・**ログアウト→再ログイン**でも維持（再ログイン前に内部値を意図的に `false` へ落として復元を実証）
+- 内部値と表示の一致を全ケースで確認／未保存・不正値のフォールバックを実測
+- **起動時リクエストはすべてGET・AI実行系POSTは0件**（`_atCurrentWorkflowId` は `null`）
+- **console 0**／**dev-check 200/200/200**／インラインJS 2ブロック構文OK
+- 既存機能の健在を実測（一括操作Hotfix・Decision 064・Task作成dbId Hotfix・billingLockガード）
+
+### 状態・次工程
+- **Phase54 Complete維持**／**Phase55未着手**／**工程B以降は未着手**
+- **非対象**：**端末間同期**（DB列がなくSQL変更が必要なため別途判断）／Auto Task・自律相談の処理内容
+- **残**：本番確認（設定保持のみ。**Leader依頼・AI生成・Task生成は行わない＝課金APIテスト禁止**）
+- **保留**：**前工程（Task作成dbId Hotfix）の本番実機確認は未実施のまま**
 
 ---
 

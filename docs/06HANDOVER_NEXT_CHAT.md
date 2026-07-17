@@ -2,11 +2,34 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**・**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-17（**Phase54 正式Complete維持**・**改善案件 工程A（設定保持）完了**（Auto Task／自律相談を端末内localStorage保持・**autoStart復元は設定と表示のみ＝起動時のWorkflow・AI自動実行なし**・端末間同期は非対象）・**localhost確認済み**。HEAD=origin/main=**8c9ed58**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-agent-settings-persistence**。**Phase55未着手・工程B以降は未着手**・**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
 
 ---
 
-## 【現在地・最優先】Task新規作成 二重化 Hotfix — **完了**（2026-07-17・本番反映済み・**localhost確認済み**）
+## 【現在地・最優先】改善案件 工程A — 設定保持 **完了**（2026-07-17・**localhost確認済み**・本番確認は残）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 開発中**
+- **現在Phase**：**Phase54 Complete維持**／**Phase55 未着手**／**工程B以降 未着手**
+- **Git**：**HEAD = origin/main = `8c9ed58`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-agent-settings-persistence`**（annotated）。
+- **内容**：Auto Task（`autoStart`）／自律相談（`autonomousConsult`）の選択状態を **localStorage で端末内保持**。**index.htmlのみ（+45/-7）**・server.js/lib/DB/API/SQL **無変更**。
+  - **キー**：`enbisou_auto_start_v1` / `enbisou_autonomous_consult_v1`（既存 `enbisou_*_v1` 規則に準拠）
+  - **保存**：各トグル直後 ／ **復元**：`restoreAgentSettings()` を `showApp()` 冒頭から（初回ロード・再ログインの両経路を通る唯一の入口）
+  - **フォールバック**：保存値なし・不正値は**既存初期値 `false`**（localStorage不可でも起動を止めない）
+  - **UI同期**：復元時に `updateAutoStartBtn()` / `updateAutonomousConsultBtn()` で**内部値と表示を一致**
+- **【課金防止の維持（最重要）】**：**復元は設定値と表示のみ＝起動時に Workflow・AI・API を自動実行しない**。`autoStart` を消費するのは `atAutoStartWorkflow()` のみで、呼び出し元は `handleLeaderDispatch` 内3箇所（ユーザーがLeaderへ依頼した後）のみ。**起動経路からの呼び出しなし**。`if (!autoStart) return;` / `autoStart && !billingLock` ガードも健在。
+  - ※ 永続化がなかったのは**実装漏れではなく「課金防止システム」節の意図的設計**（旧コメント：`localStorageには保存しない（起動毎にリセット）`）。**方針変更としてユーザー承認済み**。
+- **確認（localhost）**：自動/手動・ON/OFF とも F5 で維持／案件切替・ホーム移動・**ログアウト→再ログイン**でも維持（再ログイン前に内部値を意図的に `false` へ落として復元を実証）／**起動時リクエストは全てGET・AI実行系POST 0件**・`_atCurrentWorkflowId` は `null`／**console 0**／**dev-check 200/200/200**。
+- **非対象**：**端末間同期**（DB列がなくSQL変更が必要＝別途判断）／Auto Task・自律相談の処理内容／**工程B以降**。
+
+### 次工程（ユーザー承認後に決定・未着手）
+1. **工程A 本番確認** — **設定保持のみ**（自動→F5維持／ON→F5維持／再ログイン維持／起動時にWorkflowが始まらない・AI系POST 0件・console 0）。**Leader依頼・AI生成・Task生成は行わない＝課金APIテスト禁止**
+2. **【保留】前工程（Task作成dbId Hotfix）の本番実機確認** — 未実施のまま（Task 1件作成→dbId→リロード後1件→アーカイブ）
+3. **工程B以降**（未着手）— B-1 outputType正本化／B-2 セクション動的化＋内部指示分離／B-3 JSON構造化 → C slides/caption分離 → D Designer Prompt → E 品質判定 → F Leader要約 → G 並列化 → H Learning・Compare（要追加調査）
+4. **既存重複データの整理判断（未整理）** — 本番DBに重複署名16グループ・余剰16行
+
+---
+
+## 【参考・完了済み】Task新規作成 二重化 Hotfix — **完了**（2026-07-17・本番反映済み・**localhost確認済み**）
 
 - **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
 - **現在Phase**：**Phase54 Complete維持**／**Phase55 未着手**

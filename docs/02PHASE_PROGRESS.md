@@ -1,7 +1,53 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task新規作成 二重化 Hotfix 完了**・本番反映済み・**localhost確認済み**・**HEAD 39b44d0**・tag **v1.01-phase54-task-create-dbid**＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一。既存の重複16グループは**未整理・別途判断**。**Phase55未着手**。以前：**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了**・**localhost確認済み**・**HEAD 8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**＝Auto Task／自律相談を端末内localStorage保持。**autoStart復元は設定・表示のみ＝起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**・本番反映済み・**localhost確認済み**・**HEAD 39b44d0**・tag **v1.01-phase54-task-create-dbid**＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一。既存の重複16グループは**未整理・別途判断**。**Phase55未着手**。以前：**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## 改善案件 工程A — 設定保持 **完了**（2026-07-17・localhost確認済み）
+
+> 記録日: 2026-07-17。**Version1 Final Complete ／ Version1.1 開発中**。Phase54 Complete後に確認された「運用品質・表示・設定保持の改善案件」の**工程A**（全11改善のうち、独立性が高く低リスクな設定保持のみ）。**Phase54 正式Complete維持・Phase55未着手・工程B以降は未着手**。**index.htmlのみ（+45/-7）**／server.js・lib・DB・API・SQL は**無変更**。commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**。
+
+### 現象
+ページ更新後に **Auto Task「自動→手動」**・**自律相談「ON→OFF」** へ戻る。
+
+### 原因
+`toggleAutoStart()` / `toggleAutonomousConsult()` に永続化処理がなく、起動毎に初期値 `let autoStart = false` / `let autonomousConsult = false` へ戻っていた（両変数のlocalStorage参照は全文検索で**0件**）。
+
+**重要**：これは実装漏れではなく、**「課金防止システム」節の意図的な設計**だった（旧コメント：`初期値は必ず OFF（false）。localStorageには保存しない（起動毎にリセット）。`）。第1工程の調査レポートはこの意図を見落としていたため、実装着手時に発見・報告し、**方針変更としてユーザー承認のうえ実施**した。
+
+### 実装（index.htmlのみ）
+- **追加キー**：`enbisou_auto_start_v1` / `enbisou_autonomous_consult_v1`（値 `'1'`/`'0'`）。既存の設定系規則（`AUTH_KEY = 'enbisou_auth_v1'` / `BILLING_LOCK_KEY = 'enbisou_billing_lock_v1'`）に準拠。
+- **保存**：`_saveAgentSetting()` を新規追加し、`toggleAutoStart()` / `toggleAutonomousConsult()` の**トグル直後**に呼ぶ。
+- **復元**：`restoreAgentSettings()` を新規追加し、**`showApp()` 冒頭**から呼ぶ。`showApp()` は初回ロード（自動ログイン／認証済みロード）と**再ログイン**の両方を通る唯一の入口のため、1箇所で全条件を満たす。
+- **フォールバック**：`_loadAgentSetting()` は保存値なし・不正値なら**既存初期値 `false`** を返す。localStorage不可でも `try/catch` で**起動を止めない**。
+- **UI同期**：復元時に `updateAutoStartBtn()` / `updateAutonomousConsultBtn()` を必ず呼ぶ。自律相談の表示更新は従来トグル内にインライン実装されていたため、**`updateAutoStartBtn()` と同形の関数へ切り出し**（復元処理との重複実装を回避。表示内容・挙動は従来と同一）。
+
+### 課金防止の維持（最重要・ユーザー指示）
+**復元するのは設定値と表示のみで、起動時に Workflow / AI / API を自動実行しない。**
+- `autoStart` を参照して実行するのは **`atAutoStartWorkflow()` のみ**。その呼び出し元は `handleLeaderDispatch` 内の3箇所（8238/8246/8256＝**ユーザーがLeaderへ依頼した後**）のみで、**起動経路からの呼び出しは存在しない**。
+- `atAutoStartWorkflow()` 内の `if (!autoStart) return;` および `autoStart && !billingLock` ガードは**従来どおり有効**（実測確認）。
+- `restoreAgentSettings()` が呼ぶのは表示更新2関数のみ（実測確認）。
+
+### 確認（localhost）
+- **Auto Task**：自動→F5→「自動」維持／手動→F5→「手動」維持
+- **自律相談**：ON→F5→「ON」維持／OFF→F5→「OFF」維持
+- **複合**：自動＋ON → 案件切替 → ホーム移動 → ログアウト → 再ログイン で**維持**。**再ログイン前に内部値を意図的に `false` へ落として**から検証し、復元処理が実際に効くことを実証。ログアウトでは認証キーのみクリアされ設定は残存。
+- **フォールバック実測**：未保存→`false`／不正値「ゴミ」→`false`／`'1'`→`true`
+- **内部値と表示の一致**を全ケースで確認（テキスト・`on` クラスとも）
+- **起動時のAI実行なしを通信レベルで実証**：`autoStart=自動` 復元状態での起動時リクエストは**すべてGET**、AI実行系POSTは**0件**（`chat|dispatch|auto-task|workflow|consult|openai|claude` 一致**0件**）、`_atCurrentWorkflowId` は `null`
+- **console 0**／**dev-check 200/200/200**／インラインJS **2ブロックとも構文OK**
+- **既存機能の健在を実測**：一括操作Hotfix（`_taskBulkRunPooled`・`_TASK_BULK_CONCURRENCY = 5`）／Decision 064（`_taskIsHomeView`）／Task作成dbId Hotfix（`_persistNewTask`）／billingLockガード
+
+### 非対象・非接触
+- **非対象**：**端末間同期**（保存先のDB列がなくSQL変更が必要なため**別途判断**）／Auto Task・自律相談の**処理内容**／Workflow成果物改善／Leader要約／テンプレート混入修正／Publishing／並列化／Learning・Compare／**工程B以降**
+- **非接触（diffに非該当を実測確認）**：`LEADER_FINAL_PROMPT` / `extractSlides` / `imagePrompts` / `_taskBulkRunPooled` / `_persistNewTask` / `syncTasksFromServer` / server.js / lib / supabase / openaiClient.js
+
+### 状態
+- **Phase54 Complete維持**／**Phase55未着手**／**工程B以降は未着手**
+- **残**：本番確認（**設定保持のみ**。Leader依頼・AI生成・Task生成は行わない＝**課金APIテスト禁止**）
+- **保留**：**前工程（Task作成dbId Hotfix）の本番実機確認は未実施のまま**
 
 ---
 
