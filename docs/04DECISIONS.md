@@ -2,7 +2,61 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**。**Decision 063・Case成功確認契約 完了**・本番反映済み・HEAD **aed5f7d**・tag v1.01-phase54-case-sync-contract。先行して **Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 064
+## ホームでは全案件Taskを表示する（Decision 054 の表示仕様を改定）
+
+**背景**：Phase54 Hotfix の Task側 PC⇔iPhone 実機確認で「PCで作成したTaskがiPhoneの案件画面には出るが、**ホームでは『タスクはありません』・バッジも0**」と報告された。調査の結果、**Task同期・DB保存は正常**であり、**Decision 054 の表示仕様（ホーム・案件未選択＝`case_id=NULL` 横断Taskのみ）どおりの動作＝不具合ではない**と確定。ただし「ホームで会社全体のタスクが0件に見えるのは実運用に反する」というユーザー判断により、**表示ポリシーのみを改定**する。
+
+**決定（正式・改定対象＝Decision 054 の表示仕様のうち「ホーム＝NULL横断のみ」）**：
+- **ホーム＝全案件Task＋`case_id=NULL` 横断Task**（会社全体のTaskを俯瞰する画面とする）
+- **案件画面＝選択案件Task＋`case_id=NULL` 横断Task**（**他案件のTaskは表示しない**＝案件別分離を維持）
+- **最新一覧／案件一覧＝`case_id=NULL` 横断Taskのみ**（現状維持）
+- **Timeline／Notification／Task History は変更しない**（ホームでは従来どおり横断のみ）
+- **一覧・Progress・バッジ・診断は同一の可視集合で計算する**（**「バッジだけ全件」は禁止**＝Phase54 Hotfix の件数統一方針を継承）
+- **`tasks.case_id` のデータ構造・保存・同期は一切変更しない**（Decision 054 のデータ分離は不変。変更するのは**表示ポリシーのみ**）
+
+**実装（なぜこの形か）**：
+- **ホーム判定は `currentMember === null` に限定**（`_taskIsHomeView()`）。`_taskViewCaseId() === null` は「ホーム」と「担当選択中＋案件未選択（最新一覧/案件一覧）」の**両方で真**になるため、それだけで判定すると**最新一覧でも他案件Taskが出てしまい**「案件画面では他案件を表示しない」に抵触する。
+- **`_taskInCurrentView()` にホーム分岐を追加**し、**`renderTaskList()` のインライン重複判定を同関数へ統一**。
+- ⚠️ **重要**：`renderTaskList()` は `_taskInCurrentView()` を**呼ばずに同じ判定を複製**していたため、`_taskInCurrentView()` だけを変更すると **Progress・バッジ・診断だけが全件になり一覧は0件のまま＝件数不一致**が発生するところだった。判定を**単一の真実の源**へ集約したことで、4者の一致が**構造的に保証**される。
+- **`_taskViewCaseId()` は変更しない**（`_historyVisibleInView()`／`_timelineEventVisibleInView()` が共有しており、変更すると Timeline・Task History・Notification へ波及するため）。
+
+**副作用（仕様として許容）**：ホームでは **Taskは全件／Timeline・Notification・Task History は横断のみ**という粒度差が生じる（Timeline等の仕様変更は今回対象外のため）。
+
+**Git/反映**：commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**・**index.htmlのみ（+15/-5）**。server.js・lib・DB・API・SQL・Task同期・backfill・削除/アーカイブ同期・Timeline・Notification・Task History は**すべて無変更**。dev-check 200/200/200・console 0・本番反映済み・**PC/iPhone実機確認完了**・**DB無変更**。
+
+---
+
+# Decision 065
+## Task一覧は `createdAt` 降順を正式仕様とする（PC・iPhone同一順序）
+
+**背景**：PCは「上が最新→下が過去」、**iPhoneは「上が過去→下が最新」**と並び順が逆転していた。調査の結果、**`renderTaskList()` にソートが存在せず**、`tasks` 配列の順序をそのまま描画していたことが原因と判明。配列への追加が2系統に分かれている：
+
+| 追加方法 | 対象 | 入る位置 |
+|---|---|---|
+| `tasks.unshift(...)`（7か所） | **自端末で作成**したTask | **先頭＝上** |
+| `tasks.push(mapped)`（`syncTasksFromServer` merge） | **他端末で作成**され同期で届いたTask | **末尾＝下** |
+
+→ PC（`unshift` 主体）は上が最新、**iPhone（同期受信＝`push` 主体で新しいTaskほど末尾に積み上がる）は下が最新**となり、**表示順が「端末の操作履歴」に依存**していた（仕様ではなく構造上の欠陥）。
+
+**決定（正式仕様）**：
+- **Task一覧は `createdAt` 降順**（**上が最新・下が過去**）。**PC・iPhoneで同一順序**を保証する。
+- **同一 `createdAt` は `id` を第2キー**として順序を固定（安定ソート）。
+- **archived一覧も同一ソート**。
+- **`updatedAt` は使用しない**（状態変更のたびに順序が動いてしまうため。案件一覧が `updatedAt` 順なのとは意図的に異なる）。
+- **表示のみの変更**：`renderTaskList()` の**表示用 `filtered` のみ**を並べ替える。**`tasks` 配列本体・`unshift`/`push`・同期・backfill・localStorage・DB は一切変更しない**。
+
+**なぜこの設計か（却下案）**：
+- **`tasks.push` → `unshift` へ変更：却下**。同期の受信順に依存する点は変わらず**根本解決にならない**うえ、merge／Server-Authoritative Reconciliation への影響が大きい。
+- **`loadTasks()` でソート：却下**。保存データの並べ替え＝**localStorage書き換え**が発生し、表示だけの問題に対して過剰。
+- **`renderTaskList()` でソート：採用**。表示専用・データ非接触・端末非依存・最小変更（+10行）。既存コードでも案件一覧（`updatedAt` 降順）・Timeline・Notification が同方式（`localeCompare`）でソートしており**一貫**する。
+- **Timeline／Notification／Task History は非接触**（各自が独自に `.sort()` 済みで `tasks` 配列に非依存）。Progress・バッジ・診断は件数のみ算出し順序を使わないため影響なし。
+
+**Git/反映**：commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**・**index.htmlのみ（+10・追加のみ）**。確認：症状を再現した配列（PC想定＝新→古／iPhone想定＝古→新）から**同一の描画順へ統一**されることを実証／実データ253件で降順・同着はid固定・**`tasks` 配列本体が不変**／dev-check 200/200/200・console 0・本番配信コード一致（`tasks.sort(` 0件）・**PC/iPhone実機確認完了**・**DB無変更**（テストTaskの作成/削除/アーカイブなし）。
 
 ---
 

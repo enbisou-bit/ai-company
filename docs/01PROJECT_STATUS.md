@@ -2,7 +2,36 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**。**Case成功確認契約 完了・本番反映済み**（commit **aed5f7d**・tag **v1.01-phase54-case-sync-contract**）＝案件の作成/削除とも成功確認型へ統一・**P5解消**。先行して**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **aed5f7d**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## Task表示仕様変更 **完了**（2026-07-17・本番反映済み・PC/iPhone実機確認完了）
+
+- **位置づけ**：**Phase54 正式Complete は維持**・**Phase55 未着手**。Phase54 Hotfix の Task側 PC⇔iPhone 実機確認で判明した**表示上の2件**への対応。**index.htmlのみ**／server.js・lib・DB・API・SQL は**無変更**。
+
+### ① Task Home Overview（commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**・Decision 064）
+- **ホームでは全案件Task＋横断Task（`case_id=NULL`）を表示**する（会社全体のTaskを俯瞰する画面）
+- **案件画面では選択案件Task＋横断Task**を表示（**他案件のTaskは表示しない**＝案件別分離を維持）
+- **最新一覧／案件一覧は横断Taskのみ**（現状維持）
+- **Timeline／Notification／Task History は変更しない**（ホームでは従来どおり横断のみ）
+- 判定を `_taskInCurrentView()` へ集約し、**一覧・Progress・バッジ・診断が同一の可視集合**になるよう統一（バッジだけ全件＝件数不一致を構造的に防止）
+
+### ② Task Sort Order（commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**・Decision 065）
+- **PC・iPhoneとも Task一覧は「上が最新・下が過去」で統一**（`createdAt` 降順）
+- 同一 `createdAt` は `id` を第2キーとして順序を固定
+- **archived一覧も同一ソート**
+- 原因：一覧が `tasks` 配列の順序をそのまま描画しており、自端末作成Task（`unshift`＝先頭）と他端末作成Taskの同期受信（`syncTasksFromServer` の `push`＝末尾）が混在して、**PCとiPhoneで並び順が逆転**していた
+- **表示用 `filtered` のみをソート**。`tasks` 配列本体・同期・backfill・localStorage・DB は**一切変更しない**
+
+### 確認
+- **本番実機確認完了**（PC・iPhone）
+- dev-check 200/200/200／console 0（localhost・本番とも）／本番トップ200・配信コード一致
+- **DB無変更**：cases 生存2/削除済み2/合計4・tasks 生存253/deletedIds125・archived70＝いずれも変更前と同値。**テストデータの作成・削除・アーカイブなし**
+
+### 状態・次工程
+- **Phase54 Complete維持**／**Phase55未着手**
+- **次工程候補**：① **Phase55へ進むか判断** ／ ② **Version1.1 最終確認** ／ ③ **Version2（Affiliate Intelligence）準備**
 
 ---
 

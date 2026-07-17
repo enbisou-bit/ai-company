@@ -2,11 +2,34 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**・**Case同期 Complete**・**Case Known Issue Complete**・**Case成功確認契約 完了**。HEAD=origin/main=**aed5f7d**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-case-sync-contract**。PC/iPhone/DB とも案件1件で一致・local-only 0。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-17（**Phase54 正式Complete維持**・**Taskホーム表示改善 完了**・**Task並び順統一 完了**・**PC/iPhone実機確認完了**。HEAD=origin/main=**bbfbc73**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-sort-newest**。先行して Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
 
 ---
 
-## 【現在地・最優先】Case成功確認契約 — **完了**（2026-07-17・本番反映済み・commit aed5f7d・tag v1.01-phase54-case-sync-contract）
+## 【現在地・最優先】Task表示仕様変更 — **完了**（2026-07-17・本番反映済み・**PC/iPhone実機確認完了**）
+
+- **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
+- **現在Phase**：**Phase54 Complete維持**／**Phase55 未着手**
+- **Git**：**HEAD = origin/main = `bbfbc73`**（本docs更新commitが以降の最新HEAD）。**最新code tag = `v1.01-phase54-task-sort-newest`**。
+  - `5fe2b64`（Task Home Overview・tag `v1.01-phase54-task-home-overview`）／`bbfbc73`（Task Sort Order・tag `v1.01-phase54-task-sort-newest`）
+- **① Taskホーム表示改善 完了**（Decision 064・Decision 054 の表示仕様を改定）
+  - **ホーム＝全案件Task＋横断Task（俯瞰）** ／ **案件画面＝選択案件＋横断（他案件は非表示）** ／ **最新一覧・案件一覧＝横断のみ（現状維持）**
+  - `_taskIsHomeView()` 新規（`currentMember===null` のみホーム判定）＋`_taskInCurrentView()` にホーム分岐＋**`renderTaskList()` のインライン重複を同関数へ統一** → **一覧・Progress・バッジ・診断が同一可視集合**（件数不一致を構造的に防止）
+  - **Timeline／Notification／Task History は変更なし**（ホームでは従来どおり横断のみ＝粒度差は仕様として許容）
+- **② Task並び順統一 完了**（Decision 065）
+  - **PC・iPhoneとも「上が最新・下が過去」**（`createdAt` 降順・同着は `id` 固定・**archived一覧も同一**）
+  - 原因＝`renderTaskList()` にソートがなく、自端末作成（`unshift`＝先頭）と同期受信（`push`＝末尾）が混在し端末ごとに逆転していた
+  - **表示用 `filtered` のみソート**／**`tasks` 配列本体・同期・backfill・localStorage・DB は不変**
+- **PC/iPhone 実機確認完了**（ユーザー実施）／dev-check 200/200/200・console 0・本番配信コード一致・**DB無変更**（cases 2/2/4・tasks 253/125・archived 70・テストデータ作成なし）
+
+### 次工程（ユーザー承認後に決定・未着手）
+1. **Phase55へ進むか判断**
+2. **Version1.1 最終確認**
+3. **Version2（Affiliate Intelligence）準備**
+
+---
+
+## 【参考・完了済み】Case成功確認契約 — **完了**（2026-07-17・本番反映済み・commit aed5f7d・tag v1.01-phase54-case-sync-contract）
 
 - **現在Version**：Version1 Final Complete ／ Version1.1 Connected AI Company 開発中
 - **現在Phase**：**Phase54 Complete維持**／**Case同期 Complete**／**Case Known Issue Complete**／**Phase55 未着手**
@@ -37,9 +60,9 @@
 - **✅ `pushCaseToServer` 成功確認化は完了**（2026-07-17・commit `aed5f7d`・Decision 063・本ファイル冒頭参照）
 
 ### 残タスク（ユーザー承認後に決定・未着手）
-1. **Phase54 Hotfix の Task側 PC⇔iPhone 実機確認** — 未実施（下記【参考】参照）。Close済みなのは**Case側**であり**Task側は別**。コード変更不要の可能性が高い
-2. **Case同期契機の改善**（`visibilitychange` 等）— 現在は**起動時1回のみ**のため、他端末の削除反映に**相手端末のF5が必要**
-3. **Phase55 判断**
+- **✅ Phase54 Hotfix の Task側 PC⇔iPhone 実機確認は完了**（2026-07-17）。Task同期・DB保存は正常と確認。実機で判明した**表示上の2件**は Decision 064（ホーム全件表示）・Decision 065（並び順統一）として対応・本番反映・実機確認済み（本ファイル冒頭参照）
+1. **Case同期契機の改善**（`visibilitychange` 等）— 現在は**起動時1回のみ**のため、他端末の削除反映に**相手端末のF5が必要**
+2. **Phase55 判断**／**Version1.1 最終確認**／**Version2（Affiliate Intelligence）準備**
 
 - **その他の残存項目は別工程**：Edge(Windows 125%)Taskスクロールバー判定ずれ／正当候補156件のTask整理／`backup-dup-candidates-20260714/` の最終処理方針／検証テスト行の整理／Cost同期・Learning残buffer・回答本文のtask_history保存（Version2候補）。**Phase55は別承認まで開始しない**
 

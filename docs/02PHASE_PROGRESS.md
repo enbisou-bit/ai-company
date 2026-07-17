@@ -1,7 +1,47 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Case成功確認契約 完了**・本番反映済み・**HEAD aed5f7d**・最新tag **v1.01-phase54-case-sync-contract**。先行して**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## Task表示仕様変更 **完了**（2026-07-17・本番反映済み・PC/iPhone実機確認完了）
+
+> 記録日: 2026-07-17。**Phase54 正式Complete維持・Phase55未着手**。Phase54 Hotfix の **Task側 PC⇔iPhone 実機確認**で判明した表示上の2件への対応。**index.htmlのみ**／server.js・lib・DB・API・SQL・Timeline・Notification・Task History は**無変更**。Decision 064・065。
+
+### 時系列
+- **5fe2b64 — Task Home Overview**（tag **v1.01-phase54-task-home-overview**・index.html **+15/-5**）
+- **bbfbc73 — Task Sort Order**（tag **v1.01-phase54-task-sort-newest**・index.html **+10**）
+
+### ① Task Home Overview（Decision 064）
+- **背景**：PCで作成したTaskはiPhoneへ同期され案件画面では表示されるが、**ホームでは「タスクはありません」・バッジも0**だった。調査の結果、**同期・DB保存は正常**で、Decision 054 の表示仕様（ホーム＝`case_id=NULL` 横断Taskのみ）どおりの動作であり**不具合ではない**と確定。ユーザー要望により**仕様変更**として実施。
+- **仕様**：**ホーム＝全案件Task＋横断Task（俯瞰）** ／ **案件画面＝選択案件Task＋横断Task（他案件は非表示）** ／ **最新一覧・案件一覧＝横断Taskのみ（現状維持）**。
+- **実装**：
+  - **`_taskIsHomeView()` 新規**：`currentMember === null` のときだけホームと判定。※`_taskViewCaseId()===null` は「ホーム」と「担当選択中＋案件未選択」の**両方で真**になるため、それだけでは判定しない（最新一覧で他案件Taskを出さない＝案件別分離を壊さないため）。
+  - **`_taskInCurrentView()` にホーム分岐**（`if (_taskIsHomeView()) return true;`）。ホーム以外は既存の案件一致／横断判定を維持。
+  - **`renderTaskList()` のインライン重複判定を廃止し `_taskInCurrentView(t)` へ統一**。これにより**一覧・Progress・バッジ・診断が同一の可視集合**となり、**「バッジだけ全件」＝件数不一致を構造的に防止**（Phase54 Hotfix の件数統一方針を継承）。
+  - ⚠️ 重要な発見：`renderTaskList()` は `_taskInCurrentView()` を**呼ばずに同じ判定を複製**していたため、`_taskInCurrentView()` だけの変更では**一覧だけ0件のまま＝件数不一致**になるところだった。
+- **保護（不変）**：**`_taskViewCaseId()`**（Timeline／Task History／Notification が共有）／**`_historyVisibleInView()`**／**`_timelineEventVisibleInView()`**／`updateTaskBadge()` 本体／Task同期・backfill・削除/アーカイブ同期。
+- **副作用（仕様として許容）**：ホームでは **Taskは全件／Timeline・Notification・Task History は横断のみ**という粒度差が生じる（Timeline等の仕様変更は対象外のため）。
+
+### ② Task Sort Order（Decision 065）
+- **背景**：PCは「上が最新→下が過去」、**iPhoneは「上が過去→下が最新」**と並び順が逆転していた。
+- **原因**：**`renderTaskList()` にソートが存在せず**、`tasks` 配列の順序をそのまま描画していた。配列への追加が2系統に分かれており、**自端末作成Task＝`tasks.unshift()`（先頭・7か所）／他端末作成Taskの同期受信＝`syncTasksFromServer` の `tasks.push(mapped)`（末尾）**。そのため PC（unshift主体）は上が最新、iPhone（push主体＝受信のたび末尾へ積む）は下が最新となり、**表示順が端末の操作履歴に依存**していた。
+- **仕様**：**`createdAt` 降順（上が最新・下が過去）** ／ **同一 `createdAt` は `id` を第2キーで固定** ／ **archived一覧も同一ソート** ／ `updatedAt` は使用しない（状態変更で順序が動かないため）。
+- **実装**：`renderTaskList()` の**表示用 `filtered` のみ**を `.sort()`。**`tasks` 配列本体・`unshift`/`push`・同期・backfill・localStorage・DB は一切変更しない**（`tasks.sort(` の出現0件を本番配信コードで確認）。
+
+### 確認
+- **localhost**：症状を再現した配列（PC想定＝新→古／iPhone想定＝古→新）から**同一の描画順（新→古）へ統一**されることを実証／実データ253件でも降順・先頭2026-07-16T22:57・末尾2026-07-13T12:36／同着はid固定（配列を逆順にしても同結果）／ホーム183件＝Progress 0/183＝バッジ183で**件数一致**／案件A・案件B分離維持／最新一覧は横断のみ／archived 70件も降順／**`tasks` 配列本体が不変**であることを実証／Timeline・Notification・History 非回帰／`node --check` 0エラー／**dev-check 200/200/200**／console 0。
+- **本番**：Render自動デプロイ反映・トップ200・インラインJS 2ブロックとも parse成功・配信コードが実装と一致（`filtered.sort`／`_taskIsHomeView`／`_taskInCurrentView` ホーム分岐／旧インライン重複0件／`tasks.sort(` 0件）・保護対象4関数の本文一致・console 0。
+- **PC/iPhone 実機確認完了**（ユーザー実施）。
+- **DB無変更**：cases 生存2/削除済み2/合計4・tasks 生存253/deletedIds125・**archived 70**＝いずれも変更前と同値。**テストTaskの作成・削除・アーカイブなし**・発行HTTPは**GETのみ**。
+
+### 注記（既存仕様・今回の変更とは無関係）
+- archivedビューでは「一覧＝archived 70件／Progress・バッジ＝稼働中183件」となるが、これは **Progress・バッジが常に active（archived除外）を集計する既存設計**（「archivedは集計対象外（Leader集計対象外）」）によるもの。**当該2箇所は今回のdiffに含まれず、回帰ではない**。
+
+### 状態
+- **Phase54 Complete維持**／**Phase55未着手**
+- **次工程候補**：① Phase55へ進むか判断 ／ ② Version1.1 最終確認 ／ ③ Version2（Affiliate Intelligence）準備
 
 ---
 

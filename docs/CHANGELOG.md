@@ -4,6 +4,31 @@
 
 ---
 
+## Task Sort Order（2026-07-17・本番反映済み・**PC/iPhone実機確認済み**・commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）
+
+Task一覧の並び順を **`createdAt` 降順（上が最新・下が過去）** で PC・iPhone 統一。**index.htmlのみ（+10・追加のみ）**（Decision 065）。
+
+- **原因**：`renderTaskList()` に**ソートが存在せず** `tasks` 配列順をそのまま描画していた。配列追加が **自端末作成＝`tasks.unshift()`（先頭・7か所）／他端末作成の同期受信＝`syncTasksFromServer` の `tasks.push(mapped)`（末尾）** の2系統に分かれるため、**PCは上が最新／iPhoneは下が最新**と逆転していた（表示順が端末の操作履歴に依存）。
+- **仕様**：`createdAt` 降順 ／ **同一 `createdAt` は `id` を第2キーで固定** ／ **archived一覧も同一ソート** ／ `updatedAt` は使用しない（状態変更で順序が動かないため）。
+- **表示のみ変更**：**表示用 `filtered` のみ**を `.sort()`。**`tasks` 配列本体・`unshift`/`push`・同期・backfill・localStorage・DB は一切変更なし**（本番配信コードで `tasks.sort(` の出現 **0件** を確認）。
+- **非接触**：Timeline／Notification／Task History（各自が独自ソート済み・`tasks` 配列に非依存）／Progress・バッジ・診断（件数のみで順序不使用）／server.js・lib・DB・API・SQL。
+- **確認**：症状を再現した配列（PC想定＝新→古／iPhone想定＝古→新）から**同一の描画順へ統一**を実証／実データ253件で降順・同着id固定・**`tasks` 配列不変**を実証／dev-check 200/200/200・console 0・本番トップ200・インラインJS parse成功・**PC/iPhone実機確認済み**・**DB無変更**（cases 2/2/4・tasks 253/125・archived 70／テストTaskの作成・削除・アーカイブなし）。
+
+---
+
+## Task Home Overview（2026-07-17・本番反映済み・**PC/iPhone実機確認済み**・commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**）
+
+ホームで**全案件Taskを俯瞰表示**する仕様へ変更。**index.htmlのみ（+15/-5）**（Decision 064・Decision 054 の表示仕様を改定）。
+
+- **背景**：PC作成TaskがiPhoneの案件画面には出るがホームでは「タスクはありません」・バッジ0。調査で **Task同期・DB保存は正常**、**Decision 054 の仕様どおり＝不具合ではない**と確定 → ユーザー判断で**表示ポリシーのみ改定**。
+- **仕様**：**ホーム＝全案件Task＋`case_id=NULL` 横断Task** ／ **案件画面＝選択案件＋横断（他案件は非表示）** ／ **最新一覧・案件一覧＝横断のみ（現状維持）** ／ **Timeline・Notification・Task History は変更しない**。
+- **表示集合の統一**：`_taskIsHomeView()` 新規（`currentMember === null` のときだけホーム判定）＋`_taskInCurrentView()` にホーム分岐＋**`renderTaskList()` のインライン重複判定を `_taskInCurrentView(t)` へ統一** → **一覧・Progress・バッジ・診断が同一可視集合**となり「バッジだけ全件＝件数不一致」を構造的に防止。
+- ⚠️ **`renderTaskList()` は `_taskInCurrentView()` を呼ばず同判定を複製**していたため、同関数だけの変更では**一覧だけ0件のまま＝件数不一致**になるところだった。
+- **保護（不変）**：**`_taskViewCaseId()`**（Timeline/History/Notification が共有）／`_historyVisibleInView()`／`_timelineEventVisibleInView()`／`updateTaskBadge()` 本体／Task同期・backfill・削除/アーカイブ同期／server.js・lib・DB・API・SQL。
+- **確認**：ホーム=全件（A/B/横断）・案件A=A+横断（B非表示）・案件B=B+横断（A非表示）・最新一覧=横断のみ・**一覧/Progress/バッジ件数一致**・archived除外維持・**ホームでTimeline/Historyは横断のみを維持（非回帰）**・dev-check 200/200/200・console 0・**PC/iPhone実機確認済み**・**DB無変更**。
+
+---
+
 ## Case Success Contract（2026-07-17・本番反映済み・commit **aed5f7d**・tag **v1.01-phase54-case-sync-contract**）
 
 案件の作成・削除を「成功確認型」へ統一。**index.htmlのみ（+48/-11）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 063）。
