@@ -4889,6 +4889,24 @@
   .task-bulk-btn.perm-delete.visible { display: inline-block; }
   .task-bulk-btn.perm-delete:hover { background: rgba(255, 59, 48, 0.12); }
 
+  /* Phase54 Hotfix: 一括操作中の無効化表示（処理中の二重実行防止を視覚化） */
+  .task-bulk-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .task-bulk-btn:disabled:hover { background: rgba(255,255,255,0.06); }
+  /* Phase54 Hotfix: 一括操作の進捗表示（処理中のみ visible・折返しで独立行になる） */
+  .task-bulk-progress {
+    display: none;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text);
+    opacity: 0.85;
+    flex: 1 1 100%;
+    white-space: pre-line;   /* textContent の \n を改行表示（HTML挿入なし） */
+  }
+  .task-bulk-progress.visible { display: block; }
+
   /* アーカイブ済みカード（archived card）のグレーアウト表示 */
   .task-card.status-archived {
     opacity: 0.6;
@@ -6686,11 +6704,13 @@
   <!-- 一括操作ツールバー（bulk action toolbar） -->
   <div id="task-bulk-toolbar">
     <span class="task-bulk-count" id="task-bulk-count">0件選択中</span>
-    <button class="task-bulk-btn" onclick="taskSelectAll()">全選択</button>
-    <button class="task-bulk-btn" onclick="taskDeselectAll()">解除</button>
+    <button class="task-bulk-btn" id="task-bulk-selectall-btn" onclick="taskSelectAll()">全選択</button>
+    <button class="task-bulk-btn" id="task-bulk-deselect-btn" onclick="taskDeselectAll()">解除</button>
     <button class="task-bulk-btn danger" id="task-bulk-archive-btn" onclick="taskArchiveSelected()" title="選択したタスクをアーカイブ">🗃 アーカイブ</button>
     <button class="task-bulk-btn restore" id="task-bulk-restore-btn" onclick="taskRestoreSelected()" title="選択したタスクを復元">↩ 復元</button>
     <button class="task-bulk-btn perm-delete" id="task-bulk-perm-delete-btn" onclick="taskPermanentDeleteSelected()" title="選択したタスクを削除">🗑 削除</button>
+    <!-- Phase54 Hotfix: 一括操作の進捗表示（処理中のみ visible） -->
+    <span class="task-bulk-progress" id="task-bulk-progress"></span>
   </div>
   <div id="task-list"></div>
 </div>
@@ -20627,6 +20647,7 @@ function setFilter(type, val, btn) {
 }
 
 function changeTaskStatus(id, newStatus) {
+  if (_taskBulkBusy) return;                 // Phase54 Hotfix: 一括処理中は個別の状態変更を受け付けない
   const t = tasks.find(t => t.id === id);
   if (!t) return;
 
@@ -20710,6 +20731,7 @@ function changeTaskStatus(id, newStatus) {
 // Phase54 Hotfix: dbIdありは サーバー論理削除（PATCH {deleted:true}）成功後に local 除去（失敗時は local 維持＝保護）。
 //   dbIdなし local-only は従来どおり local のみ除去（サーバー未登録のため）。
 async function deleteTask(id) {
+  if (_taskBulkBusy) return;                 // Phase54 Hotfix: 一括処理中は個別削除を受け付けない
   if (!confirm('このタスクを削除しますか？')) return;
   var t = tasks.find(function (x) { return x.id === id; });
   if (t && t.dbId) {
@@ -20724,12 +20746,91 @@ async function deleteTask(id) {
 
 // ── 一括操作（bulk action）関連 ──
 
+// ══════════════════════════════════════════════════════════════
+// Phase54 Hotfix: Task一括操作の共通基盤（同時5並列 / 進捗表示 / 逐次保存 / 二重実行防止 / 離脱保護）
+// 背景: 従来は1件ずつ直列 await（本番RTT実測 約0.9秒 × 133件 ≒ 約2分）。その間UIは無反応で、
+//   localStorage保存もループ完了後の1回のみだった。待ちきれず画面更新すると処理が中断し、
+//   PATCH完了分のみ Server正本（archivedAt / deletedIds）から復元されるため「一部しか消えない」ように見えていた。
+// 対策: 同時5並列で所要を約1/5へ短縮し、進捗を可視化し、成功のつど保存して中断に耐える構造にする。
+// 非接触: setTaskArchivedOnServer / softDeleteTaskOnServer / Task同期・backfill / Server正本契約 /
+//   deletedIds契約 / 並び順（Decision 065）/ Home表示仕様（Decision 064）/ Timeline・Notification・Task History。
+// 使用範囲: taskArchiveSelected / taskRestoreSelected / taskPermanentDeleteSelected の3関数のみ（横展開しない）。
+// ══════════════════════════════════════════════════════════════
+var _taskBulkBusy = false;              // 一括処理中フラグ（二重実行防止）
+var _TASK_BULK_CONCURRENCY = 5;         // 同時実行数（無制限 Promise.all は禁止）
+var _taskBulkBeforeUnload = null;       // 処理中のみ登録する beforeunload ハンドラ
+
+// 同時実行数を _TASK_BULK_CONCURRENCY に制限して worker を実行する。
+// 共有カーソル方式: 各workerが「次の未処理index」を取り出して進むため、同一IDを二重処理しない。
+// worker(id) は 成功=true / 失敗=false を返す。worker内の予期しない例外も失敗扱いとし、全体は停止しない。
+// 全対象の完了を待って { ok, ng, done } を返す。onProgress(done, total, ok, ng) は完了実測値で呼ぶ。
+async function _taskBulkRunPooled(ids, worker, onProgress) {
+  var cursor = 0;                        // 共有カーソル（単一スレッドのため取り出しは不可分）
+  var ok = 0, ng = 0;
+  async function runOne() {
+    for (;;) {
+      var i = cursor++;                  // 取り出し時に即進める＝重複処理なし
+      if (i >= ids.length) return;
+      var success = false;
+      try {
+        success = await worker(ids[i]);
+      } catch (e) {                      // worker内の予期しない例外も失敗扱い（残りは継続）
+        try { console.warn('[bulk] worker例外（失敗として継続）:', e && e.message); } catch (_e) {}
+        success = false;
+      }
+      if (success) ok++; else ng++;
+      if (onProgress) { try { onProgress(ok + ng, ids.length, ok, ng); } catch (_e) {} }
+    }
+  }
+  var workers = [];
+  var n = Math.min(_TASK_BULK_CONCURRENCY, ids.length);
+  for (var w = 0; w < n; w++) workers.push(runOne());
+  await Promise.all(workers);            // ワーカー n 本の待機のみ（対象全件を一度に展開しない）
+  return { ok: ok, ng: ng, done: ok + ng };
+}
+
+// 一括処理中フラグの設定と、それに伴うUI無効化・離脱保護を一元管理する。
+// 成功・一部失敗・例外のいずれでも finally から必ず _taskBulkSetBusy(false) を呼ぶこと。
+function _taskBulkSetBusy(on) {
+  _taskBulkBusy = !!on;
+  ['task-bulk-selectall-btn', 'task-bulk-deselect-btn', 'task-bulk-archive-btn',
+   'task-bulk-restore-btn', 'task-bulk-perm-delete-btn'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = !!on;
+  });
+  if (on) {
+    // 処理中のみ離脱警告を登録（iPhone Safariでは表示が保証されないため、進捗表示と逐次保存を主保護とする）
+    if (!_taskBulkBeforeUnload) {
+      _taskBulkBeforeUnload = function (e) { e.preventDefault(); e.returnValue = ''; return ''; };
+      window.addEventListener('beforeunload', _taskBulkBeforeUnload);
+    }
+  } else {
+    if (_taskBulkBeforeUnload) {
+      window.removeEventListener('beforeunload', _taskBulkBeforeUnload);
+      _taskBulkBeforeUnload = null;
+    }
+    var prog = document.getElementById('task-bulk-progress');
+    if (prog) { prog.classList.remove('visible'); prog.textContent = ''; }
+  }
+}
+
+// 進捗表示のみ更新する（renderTaskList / updateTaskBadge は呼ばない＝本描画は完了後に1回だけ）
+function _taskBulkProgress(label, done, total, ok, ng) {
+  var prog = document.getElementById('task-bulk-progress');
+  if (!prog) return;
+  prog.classList.add('visible');
+  prog.textContent = label + '中 ' + done + ' / ' + total + '件\n'
+                   + '成功' + ok + '件・失敗' + ng + '件\n'
+                   + '画面を閉じずにお待ちください';
+}
+
 // 選択中の archived（アーカイブ済み）タスクを完全削除する（permanent delete）
 // 対象：archived タスクのみ。通常タスクは削除不可。
 // Supabase・会話履歴は削除しない。localStorage 上のタスク管理データのみ削除。
 // Phase54 Hotfix: 一括削除も端末間同期。dbIdありは サーバー論理削除（PATCH {deleted:true}）成功時のみ local 除去。
 //   dbIdなし local-only は従来どおり local 除去。サーバー削除失敗分は local に維持（保護）＝他端末とも整合。
 async function taskPermanentDeleteSelected() {
+  if (_taskBulkBusy) return;                             // Phase54 Hotfix: 二重実行防止
   if (_taskSelection.size === 0) return;
   // archived 以外が混入していないか確認
   const targets = [..._taskSelection].filter(id => {
@@ -20749,26 +20850,34 @@ async function taskPermanentDeleteSelected() {
     `続行しますか？`
   )) return;
 
-  // dbIdあり→サーバー論理削除、成功したもの＋local-onlyのみ local から除去（失敗は local 維持）
-  const toRemove = new Set();
-  let failedCount = 0;
-  for (const id of targets) {
-    const t = tasks.find(x => x.id === id);
-    if (!t) continue;
-    if (t.dbId) {
-      const okDel = await softDeleteTaskOnServer(t.dbId);
-      if (okDel) toRemove.add(id); else failedCount++;   // 失敗は local 維持（保護）
-    } else {
-      toRemove.add(id);                                   // local-only は従来どおり
-    }
+  // Phase54 Hotfix: dbIdあり→サーバー論理削除、成功したもの＋local-onlyのみ local から除去（失敗は local 維持）。
+  //   同時5並列・成功のつど local 除去＋保存・成功Taskのみ選択解除（失敗は選択維持）。deletedIds契約は不変
+  //   （local側で deletedIds を生成・改変しない。他端末への削除伝播は従来どおり Server の deletedIds が担う）。
+  _taskBulkSetBusy(true);
+  let res;
+  try {
+    _taskBulkProgress('完全削除処理', 0, targets.length, 0, 0);
+    res = await _taskBulkRunPooled(targets, async (id) => {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return false;
+      if (t.dbId) {
+        const okDel = await softDeleteTaskOnServer(t.dbId);
+        if (!okDel) return false;                        // サーバー削除失敗→local維持（保護）
+      }
+      // ここから local 反映（Server成功後のみ。dbIdなし local-only は従来どおり local のみ除去）
+      tasks = tasks.filter(x => x.id !== id);
+      _taskSelection.delete(id);                         // 成功Taskのみ選択解除
+      saveTasks();                                       // 成功確定ごとに保存（中断されても成功分は残る）
+      return true;
+    }, (done, total, ok, ng) => _taskBulkProgress('完全削除処理', done, total, ok, ng));
+  } finally {
+    _taskBulkSetBusy(false);                             // 成功・一部失敗・例外のいずれでも必ず解除
   }
-  tasks = tasks.filter(t => !toRemove.has(t.id));
-  _taskSelection.clear();
-  saveTasks();
+  // 本描画は完了後に1回だけ
   renderTaskList();
   updateTaskBadge();
   updateTaskBulkToolbar();
-  if (failedCount > 0) { try { alert(`${failedCount} 件はサーバー削除に失敗したため保持しました（通信状態を確認してください）。`); } catch (e) {} }
+  if (res && res.ng > 0) { try { alert(`${res.ok} 件を完全削除しました。\n${res.ng} 件は失敗したため保持し、選択を維持しています（通信状態を確認してください）。`); } catch (e) {} }
 }
 
 // 選択中の archived（アーカイブ済み）タスクを復元する（restore）
@@ -20777,37 +20886,48 @@ async function taskPermanentDeleteSelected() {
 // Phase54 Hotfix: アーカイブ解除を端末間同期。dbIdあり→PATCH {archived:false} 成功時のみ通常一覧へ戻す（失敗は archived 維持）。
 //   dbIdなし local-only は従来どおり local のみ。base status は previousStatus から復元（DB status 列は archive中も保持）。
 async function taskRestoreSelected() {
+  if (_taskBulkBusy) return;                           // Phase54 Hotfix: 二重実行防止
   if (_taskSelection.size === 0) return;
   const n = _taskSelection.size;
   if (!confirm(`選択中の ${n} 件を復元（restore）します。\nよろしいですか？`)) return;
   const now = new Date().toISOString();
   const ids = [..._taskSelection];
-  let failed = 0;
-  for (const id of ids) {
-    const t = tasks.find(x => x.id === id);
-    if (!t || t.status !== 'archived') continue;
-    if (t.dbId) {
-      const ok = await setTaskArchivedOnServer(t.dbId, false);
-      if (!ok) { failed++; continue; }                 // サーバー失敗→archived維持
-    }
-    const restoredStatus = t.previousStatus || 'todo';
-    t.status = restoredStatus;
-    t.archivedAt = null;
-    t.updatedAt = now;
-    if (!t.logs) t.logs = [];
-    t.logs.push({
-      action: 'restored',
-      who: 'Leader',
-      message: `restore（復元）→ ${restoredStatus}`,
-      timestamp: now,
-    });
+  // Phase54 Hotfix: 同時5並列・Server成功後のみlocal反映・成功のつど保存・成功Taskのみ選択解除（失敗は選択維持）
+  _taskBulkSetBusy(true);
+  let res;
+  try {
+    _taskBulkProgress('復元処理', 0, ids.length, 0, 0);
+    res = await _taskBulkRunPooled(ids, async (id) => {
+      const t = tasks.find(x => x.id === id);
+      if (!t || t.status !== 'archived') return false;
+      if (t.dbId) {
+        const ok = await setTaskArchivedOnServer(t.dbId, false);
+        if (!ok) return false;                         // サーバー失敗→archived維持
+      }
+      // ここから local 反映（Server成功後のみ）
+      const restoredStatus = t.previousStatus || 'todo';
+      t.status = restoredStatus;
+      t.archivedAt = null;
+      t.updatedAt = now;
+      if (!t.logs) t.logs = [];
+      t.logs.push({
+        action: 'restored',
+        who: 'Leader',
+        message: `restore（復元）→ ${restoredStatus}`,
+        timestamp: now,
+      });
+      _taskSelection.delete(id);                       // 成功Taskのみ選択解除
+      saveTasks();                                     // 成功確定ごとに保存（中断されても成功分は残る）
+      return true;
+    }, (done, total, ok, ng) => _taskBulkProgress('復元処理', done, total, ok, ng));
+  } finally {
+    _taskBulkSetBusy(false);                           // 成功・一部失敗・例外のいずれでも必ず解除
   }
-  _taskSelection.clear();
-  saveTasks();
+  // 本描画は完了後に1回だけ
   renderTaskList();
   updateTaskBadge();
   updateTaskBulkToolbar();
-  if (failed > 0) { try { alert(`${failed} 件はサーバー同期に失敗したため保持しました（通信状態を確認してください）。`); } catch (e) {} }
+  if (res && res.ng > 0) { try { alert(`${res.ok} 件を復元しました。\n${res.ng} 件は失敗したため archived のまま保持し、選択を維持しています（通信状態を確認してください）。`); } catch (e) {} }
 }
 
 // ツールバーの selected（選択中）件数を更新する
@@ -20825,9 +20945,10 @@ function updateTaskBulkToolbar() {
   if (restBtn) restBtn.classList.toggle('visible', isArchivedView);
   // 🗑 完全削除ボタンはアーカイブビューのみ表示
   if (permBtn) permBtn.classList.toggle('visible', isArchivedView);
-  if (n > 0) {
+  // Phase54 Hotfix: 一括処理中は、成功のつど選択が減って n=0 になってもツールバー（＝進捗表示の親）を隠さない
+  if (n > 0 || _taskBulkBusy) {
     toolbar.classList.add('visible');
-    countEl.textContent = `${n}件選択中`;
+    countEl.textContent = _taskBulkBusy ? '一括処理中…' : `${n}件選択中`;
   } else {
     toolbar.classList.remove('visible');
   }
@@ -20835,6 +20956,7 @@ function updateTaskBulkToolbar() {
 
 // checkbox（チェックボックス）のON/OFFを切り替える
 function toggleTaskSelection(id) {
+  if (_taskBulkBusy) return;                 // Phase54 Hotfix: 一括処理中は選択を変更しない
   if (_taskSelection.has(id)) {
     _taskSelection.delete(id);
   } else {
@@ -20852,6 +20974,7 @@ function toggleTaskSelection(id) {
 
 // 現在表示中のタスクをすべて選択する（select all）
 function taskSelectAll() {
+  if (_taskBulkBusy) return;                 // Phase54 Hotfix: 一括処理中は選択を変更しない
   document.querySelectorAll('.task-card[data-task-id]').forEach(card => {
     const id = card.dataset.taskId;
     if (id) _taskSelection.add(id);
@@ -20864,6 +20987,7 @@ function taskSelectAll() {
 
 // 選択をすべて解除する（deselect all）
 function taskDeselectAll() {
+  if (_taskBulkBusy) return;                 // Phase54 Hotfix: 一括処理中は選択を変更しない
   _taskSelection.clear();
   document.querySelectorAll('.task-card').forEach(card => {
     card.classList.remove('selected');
@@ -20878,38 +21002,49 @@ function taskDeselectAll() {
 // Phase54 Hotfix: アーカイブを端末間同期。dbIdあり→PATCH {archived:true} 成功時のみ local 反映（失敗は local 維持）。
 //   dbIdなし local-only は従来どおり local のみ。status(base)は DB status 列に保持・archived_at で管理（Task History/Learningは残す）。
 async function taskArchiveSelected() {
+  if (_taskBulkBusy) return;                           // Phase54 Hotfix: 二重実行防止
   if (_taskSelection.size === 0) return;
   const n = _taskSelection.size;
   if (!confirm(`選択中の ${n} 件をアーカイブ（archive）します。\n画面から非表示になりますが、データは保持されます。\nよろしいですか？`)) return;
   const now = new Date().toISOString();
   const ids = [..._taskSelection];
-  let failed = 0;
-  for (const id of ids) {
-    const t = tasks.find(x => x.id === id);
-    if (!t) continue;
-    if (t.dbId) {
-      const ok = await setTaskArchivedOnServer(t.dbId, true);
-      if (!ok) { failed++; continue; }                 // サーバー失敗→local維持（アーカイブしない）
-    }
-    // previousStatus（復元用の元ステータス）を保存してから archived に変更
-    t.previousStatus = t.status;
-    t.status = 'archived';
-    t.archivedAt = now;
-    t.updatedAt = now;
-    if (!t.logs) t.logs = [];
-    t.logs.push({
-      action: 'archived',
-      who: 'Leader',
-      message: '一括アーカイブ（bulk archive）で非表示に設定',
-      timestamp: now,
-    });
+  // Phase54 Hotfix: 同時5並列・Server成功後のみlocal反映・成功のつど保存・成功Taskのみ選択解除（失敗は選択維持）
+  _taskBulkSetBusy(true);
+  let res;
+  try {
+    _taskBulkProgress('アーカイブ処理', 0, ids.length, 0, 0);
+    res = await _taskBulkRunPooled(ids, async (id) => {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return false;
+      if (t.dbId) {
+        const ok = await setTaskArchivedOnServer(t.dbId, true);
+        if (!ok) return false;                         // サーバー失敗→local維持（アーカイブしない）
+      }
+      // ここから local 反映（Server成功後のみ）
+      // previousStatus（復元用の元ステータス）を保存してから archived に変更
+      t.previousStatus = t.status;
+      t.status = 'archived';
+      t.archivedAt = now;
+      t.updatedAt = now;
+      if (!t.logs) t.logs = [];
+      t.logs.push({
+        action: 'archived',
+        who: 'Leader',
+        message: '一括アーカイブ（bulk archive）で非表示に設定',
+        timestamp: now,
+      });
+      _taskSelection.delete(id);                       // 成功Taskのみ選択解除
+      saveTasks();                                     // 成功確定ごとに保存（中断されても成功分は残る）
+      return true;
+    }, (done, total, ok, ng) => _taskBulkProgress('アーカイブ処理', done, total, ok, ng));
+  } finally {
+    _taskBulkSetBusy(false);                           // 成功・一部失敗・例外のいずれでも必ず解除
   }
-  _taskSelection.clear();
-  saveTasks();
+  // 本描画は完了後に1回だけ
   renderTaskList();
   updateTaskBadge();
   updateTaskBulkToolbar();
-  if (failed > 0) { try { alert(`${failed} 件はサーバー同期に失敗したため保持しました（通信状態を確認してください）。`); } catch (e) {} }
+  if (res && res.ng > 0) { try { alert(`${res.ok} 件をアーカイブしました。\n${res.ng} 件はサーバー同期に失敗したため保持し、選択を維持しています（通信状態を確認してください）。`); } catch (e) {} }
 }
 
 function renderMemberFilterBar() {
