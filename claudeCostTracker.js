@@ -107,6 +107,20 @@ function ensureState() {
   return state;
 }
 
+// A-2-6: 料金イベントDB保存用の純関数（既存 addClaudeUsage と同一の単価表・同一fallback＝sonnet
+//   を用い、per-event の USD/JPY を返す。状態を変更しない。新単価表は追加しない）。
+//   丸めは OpenAI 側イベント（calculateOpenAICost）と揃える（usd 6桁・jpy 2桁）。
+function calculateClaudeCost(model = '', inputTokens = 0, outputTokens = 0) {
+  const price = CLAUDE_PRICE_PER_1K[model] || CLAUDE_PRICE_PER_1K['claude-sonnet-4-6'];
+  const inTok  = Number(inputTokens)  || 0;
+  const outTok = Number(outputTokens) || 0;
+  const usd = (inTok / 1000) * price.input + (outTok / 1000) * price.output;
+  return {
+    usd: Number(usd.toFixed(6)),
+    jpy: Number((usd * USD_TO_JPY).toFixed(2)),
+  };
+}
+
 function addClaudeUsage(model, inputTokens, outputTokens) {
   const state = ensureState();
   const price = CLAUDE_PRICE_PER_1K[model] || CLAUDE_PRICE_PER_1K['claude-sonnet-4-6'];
@@ -625,6 +639,8 @@ function buildClaudeQualityWarning() {
 
 module.exports = {
   addClaudeUsage,
+  calculateClaudeCost, // A-2-6: 料金イベントDB保存用の純関数
+  USD_TO_JPY,          // A-2-6: 為替固定値（既存正本）
   getSummary,
   getClaudeCostAnalysis,
   CLAUDE_COST_ANALYSIS_VERSION,

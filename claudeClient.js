@@ -1,6 +1,7 @@
 // claudeClient.js — Phase27: Claude API Provider（Writer / Reviewer / Strategy）
 // 既存 openaiClient.js は変更しない。Claude担当のみこのファイルで処理する。
 
+const crypto = require('crypto');
 const { buildSystemPrompt } = require('./openaiClient');
 // Phase47-1.6: Claude料金永続化
 let _addClaudeCost = null;
@@ -9,6 +10,8 @@ try {
 } catch (_e) {
   console.error('[claudeCostTracker] load error:', _e && _e.message);
 }
+// A-2-6: 料金イベントDB保存用の純関数・為替固定値（既存正本）
+const { calculateClaudeCost, USD_TO_JPY } = require('./claudeCostTracker');
 
 // Claude対象社員
 const CLAUDE_AGENTS = new Set(['writer', 'reviewer', 'strategy']);
@@ -99,6 +102,60 @@ function trackUsage(model, inputTokens, outputTokens) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// A-2-6: Claude料金イベント Supabase 保存
+//   Claude API 成功・実測usageあり時のみ呼ぶ。既存 trackUsage()/addClaudeUsage() に加える dual-write。
+//   金額は既存正本 calculateClaudeCost()（addClaudeUsage と同一単価・同一sonnet fallback）。
+//   為替は既存正本 USD_TO_JPY(160) を固定値で保存（source/version は静的レートの実態記述）。
+//   DB保存失敗は AI回答を壊さず、保存済みと偽らず、ログのみ（秘匿情報は出さない）。
+// ══════════════════════════════════════════════════════════════
+const CLAUDE_EXCHANGE_RATE_SOURCE  = 'static'; // 外部API未使用の静的レート（USD_TO_JPY）
+const CLAUDE_EXCHANGE_RATE_VERSION = 'v1';     // 静的レート方式の安定識別子
+
+// JST の YYYY-MM-DD（A-2-2 / costDb / claudeCostTracker と同一方式・外部ライブラリ不使用）
+function _jstUsageDate() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+async function persistClaudeCostEvent({ responseId, model, inputTokens, outputTokens, assignee, usageType }) {
+  try {
+    // 遅延require（ロード順による supabase null 固定化を回避。既存 lib/*Db と同方式）
+    const { insertCostEvent, markCostStateStale } = require('./lib/costDb');
+    // 金額は既存正本の純関数（新単価表を作らない・既存 addClaudeUsage 記録と一致）
+    const { usd, jpy } = calculateClaudeCost(model, inputTokens, outputTokens);
+    const event = {
+      usage_event_id: responseId ? String(responseId) : `claude:${crypto.randomUUID()}`,
+      usage_date: _jstUsageDate(),
+      provider: 'claude',
+      model,
+      assignee: assignee || 'unknown',
+      usage_type: usageType || 'text',
+      requests: 1,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      amount_jpy: jpy,
+      amount_usd: usd,
+      currency: 'JPY',
+      exchange_rate: USD_TO_JPY,
+      exchange_rate_source: CLAUDE_EXCHANGE_RATE_SOURCE,
+      exchange_rate_recorded_at: new Date().toISOString(), // 保存時点固定・後から再計算しない
+      exchange_rate_version: CLAUDE_EXCHANGE_RATE_VERSION,
+    };
+    const res = await insertCostEvent(event);
+    if (res && res.ok) {
+      // 新規保存・冪等duplicate いずれも集計キャッシュを安全側で stale 化（二重加算はしない）
+      markCostStateStale();
+    } else {
+      // DB保存失敗：保存済みと偽らない／stale維持／秘匿情報は出さない
+      const detail = (res && res.error) ? (res.error.code || res.error.message) : 'unknown';
+      console.error('[A-2-6] Claude cost event persist failed:', detail);
+    }
+  } catch (err) {
+    // ここで throw させない（AI回答を壊さない）
+    console.error('[A-2-6] Claude cost event persist exception:', (err && err.message) ? err.message : 'exception');
+  }
+}
+
 // Claude API 呼び出し（Fallback: エラー時は null を返す）
 async function callClaudeAI(systemPrompt, userMessage, history = [], agentId = 'writer') {
   const client = getAnthropicClient();
@@ -118,7 +175,21 @@ async function callClaudeAI(systemPrompt, userMessage, history = [], agentId = '
       messages,
     });
     const text = response.content?.[0]?.text || '';
-    trackUsage(model, response.usage?.input_tokens || 0, response.usage?.output_tokens || 0);
+    const inTok  = response.usage?.input_tokens  || 0;
+    const outTok = response.usage?.output_tokens || 0;
+    trackUsage(model, inTok, outTok);
+    // A-2-6: 既存料金記録に加え、Supabase へ料金イベントを保存（dual-write）。
+    //   保存失敗しても AI回答は返す（persistClaudeCostEvent は throw しない）。
+    if (inTok || outTok) {
+      await persistClaudeCostEvent({
+        responseId:   response?.id,
+        model,
+        inputTokens:  inTok,
+        outputTokens: outTok,
+        assignee:     agentId,
+        usageType:    'text',
+      });
+    }
     claudeUsage.status = 'ready';
     claudeUsage.lastAgent = agentId;
     claudeUsage.lastModel = model;
@@ -183,6 +254,17 @@ async function testClaudeAgent(agentId = 'writer') {
     const inputTokens  = response.usage?.input_tokens  || 0;
     const outputTokens = response.usage?.output_tokens || 0;
     trackUsage(model, inputTokens, outputTokens);
+    // A-2-6: 接続テストも実課金のため、既存記録に加え Supabase へ保存（dual-write）。
+    if (inputTokens || outputTokens) {
+      await persistClaudeCostEvent({
+        responseId:   response?.id,
+        model,
+        inputTokens,
+        outputTokens,
+        assignee:     agentId,
+        usageType:    'text',
+      });
+    }
     claudeUsage.status    = 'ready';
     claudeUsage.lastAgent = agentId;
     claudeUsage.lastModel = model;
