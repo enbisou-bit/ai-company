@@ -15,8 +15,11 @@ const MODEL_PRICES = {
   },
 };
 // Phase47-1.6: 日付キー追加（日次・月次リセット用）
-function _todayKey() { return new Date().toISOString().slice(0, 10); }
-function _monthKey() { return new Date().toISOString().slice(0, 7);  }
+// A-2-2: JST（Asia/Tokyo, UTC+9）基準へ変更。UTC基準だと日本時間09:00に当日料金が0リセットされる不具合を解消。
+//   Date.now()+9h した Date に toISOString()（UTC表記）を適用すると、JSTの壁時計の日付が得られる（外部ライブラリ不使用）。
+function _jstNow()   { return new Date(Date.now() + 9 * 60 * 60 * 1000); }
+function _todayKey() { return _jstNow().toISOString().slice(0, 10); } // JST の YYYY-MM-DD
+function _monthKey() { return _jstNow().toISOString().slice(0, 7);  } // JST の YYYY-MM
 
 const DEFAULT_STATE = {
   todayKey: '',

@@ -14,8 +14,11 @@ const CLAUDE_PRICE_PER_1K = {
   'claude-haiku-4-5':  { input: 0.0008, output: 0.004  },
 };
 
-function todayKey() { return new Date().toISOString().slice(0, 10); }
-function monthKey() { return new Date().toISOString().slice(0, 7);  }
+// A-2-2: JST（Asia/Tokyo, UTC+9）基準へ変更。costTracker.js と同一方式（外部ライブラリ不使用）。
+//   Date.now()+9h した Date に toISOString()（UTC表記）を適用すると、JSTの壁時計の日付が得られる。
+function _jstNow()  { return new Date(Date.now() + 9 * 60 * 60 * 1000); }
+function todayKey() { return _jstNow().toISOString().slice(0, 10); } // JST の YYYY-MM-DD
+function monthKey() { return _jstNow().toISOString().slice(0, 7);  } // JST の YYYY-MM
 
 function emptyPeriod() {
   return { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
