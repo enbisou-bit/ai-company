@@ -1,6 +1,11 @@
 const axios = require('axios');
+const crypto = require('crypto');
 const dotenv = require('dotenv');
-const { costTracker, addOpenAIUsage } = require('./costTracker');
+const { costTracker, addOpenAIUsage, calculateOpenAICost, USD_TO_JPY } = require('./costTracker');
+// A-2-5: OpenAI料金イベントの Supabase 保存は lib/costDb.js 経由。
+//   require は遅延（persistOpenAICostEvent 内）で行う。トップレベルで require すると
+//   server.js の dotenv.config()（line 50）より前に supabase が初回ロードされ null 固定化して
+//   既存DB機能まで壊れるため（既存 lib/*Db は全て server.js で遅延require されている）。
 
 dotenv.config({ path: '.env.local' });
 
@@ -1059,6 +1064,59 @@ async function leaderSummary(userMessage, memberReplies, strategyReply) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// A-2-5: OpenAI料金イベント Supabase 保存
+//   OpenAI API 成功・実測usageあり時のみ呼ぶ。既存 addOpenAIUsage() に加える dual-write。
+//   為替情報は既存正本 USD_TO_JPY(160) を固定値で保存（source/version は静的レートの実態記述）。
+//   DB保存失敗は AI回答を壊さず、保存済みと偽らず、ログのみ（秘匿情報は出さない）。
+// ══════════════════════════════════════════════════════════════
+const EXCHANGE_RATE_SOURCE = 'static';   // 外部API未使用の静的レート（USD_TO_JPY）
+const EXCHANGE_RATE_VERSION = 'v1';      // 静的レート方式の安定識別子
+
+// JST の YYYY-MM-DD（A-2-2 / costTracker / costDb と同一方式・外部ライブラリ不使用）
+function _jstUsageDate() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+async function persistOpenAICostEvent({ responseId, model, inputTokens, outputTokens, assignee, usageType }) {
+  try {
+    // 遅延require（ロード順による supabase null 固定化を回避。既存 lib/*Db と同方式）
+    const { insertCostEvent, markCostStateStale } = require('./lib/costDb');
+    // 金額は既存正本の純関数を利用（新単価表を作らない・既存計算値と一致）
+    const { usd, jpy } = calculateOpenAICost(model, inputTokens, outputTokens);
+    const event = {
+      usage_event_id: responseId ? String(responseId) : `openai:${crypto.randomUUID()}`,
+      usage_date: _jstUsageDate(),
+      provider: 'openai',
+      model,
+      assignee: assignee || 'aiDevelopment',
+      usage_type: usageType || 'text',
+      requests: 1,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      amount_jpy: jpy,
+      amount_usd: usd,
+      currency: 'JPY',
+      exchange_rate: USD_TO_JPY,
+      exchange_rate_source: EXCHANGE_RATE_SOURCE,
+      exchange_rate_recorded_at: new Date().toISOString(), // 保存時点固定・後から再計算しない
+      exchange_rate_version: EXCHANGE_RATE_VERSION,
+    };
+    const res = await insertCostEvent(event);
+    if (res && res.ok) {
+      // 新規保存・冪等duplicate いずれも集計キャッシュを安全側で stale 化（二重加算はしない）
+      markCostStateStale();
+    } else {
+      // DB保存失敗：保存済みと偽らない／stale維持／秘匿情報は出さない
+      const detail = (res && res.error) ? (res.error.code || res.error.message) : 'unknown';
+      console.error('[A-2-5] OpenAI cost event persist failed:', detail);
+    }
+  } catch (err) {
+    // ここで throw させない（AI回答を壊さない）
+    console.error('[A-2-5] OpenAI cost event persist exception:', (err && err.message) ? err.message : 'exception');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // OpenAI 共通呼び出し
 // ══════════════════════════════════════════════════════════════
 async function callOpenAI(systemPrompt, userMessage, history = [], options = {}) {
@@ -1091,6 +1149,16 @@ async function callOpenAI(systemPrompt, userMessage, history = [], options = {})
     const outputTokens = usage.output_tokens || usage.outputTokens || 0;
     if (inputTokens || outputTokens) {
       addOpenAIUsage(OPENAI_MODEL, inputTokens, outputTokens, 'aiDevelopment', 'text');
+      // A-2-5: 既存料金記録に加え、Supabase へ料金イベントを保存（dual-write）。
+      //   保存失敗しても AI回答は返す（persistOpenAICostEvent は throw しない）。
+      await persistOpenAICostEvent({
+        responseId:  response?.data?.id,
+        model:       OPENAI_MODEL,
+        inputTokens,
+        outputTokens,
+        assignee:    'aiDevelopment',
+        usageType:   'text',
+      });
     }
     return outputText || null;
   } catch (error) {
