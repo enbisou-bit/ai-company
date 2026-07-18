@@ -429,12 +429,24 @@ app.get('/', (req, res) => {
 });
 
 // ── API料金メーター ───────────────────────────────
-app.get('/api/cost', (req, res) => {
+app.get('/api/cost', async (req, res) => {
+  // A-2-8a: 表示データ源を Supabase(costDb) へ切替。既定 provider=openai・既存14キー互換維持。
+  //   成功時は result.data（14キー）のみ展開し envelope は返さない。
+  //   DB障害時は provider別 last-good を返し、cold start は 503（0円捏造・costTracker fallback はしない）。
+  //   ※ 月額停止ゲート（costTracker.canProcess()/getSummary().stopped）は今回変更しない（旧costTracker正本のまま）。
   try {
-    const summary = costTracker.getSummary();
-    res.json({ ok: true, ...summary });
+    const { getLegacyCostSummaryForApi } = require('./lib/costDb');
+    const provider = (req.query.provider == null || req.query.provider === '') ? 'openai' : String(req.query.provider);
+    const result = await getLegacyCostSummaryForApi({ provider });
+    if (result.invalidProvider) {
+      return res.status(400).json({ ok: false, error: 'invalid provider' });
+    }
+    if (result.ok) {
+      return res.json({ ok: true, ...result.data });
+    }
+    return res.status(503).json({ ok: false, error: 'cost summary unavailable' });
   } catch (e) {
-    res.json({ ok: false, error: e.message });
+    return res.status(503).json({ ok: false, error: 'cost summary unavailable' });
   }
 });
 // ─────────────────────────────────────────────────
