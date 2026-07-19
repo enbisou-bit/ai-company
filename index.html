@@ -8945,7 +8945,7 @@ function buildOutputDraftPayloadForServer(draft, caseId) {
   return {
     outputId:       draft.id,
     caseId:         caseId,
-    type:           draft.type || null,
+    type:           normalizeOutputType(draft.type),   // 社員向上B B-1: 保存値は必ず正式値（null/列挙外を送らない）
     status:         draft.status || null,
     title:          _outputDraftTitle(draft),
     sourceText:     draft.sourceText || null,
@@ -9108,7 +9108,7 @@ function _outputDraftFromServerRow(row) {
   var d = normalizeOutputDraft({
     id:             row.output_id,
     caseId:         row.case_id || null,
-    type:           row.type || null,
+    type:           normalizeOutputType(row.type),   // 社員向上B B-1: 復元時に正式値へ補正（DB行は更新しない・読込時のみ）
     status:         row.status || null,
     sourceText:     row.source_text || '',
     fields:         row.fields || {},
@@ -11811,7 +11811,8 @@ async function atRunWorkflow() {
 
   // Phase44-2: 成果物タイプ自動判定
   _lastOutputDetection = detectOutputType(userMessage);
-  _lastOutputDraft     = createOutputDraft(_lastOutputDetection.type, userMessage);
+  // 社員向上B B-1: 検出値を正式値へ正規化してからDraft生成（二重判定はしない・冪等）
+  _lastOutputDraft     = createOutputDraft(normalizeOutputType(_lastOutputDetection.type), userMessage);
   // Phase45-7: Knowledge取得・選定（失敗してもWorkflowを止めない）
   // Phase46-1: fetch状態・件数を追跡
   _lastInjectedKnowledge = [];
@@ -22366,6 +22367,7 @@ const OUTPUT_SCHEMA_V1 = {
 
 function normalizeOutputDraft(draft) {
   if (!draft) return null;
+  draft.type = normalizeOutputType(draft.type);   // 社員向上B B-1: type は必ず正式値へ（他フィールドの補完処理は不変）
   if (!draft.schemaVersion) draft.schemaVersion = OUTPUT_SCHEMA_VERSION;
   if (!draft.updatedAt)     draft.updatedAt     = new Date().toISOString();
   if (!draft.fields)        draft.fields        = {};
@@ -24850,6 +24852,35 @@ const OUTPUT_TYPES = {
   DOCUMENT:           'document',
 };
 
+// ══════════════════════════════════════════════════
+// 社員向上B B-1: outputType 正規化（正本ガード）
+// draft.type / output_drafts.type / Export outputType へ入る値を必ず OUTPUT_TYPES の
+// 正式13値へ寄せる。自然言語からの推定は detectOutputType() の責務で、本関数は行わない。
+// legacy alias は「意味が一意な旧保存値」のみ許可。曖昧語(instagram/insta/ig/reel/video/post/carousel)は変換しない。
+// ══════════════════════════════════════════════════
+const OUTPUT_TYPE_LEGACY_ALIASES = {
+  'ppt':                'powerpoint',
+  'pptx':               'powerpoint',
+  'landing_page':       'lp',
+  'landing-page':       'lp',
+  'youtube_short':      'youtube_shorts',
+  'image-prompt':       'image_prompt',
+  'video-prompt':       'video_prompt',
+  'instagram-carousel': 'instagram_carousel',
+  'instagram-post':     'instagram_post',
+};
+function normalizeOutputType(value, fallback) {
+  var fb = fallback || OUTPUT_TYPES.DOCUMENT;
+  try {
+    if (value === null || value === undefined) return fb;
+    var s = String(value).trim().toLowerCase();
+    if (s === '') return fb;
+    if (Object.values(OUTPUT_TYPES).indexOf(s) !== -1) return s;                 // 正式値はそのまま
+    if (OUTPUT_TYPE_LEGACY_ALIASES.hasOwnProperty(s)) return OUTPUT_TYPE_LEGACY_ALIASES[s]; // 一意なlegacy aliasのみ
+    return fb;                                                                    // unknown / 空 / 未知 / 曖昧語 → fallback(document)
+  } catch (_e) { return fb; }                                                     // 例外でも起動を止めない
+}
+
 const OUTPUT_TYPE_DEFINITIONS = [
   {
     id: 'instagram_carousel',
@@ -25246,13 +25277,15 @@ function evaluateOutputPackageCompleteness(draft) {
 
 function createOutputDraft(type, sourceText) {
   resetApprovalStatesToDefault();   // Phase54-1e: 新成果物生成境界。前成果物の承認状態を必ずリセット（未承認から開始）
-  var def = getOutputTypeDefinition(type);
+  // 社員向上B B-1: 別経路から呼ばれても列挙外値が draft.type へ入らないよう入口で正規化（冪等）
+  var normalizedType = normalizeOutputType(type);
+  var def = getOutputTypeDefinition(normalizedType);
   if (!def) return null;
-  var roleInfo = getOutputRoleAssignments(type);
+  var roleInfo = getOutputRoleAssignments(normalizedType);
   var now = new Date().toISOString();
   var draft = {
     id: 'out_' + Date.now(),
-    type: type,
+    type: normalizedType,
     status: OUTPUT_STATUS.DRAFT,
     sourceText: sourceText || '',
     fields: {},
@@ -26311,7 +26344,7 @@ function buildOutputPackageQualityHtml() {
   var recommendHtml = (q.recommendations || []).map(function(r) { return '<li>' + esc(r) + '</li>'; }).join('');
   var nextHtml       = (q.nextActions || []).map(function(n) { return '<li>' + esc(n) + '</li>'; }).join('');
 
-  var typeDef = getOutputTypeDefinition(q.outputType);
+  var typeDef = getOutputTypeDefinition(normalizeOutputType(q.outputType));   // 社員向上B B-1: 定義label経由に統一（生値表示を回避）
   var typeLabel = typeDef ? typeDef.label : q.outputType;
 
   // Phase48-3: 改善ループ — 90点未満の場合は改善が必要である旨を明示表示
