@@ -6,6 +6,23 @@
 
 ---
 
+## 【現在地・最優先】社員向上B 工程B-1 — outputType正本化 **完了**（2026-07-20・localhost確認済み）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 開発中**
+- **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**／改善案件 **工程B-1 完了・工程B-2 未着手**
+- **Git**：最新Code commit **066241f**（`Normalize output type boundaries`・index.htmlのみ +40/-7）／最新tag **v1.01-phase54-output-type-normalization**（→066241f）／Docs commit（本更新）／**main push＋当該tag push実施 → HEAD = origin/main**。
+- **B-1内容**：`OUTPUT_TYPES`(13種)＝定義正本／`_lastOutputDraft.type`＝ランタイム正本／`output_drafts.type`＝永続化正本／`OUTPUT_TYPE_DEFINITIONS`＝表示定義正本／`outputType`＝派生値。`normalizeOutputType()` 追加（legacy alias 9件・空/null/undefined/unknown/未知→`document`・曖昧語は非alias）。境界（生成起点・createOutputDraft入口・DB復元・normalizeOutputDraft・保存Payload・Output Engine表示）で正規化。**server.js/lib/DB/API/schema.sql 無変更**。
+- **確認**：dev-check 200/200/200・console 0・正規化 24/24 PASS・13種自己返却OK・非回帰・**AI API実行なし**。
+- **本番反映状況**：main/tag push → Render反映確認 → 本番 非課金確認（HTTP200・console 0・配信コードに `normalizeOutputType`/`OUTPUT_TYPE_LEGACY_ALIASES` 存在・Output Engine/Draft/Preview/Publishing 非回帰・AI系POST 0件）。※本番の**書込みを伴う実機確認は行わない**。
+- **保護対象（未commit）**：cost-logs.json・claude-cost-logs.json・claude-quality-history.json・backup-dup-candidates-20260714/。
+- **Cost DB 後続完了（最新状態）**：main push完了・tag push完了・Render反映確認済み・本番API確認済み（`/api/cost`・`?provider=claude`・`?provider=all` 全HTTP200）。下記Cost DB節の「push未実施」は**過去履歴**。
+
+### 次工程（未着手）
+- **社員向上B 工程B-2「セクション動的化＋内部指示分離」の調査**（B-2はまだ開始しない）。
+- `genre === outputType` 結合の後続判断（B-2以降）。
+
+---
+
 ## 【現在地・最優先】Cost DB 完了 — Opening Balance／一意性／23505／schema.sql記録（2026-07-19・commit 81a5288・tag v1.01-phase54-cost-db-complete・**push未実施**）
 
 - **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**

@@ -4,6 +4,18 @@
 
 ---
 
+## Output Type Normalization（社員向上B 工程B-1）（2026-07-20・localhost確認済み・commit **066241f**・tag **v1.01-phase54-output-type-normalization**）
+
+**outputType の正本を明文化し、正規化関門を追加**。**index.htmlのみ（+40/-7）**・server.js/lib/DB/API/schema.sql **無変更**。**Phase54 Complete維持・Phase55未着手**。
+
+- **正本**：定義=`OUTPUT_TYPES`（13種・増減なし）／ランタイム=`_lastOutputDraft.type`／永続化=`output_drafts.type`／表示定義=`OUTPUT_TYPE_DEFINITIONS`／`outputType`=`draft.type` 派生値（新たな並行正本なし）。
+- **`normalizeOutputType()` 追加**：正式値そのまま／legacy alias 9件（`ppt`/`pptx`→`powerpoint`・`landing_page`/`landing-page`→`lp`・`youtube_short`→`youtube_shorts`・`image-prompt`→`image_prompt`・`video-prompt`→`video_prompt`・`instagram-carousel`→`instagram_carousel`・`instagram-post`→`instagram_post`）／空・null・undefined・unknown・未知値→`document`／曖昧語（instagram/insta/ig/reel/video/post/carousel）は非alias（`detectOutputType()` 責務）。
+- **境界正規化**：Workflow生成起点・`createOutputDraft()` 入口・DB復元・`normalizeOutputDraft()`・保存Payload（null不送出）・Output Engine主要表示（定義label経由）。DB CHECK制約は追加しない。
+- **確認**：dev-check 200/200/200・console 0・正規化テスト **24/24 PASS**・13種自己返却OK・Draft/復元/保存/Export/Preview/Publishing 非回帰・**AI API実行なし**。
+- **Git**：Code commit **066241f**・tag **v1.01-phase54-output-type-normalization**（→066241f）・Docs commit（本更新）。
+
+---
+
 ## Cost DB Opening Balance / 一意性 / 23505 / schema.sql 記録（2026-07-19・commit **81a5288**・tag **v1.01-phase54-cost-db-complete**・**push未実施**）
 
 **Cost DB 完成の記録**。**Phase54 Complete維持・Phase55未着手**。

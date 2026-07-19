@@ -6,6 +6,26 @@
 
 ---
 
+## 社員向上B 工程B-1 — outputType正本化 **完了**（2026-07-20・localhost確認済み・commit 066241f・tag v1.01-phase54-output-type-normalization）
+
+> 記録日: 2026-07-20。**Version1 Final Complete ／ Version1.1 開発中**。**Phase54 Complete維持・Phase55未着手**。改善案件の**工程B-1**。**index.htmlのみ（+40/-7）**／server.js・lib・DB・API・schema.sql は**無変更**。
+
+- **正本の明文化**：定義の正本＝`OUTPUT_TYPES`（13種・増減なし）／ランタイム正本＝`_lastOutputDraft.type`／永続化正本＝`output_drafts.type`／表示定義正本＝`OUTPUT_TYPE_DEFINITIONS`。各処理の `outputType` は `draft.type` の**派生値**（新たな並行正本は作らない）。
+- **`normalizeOutputType()` 追加**（正規化関門）：正式値はそのまま／legacy alias 9件（`ppt`・`pptx`→`powerpoint`／`landing_page`・`landing-page`→`lp`／`youtube_short`→`youtube_shorts`／`image-prompt`→`image_prompt`／`video-prompt`→`video_prompt`／`instagram-carousel`→`instagram_carousel`／`instagram-post`→`instagram_post`）／**空・null・undefined・unknown・未知値は `document`**／曖昧語（instagram/insta/ig/reel/video/post/carousel）は**alias化せず** `detectOutputType()` の責務として維持。
+- **境界で正規化**：Workflow生成起点（`atRunWorkflow`）／`createOutputDraft()` 入口／DB復元（`_outputDraftFromServerRow`）／`normalizeOutputDraft()`／保存Payload（`buildOutputDraftPayloadForServer`・**null不送出**）／Output Engine主要表示を定義label経由へ統一。**DB CHECK制約は追加しない**。
+- **Learning観測値の `unknown`** は成果物正本とは**別責務**として温存（server.js・無変更）。
+- **確認**：インラインJS 2ブロック構文OK／dev-check 200/200/200／console 0／正規化テスト **24/24 PASS**／OUTPUT_TYPES 13種自己返却OK／Draft生成・DB復元・保存Payload・Output Engine表示・Export派生・Preview/Publishing 非回帰／**AI API実行なし**。
+- **Git**：Code commit **066241f**（index.htmlのみ）・tag **v1.01-phase54-output-type-normalization**（→066241f）・Docs commit（本更新）。**main push＋当該tag push実施**。保護対象4件（cost-logs.json・claude-cost-logs.json・claude-quality-history.json・backup-dup-candidates-20260714/）は未commitで保護。
+- **次工程**：本番反映・確認後に **工程B-2「セクション動的化＋内部指示分離」の調査**（未着手）。
+
+### Cost DB工程 後続完了（最新状態・「push未実施」記録は過去履歴）
+- 下記「Cost DB 基盤 完了」節の **「push未実施／Render確認前／`/api/cost`確認前」は記録時点（過去履歴）**。**最新状態は以下で確定**：
+  - **HEAD = origin/main = `532b3f3`ライン＝main push完了・tag push完了**
+  - **Render反映確認済み・本番API確認済み**：`GET /api/cost`／`GET /api/cost?provider=claude`／`GET /api/cost?provider=all` すべて **HTTP200**。
+- これは**履歴情報と最新状態の差**であり更新漏れではない。
+
+---
+
 ## Cost DB 基盤 完了 — Opening Balance／一意性設計／23505改善／schema.sql記録（2026-07-19・commit 81a5288・tag v1.01-phase54-cost-db-complete・**push未実施**）
 
 > 記録日: 2026-07-19。**Version1 Final Complete ／ Version1.1 開発中**。**Phase54 Complete維持・Phase55未着手**。本項は「Cost DB層」（コードが先行しdocs未記載だった意図的な二層のうち Cost DB 関連）を正式記録するもの。**実DB構造は既に適用済み**。

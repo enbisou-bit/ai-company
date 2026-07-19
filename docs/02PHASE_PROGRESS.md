@@ -5,6 +5,21 @@
 
 ---
 
+## 改善案件 工程B-1 — outputType正本化 **完了**（2026-07-20・localhost確認済み・commit 066241f・tag v1.01-phase54-output-type-normalization）
+
+> 記録日: 2026-07-20。**Phase54 Complete維持・Phase55未着手**。改善案件の工程B-1。**index.htmlのみ（+40/-7）**。
+
+- **改善案件 進捗**：工程A（設定保持）完了 ／ **工程B-1（outputType正本化）完了** ／ 工程B-2 未着手 ／ 工程B-3 未着手。
+- **完了条件**：index.htmlのみ・+40/-7・正規化関門（`normalizeOutputType()`）追加・OUTPUT_TYPES 13種維持・正規化テスト **24/24 PASS**・dev-check 200/200/200・console 0・**AI API実行なし**・Code commit 066241f／tag 作成済み・Phase54 Complete維持・Phase55未着手。
+- **正本**：定義=`OUTPUT_TYPES`／ランタイム=`_lastOutputDraft.type`／永続化=`output_drafts.type`／表示定義=`OUTPUT_TYPE_DEFINITIONS`／`outputType`=派生値。
+- **正規化**：legacy alias 9件／空・null・undefined・unknown・未知値→`document`／曖昧語は非alias（`detectOutputType()` 責務）／境界（生成起点・createOutputDraft入口・DB復元・normalizeOutputDraft・保存Payload・Output Engine表示）で正規化／server.js・DB・API・schema.sql 無変更。
+- **次工程**：本番反映・確認後に **工程B-2「セクション動的化＋内部指示分離」の調査**。
+
+### Cost DB 後続完了（最新状態）
+- Cost DB は **main push完了・tag push完了・Render反映確認済み・本番API確認済み**（`/api/cost`・`?provider=claude`・`?provider=all` 全HTTP200）。docs内の「push未実施」は過去履歴。
+
+---
+
 ## Cost DB（A-2系）完了 — Supabase料金基盤／Opening Balance／一意性／23505／schema記録（2026-07-19・commit 81a5288・tag v1.01-phase54-cost-db-complete）
 
 > 記録日: 2026-07-19。**Phase54 Complete維持・Phase55未着手**（Phase55開始・再開ではない。Cost DB層の正式記録）。

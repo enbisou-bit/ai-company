@@ -6,6 +6,33 @@
 
 ---
 
+# Decision 067
+## outputTypeの正本・正規化境界・フォールバックを正式化（2026-07-20）
+
+**背景**：
+- `OUTPUT_TYPES` と `draft.type` は既に事実上の正本だったが、DB復元・保存・表示・学習周辺で `document`／`unknown`／`null`／`—` が混在していた。
+- `normalizeOutputDraft()` は type値を正規化していなかった（警告のみの `validateOutputDraft` は補正しない）。
+- 後続B-2／B-3が機械参照可能な列挙保証値を必要とする。
+
+**決定（正式）**：
+1. `OUTPUT_TYPES`（13種）を正式内部値の正本とする。
+2. `_lastOutputDraft.type` をランタイム正本とする。
+3. `output_drafts.type` を永続化正本とする。
+4. `OUTPUT_TYPE_DEFINITIONS` を表示定義正本とする。
+5. `outputType` は `draft.type` の派生値（**新たな並行正本を作らない**）。
+6. `normalizeOutputType()` を正規化関門とする（正式値はそのまま・legacy alias 9件のみ許可）。
+7. 未知・空・null・undefined・unknown は `document`。
+8. 曖昧な自然言語（instagram/insta/ig/reel/video/post/carousel）は alias化せず `detectOutputType()` へ委ねる。
+9. **DB CHECK制約は追加しない**（既存本番DBへ差分適用しない方針を踏襲）。
+10. `genre === outputType` 結合（`selectRelevantKnowledge`）は今回変更しない（B-2以降の別調査）。
+11. Learning／品質履歴の観測値 `unknown` は成果物正本とは別責務として残す。
+
+**採用理由**：新しい正本を作らず既存構造を利用／DB・API・Case同期・PC⇔iPhone同期へ波及しない／後続B-2・B-3の前提を安全に整備／最小変更・低リスク。
+
+**Git/反映**：Code commit **066241f**・tag **v1.01-phase54-output-type-normalization**（index.htmlのみ +40/-7）。**Phase54 Complete維持・Phase55未着手**。
+
+---
+
 # Decision 066
 ## Cost DB Opening Balance の一意性設計・23505処理・schema.sql の位置づけ（2026-07-19）
 
