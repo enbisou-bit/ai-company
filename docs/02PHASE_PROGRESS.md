@@ -5,6 +5,20 @@
 
 ---
 
+## Cost DB（A-2系）完了 — Supabase料金基盤／Opening Balance／一意性／23505／schema記録（2026-07-19・commit 81a5288・tag v1.01-phase54-cost-db-complete）
+
+> 記録日: 2026-07-19。**Phase54 Complete維持・Phase55未着手**（Phase55開始・再開ではない。Cost DB層の正式記録）。
+
+- **① Supabase Cost DB Layer**（`lib/costDb.js`）：DBアクセス層＋標準集計。JST日付キー。
+- **② Cost Event 永続化**：`api_cost_events` へ OpenAI／Claude の利用イベントを保存（`usage_event_id` UNIQUE 冪等）。
+- **③ Legacy互換層**：`getLegacyCostSummaryForApi`（provider別 last-good・DB障害安全）。`/api/cost` をSupabase表示へ切替（Opening Balance は非参照）。
+- **④ Opening Balance**：`api_cost_opening_balance` へ移行前累積を冪等登録。OpenAI 54.05円／Claude 319.57円。
+- **⑤ provider別 active 一意性**：index を `(balance_type)` → `(provider, balance_type) WHERE is_active` へ差替（旧 `uq_api_cost_ob_active_legacy` 廃止）。Claude を別 provider 行として共存。
+- **⑥ 23505 二段階判定**：fingerprint／業務キーを区別（`OPENING_BALANCE_ACTIVE_CONFLICT`）。stub全PASS・dev-check 200/200/200・実DB非接触。
+- **⑦ schema.sql 正式記録**：Cost DB 全定義を +181 純追記（定義記録用・migrationではない）。
+
+---
+
 ## 改善案件 工程A — 設定保持 **完了**（2026-07-17・localhost確認済み）
 
 > 記録日: 2026-07-17。**Version1 Final Complete ／ Version1.1 開発中**。Phase54 Complete後に確認された「運用品質・表示・設定保持の改善案件」の**工程A**（全11改善のうち、独立性が高く低リスクな設定保持のみ）。**Phase54 正式Complete維持・Phase55未着手・工程B以降は未着手**。**index.htmlのみ（+45/-7）**／server.js・lib・DB・API・SQL は**無変更**。commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**。

@@ -6,6 +6,21 @@
 
 ---
 
+## 【現在地・最優先】Cost DB 完了 — Opening Balance／一意性／23505／schema.sql記録（2026-07-19・commit 81a5288・tag v1.01-phase54-cost-db-complete・**push未実施**）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
+- **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**
+- **Cost DB 実装・実DB・schema記録 完了**：
+  - Opening Balance＝OpenAI **54.05円**（id=1）／Claude **319.57円**（id=4）・active2件・**grand_total 373.66円**。
+  - 業務一意性 `(provider, balance_type) WHERE is_active`（`uq_api_cost_ob_active_provider_type`）／技術的冪等 `source_fingerprint` UNIQUE。**旧 `uq_api_cost_ob_active_legacy` 廃止**。
+  - `ensureOpeningBalance()` **23505 二段階判定**（`OPENING_BALANCE_ACTIVE_CONFLICT`）。stub全PASS・dev-check 200/200/200・実DB非接触・**冪等再実行 existing 確認済み**。
+  - `supabase/schema.sql` へ Cost DB 全定義を **+181 純追記**（定義記録用・migrationではない・既存本番DBへの差分適用に使用しない）。
+- **Git 現在地**：Code commit **81a5288**（`lib/costDb.js`＋`supabase/schema.sql`）・tag **v1.01-phase54-cost-db-complete**。本docs更新が Docs commit。**push未実施**（未push＝既存7 ＋ code ＋ docs）。
+- **対象外・保護（未commit）**：`cost-logs.json`（ランタイム書込）・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`。**stage/commitしない**。
+- **次工程**：push 承認 → main/tag push → Render デプロイ確認 → `/api/cost` read-only 疎通 → 整合確認。**実DB構造は適用済み・schema.sql は本番を自動変更しない**。
+
+---
+
 ## 【現在地・最優先】改善案件 工程A — 設定保持 **完了**（2026-07-17・**localhost確認済み**・本番確認は残）
 
 - **現在Version**：**Version1 Final Complete ／ Version1.1 開発中**

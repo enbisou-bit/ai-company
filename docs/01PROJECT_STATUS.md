@@ -6,6 +6,19 @@
 
 ---
 
+## Cost DB 基盤 完了 — Opening Balance／一意性設計／23505改善／schema.sql記録（2026-07-19・commit 81a5288・tag v1.01-phase54-cost-db-complete・**push未実施**）
+
+> 記録日: 2026-07-19。**Version1 Final Complete ／ Version1.1 開発中**。**Phase54 Complete維持・Phase55未着手**。本項は「Cost DB層」（コードが先行しdocs未記載だった意図的な二層のうち Cost DB 関連）を正式記録するもの。**実DB構造は既に適用済み**。
+
+- **Cost DB 4オブジェクト完成**：`api_cost_events`（利用イベント正本・`usage_event_id` UNIQUE冪等・provider CHECK・token/request/金額の非負CHECK・`usage_date`／`usage_date+provider` INDEX）／`api_cost_settings`（単一行 id=1・`monthly_limit`・`stopped`）／`api_cost_opening_balance`（移行前累積）／`api_cost_daily_v`（日次集計VIEW）。RLS有効・`<table>_all` FOR ALL TO anon。
+- **Opening Balance 登録済み**：OpenAI **54.05円**（id=1・historical_usage）／Claude **319.57円**（id=4・historical_usage・`$1.997365 × 160 − 既存Event0.01`）。**active合計 373.62円**・events 0.04円・**grand_total 373.66円**。
+- **一意性設計**：業務一意性＝`(provider, balance_type) WHERE is_active`（部分UNIQUE `uq_api_cost_ob_active_provider_type`）／技術的冪等＝`source_fingerprint` UNIQUE（`api_cost_ob_fingerprint_key`）。**旧 `uq_api_cost_ob_active_legacy` は廃止済み**。
+- **23505 二段階判定**（`lib/costDb.js` `ensureOpeningBalance()`・+43/-2）：①`source_fingerprint`再SELECT＝冪等 ②`(provider,balance_type,is_active)`再SELECT＝業務競合を `OPENING_BALANCE_ACTIVE_CONFLICT` で明示（誤existingにしない）③どちらも不能なら元23505保持。stub全PASS・dev-check 200/200/200・実DB非接触・冪等再実行 existing 確認済み。
+- **schema.sql 正式記録**：末尾へ Cost DB セクションを **+181/-0 純追記**（既存行無変更）。**空DB再構築・定義記録用であり本番migrationではない／既存本番DBへの差分適用には使用しない**。
+- **Git**：Code commit **81a5288**（`lib/costDb.js`＋`supabase/schema.sql`）・tag **v1.01-phase54-cost-db-complete**。**push未実施**。対象外（`cost-logs.json`・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`）は未commitで保護。
+
+---
+
 ## 改善案件 工程A — 設定保持 **完了**（2026-07-17・localhost確認済み・commit 8c9ed58・tag v1.01-phase54-agent-settings-persistence）
 
 - **位置づけ**：**Version1 Final Complete ／ Version1.1 開発中**。Phase54 Complete後に確認された「運用品質・表示・設定保持の改善案件」の**工程A**。**Phase54 正式Complete維持**・**Phase55 未着手**・**工程B以降は未着手**。**index.htmlのみ（+45/-7）**／server.js・lib・DB・API・SQL は**無変更**。

@@ -6,6 +6,22 @@
 
 ---
 
+# Decision 066
+## Cost DB Opening Balance の一意性設計・23505処理・schema.sql の位置づけ（2026-07-19）
+
+**背景**：Opening Balance 登録時、実DBの部分UNIQUE `uq_api_cost_ob_active_legacy`（`(balance_type) WHERE is_active`・provider非包含）により、Claude を同一 `balance_type=historical_usage` で登録すると 23505 で衝突し、現行の `source_fingerprint` 再SELECTでは救済できないことが判明。read-only 調査（ローカル → 実DB introspection）で制約定義を確定した。
+
+**決定（正式）**：
+1. **業務一意性 = `(provider, balance_type) WHERE is_active`**（部分UNIQUE `uq_api_cost_ob_active_provider_type`）。provider別に active な Opening Balance を1行保持。**旧 `uq_api_cost_ob_active_legacy` は廃止**。
+2. **技術的冪等キー = `source_fingerprint` UNIQUE**（`api_cost_ob_fingerprint_key`・金額は含めない）。業務一意性とは別レイヤ。
+3. **23505 処理 = 二段階照合**：① `source_fingerprint` で既存確認（冪等）② `(provider, balance_type, is_active)` で既存確認（業務競合＝`OPENING_BALANCE_ACTIVE_CONFLICT`・誤existingにしない）③ 特定不能なら元23505保持。**INDEX名の文字列解析には依存しない**。
+4. **Claude Opening Balance = 319.57円**（`$1.997365 × 160`（静的会計レート `USD_TO_JPY`）`− 既存Cost Event 0.01円`）。為替は静的レート採用・外部為替API不使用。
+5. **`supabase/schema.sql` は空DB再構築・定義記録用**であり、本番DBへ自動適用する migration ではない／既存本番DBへの差分適用には使用しない（既存 output_* と同方針）。実DDLは Supabase SQL Editor で手動適用済み。
+
+**Git/反映**：commit **81a5288**・tag **v1.01-phase54-cost-db-complete**（`lib/costDb.js`＋`supabase/schema.sql`）。**push未実施**。**Phase54 Complete維持・Phase55未着手**。
+
+---
+
 # Decision 064
 ## ホームでは全案件Taskを表示する（Decision 054 の表示仕様を改定）
 

@@ -4,6 +4,18 @@
 
 ---
 
+## Cost DB Opening Balance / 一意性 / 23505 / schema.sql 記録（2026-07-19・commit **81a5288**・tag **v1.01-phase54-cost-db-complete**・**push未実施**）
+
+**Cost DB 完成の記録**。**Phase54 Complete維持・Phase55未着手**。
+
+- **Opening Balance**：OpenAI 54.05円／Claude 319.57円（`$1.997365 × 160 − 既存Event0.01`）登録済み。active2件・grand_total 373.66円。
+- **一意性**：業務＝`(provider, balance_type) WHERE is_active`（`uq_api_cost_ob_active_provider_type`）／技術的冪等＝`source_fingerprint` UNIQUE。**旧 `uq_api_cost_ob_active_legacy` 廃止**。
+- **23505 二段階判定**：`lib/costDb.js` `ensureOpeningBalance()`（+43/-2）。fingerprint → 業務キーで区別（`OPENING_BALANCE_ACTIVE_CONFLICT`）。stub全PASS・dev-check 200/200/200・実DB非接触。
+- **schema.sql**：Cost DB 全定義を **+181 純追記**（定義記録用・本番migrationではない）。
+- **変更ファイル**：`lib/costDb.js` / `supabase/schema.sql` / docs（01/02/04/06/CHANGELOG）。
+
+---
+
 ## Agent Settings Persistence（工程A）（2026-07-17・**localhost確認済み**・commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）
 
 **Auto Task（autoStart）／自律相談（autonomousConsult）の選択状態を localStorage で端末内保持**。**index.htmlのみ（+45/-7）**・server.js/lib/DB/API/SQL **無変更**。**Phase54 Complete維持・Phase55未着手・工程B以降は未着手**。
