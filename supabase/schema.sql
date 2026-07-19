@@ -457,3 +457,184 @@ INSERT INTO strategy_learning (id) VALUES (1) ON CONFLICT DO NOTHING;
 
 ALTER TABLE strategy_learning ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "strategy_learning_all" ON strategy_learning FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- Cost DB（料金基盤 / A-2 系）— 定義記録
+-- ※ 実DBは Supabase SQL Editor で直接作成・変更済み。
+-- ※ 本セクションは空DB再構築・定義記録用であり、
+--    本番DBへ自動適用するmigrationではない。
+-- ※ 既存本番DBへの差分適用には使用しない。
+-- ※ 定義は実DB introspection（information_schema / pg_catalog）を正本とする。
+-- ※ 対象: api_cost_events / api_cost_settings / api_cost_opening_balance / api_cost_daily_v
+-- ※ Cost DB専用の trigger / function は存在しない（実DB確認: 0件）。
+-- ============================================================
+
+-- 1) Cost Event（利用イベント・正本）
+CREATE TABLE IF NOT EXISTS api_cost_events (
+  id                        BIGINT GENERATED ALWAYS AS IDENTITY,
+  usage_event_id            TEXT NOT NULL,
+  usage_date                DATE NOT NULL,
+  provider                  TEXT NOT NULL,
+  model                     TEXT NOT NULL DEFAULT 'unknown',
+  assignee                  TEXT NOT NULL DEFAULT 'web',
+  usage_type                TEXT NOT NULL DEFAULT 'text',
+  requests                  INTEGER NOT NULL DEFAULT 1,
+  input_tokens              BIGINT NOT NULL DEFAULT 0,
+  output_tokens             BIGINT NOT NULL DEFAULT 0,
+  amount_jpy                NUMERIC(12,4) NOT NULL DEFAULT 0,
+  amount_usd                NUMERIC(12,6) NOT NULL DEFAULT 0,
+  currency                  TEXT NOT NULL DEFAULT 'JPY',
+  exchange_rate             NUMERIC(12,4),
+  exchange_rate_source      TEXT,
+  exchange_rate_recorded_at TIMESTAMPTZ,
+  exchange_rate_version     TEXT,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT api_cost_events_pkey
+    PRIMARY KEY (id),
+  CONSTRAINT api_cost_events_usage_event_id_key
+    UNIQUE (usage_event_id),
+  CONSTRAINT api_cost_events_intok_chk
+    CHECK (input_tokens >= 0),
+  CONSTRAINT api_cost_events_outtok_chk
+    CHECK (output_tokens >= 0),
+  CONSTRAINT api_cost_events_requests_chk
+    CHECK (requests >= 0),
+  CONSTRAINT api_cost_events_jpy_chk
+    CHECK (amount_jpy >= 0::numeric),
+  CONSTRAINT api_cost_events_usd_chk
+    CHECK (amount_usd >= 0::numeric),
+  CONSTRAINT api_cost_events_provider_chk
+    CHECK (
+      provider = ANY (
+        ARRAY['openai'::text, 'claude'::text]
+      )
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_api_cost_events_date
+  ON api_cost_events USING btree (usage_date);
+CREATE INDEX IF NOT EXISTS idx_api_cost_events_date_provider
+  ON api_cost_events USING btree (usage_date, provider);
+ALTER TABLE api_cost_events ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'api_cost_events'
+      AND policyname = 'api_cost_events_all'
+  ) THEN
+    CREATE POLICY "api_cost_events_all"
+      ON api_cost_events
+      FOR ALL
+      TO anon
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END
+$$;
+
+-- 2) Cost Settings（月次上限・単一行 id=1）
+CREATE TABLE IF NOT EXISTS api_cost_settings (
+  id            SMALLINT NOT NULL DEFAULT 1,
+  monthly_limit NUMERIC(12,4) NOT NULL DEFAULT 1000,
+  stopped       BOOLEAN NOT NULL DEFAULT false,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT api_cost_settings_pkey
+    PRIMARY KEY (id),
+  CONSTRAINT api_cost_settings_singleton_chk
+    CHECK (id = 1),
+  CONSTRAINT api_cost_settings_limit_chk
+    CHECK (monthly_limit >= 0::numeric)
+);
+ALTER TABLE api_cost_settings ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'api_cost_settings'
+      AND policyname = 'api_cost_settings_all'
+  ) THEN
+    CREATE POLICY "api_cost_settings_all"
+      ON api_cost_settings
+      FOR ALL
+      TO anon
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END
+$$;
+
+-- 3) Opening Balance（移行前累積・provider別 active 一意）
+CREATE TABLE IF NOT EXISTS api_cost_opening_balance (
+  id                  BIGINT GENERATED ALWAYS AS IDENTITY,
+  balance_type        TEXT NOT NULL DEFAULT 'legacy_opening',
+  provider            TEXT NOT NULL DEFAULT 'unknown',
+  amount_jpy          NUMERIC(12,4) NOT NULL,
+  currency            TEXT NOT NULL DEFAULT 'JPY',
+  source              TEXT NOT NULL,
+  source_file         TEXT,
+  source_value        NUMERIC(12,4),
+  source_fingerprint  TEXT NOT NULL,
+  migration_key       TEXT NOT NULL,
+  migration_version   TEXT NOT NULL,
+  migrated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  migrated_by         TEXT,
+  recorded_at         TIMESTAMPTZ,
+  note                TEXT,
+  is_verified         BOOLEAN NOT NULL DEFAULT false,
+  verification_source TEXT,
+  is_active           BOOLEAN NOT NULL DEFAULT true,
+  voided_at           TIMESTAMPTZ,
+  CONSTRAINT api_cost_opening_balance_pkey
+    PRIMARY KEY (id),
+  CONSTRAINT api_cost_ob_fingerprint_key
+    UNIQUE (source_fingerprint),
+  CONSTRAINT api_cost_ob_amount_chk
+    CHECK (amount_jpy >= 0::numeric)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_api_cost_ob_active_provider_type
+  ON api_cost_opening_balance USING btree (provider, balance_type)
+  WHERE is_active;
+ALTER TABLE api_cost_opening_balance ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'api_cost_opening_balance'
+      AND policyname = 'api_cost_opening_balance_all'
+  ) THEN
+    CREATE POLICY "api_cost_opening_balance_all"
+      ON api_cost_opening_balance
+      FOR ALL
+      TO anon
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END
+$$;
+
+-- 4) 日次集計VIEW（api_cost_events 由来・実DB正本のSELECTをそのまま記録）
+CREATE OR REPLACE VIEW api_cost_daily_v AS
+SELECT
+    usage_date,
+    provider,
+    model,
+    assignee,
+    usage_type,
+    COALESCE(sum(requests), 0::bigint)        AS requests,
+    COALESCE(sum(input_tokens), 0::numeric)  AS input_tokens,
+    COALESCE(sum(output_tokens), 0::numeric) AS output_tokens,
+    COALESCE(sum(amount_jpy), 0::numeric)    AS amount_jpy,
+    COALESCE(sum(amount_usd), 0::numeric)    AS amount_usd
+FROM api_cost_events
+GROUP BY
+    usage_date,
+    provider,
+    model,
+    assignee,
+    usage_type;
