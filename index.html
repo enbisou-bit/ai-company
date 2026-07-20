@@ -25927,29 +25927,57 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     updatedFields = ['script', 'captions', 'cta', 'duration', 'musicMood', 'visualPrompts', 'motionPrompts', 'ending'];
 
   } else if (type === OUTPUT_TYPES.IMAGE_PROMPT) {
-    fields.prompt          = designerSearchText || finalText;
-    fields.negativePrompt  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ネガティブ|Negative)\s*[:：]/i], 'low quality, blurry, watermark');
-    fields.style              = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(スタイル|Style)\s*[:：]/i], 'photorealistic');
-    fields.size                = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(サイズ|Size)\s*[:：]/i], '1024x1024');
-    // Phase48-3
-    fields.subject               = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体|Subject)\s*[:：]/i], finalText.slice(0, 80));
-    fields.composition             = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(構図|Composition)\s*[:：]/i], 'センター構図');
-    fields.lighting                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ライティング|照明|Lighting)\s*[:：]/i], '自然光');
-    fields.background                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(背景|Background)\s*[:：]/i], 'シンプルな背景');
-    fields.usage                         = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(用途|Usage)\s*[:：]/i], 'SNS投稿用');
+    // 社員向上B B-2-2c: image_prompt を定義駆動へ移行（ハイブリッド）。
+    // subject は動的フォールバック finalText.slice(0,80) のため定義駆動から除外し旧ロジックを維持（二重代入なし）。失敗時は下の旧処理へフォールバック。
+    var _ddCtxImg = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFieldsImg = buildDefinitionDrivenDraftFields(type, _ddCtxImg);
+    if (_ddFieldsImg) {
+      Object.keys(_ddFieldsImg).forEach(function(k) { if (k !== 'subject') fields[k] = _ddFieldsImg[k]; });
+      fields.subject = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体|Subject)\s*[:：]/i], finalText.slice(0, 80));
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.prompt          = designerSearchText || finalText;
+      fields.negativePrompt  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ネガティブ|Negative)\s*[:：]/i], 'low quality, blurry, watermark');
+      fields.style              = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(スタイル|Style)\s*[:：]/i], 'photorealistic');
+      fields.size                = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(サイズ|Size)\s*[:：]/i], '1024x1024');
+      // Phase48-3
+      fields.subject               = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体|Subject)\s*[:：]/i], finalText.slice(0, 80));
+      fields.composition             = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(構図|Composition)\s*[:：]/i], 'センター構図');
+      fields.lighting                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ライティング|照明|Lighting)\s*[:：]/i], '自然光');
+      fields.background                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(背景|Background)\s*[:：]/i], 'シンプルな背景');
+      fields.usage                         = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(用途|Usage)\s*[:：]/i], 'SNS投稿用');
+    }
     updatedFields = ['prompt', 'negativePrompt', 'style', 'size', 'subject', 'composition', 'lighting', 'background', 'usage'];
 
   } else if (type === OUTPUT_TYPES.VIDEO_PROMPT) {
-    fields.prompt   = designerSearchText || finalText;
-    fields.style      = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(スタイル|Style)\s*[:：]/i], 'cinematic');
-    fields.duration     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(尺|Duration)\s*[:：]/i], '5秒');
-    fields.aspect         = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(アスペクト比?|Aspect)\s*[:：]/i], '9:16');
-    // Phase48-3
-    fields.scene            = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(シーン|Scene)\s*[:：]/i], finalText.slice(0, 80));
-    fields.cameraMotion       = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(カメラワーク|カメラ|Camera)\s*[:：]/i], 'ゆっくりズームイン');
-    fields.subjectMotion        = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体の動き|Motion)\s*[:：]/i], '自然な動き');
-    fields.ending                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(エンディング|Ending)\s*[:：]/i], 'フェードアウト');
-    fields.negativePrompt            = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ネガティブ|Negative)\s*[:：]/i], 'low quality, blurry, watermark');
+    // 社員向上B B-2-2c: video_prompt を定義駆動へ移行（ハイブリッド）。
+    // scene は動的フォールバック finalText.slice(0,80) のため定義駆動から除外し旧ロジックを維持（二重代入なし）。失敗時は下の旧処理へフォールバック。
+    var _ddCtxVid = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFieldsVid = buildDefinitionDrivenDraftFields(type, _ddCtxVid);
+    if (_ddFieldsVid) {
+      Object.keys(_ddFieldsVid).forEach(function(k) { if (k !== 'scene') fields[k] = _ddFieldsVid[k]; });
+      fields.scene = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(シーン|Scene)\s*[:：]/i], finalText.slice(0, 80));
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.prompt   = designerSearchText || finalText;
+      fields.style      = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(スタイル|Style)\s*[:：]/i], 'cinematic');
+      fields.duration     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(尺|Duration)\s*[:：]/i], '5秒');
+      fields.aspect         = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(アスペクト比?|Aspect)\s*[:：]/i], '9:16');
+      // Phase48-3
+      fields.scene            = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(シーン|Scene)\s*[:：]/i], finalText.slice(0, 80));
+      fields.cameraMotion       = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(カメラワーク|カメラ|Camera)\s*[:：]/i], 'ゆっくりズームイン');
+      fields.subjectMotion        = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(被写体の動き|Motion)\s*[:：]/i], '自然な動き');
+      fields.ending                  = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(エンディング|Ending)\s*[:：]/i], 'フェードアウト');
+      fields.negativePrompt            = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ネガティブ|Negative)\s*[:：]/i], 'low quality, blurry, watermark');
+    }
     updatedFields = ['prompt', 'style', 'duration', 'aspect', 'scene', 'cameraMotion', 'subjectMotion', 'ending', 'negativePrompt'];
 
   } else if (type === OUTPUT_TYPES.POWERPOINT) {
