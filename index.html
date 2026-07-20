@@ -25078,7 +25078,7 @@ const OUTPUT_SECTION_DEFINITIONS = Object.freeze({
   ],
   [OUTPUT_TYPES.LP]: [
     { key:'headline',      label:'Headline',       source:'leaderFinal', extractType:'labeled',  extractPattern:['ヘッドライン','キャッチコピー','Headline'], previewOrder:10, exportOrder:10, note:'dynamic:firstLine' },
-    { key:'sections',      label:'Sections',       source:'leaderFinal', extractType:'fullText', previewOrder:20, exportOrder:20, note:'array[finalText]' },
+    { key:'sections',      label:'Sections',       source:'leaderFinal', extractType:'derived',  previewOrder:20, exportOrder:20, note:'array[finalText]' },
     { key:'cta',           label:'CTA',            source:'leaderFinal', extractType:'cta',      previewOrder:30, exportOrder:30 },
     { key:'html',          label:'HTML',           source:'fixed',       extractType:'fixed',    defaultValue:'', previewOrder:40, exportOrder:40, note:'現行は空文字固定' },
     { key:'firstView',     label:'First View',     source:'derived',     extractType:'derived',  previewOrder:50, exportOrder:50, note:'derived: = headline' },
@@ -25105,7 +25105,7 @@ const OUTPUT_SECTION_DEFINITIONS = Object.freeze({
   ],
   [OUTPUT_TYPES.PDF]: [
     { key:'title',             label:'Title',              source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10 },
-    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'fullText',  previewOrder:20, exportOrder:20, note:'array[finalText]' },
+    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'derived',   previewOrder:20, exportOrder:20, note:'array[finalText]' },
     { key:'summary',           label:'Summary',            source:'leaderFinal', extractType:'derived',   previewOrder:30, exportOrder:30, note:'slice(0,200)' },
     { key:'visualInstruction', label:'Visual Instruction', source:'designer',    extractType:'labeled',   extractPattern:['ビジュアル','図版','Visual'], defaultValue:'', previewOrder:40, exportOrder:40 },
     { key:'proof',             label:'Proof',              source:'leaderFinal', extractType:'labeled',   extractPattern:['実績','根拠','Proof'], defaultValue:'', previewOrder:50, exportOrder:50 },
@@ -25117,7 +25117,7 @@ const OUTPUT_SECTION_DEFINITIONS = Object.freeze({
     { key:'html',              label:'HTML',               source:'leaderFinal', extractType:'fullText',  previewOrder:20, exportOrder:20, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
     { key:'css',               label:'CSS',                source:'leaderFinal', extractType:'labeled',   previewOrder:30, exportOrder:30, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
     { key:'copy',              label:'Copy',               source:'leaderFinal', extractType:'fullText',  previewOrder:40, exportOrder:40 },
-    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'fullText',  previewOrder:50, exportOrder:50, note:'array[finalText]' },
+    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'derived',   previewOrder:50, exportOrder:50, note:'array[finalText]' },
     { key:'htmlStructure',     label:'HTML Structure',     source:'fixed',       extractType:'fixed',     defaultValue:'セクション構成: ヘッダー→メインコンテンツ→CTA→フッター', previewOrder:60, exportOrder:60 },
     { key:'cta',               label:'CTA',                source:'leaderFinal', extractType:'cta',       previewOrder:70, exportOrder:70 },
     { key:'responsiveNote',    label:'Responsive Note',    source:'fixed',       extractType:'fixed',     defaultValue:'モバイル375px〜デスクトップ1440px対応のレスポンシブレイアウトを想定', previewOrder:80, exportOrder:80 },
@@ -25159,7 +25159,7 @@ const OUTPUT_SECTION_DEFINITIONS = Object.freeze({
     { key:'title',             label:'Title',              source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10 },
     { key:'body',              label:'Body',               source:'leaderFinal', extractType:'fullText',  previewOrder:20, exportOrder:20 },
     { key:'summary',           label:'Summary',            source:'leaderFinal', extractType:'derived',   previewOrder:30, exportOrder:30, note:'slice(0,200)' },
-    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'fullText',  previewOrder:40, exportOrder:40, note:'array[finalText]' },
+    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'derived',   previewOrder:40, exportOrder:40, note:'array[finalText]' },
     { key:'visualInstruction', label:'Visual Instruction', source:'designer',    extractType:'labeled',   extractPattern:['ビジュアル','図版','Visual'], defaultValue:'', previewOrder:50, exportOrder:50 },
     { key:'proof',             label:'Proof',              source:'leaderFinal', extractType:'labeled',   extractPattern:['実績','根拠','Proof'], defaultValue:'', previewOrder:60, exportOrder:60 },
     { key:'cta',               label:'CTA',                source:'leaderFinal', extractType:'cta',       previewOrder:70, exportOrder:70 },
@@ -25209,6 +25209,224 @@ function validateOutputSectionDefinitions() {
     });
   } catch (_e) { report.ok = false; report.error = String(_e); }
   return report;
+}
+
+// ══════════════════════════════════════════════════
+// 社員向上B B-2-2a: 定義駆動 Section抽出基盤（比較・検証専用・正式出力へ未接続）
+// OUTPUT_SECTION_DEFINITIONS から fields を生成する汎用エンジン。既存 buildOutputDraftFromLeaderFinal()
+// の if/else には【接続しない】。既存の抽出関数（_extractLabeledSection / _extractHashtagsFromText /
+// _extractCtaFromText）を再利用し、それらの本体は変更しない。DOM/API/グローバル書換えを行わない。
+// extractSlides() はネスト関数のためグローバル非公開 → slides は context.slides を優先（無ければ空）。
+// ══════════════════════════════════════════════════
+
+// 抽出Context（呼び出し側が必要値を明示的に渡す。グローバル依存を避ける）
+function buildOutputSectionContext(opts) {
+  opts = opts || {};
+  var finalText    = opts.finalText    || '';
+  var writerText   = opts.writerText   || '';
+  var strategyText = opts.strategyText || '';
+  var designerText = opts.designerText || '';
+  var searchText         = [finalText, writerText, strategyText].filter(Boolean).join('\n');
+  var designerSearchText = designerText || searchText;
+  return {
+    type:              normalizeOutputType(opts.type),
+    finalText:         finalText,
+    writerText:        writerText,
+    strategyText:      strategyText,
+    designerText:      designerText,
+    userMessage:       opts.userMessage    || '',
+    slides:            (opts.slides != null) ? opts.slides : null,
+    existingFields:    opts.existingFields  || {},
+    searchText:        searchText,
+    designerSearchText:designerSearchText,
+    _built:            {},   // 生成途中fields（derived firstView等が参照）
+  };
+}
+
+// source別の基底テキスト/データ取得（不明sourceでもthrowしない）
+function getOutputSectionSource(section, context) {
+  try {
+    switch (section && section.source) {
+      case 'leaderFinal': return context.finalText || '';
+      case 'designer':    return context.designerSearchText || '';
+      case 'userMessage': return context.userMessage || '';
+      case 'slides':      return (context.slides != null) ? context.slides : null;
+      case 'existing':    return (context.existingFields || {})[section.key];
+      case 'fixed':       return null;   // defaultValue使用
+      case 'derived':     return null;   // derived処理へ
+      default:            return null;   // 不明source
+    }
+  } catch (_e) { return null; }
+}
+
+// Section定義の extractPattern(ラベル候補配列) を _extractLabeledSection が期待する正規表現配列へ変換
+// （既存 _extractLabeledSection 本体は変更しない・薄い変換のみ）
+function _compileSectionLabelPatterns(patternArr) {
+  if (!Array.isArray(patternArr) || patternArr.length === 0) return [];
+  var esc = patternArr.map(function(p) { return String(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+  try {
+    return [ new RegExp('^[■●◆\\-\\*]?\\s*(' + esc.join('|') + ')\\s*[:：]', 'i') ];
+  } catch (_e) { return []; }
+}
+
+// derived（派生）値：現行コードで明確なものだけ再現。曖昧なものは undefined（未対応）を返す。
+function _deriveOutputSectionValue(section, context) {
+  try {
+    var key = section && section.key;
+    var finalText = context.finalText || '';
+    if (key === 'sections')  return [finalText];                       // 既存: [finalText]
+    if (key === 'summary')   return finalText.slice(0, 200);           // 既存: slice(0,200)
+    if (key === 'firstView') return context._built ? context._built.headline : undefined; // 既存: = headline
+    if (key === 'imagePrompts') {                                      // 既存: slidesから生成
+      var slides = (context.slides != null) ? context.slides : [];
+      if (!Array.isArray(slides)) return [];
+      return slides.map(function(s) { return 'Instagramスライド用画像プロンプト: ' + String(s).slice(0, 60); });
+    }
+    if (key === 'sheets')    return undefined;                         // 現行未生成（unsupported）
+    return undefined;                                                  // 未対応derived
+  } catch (_e) { return undefined; }
+}
+
+// extractType別に1値を抽出（unknown extractTypeでもthrowしない）
+function extractOutputSectionValue(section, context) {
+  try {
+    var finalText          = context.finalText || '';
+    var searchText         = context.searchText || finalText;
+    var designerSearchText = context.designerSearchText || searchText;
+    switch (section && section.extractType) {
+      case 'firstLine':
+        return (finalText.split('\n')[0] || '').slice(0, 60);
+      case 'fullText':
+        return (section.source === 'designer') ? (designerSearchText || finalText) : finalText;
+      case 'lines':
+        return finalText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).slice(0, 5);
+      case 'labeled': {
+        if (typeof _extractLabeledSection !== 'function') return '';
+        var base = (section.source === 'designer') ? designerSearchText : searchText;
+        var pats = _compileSectionLabelPatterns(section.extractPattern);
+        var fb   = (section.defaultValue !== undefined) ? section.defaultValue : '';   // 静的既定のみ（動的は未対応）
+        return _extractLabeledSection(base, pats, fb);
+      }
+      case 'hashtags':
+        return (typeof _extractHashtagsFromText === 'function') ? _extractHashtagsFromText(searchText) : [];
+      case 'cta':
+        return (typeof _extractCtaFromText === 'function') ? _extractCtaFromText(searchText) : '';
+      case 'slides':
+        return (context.slides != null) ? context.slides : [];   // extractSlicesはネスト関数のためcontext優先
+      case 'fixed':
+        return (section.defaultValue !== undefined) ? section.defaultValue : '';
+      case 'existing':
+        return (context.existingFields || {})[section.key];
+      case 'derived':
+        return _deriveOutputSectionValue(section, context);
+      default:
+        return undefined;   // unknown extractType
+    }
+  } catch (_e) { return undefined; }
+}
+
+// 空判定（0 / false は有効値として保持）
+function _isOutputSectionEmpty(v) {
+  if (v === null || v === undefined) return true;
+  if (typeof v === 'string') return v.trim() === '';
+  if (Array.isArray(v)) return v.length === 0;
+  return false;
+}
+
+// defaultValue適用（空のとき静的既定を適用。動的既定は再現しない＝呼び出し側でunsupported判定）
+function applyOutputSectionDefault(section, value, context) {
+  try {
+    if (!_isOutputSectionEmpty(value)) return { value: value, usedDefault: false };
+    if (section && section.defaultValue !== undefined) return { value: section.defaultValue, usedDefault: true };
+    return { value: value, usedDefault: false };
+  } catch (_e) { return { value: value, usedDefault: false }; }
+}
+
+// 1 Section生成（implemented:false は原則skip・throwしない）
+function buildOutputSectionValue(section, context) {
+  var base = {
+    key:           section ? section.key : undefined,
+    value:         undefined,
+    usedDefault:   false,
+    source:        section ? section.source : undefined,
+    extractType:   section ? section.extractType : undefined,
+    implemented:   section ? (section.implemented !== false) : false,
+    legacyMismatch:!!(section && section.legacyMismatch),
+    skipped:       false,
+    warning:       null,
+  };
+  try {
+    if (!section || !section.key) { base.skipped = true; base.warning = 'no-key'; return base; }
+    if (section.implemented === false) { base.skipped = true; base.warning = 'implemented:false'; return base; }
+    var raw     = extractOutputSectionValue(section, context);
+    if (raw === undefined && section.extractType === 'derived') { base.skipped = true; base.warning = 'unsupported-derived'; return base; }
+    var applied = applyOutputSectionDefault(section, raw, context);
+    base.value       = applied.value;
+    base.usedDefault = applied.usedDefault;
+  } catch (_e) { base.warning = 'exception:' + String(_e); }
+  return base;
+}
+
+// 1 outputType分のfields生成（比較用・正式draftへ代入しない）
+function buildOutputFieldsFromDefinitions(type, context) {
+  var result = {
+    type: normalizeOutputType(type),
+    fields: {},
+    diagnostics: { processed: 0, implemented: 0, skipped: 0, usedDefault: 0, legacyMismatch: 0, warnings: [] }
+  };
+  try {
+    var ctx  = context || buildOutputSectionContext({ type: type });
+    ctx._built = ctx._built || {};
+    var secs = getOutputSectionDefinitions(result.type);
+    secs.forEach(function(section) {
+      result.diagnostics.processed++;
+      if (section.legacyMismatch) result.diagnostics.legacyMismatch++;
+      var r = buildOutputSectionValue(section, ctx);
+      if (r.skipped) {
+        result.diagnostics.skipped++;
+        if (r.warning) result.diagnostics.warnings.push({ key: section.key, warning: r.warning });
+        return;
+      }
+      result.diagnostics.implemented++;
+      if (r.usedDefault) result.diagnostics.usedDefault++;
+      result.fields[section.key] = r.value;
+      ctx._built[section.key]    = r.value;   // 後続 derived（firstView等）が参照
+    });
+  } catch (_e) { result.diagnostics.warnings.push({ key: '*', warning: 'exception:' + String(_e) }); }
+  return result;
+}
+
+// 現行fields と 定義駆動fields の等価比較（開発確認専用・UI非表示・自動実行なし）
+function _outputFieldsDeepEqual(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) { if (!_outputFieldsDeepEqual(a[i], b[i])) return false; }
+    return true;
+  }
+  return false;
+}
+function compareDefinitionDrivenOutputFields(type, legacyFields, definitionFields) {
+  var out = { type: normalizeOutputType(type), equal: [], knownMismatch: [], newMismatch: [], unsupported: [], details: [] };
+  try {
+    var secs = getOutputSectionDefinitions(out.type);
+    legacyFields    = legacyFields    || {};
+    definitionFields= definitionFields|| {};
+    secs.forEach(function(section) {
+      var k = section.key;
+      var lv = legacyFields[k];
+      var nv = definitionFields[k];
+      var isDynamic = !!(section.note && section.note.indexOf('dynamic:') !== -1);
+      var cls;
+      if (section.legacyMismatch)                    cls = 'knownMismatch';
+      else if (_outputFieldsDeepEqual(lv, nv))       cls = 'equal';
+      else if (isDynamic)                            cls = 'unsupported';
+      else                                           cls = 'newMismatch';
+      out[cls].push(k);
+      out.details.push({ key: k, class: cls, legacy: lv, definition: nv, dynamic: isDynamic });
+    });
+  } catch (_e) { out.details.push({ key: '*', class: 'error', error: String(_e) }); }
+  return out;
 }
 
 // ══════════════════════════════════════════════════
