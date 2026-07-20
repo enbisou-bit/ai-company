@@ -2,7 +2,29 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-17（**Phase54 正式Complete維持**。**Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+更新日: 2026-07-21（**Phase54 正式Complete維持**。**Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 068
+## 社員向上B の目的・完了条件・移行範囲・保留方針を正式化（2026-07-21）
+
+**背景**：
+- 社員向上Bはoutput型の定義分散を解消し、定義駆動基盤を完成させる改善案件。工程B-1（outputType正本化）に続き、Section定義（`OUTPUT_SECTION_DEFINITIONS`）・抽出エンジン・wrapper適用・型別移行（document/pdf/image_prompt/video_prompt/powerpoint/excel/instagram_post/instagram_carousel/tiktok_video/youtube_shorts/html）を実装した（未push 7コミット・index.htmlのみ）。
+- 「13型すべてを完全統一するのか」「どこを完了とするのか」「Flyer・LPをどう扱うか」を正式に確定する必要があった。
+
+**決定（正式）**：
+1. **社員向上Bの目的は13型すべての完全統一ではない**。目的は①定義分散の解消 ②定義駆動基盤の完成 ③既存出力との互換性維持 ④Instagram自動運営・収益化開発へ安全かつ最短で移行できる状態を作ること。
+2. **実用上十分な定義駆動基盤の完成をもって完了条件**とする（①定義駆動基盤が実用上十分完成 ②Instagram収益化に必要な出力型が安全に運用可能 ③既存出力互換維持）。
+3. **Instagram収益化を最優先の判断基準**とする。移行の順序・範囲はInstagram収益化を遅らせないことを基準に決める。
+4. **Flyer・LPは正式保留**とする。**未完了・失敗ではなく**、優先順位判断による保留。必要性が生じた時点で、社員向上Bとは別の個別工程として再評価する。
+5. **13型中11型の移行完了をもって社員向上Bを正式完了**とする（完全定義駆動6：document/pdf/powerpoint/excel/instagram_post/html／ハイブリッド5：image_prompt/video_prompt/instagram_carousel/tiktok_video/youtube_shorts）。
+6. **次工程はInstagram自動運営機能**（市場調査／競合分析／ASP比較／商品選定／投稿企画／カルーセル／キャプション／ハッシュタグ／Learning／投稿承認）。
+7. 13型完全統一を将来の必須条件へ戻さない。
+
+**採用理由**：Instagram収益化への移行を遅らせない／既存出力を壊さず定義分散のみ解消／保留2型を安全に切り出し後日評価可能／最小変更・低リスクで基盤を確定。
+
+**状態**：**localhost検証完了・push前・Render未反映**（本番実機確認は未実施）。HEAD 61dde05／origin/main ac2f5da／local ahead 7。server.js／lib／DB／API／schema.sql 無変更。**Phase54 Complete維持・Phase55未着手**。
 
 ---
 

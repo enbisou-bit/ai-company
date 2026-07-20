@@ -4,6 +4,27 @@
 
 ---
 
+## 社員向上B 正式完了 — 定義駆動セクション移行（2026-07-21・localhost検証完了・**push前・Render未反映**・HEAD **61dde05**）
+
+**改善案件「社員向上B」を正式完了**。定義分散を解消し、`OUTPUT_SECTION_DEFINITIONS` による定義駆動基盤を完成。**13型中11型移行済み**（Flyer/LP 正式保留）。**index.htmlのみ**・未push 7コミット・server.js/lib/DB/API/schema.sql **無変更**。**Phase54 Complete維持・Phase55未着手**。※本項は**push前・Render未反映**（本番実機確認は未実施）で、上記B-1までとは反映状態が異なる。
+
+7コミットを工程順に記録（各工程の目的→到達点）：
+
+1. **c38df55 — Section定義（B-2-1）**：目的＝output型の各セクション（見出し／構成要素）を定義データとして一元化。到達＝`OUTPUT_SECTION_DEFINITIONS` Section定義層を新設（index.html +191）。定義の正本を確立。
+2. **6fc3616 — Section抽出エンジン（B-2-2a）**：目的＝定義からdraft fieldを機械的に構築し、inline実装への分散を解消。到達＝抽出エンジン＋wrapperによる安全適用（`implemented:false`対応・型別fallback維持）を追加（+222/-4）。旧inline処理と等価。
+3. **a48380c — document / pdf（B-2-2b）**：目的＝両型のdraft fieldを定義駆動へ移行。到達＝移行完了・旧新等価・mismatch 0（+33/-9）。
+4. **43598a6 — image_prompt / video_prompt（B-2-2c）**：目的＝プロンプト系2型を定義駆動へ移行。到達＝ハイブリッド移行完了・非回帰（+48/-20）。
+5. **83fbad3 — powerpoint / excel（B-2-2d）**：目的＝資料系2型を定義駆動へ移行。到達＝移行完了・updatedFields一致（+37/-3）。
+6. **（B-2-2e 調査）**：目的＝instagram/video系型の移行方式を確定。到達＝調査完了（コミット無し・実装は下記f/gで反映）。
+7. **51caede — instagram_post / instagram_carousel（B-2-2f）**：目的＝Instagram系2型を移行。到達＝instagram_post 完全定義駆動・instagram_carousel ハイブリッド移行完了（+40/-12）。
+8. **61dde05 — tiktok_video / youtube_shorts / html（B-2-2g）**：目的＝動画系2型＋htmlを移行。到達＝html 完全定義駆動・tiktok/youtube ハイブリッド移行完了＝**社員向上B 正式完了**（+45/-18）。
+
+**最終移行状況**：完全定義駆動6（document/pdf/powerpoint/excel/instagram_post/html）／ハイブリッド5（image_prompt/video_prompt/instagram_carousel/tiktok_video/youtube_shorts）／正式保留2（flyer/lp・優先順位判断・別工程で再評価）。
+**品質確認（ローカル）**：旧新等価・mismatch 0・updatedFields一致・wrapper非回帰・二重生成なし・二重代入なし・JS構文OK・dev-check 200/200/200・console error 0・**AI API実行なし**・POST/PATCH/DELETEなし。
+**Git**：HEAD **61dde05**／origin/main **ac2f5da**／**local ahead 7**（未push）／最新Tag **v1.01-phase54-video-html-section-migration**。**push・Render反映は未実施**（ユーザー承認後）。Decision **068** 参照。
+
+---
+
 ## Output Type Normalization（社員向上B 工程B-1）（2026-07-20・localhost確認済み・commit **066241f**・tag **v1.01-phase54-output-type-normalization**）
 
 **outputType の正本を明文化し、正規化関門を追加**。**index.htmlのみ（+40/-7）**・server.js/lib/DB/API/schema.sql **無変更**。**Phase54 Complete維持・Phase55未着手**。

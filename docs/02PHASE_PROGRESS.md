@@ -1,7 +1,39 @@
 # PHASE_PROGRESS.md
 
 > ENBISOU AI COMPANY 開発進捗管理書
-> 更新日: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了**・**localhost確認済み**・**HEAD 8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**＝Auto Task／自律相談を端末内localStorage保持。**autoStart復元は設定・表示のみ＝起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**・本番反映済み・**localhost確認済み**・**HEAD 39b44d0**・tag **v1.01-phase54-task-create-dbid**＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一。既存の重複16グループは**未整理・別途判断**。**Phase55未着手**。以前：**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+> 更新日: 2026-07-21（**社員向上B 正式完了**（B-1／B-2-1／B-2-2a〜g 完了・定義駆動基盤完成・**13型中11型移行済み**・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**）。以前の更新: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了**・**localhost確認済み**・**HEAD 8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**＝Auto Task／自律相談を端末内localStorage保持。**autoStart復元は設定・表示のみ＝起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**・本番反映済み・**localhost確認済み**・**HEAD 39b44d0**・tag **v1.01-phase54-task-create-dbid**＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一。既存の重複16グループは**未整理・別途判断**。**Phase55未着手**。以前：**Task一括操作 Hotfix 完了**・本番反映済み・**localhost実機確認済み**・**HEAD deba2ed**・tag **v1.01-phase54-task-bulk-parallel**＝一括アーカイブ／復元／完全削除を**同時5並列化**・進捗表示／二重実行防止／成功ごとの保存を追加。**Phase55未着手**。以前：**Task表示仕様変更 完了**・本番反映済み・**PC/iPhone実機確認完了**・**HEAD bbfbc73**・最新tag **v1.01-phase54-task-sort-newest**。先行して **Case成功確認契約 完了**（aed5f7d）・**案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Phase54 Known Issue（Task表示不一致）Complete・HEAD a5bbe27／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete／Phase54 Hotfix・commit d512bad）
+
+---
+
+## 社員向上B 正式完了 — 定義駆動基盤完成／セクション移行（2026-07-21・localhost検証完了・push前・Render未反映）
+
+> 記録日: 2026-07-21。**Phase54 Complete維持・Phase55未着手**（本更新でPhase55を開始しない）。改善案件「社員向上B」を**正式完了**として記録。**index.htmlのみ**・未push 7コミット・server.js／lib／DB／API／schema.sql 無変更。
+
+### 社員向上B 工程進捗（すべて完了）
+- **B-1（outputType正本化）完了** — commit 066241f・tag v1.01-phase54-output-type-normalization（origin反映済み）
+- **B-2-1（Section定義）完了** — `OUTPUT_SECTION_DEFINITIONS` Section定義層追加（commit **c38df55**・index.html +191）
+- **B-2-2a（Section抽出）完了** — 定義からdraft fieldを構築する抽出エンジン＋wrapper安全適用（commit **6fc3616**・+222/-4）
+- **B-2-2b（document/pdf）完了** — draft field を定義駆動へ移行（commit **a48380c**・+33/-9）
+- **B-2-2c（image_prompt/video_prompt）完了** — 同上（commit **43598a6**・+48/-20）
+- **B-2-2d（powerpoint/excel）完了** — 同上（commit **83fbad3**・+37/-3）
+- **B-2-2e（調査）完了** — instagram/video系型の移行方式を調査（コミット無し・実装は f/g で反映）
+- **B-2-2f（instagram_post/instagram_carousel）完了** — 同上（commit **51caede**・+40/-12）
+- **B-2-2g（tiktok_video/youtube_shorts/html）完了** — 同上（commit **61dde05**・+45/-18）
+- **→ 社員向上B 正式完了**（Phase54 Complete維持・Phase55未着手）
+
+### 目的・完了条件（13型完全統一ではない）
+社員向上Bの目的は13型完全統一ではなく、**定義分散の解消／定義駆動基盤の完成／既存出力互換維持／Instagram自動運営・収益化へ安全かつ最短で移行できる状態を作ること**。正式完了条件（①定義駆動基盤が実用上十分完成 ②Instagram収益化に必要な出力型が安全に運用可能 ③既存出力互換維持）を充足したため正式完了とする。13型完全統一は必須条件ではない。
+
+### 最終移行状況（13型中11型）
+- **完全定義駆動（6）**：document ／ pdf ／ powerpoint ／ excel ／ instagram_post ／ html
+- **ハイブリッド（5）**：image_prompt ／ video_prompt ／ instagram_carousel ／ tiktok_video ／ youtube_shorts
+- **正式保留（2）**：flyer ／ lp（**失敗・未完成ではない**。Instagram収益化を遅らせないための優先順位判断。別工程で再評価）
+
+### 品質確認（ローカル）
+旧新等価・mismatch 0・updatedFields一致・wrapper非回帰・二重生成なし・二重代入なし・JS構文OK・dev-check 200/200/200・console error 0・**AI API実行なし**・POST/PATCH/DELETEなし。**ローカル実装・ローカル検証完了、push前・Render未反映**（本番実機確認は未実施）。
+
+### Git
+HEAD **61dde05**／origin/main **ac2f5da**／**local ahead 7**（未push）／最新Tag **v1.01-phase54-video-html-section-migration**。**push・Render反映は未実施**（ユーザー承認後）。保護対象4件は未commitで保護。
 
 ---
 
