@@ -25021,6 +25021,197 @@ function getOutputTypeDefinition(type) {
 }
 
 // ══════════════════════════════════════════════════
+// 社員向上B B-2-1: OUTPUT_SECTION_DEFINITIONS（Section定義層・追加のみ・現行処理へ未接続）
+// 目的: outputTypeごとの「セクション定義」を1箇所のデータへ集約する基盤を作る。
+//   現行の buildOutputDraftFromLeaderFinal() / Preview / Publishing / Export / 各Prompt へは
+//   【接続しない】。挙動は一切変えない（B-2-2以降で段階接続）。
+// 記述子スキーマ（未使用項目は省略可）:
+//   内部用: source / extractType / extractPattern / role / internalOnly
+//   表示用: label / defaultValue / previewOrder / exportOrder
+//   状態  : implemented(false=現行未充填) / legacyMismatch(true) / note
+//   ※ internalOnly（内部指示の個別分類）は B-2-4 で確定（本工程では未分類＝省略）。
+//   ※ defaultValue は【静的既定のみ】記録。動的フォールバック（抜粋slice等）は現行コードに委ね、
+//      note に 'dynamic:...' と明示（値を複製しない＝二重管理を避ける）。
+//   ※ 本定義の key は OUTPUT_TYPE_DEFINITIONS.outputFields を基準に作成（現行の宣言スキーマを写経）。
+// ══════════════════════════════════════════════════
+const OUTPUT_SECTION_DEFINITIONS = Object.freeze({
+  [OUTPUT_TYPES.INSTAGRAM_CAROUSEL]: [
+    { key:'slides',          label:'Slides',          source:'slides',      extractType:'slides',   previewOrder:10, exportOrder:10 },
+    { key:'caption',         label:'Caption',         source:'leaderFinal', extractType:'fullText', previewOrder:20, exportOrder:20 },
+    { key:'cta',             label:'CTA',             source:'leaderFinal', extractType:'cta',      previewOrder:30, exportOrder:30 },
+    { key:'hashtags',        label:'Hashtags',        source:'leaderFinal', extractType:'hashtags', previewOrder:40, exportOrder:40 },
+    { key:'imagePrompts',    label:'Image Prompts',   source:'derived',     extractType:'derived',  previewOrder:50, exportOrder:50, note:'derived from slides' },
+    { key:'targetAudience',  label:'Target Audience', source:'leaderFinal', extractType:'labeled',  extractPattern:['ターゲット層','想定読者','Target Audience'], previewOrder:60, exportOrder:60, note:'dynamic:sourceExcerpt' },
+    { key:'benefit',         label:'Benefit',         source:'leaderFinal', extractType:'labeled',  extractPattern:['ベネフィット','メリット','得られる価値','Benefit'], previewOrder:70, exportOrder:70, note:'dynamic:sourceExcerpt' },
+    { key:'saveSharePrompt', label:'Save/Share',      source:'leaderFinal', extractType:'labeled',  extractPattern:['保存','シェア','Save','Share'], defaultValue:'保存してあとで見返してください', previewOrder:80, exportOrder:80 },
+  ],
+  [OUTPUT_TYPES.INSTAGRAM_POST]: [
+    { key:'caption',     label:'Caption',      source:'leaderFinal', extractType:'fullText', previewOrder:10, exportOrder:10 },
+    { key:'cta',         label:'CTA',          source:'leaderFinal', extractType:'cta',      previewOrder:20, exportOrder:20 },
+    { key:'hashtags',    label:'Hashtags',     source:'leaderFinal', extractType:'hashtags', previewOrder:30, exportOrder:30 },
+    { key:'imagePrompt', label:'Image Prompt', source:'designer',    extractType:'labeled',  previewOrder:40, exportOrder:40, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行buildOutputDraftFromLeaderFinalで未充填' },
+  ],
+  [OUTPUT_TYPES.TIKTOK_VIDEO]: [
+    { key:'script',        label:'Script',         source:'leaderFinal', extractType:'fullText', previewOrder:10, exportOrder:10 },
+    { key:'captions',      label:'Captions',       source:'leaderFinal', extractType:'lines',    previewOrder:20, exportOrder:20, note:'lines slice(0,5)' },
+    { key:'cta',           label:'CTA',            source:'leaderFinal', extractType:'cta',      previewOrder:30, exportOrder:30 },
+    { key:'duration',      label:'Duration',       source:'leaderFinal', extractType:'labeled',  extractPattern:['尺','再生時間','Duration'], defaultValue:'15〜30秒', previewOrder:40, exportOrder:40 },
+    { key:'musicMood',     label:'Music/Mood',     source:'leaderFinal', extractType:'labeled',  extractPattern:['音楽','BGM','雰囲気','Music','Mood'], defaultValue:'アップテンポ', previewOrder:50, exportOrder:50 },
+    { key:'visualPrompts', label:'Visual Prompts', source:'designer',    extractType:'labeled',  extractPattern:['映像','ビジュアル','Visual'], previewOrder:60, exportOrder:60, note:'dynamic:sourceExcerpt' },
+    { key:'motionPrompts', label:'Motion Prompts', source:'designer',    extractType:'labeled',  extractPattern:['モーション','カメラワーク','Motion'], defaultValue:'カット割りでテンポよく展開', previewOrder:70, exportOrder:70 },
+    { key:'ending',        label:'Ending',         source:'leaderFinal', extractType:'labeled',  extractPattern:['エンディング','締め','Ending'], previewOrder:80, exportOrder:80, note:'dynamic:lastLine' },
+    { key:'hashtags',      label:'Hashtags',       source:'leaderFinal', extractType:'hashtags', previewOrder:90, exportOrder:90, note:'現行: hashtags in fields のとき充填' },
+    { key:'videoPrompt',   label:'Video Prompt',   source:'designer',    extractType:'labeled',  previewOrder:100, exportOrder:100, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
+  ],
+  [OUTPUT_TYPES.YOUTUBE_SHORTS]: [
+    { key:'script',        label:'Script',         source:'leaderFinal', extractType:'fullText', previewOrder:10, exportOrder:10 },
+    { key:'cta',           label:'CTA',            source:'leaderFinal', extractType:'cta',      previewOrder:20, exportOrder:20 },
+    { key:'duration',      label:'Duration',       source:'leaderFinal', extractType:'labeled',  extractPattern:['尺','再生時間','Duration'], defaultValue:'15〜30秒', previewOrder:30, exportOrder:30 },
+    { key:'musicMood',     label:'Music/Mood',     source:'leaderFinal', extractType:'labeled',  extractPattern:['音楽','BGM','雰囲気','Music','Mood'], defaultValue:'アップテンポ', previewOrder:40, exportOrder:40 },
+    { key:'visualPrompts', label:'Visual Prompts', source:'designer',    extractType:'labeled',  extractPattern:['映像','ビジュアル','Visual'], previewOrder:50, exportOrder:50, note:'dynamic:sourceExcerpt' },
+    { key:'motionPrompts', label:'Motion Prompts', source:'designer',    extractType:'labeled',  extractPattern:['モーション','カメラワーク','Motion'], defaultValue:'カット割りでテンポよく展開', previewOrder:60, exportOrder:60 },
+    { key:'ending',        label:'Ending',         source:'leaderFinal', extractType:'labeled',  extractPattern:['エンディング','締め','Ending'], previewOrder:70, exportOrder:70, note:'dynamic:lastLine' },
+    { key:'title',         label:'Title',          source:'leaderFinal', extractType:'firstLine', previewOrder:80, exportOrder:80, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・tiktok共用分岐のため未充填' },
+    { key:'description',   label:'Description',    source:'leaderFinal', extractType:'fullText',  previewOrder:90, exportOrder:90, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
+    { key:'videoPrompt',   label:'Video Prompt',   source:'designer',    extractType:'labeled',   previewOrder:100, exportOrder:100, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
+    { key:'captions',      label:'Captions',       source:'leaderFinal', extractType:'lines',     previewOrder:110, exportOrder:110, legacyMismatch:true, note:'現行はtiktok共用分岐でcaptionsを充填するがoutputFields宣言外' },
+  ],
+  [OUTPUT_TYPES.LP]: [
+    { key:'headline',      label:'Headline',       source:'leaderFinal', extractType:'labeled',  extractPattern:['ヘッドライン','キャッチコピー','Headline'], previewOrder:10, exportOrder:10, note:'dynamic:firstLine' },
+    { key:'sections',      label:'Sections',       source:'leaderFinal', extractType:'fullText', previewOrder:20, exportOrder:20, note:'array[finalText]' },
+    { key:'cta',           label:'CTA',            source:'leaderFinal', extractType:'cta',      previewOrder:30, exportOrder:30 },
+    { key:'html',          label:'HTML',           source:'fixed',       extractType:'fixed',    defaultValue:'', previewOrder:40, exportOrder:40, note:'現行は空文字固定' },
+    { key:'firstView',     label:'First View',     source:'derived',     extractType:'derived',  previewOrder:50, exportOrder:50, note:'derived: = headline' },
+    { key:'problem',       label:'Problem',        source:'leaderFinal', extractType:'labeled',  extractPattern:['課題','悩み','Problem'], previewOrder:60, exportOrder:60, note:'dynamic:sourceExcerpt' },
+    { key:'solution',      label:'Solution',       source:'leaderFinal', extractType:'labeled',  extractPattern:['解決策','ソリューション','Solution'], previewOrder:70, exportOrder:70, note:'dynamic:sourceExcerpt' },
+    { key:'benefits',      label:'Benefits',       source:'leaderFinal', extractType:'labeled',  extractPattern:['ベネフィット','メリット','Benefits'], previewOrder:80, exportOrder:80, note:'dynamic:sourceExcerpt' },
+    { key:'proof',         label:'Proof',          source:'leaderFinal', extractType:'labeled',  extractPattern:['実績','信頼','Proof'], defaultValue:'', previewOrder:90, exportOrder:90 },
+    { key:'flow',          label:'Flow',           source:'leaderFinal', extractType:'labeled',  extractPattern:['流れ','ご利用の流れ','Flow'], defaultValue:'', previewOrder:100, exportOrder:100 },
+    { key:'faq',           label:'FAQ',            source:'leaderFinal', extractType:'labeled',  extractPattern:['よくある質問','FAQ'], defaultValue:'', previewOrder:110, exportOrder:110 },
+    { key:'htmlStructure', label:'HTML Structure', source:'fixed',       extractType:'fixed',    defaultValue:'セクション構成: ヘッドライン→課題→解決策→ベネフィット→実績→ご利用の流れ→FAQ→CTA', previewOrder:120, exportOrder:120, note:'現行は末尾にsection数を付与（dynamic:count）' },
+  ],
+  [OUTPUT_TYPES.FLYER]: [
+    { key:'catchcopy',         label:'Catchcopy',          source:'leaderFinal', extractType:'labeled', extractPattern:['ヘッドライン','キャッチコピー','Headline'], previewOrder:10, exportOrder:10, note:'dynamic:firstLine' },
+    { key:'body',              label:'Body',               source:'leaderFinal', extractType:'fullText', previewOrder:20, exportOrder:20 },
+    { key:'offer',             label:'Offer',              source:'leaderFinal', extractType:'labeled', extractPattern:['オファー','特典','Offer'], defaultValue:'', previewOrder:30, exportOrder:30 },
+    { key:'designNotes',       label:'Design Notes',       source:'designer',    extractType:'labeled', extractPattern:['デザイン','レイアウト','Design'], defaultValue:'', previewOrder:40, exportOrder:40 },
+    { key:'subheadline',       label:'Subheadline',        source:'leaderFinal', extractType:'labeled', extractPattern:['サブヘッドライン','Subheadline'], defaultValue:'', previewOrder:50, exportOrder:50 },
+    { key:'proof',             label:'Proof',              source:'leaderFinal', extractType:'labeled', extractPattern:['実績','信頼','Proof'], defaultValue:'', previewOrder:60, exportOrder:60 },
+    { key:'area',              label:'Area',               source:'leaderFinal', extractType:'labeled', extractPattern:['対応エリア','エリア','Area'], defaultValue:'', previewOrder:70, exportOrder:70 },
+    { key:'cta',               label:'CTA',                source:'leaderFinal', extractType:'cta',     previewOrder:80, exportOrder:80 },
+    { key:'layoutInstruction', label:'Layout Instruction', source:'designer',    extractType:'labeled', extractPattern:['レイアウト','Layout'], defaultValue:'A4縦・写真中心の構成を想定', previewOrder:90, exportOrder:90, note:'現行fallbackは designNotes || 既定' },
+    { key:'imageInstruction',  label:'Image Instruction',  source:'designer',    extractType:'labeled', extractPattern:['画像','写真','イラスト','Image'], defaultValue:'訴求に合った写真・イラストを配置', previewOrder:100, exportOrder:100, note:'現行fallbackは designNotes || 既定' },
+    { key:'contact',           label:'Contact',            source:'leaderFinal', extractType:'labeled', extractPattern:['連絡先','お問い合わせ','Contact','TEL'], defaultValue:'', previewOrder:110, exportOrder:110 },
+  ],
+  [OUTPUT_TYPES.PDF]: [
+    { key:'title',             label:'Title',              source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10 },
+    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'fullText',  previewOrder:20, exportOrder:20, note:'array[finalText]' },
+    { key:'summary',           label:'Summary',            source:'leaderFinal', extractType:'derived',   previewOrder:30, exportOrder:30, note:'slice(0,200)' },
+    { key:'visualInstruction', label:'Visual Instruction', source:'designer',    extractType:'labeled',   extractPattern:['ビジュアル','図版','Visual'], defaultValue:'', previewOrder:40, exportOrder:40 },
+    { key:'proof',             label:'Proof',              source:'leaderFinal', extractType:'labeled',   extractPattern:['実績','根拠','Proof'], defaultValue:'', previewOrder:50, exportOrder:50 },
+    { key:'cta',               label:'CTA',                source:'leaderFinal', extractType:'cta',       previewOrder:60, exportOrder:60 },
+    { key:'nextAction',        label:'Next Action',        source:'leaderFinal', extractType:'labeled',   extractPattern:['次のアクション','Next Action'], defaultValue:'', previewOrder:70, exportOrder:70 },
+  ],
+  [OUTPUT_TYPES.HTML]: [
+    { key:'title',             label:'Title',              source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10 },
+    { key:'html',              label:'HTML',               source:'leaderFinal', extractType:'fullText',  previewOrder:20, exportOrder:20, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
+    { key:'css',               label:'CSS',                source:'leaderFinal', extractType:'labeled',   previewOrder:30, exportOrder:30, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
+    { key:'copy',              label:'Copy',               source:'leaderFinal', extractType:'fullText',  previewOrder:40, exportOrder:40 },
+    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'fullText',  previewOrder:50, exportOrder:50, note:'array[finalText]' },
+    { key:'htmlStructure',     label:'HTML Structure',     source:'fixed',       extractType:'fixed',     defaultValue:'セクション構成: ヘッダー→メインコンテンツ→CTA→フッター', previewOrder:60, exportOrder:60 },
+    { key:'cta',               label:'CTA',                source:'leaderFinal', extractType:'cta',       previewOrder:70, exportOrder:70 },
+    { key:'responsiveNote',    label:'Responsive Note',    source:'fixed',       extractType:'fixed',     defaultValue:'モバイル375px〜デスクトップ1440px対応のレスポンシブレイアウトを想定', previewOrder:80, exportOrder:80 },
+    { key:'visualInstruction', label:'Visual Instruction', source:'designer',    extractType:'labeled',   extractPattern:['ビジュアル','画像','Visual'], defaultValue:'', previewOrder:90, exportOrder:90 },
+  ],
+  [OUTPUT_TYPES.POWERPOINT]: [
+    { key:'title',       label:'Title',        source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10 },
+    { key:'slides',      label:'Slides',       source:'slides',      extractType:'slides',    previewOrder:20, exportOrder:20 },
+    { key:'designNotes', label:'Design Notes', source:'designer',    extractType:'labeled',   previewOrder:30, exportOrder:30, implemented:false, legacyMismatch:true, note:'outputFields宣言あり・現行未充填' },
+  ],
+  [OUTPUT_TYPES.EXCEL]: [
+    { key:'title',   label:'Title',   source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10, note:'現行は専用分岐なし・elseフォールバックで充填' },
+    { key:'sheets',  label:'Sheets',  source:'leaderFinal', extractType:'derived',   previewOrder:20, exportOrder:20, implemented:false, legacyMismatch:true, note:'専用分岐なし・sheets未生成' },
+    { key:'summary', label:'Summary', source:'leaderFinal', extractType:'derived',   previewOrder:30, exportOrder:30, note:'elseフォールバック slice(0,200)' },
+  ],
+  [OUTPUT_TYPES.IMAGE_PROMPT]: [
+    { key:'prompt',         label:'Prompt',          source:'designer', extractType:'fullText', previewOrder:10, exportOrder:10, note:'designerSearchText || finalText' },
+    { key:'negativePrompt', label:'Negative Prompt', source:'designer', extractType:'labeled',  extractPattern:['ネガティブ','Negative'], defaultValue:'low quality, blurry, watermark', previewOrder:20, exportOrder:20 },
+    { key:'style',          label:'Style',           source:'designer', extractType:'labeled',  extractPattern:['スタイル','Style'], defaultValue:'photorealistic', previewOrder:30, exportOrder:30 },
+    { key:'size',           label:'Size',            source:'designer', extractType:'labeled',  extractPattern:['サイズ','Size'], defaultValue:'1024x1024', previewOrder:40, exportOrder:40 },
+    { key:'subject',        label:'Subject',         source:'designer', extractType:'labeled',  extractPattern:['被写体','Subject'], previewOrder:50, exportOrder:50, note:'dynamic:sourceExcerpt' },
+    { key:'composition',    label:'Composition',     source:'designer', extractType:'labeled',  extractPattern:['構図','Composition'], defaultValue:'センター構図', previewOrder:60, exportOrder:60 },
+    { key:'lighting',       label:'Lighting',        source:'designer', extractType:'labeled',  extractPattern:['ライティング','照明','Lighting'], defaultValue:'自然光', previewOrder:70, exportOrder:70 },
+    { key:'background',     label:'Background',       source:'designer', extractType:'labeled',  extractPattern:['背景','Background'], defaultValue:'シンプルな背景', previewOrder:80, exportOrder:80 },
+    { key:'usage',          label:'Usage',           source:'designer', extractType:'labeled',  extractPattern:['用途','Usage'], defaultValue:'SNS投稿用', previewOrder:90, exportOrder:90 },
+  ],
+  [OUTPUT_TYPES.VIDEO_PROMPT]: [
+    { key:'prompt',         label:'Prompt',          source:'designer', extractType:'fullText', previewOrder:10, exportOrder:10, note:'designerSearchText || finalText' },
+    { key:'style',          label:'Style',           source:'designer', extractType:'labeled',  extractPattern:['スタイル','Style'], defaultValue:'cinematic', previewOrder:20, exportOrder:20 },
+    { key:'duration',       label:'Duration',        source:'designer', extractType:'labeled',  extractPattern:['尺','Duration'], defaultValue:'5秒', previewOrder:30, exportOrder:30 },
+    { key:'aspect',         label:'Aspect',          source:'designer', extractType:'labeled',  extractPattern:['アスペクト比','Aspect'], defaultValue:'9:16', previewOrder:40, exportOrder:40 },
+    { key:'scene',          label:'Scene',           source:'designer', extractType:'labeled',  extractPattern:['シーン','Scene'], previewOrder:50, exportOrder:50, note:'dynamic:sourceExcerpt' },
+    { key:'cameraMotion',   label:'Camera Motion',   source:'designer', extractType:'labeled',  extractPattern:['カメラワーク','カメラ','Camera'], defaultValue:'ゆっくりズームイン', previewOrder:60, exportOrder:60 },
+    { key:'subjectMotion',  label:'Subject Motion',  source:'designer', extractType:'labeled',  extractPattern:['被写体の動き','Motion'], defaultValue:'自然な動き', previewOrder:70, exportOrder:70 },
+    { key:'ending',         label:'Ending',          source:'designer', extractType:'labeled',  extractPattern:['エンディング','Ending'], defaultValue:'フェードアウト', previewOrder:80, exportOrder:80 },
+    { key:'negativePrompt', label:'Negative Prompt', source:'designer', extractType:'labeled',  extractPattern:['ネガティブ','Negative'], defaultValue:'low quality, blurry, watermark', previewOrder:90, exportOrder:90 },
+  ],
+  [OUTPUT_TYPES.DOCUMENT]: [
+    { key:'title',             label:'Title',              source:'leaderFinal', extractType:'firstLine', previewOrder:10, exportOrder:10 },
+    { key:'body',              label:'Body',               source:'leaderFinal', extractType:'fullText',  previewOrder:20, exportOrder:20 },
+    { key:'summary',           label:'Summary',            source:'leaderFinal', extractType:'derived',   previewOrder:30, exportOrder:30, note:'slice(0,200)' },
+    { key:'sections',          label:'Sections',           source:'leaderFinal', extractType:'fullText',  previewOrder:40, exportOrder:40, note:'array[finalText]' },
+    { key:'visualInstruction', label:'Visual Instruction', source:'designer',    extractType:'labeled',   extractPattern:['ビジュアル','図版','Visual'], defaultValue:'', previewOrder:50, exportOrder:50 },
+    { key:'proof',             label:'Proof',              source:'leaderFinal', extractType:'labeled',   extractPattern:['実績','根拠','Proof'], defaultValue:'', previewOrder:60, exportOrder:60 },
+    { key:'cta',               label:'CTA',                source:'leaderFinal', extractType:'cta',       previewOrder:70, exportOrder:70 },
+    { key:'nextAction',        label:'Next Action',        source:'leaderFinal', extractType:'labeled',   extractPattern:['次のアクション','Next Action'], defaultValue:'', previewOrder:80, exportOrder:80 },
+  ],
+});
+
+// 読み取り専用の取得関数（type は normalizeOutputType を通す・配列を安全に返す・例外で止めない）
+function getOutputSectionDefinitions(type) {
+  try {
+    var t = normalizeOutputType(type);
+    return OUTPUT_SECTION_DEFINITIONS[t] || OUTPUT_SECTION_DEFINITIONS[OUTPUT_TYPES.DOCUMENT] || [];
+  } catch (_e) { return OUTPUT_SECTION_DEFINITIONS[OUTPUT_TYPES.DOCUMENT] || []; }
+}
+function getOutputSectionDefinition(type, key) {
+  return getOutputSectionDefinitions(type).find(function(s) { return s.key === key; }) || null;
+}
+
+// 開発確認用：Section定義と outputFields の整合性を検証（throwしない・本番UIへ警告しない・接続なし）
+function validateOutputSectionDefinitions() {
+  var report = {
+    ok: true, types: [], totalSections: 0,
+    missingTypes: [], dupKeys: [], onlyInOutputFields: [], onlyInSections: [],
+    dupPreviewOrder: [], dupExportOrder: [], legacyMismatch: []
+  };
+  try {
+    Object.values(OUTPUT_TYPES).forEach(function(t) {
+      var secs = OUTPUT_SECTION_DEFINITIONS[t];
+      if (!secs) { report.missingTypes.push(t); report.ok = false; return; }
+      report.types.push(t);
+      report.totalSections += secs.length;
+      var keys = secs.map(function(s) { return s.key; });
+      var seen = {};
+      keys.forEach(function(k) { if (seen[k]) report.dupKeys.push({ type: t, key: k }); seen[k] = 1; });
+      function orderDup(field) {
+        var o = {};
+        secs.forEach(function(s) {
+          if (s[field] != null) { if (o[s[field]]) (field === 'previewOrder' ? report.dupPreviewOrder : report.dupExportOrder).push({ type: t, order: s[field] }); o[s[field]] = 1; }
+        });
+      }
+      orderDup('previewOrder'); orderDup('exportOrder');
+      var def = getOutputTypeDefinition(t);
+      var of = (def && def.outputFields) || [];
+      of.forEach(function(k) { if (keys.indexOf(k) === -1) report.onlyInOutputFields.push({ type: t, key: k }); });
+      keys.forEach(function(k) { if (of.indexOf(k) === -1) report.onlyInSections.push({ type: t, key: k }); });
+      secs.forEach(function(s) { if (s.legacyMismatch) report.legacyMismatch.push({ type: t, key: s.key, note: s.note || '' }); });
+    });
+  } catch (_e) { report.ok = false; report.error = String(_e); }
+  return report;
+}
+
+// ══════════════════════════════════════════════════
 // Phase48-1: Output Package Quality Checklist
 // 成果物ごとの不足要素を見える化する（生成ロジックは変更しない・追加のみ）
 // ══════════════════════════════════════════════════
