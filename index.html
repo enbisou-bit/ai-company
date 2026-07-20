@@ -25429,6 +25429,17 @@ function compareDefinitionDrivenOutputFields(type, legacyFields, definitionField
   return out;
 }
 
+// 社員向上B B-2-2b: 正式Draft移行用の安全ラッパー。定義駆動fieldsを返す。
+// 失敗・警告時は null を返し、呼び出し側は旧処理へフォールバックする（アプリを止めない）。
+function buildDefinitionDrivenDraftFields(type, context) {
+  try {
+    var result = buildOutputFieldsFromDefinitions(type, context);
+    if (!result || !result.fields) return null;
+    if (result.diagnostics && result.diagnostics.warnings && result.diagnostics.warnings.length) return null;
+    return result.fields;
+  } catch (_e) { return null; }
+}
+
 // ══════════════════════════════════════════════════
 // Phase48-1: Output Package Quality Checklist
 // 成果物ごとの不足要素を見える化する（生成ロジックは変更しない・追加のみ）
@@ -25866,15 +25877,28 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     updatedFields = ['headline', 'sections', 'cta', 'html', 'firstView', 'problem', 'solution', 'benefits', 'proof', 'flow', 'faq', 'htmlStructure'];
 
   } else if (type === OUTPUT_TYPES.PDF || type === OUTPUT_TYPES.DOCUMENT) {
-    fields.sections = [finalText];
-    fields.summary  = finalText.slice(0, 200);
-    fields.title    = finalText.split('\n')[0].slice(0, 60);
-    if (type === OUTPUT_TYPES.DOCUMENT) fields.body = finalText;
-    // Phase48-3
-    fields.proof              = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(実績|根拠|Proof)\s*[:：]/i], '');
-    fields.visualInstruction   = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ビジュアル|図版|Visual)\s*[:：]/i], '');
-    fields.cta                  = _extractCtaFromText(searchText);
-    fields.nextAction             = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(次のアクション|Next\s*Action)\s*[:：]/i], '');
+    // 社員向上B B-2-2b: document/pdf を OUTPUT_SECTION_DEFINITIONS 駆動へ正式移行（B-2-2aで等価確認済み）。
+    // 失敗・警告時は下の旧処理（完全同一）へフォールバックし、アプリを止めない。
+    var _ddCtx = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFields = buildDefinitionDrivenDraftFields(type, _ddCtx);
+    if (_ddFields) {
+      Object.keys(_ddFields).forEach(function(k) { fields[k] = _ddFields[k]; });   // 既存fieldsへ上書き（参照は保持）
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.sections = [finalText];
+      fields.summary  = finalText.slice(0, 200);
+      fields.title    = finalText.split('\n')[0].slice(0, 60);
+      if (type === OUTPUT_TYPES.DOCUMENT) fields.body = finalText;
+      // Phase48-3
+      fields.proof              = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(実績|根拠|Proof)\s*[:：]/i], '');
+      fields.visualInstruction   = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ビジュアル|図版|Visual)\s*[:：]/i], '');
+      fields.cta                  = _extractCtaFromText(searchText);
+      fields.nextAction             = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(次のアクション|Next\s*Action)\s*[:：]/i], '');
+    }
     updatedFields = ['sections', 'summary', 'title', 'proof', 'visualInstruction', 'cta', 'nextAction'];
     if (type === OUTPUT_TYPES.DOCUMENT) updatedFields.push('body');
 
