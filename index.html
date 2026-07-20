@@ -25435,7 +25435,12 @@ function buildDefinitionDrivenDraftFields(type, context) {
   try {
     var result = buildOutputFieldsFromDefinitions(type, context);
     if (!result || !result.fields) return null;
-    if (result.diagnostics && result.diagnostics.warnings && result.diagnostics.warnings.length) return null;
+    // 社員向上B B-2-2d: implemented:false（想定内スキップ＝現行も未充填の宣言済フィールド）はブロッキング警告としない。
+    // それ以外の警告（unsupported-derived / exception / no-key 等）がある場合のみ null → 呼び出し側が旧処理へフォールバック。
+    var blocking = ((result.diagnostics && result.diagnostics.warnings) || []).filter(function(w) {
+      return !w || w.warning !== 'implemented:false';
+    });
+    if (blocking.length) return null;
     return result.fields;
   } catch (_e) { return null; }
 }
@@ -25981,9 +25986,38 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     updatedFields = ['prompt', 'style', 'duration', 'aspect', 'scene', 'cameraMotion', 'subjectMotion', 'ending', 'negativePrompt'];
 
   } else if (type === OUTPUT_TYPES.POWERPOINT) {
-    fields.title  = finalText.split('\n')[0].slice(0, 60);
-    fields.slides = extractSlides(finalText);
+    // 社員向上B B-2-2d: powerpoint を定義駆動へ移行。designNotes は現行未充填（implemented:false）＝init '' のまま（両者同一）。失敗時は旧処理へフォールバック。
+    var _ddCtxPpt = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      slides: extractSlides(finalText), existingFields: fields
+    });
+    var _ddFieldsPpt = buildDefinitionDrivenDraftFields(type, _ddCtxPpt);
+    if (_ddFieldsPpt) {
+      Object.keys(_ddFieldsPpt).forEach(function(k) { fields[k] = _ddFieldsPpt[k]; });
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.title  = finalText.split('\n')[0].slice(0, 60);
+      fields.slides = extractSlides(finalText);
+    }
     updatedFields = ['title', 'slides'];
+
+  } else if (type === OUTPUT_TYPES.EXCEL) {
+    // 社員向上B B-2-2d: excel を定義駆動へ移行（従来はelse経路）。sheets は現行未生成（implemented:false）＝init '' のまま（両者同一）。失敗時は旧else相当へフォールバック。
+    var _ddCtxXls = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFieldsXls = buildDefinitionDrivenDraftFields(type, _ddCtxXls);
+    if (_ddFieldsXls) {
+      Object.keys(_ddFieldsXls).forEach(function(k) { fields[k] = _ddFieldsXls[k]; });
+    } else {
+      // フォールバック（旧else処理のexcel相当・完全同一）
+      if ('summary' in fields) fields.summary = finalText.slice(0, 200);
+      if ('title' in fields && !fields.title) fields.title = finalText.split('\n')[0].slice(0, 60);
+    }
+    updatedFields = ['summary', 'title'];
 
   } else {
     if ('body'     in fields) { fields.body     = finalText;              updatedFields.push('body'); }
