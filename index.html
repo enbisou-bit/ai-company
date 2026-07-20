@@ -25833,21 +25833,49 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   var designerSearchText = _designerText || searchText;
 
   if (type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL) {
-    fields.slides      = extractSlides(finalText);
-    fields.caption     = finalText;
-    fields.cta         = _extractCtaFromText(searchText);
-    fields.hashtags    = _extractHashtagsFromText(searchText);
-    fields.imagePrompts = fields.slides.map(function(s) { return 'Instagramスライド用画像プロンプト: ' + s.slice(0, 60); });
-    // Phase48-3: Output Draft Builder強化（Phase48-2追加フィールドの自動反映）
-    fields.targetAudience  = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ターゲット層?|想定読者|Target\s*Audience)\s*[:：]/i], searchText.slice(0, 100));
-    fields.benefit          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ベネフィット|メリット|得られる価値|Benefit)\s*[:：]/i], searchText.slice(0, 100));
-    fields.saveSharePrompt   = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(保存|シェア|Save|Share)\s*[:：]/i], '保存してあとで見返してください');
+    // 社員向上B B-2-2f: instagram_carousel を定義駆動へ移行（ハイブリッド）。
+    // targetAudience/benefit は動的フォールバック searchText.slice(0,100) のため定義駆動から除外し旧ロジックを維持（二重代入なし）。失敗時は下の旧処理へフォールバック。
+    var _slidesCar = extractSlides(finalText);   // 分岐内で1回だけ生成
+    var _ddCtxCar = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      slides: _slidesCar, existingFields: fields
+    });
+    var _ddFieldsCar = buildDefinitionDrivenDraftFields(type, _ddCtxCar);
+    if (_ddFieldsCar) {
+      Object.keys(_ddFieldsCar).forEach(function(k) { if (k !== 'targetAudience' && k !== 'benefit') fields[k] = _ddFieldsCar[k]; });
+      fields.targetAudience = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ターゲット層?|想定読者|Target\s*Audience)\s*[:：]/i], searchText.slice(0, 100));
+      fields.benefit        = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ベネフィット|メリット|得られる価値|Benefit)\s*[:：]/i], searchText.slice(0, 100));
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.slides      = _slidesCar;
+      fields.caption     = finalText;
+      fields.cta         = _extractCtaFromText(searchText);
+      fields.hashtags    = _extractHashtagsFromText(searchText);
+      fields.imagePrompts = fields.slides.map(function(s) { return 'Instagramスライド用画像プロンプト: ' + s.slice(0, 60); });
+      // Phase48-3: Output Draft Builder強化（Phase48-2追加フィールドの自動反映）
+      fields.targetAudience  = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ターゲット層?|想定読者|Target\s*Audience)\s*[:：]/i], searchText.slice(0, 100));
+      fields.benefit          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ベネフィット|メリット|得られる価値|Benefit)\s*[:：]/i], searchText.slice(0, 100));
+      fields.saveSharePrompt   = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(保存|シェア|Save|Share)\s*[:：]/i], '保存してあとで見返してください');
+    }
     updatedFields = ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts', 'targetAudience', 'benefit', 'saveSharePrompt'];
 
   } else if (type === OUTPUT_TYPES.INSTAGRAM_POST) {
-    fields.caption  = finalText;
-    fields.cta      = _extractCtaFromText(searchText);
-    fields.hashtags = _extractHashtagsFromText(searchText);
+    // 社員向上B B-2-2f: instagram_post を完全定義駆動へ移行。imagePrompt は現行未充填（implemented:false）＝init '' のまま。失敗時は旧処理へフォールバック。
+    var _ddCtxPost = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFieldsPost = buildDefinitionDrivenDraftFields(type, _ddCtxPost);
+    if (_ddFieldsPost) {
+      Object.keys(_ddFieldsPost).forEach(function(k) { fields[k] = _ddFieldsPost[k]; });
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.caption  = finalText;
+      fields.cta      = _extractCtaFromText(searchText);
+      fields.hashtags = _extractHashtagsFromText(searchText);
+    }
     updatedFields = ['caption', 'cta', 'hashtags'];
 
   } else if (type === OUTPUT_TYPES.FLYER) {
