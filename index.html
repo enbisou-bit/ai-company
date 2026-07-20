@@ -25936,27 +25936,54 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     if (type === OUTPUT_TYPES.DOCUMENT) updatedFields.push('body');
 
   } else if (type === OUTPUT_TYPES.HTML) {
-    fields.copy         = finalText;
-    fields.sections     = [finalText];
-    fields.htmlStructure = 'セクション構成: ヘッダー→メインコンテンツ→CTA→フッター';
-    // Phase48-3
-    fields.title              = finalText.split('\n')[0].slice(0, 60);
-    fields.cta                 = _extractCtaFromText(searchText);
-    fields.responsiveNote       = 'モバイル375px〜デスクトップ1440px対応のレスポンシブレイアウトを想定';
-    fields.visualInstruction     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ビジュアル|画像|Visual)\s*[:：]/i], '');
+    // 社員向上B B-2-2g: html を完全定義駆動へ移行。html/css は現行未充填（implemented:false）＝init '' のまま。失敗時は旧処理へフォールバック。
+    var _ddCtxHtml = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFieldsHtml = buildDefinitionDrivenDraftFields(type, _ddCtxHtml);
+    if (_ddFieldsHtml) {
+      Object.keys(_ddFieldsHtml).forEach(function(k) { fields[k] = _ddFieldsHtml[k]; });
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.copy         = finalText;
+      fields.sections     = [finalText];
+      fields.htmlStructure = 'セクション構成: ヘッダー→メインコンテンツ→CTA→フッター';
+      // Phase48-3
+      fields.title              = finalText.split('\n')[0].slice(0, 60);
+      fields.cta                 = _extractCtaFromText(searchText);
+      fields.responsiveNote       = 'モバイル375px〜デスクトップ1440px対応のレスポンシブレイアウトを想定';
+      fields.visualInstruction     = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(ビジュアル|画像|Visual)\s*[:：]/i], '');
+    }
     updatedFields = ['copy', 'sections', 'htmlStructure', 'title', 'cta', 'responsiveNote', 'visualInstruction'];
 
   } else if (type === OUTPUT_TYPES.TIKTOK_VIDEO || type === OUTPUT_TYPES.YOUTUBE_SHORTS) {
-    fields.script  = finalText;
-    fields.captions = finalText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).slice(0, 5);
-    // Phase48-3
-    fields.cta            = _extractCtaFromText(searchText);
-    fields.duration         = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(尺|再生時間|Duration)\s*[:：]/i], '15〜30秒');
-    fields.musicMood          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(音楽|BGM|雰囲気|Music|Mood)\s*[:：]/i], 'アップテンポ');
-    fields.visualPrompts        = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(映像|ビジュアル|Visual)\s*[:：]/i], finalText.slice(0, 120));
-    fields.motionPrompts          = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(モーション|カメラワーク|Motion)\s*[:：]/i], 'カット割りでテンポよく展開');
-    fields.ending                    = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(エンディング|締め|Ending)\s*[:：]/i], finalText.split('\n').map(function(l){return l.trim();}).filter(Boolean).slice(-1)[0] || '');
-    if ('hashtags' in fields) fields.hashtags = _extractHashtagsFromText(searchText);
+    // 社員向上B B-2-2g: tiktok/youtube を定義駆動へ移行（ハイブリッド）。
+    // visualPrompts(finalText.slice(0,120)) / ending(末尾非空行) は動的フォールバックのため定義駆動から除外し旧ロジック維持（二重代入なし）。失敗時は旧処理へフォールバック。
+    var _ddCtxVid = buildOutputSectionContext({
+      type: type, finalText: finalText,
+      writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
+      existingFields: fields
+    });
+    var _ddFieldsVid = buildDefinitionDrivenDraftFields(type, _ddCtxVid);
+    if (_ddFieldsVid) {
+      Object.keys(_ddFieldsVid).forEach(function(k) { if (k !== 'visualPrompts' && k !== 'ending') fields[k] = _ddFieldsVid[k]; });
+      fields.visualPrompts = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(映像|ビジュアル|Visual)\s*[:：]/i], finalText.slice(0, 120));
+      fields.ending        = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(エンディング|締め|Ending)\s*[:：]/i], finalText.split('\n').map(function(l){return l.trim();}).filter(Boolean).slice(-1)[0] || '');
+    } else {
+      // フォールバック（旧処理・完全同一）
+      fields.script  = finalText;
+      fields.captions = finalText.split('\n').map(function(l) { return l.trim(); }).filter(Boolean).slice(0, 5);
+      // Phase48-3
+      fields.cta            = _extractCtaFromText(searchText);
+      fields.duration         = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(尺|再生時間|Duration)\s*[:：]/i], '15〜30秒');
+      fields.musicMood          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(音楽|BGM|雰囲気|Music|Mood)\s*[:：]/i], 'アップテンポ');
+      fields.visualPrompts        = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(映像|ビジュアル|Visual)\s*[:：]/i], finalText.slice(0, 120));
+      fields.motionPrompts          = _extractLabeledSection(designerSearchText, [/^[■●◆\-\*]?\s*(モーション|カメラワーク|Motion)\s*[:：]/i], 'カット割りでテンポよく展開');
+      fields.ending                    = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(エンディング|締め|Ending)\s*[:：]/i], finalText.split('\n').map(function(l){return l.trim();}).filter(Boolean).slice(-1)[0] || '');
+      if ('hashtags' in fields) fields.hashtags = _extractHashtagsFromText(searchText);
+    }
     updatedFields = ['script', 'captions', 'cta', 'duration', 'musicMood', 'visualPrompts', 'motionPrompts', 'ending'];
 
   } else if (type === OUTPUT_TYPES.IMAGE_PROMPT) {
