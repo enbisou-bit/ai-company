@@ -4,6 +4,21 @@
 
 ---
 
+## Instagram自動運営 工程1-B-0a〜0d — Affiliate評価 Active一意性の商材単位化（2026-07-22・Code commit **2ef2ad3**・Migration完了・実DB検証完了）
+
+**Affiliate評価のActive一意性を「案件×チャネル」から「案件×チャネル×商材」へ移行**。**`lib/affiliateEvalDb.js`（+36/-6）の1ファイルのみ**・`server.js`／`index.html`／`schema.sql`／他lib／他API **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**（Decision 070）。
+
+- **Migration**：`DROP INDEX uq_affiliate_eval_active_case` → `CREATE UNIQUE INDEX uq_affiliate_eval_active_product ON affiliate_evaluations (case_id, channel_scope, (COALESCE(product_identifier,''))) WHERE is_active`。**Supabase SQL Editorで実行**（Claude Code環境にDDL経路なし）。旧Index不在・新Index定義一致・件数不変を `pg_indexes` 実測で確認。
+- **productIdentifier**：**サーバー正本**（`lib/affiliateEvalDb.js`）。`JSON.stringify([normalizedProductName, normalizedAspName || null])`。正規化＝全角空白→半角／trim／連続空白統一／英字小文字化。**NFKC・ASP別名辞書・記号除去は不採用**。JSON配列採用で**区切り文字衝突を回避**。
+- **案A（厳格）**：`productName` があればサーバー側で**必ず再生成**し、**client送信の `productIdentifier` は保存しない**。`productName` なしは **null**。
+- **旧active無効化を subject 限定**：値ありは `.eq('product_identifier', …)`／**nullは `.is('product_identifier', null)`**。`.eq(…, null)` は不使用。**`_str()` 共通関数は無変更**。
+- **検証**：`node --check` OK・**dev-check 200/200/200**・GET非回帰OK・**純関数テスト 15/15 PASS**・**実DB POST検証 全8ケース成功**（Active **5件共存**／Inactive 2件／履歴 7件／**23505なし**／**HTTP 500なし**／全POST `ok:true`・`source:"db"`）。**`.eq()`／`.is()` が他商材・別ASP・null↔非null を巻き込まないことを実DBで実証**。
+- **後始末**：Supabase SQL Editorで専用 `case_id` の**限定DELETE**を実行し **`remaining = 0`**。localhost GET（`activeOnly=0`）でも履歴込み0件を独立確認。**条件なしDELETE不使用・実案件データ無影響**。
+- **既知事項**：①**`schema.sql` 未記録**（`affiliate_evaluations` は定義自体が未記録・別工程） ②**`index.html` 配線は未着手**（工程1-B本体） ③RPC/transaction化は未実施 ④**inactive化／PATCH／DELETE APIは未実装** ⑤**1 case に active 複数件**があり得る（「active＝1件」前提の利用側を作らない） ⑥**Phase55未着手を維持**。
+- **Git**：Code commit **2ef2ad3**（`Fix affiliate evaluation active uniqueness by product`）／docs commit＝本更新（確定SHAは完了報告に記載）。保護対象4件は未stage。
+
+---
+
 ## Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API（2026-07-21・Code commit **047f4d3**・localhost検証完了）
 
 **会社共通Affiliate評価の永続化APIを追加**。**`server.js`（+34/-1）＋ `lib/affiliateEvalDb.js`（新規110行）の2ファイルのみ**・index.html／schema.sql／他lib／他API **無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 069）。

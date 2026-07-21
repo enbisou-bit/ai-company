@@ -2,7 +2,65 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-22（**Instagram自動運営 工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## Instagram自動運営 工程1-B-0a〜0d — Affiliate評価 Active一意性の商材単位化 **完了**（2026-07-22・Code commit 2ef2ad3・Migration完了・実DB検証完了）
+
+> 記録日: 2026-07-22。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**（本工程でPhase55を開始しない）。変更は **`lib/affiliateEvalDb.js` の1ファイルのみ**（`server.js`・`index.html`・`supabase/schema.sql`・他lib・他APIは**無変更**）。**API shape維持**。
+
+### 工程の内訳
+
+- **工程1-B-0a（本番DB実測調査）完了** — `affiliate_evaluations` 0件・旧Index `uq_affiliate_eval_active_case` 存在・Active重複なしを実測。
+- **工程1-B-0b（最終設計確認）完了** — `productIdentifier` 正式方式・正規化規則・Migration SQLを確定。
+- **工程1-B-0c（Migration）完了** — 実行はSupabase SQL Editor（**Claude Code環境にDDL実行経路がないため**：service_roleキー／`DATABASE_URL`／`pg`／`psql`／Supabase CLI いずれも未存在）。
+- **工程1-B-0d（実装＋実DB検証）完了** — コード実装・純関数検証・実DB POST検証・テストデータ削除まで完了。
+
+### Migration（適用済み）
+
+```sql
+DROP INDEX IF EXISTS public.uq_affiliate_eval_active_case;
+CREATE UNIQUE INDEX uq_affiliate_eval_active_product
+ON public.affiliate_evaluations (case_id, channel_scope, (COALESCE(product_identifier, '')))
+WHERE is_active;
+```
+
+- **旧Index `uq_affiliate_eval_active_case` は不在**・**新Index定義一致**・**件数不変（0件）**を `pg_indexes` 実測で確認。
+- `pg_constraint` に旧Active一意性相当のConstraintは**存在しない**（`affiliate_evaluations_pkey` / `affiliate_evaluations_fingerprint_key` / `affiliate_evaluations_reco_chk` のみ）。
+- **経緯**：Migration本体の再実行時に **42P07（新Indexが既に存在）** が発生。`BEGIN〜COMMIT` 内のため**全体がロールバックされDB状態は不変**。その後の読み取り実測でIndex構成が目的どおりであることを確認し、**追加DDL・Rollbackは不要**と判定した。
+
+### 実装（`lib/affiliateEvalDb.js` +36/-6）
+
+- **`normalizeAffiliateKeyPart()` 追加**：全角空白→半角／前後空白削除／連続空白を1つへ統一／英字小文字化。**Unicode NFKC・ASP別名辞書・記号除去は不採用**（誤統合より別subject保持を優先）。
+- **`buildProductIdentifier()` 追加**：`JSON.stringify([normalizedProductName, normalizedAspName || null])`。`productName` なしは **`null`**。JSON配列採用により**区切り文字衝突**（`"商品|ASP"` 形式）を回避。**空文字を返さない＝`''` をDBへ保存しない**。
+- **案A（厳格）採用**：`productName` があればサーバー側で**必ず再生成**し、**client送信の `ev.productIdentifier` は保存値に使用しない**（正本はサーバー＝`lib/affiliateEvalDb.js`）。
+- **旧active無効化を subject 単位へ限定**：`case_id + channel_scope + product_identifier + is_active`。値ありは `.eq('product_identifier', …)`、**nullは `.is('product_identifier', null)`**（`.eq(…, null)` は一致しないため禁止）。
+- **`_str()` 共通関数は無変更**（他17列への副作用ゼロ）。`getAffiliateEvaluations()`・`module.exports`・処理順（①冪等判定→②旧active false化→③insert）も**不変**。
+
+### 検証（実測）
+
+- `node --check` OK ／ **dev-check 200/200/200** ／ GET非回帰OK（`source:"db"`・caseId欠落は400）。
+- **純関数テスト 15/15 PASS**（実ファイル本文から関数ソースを抽出して実行。**検証目的のexport追加なし・本番コードへテスト処理を残していない**）。
+- **実DB POST検証 全8ケース成功**（専用 `caseId=test-aff-eval-1b0d-20260722` / `channelScope=test-instagram-1b0d`）：①商品A初回 ②商品B共存 ③同一fingerprint再送＝`idempotent:true`・行数不変 ④商品A再評価＝旧Aのみinactive ⑤同一商品・別ASP＝別subject共存 ⑥client指定 `productIdentifier` 無視 ⑦`productName` なし＝`product_identifier` null ⑧null subject再評価＝旧nullのみinactive。
+- **最終状態**：Active **5件共存**（旧Indexでは不可能）／Inactive 2件／履歴 7件／**23505なし**／**HTTP 500なし**／全POST `ok:true`・`source:"db"`。
+- **`.eq()` / `.is()` を実DBで実証**：同一subject以外（他商材・別ASP・null↔非null）を**一切巻き込まない**ことを確認。
+- **後始末完了**：Supabase SQL Editorで `WHERE case_id = 'test-aff-eval-1b0d-20260722'` の**限定DELETE**を実行し `remaining = 0`。localhost GET（`activeOnly=0`）でも**履歴込み0件**を独立確認。**条件なしDELETEは未使用・実案件データ無影響**。
+
+### Git
+
+- Code commit **2ef2ad3**（`Fix affiliate evaluation active uniqueness by product`・`lib/affiliateEvalDb.js` のみ +36/-6）。docs commit＝本更新。
+- 保護対象4件（`cost-logs.json`・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`）は**未stage・未commitで保護**。`git add .` / `git add -A` は不使用。
+
+### 残タスク・既知事項（隠さず記録）
+
+1. **`supabase/schema.sql` へ未記録** — `affiliate_evaluations` は**テーブル定義そのものが schema.sql に存在しない**（工程1-A時にDBへ直接作成）。新Index定義を含めた記録は**別工程**とする。
+2. **`index.html` 側の配線は未着手**（`_affiliateCases` は現在もメモリ保持のみ。当該APIへの `fetch` はゼロ）。**工程1-B本体**で実施する。
+3. **旧active無効化→insert のトランザクション化（RPC等）は未実施**（工程1-A由来の既知事項を継続）。
+4. **inactive化／PATCH／DELETE API は未実装**（後始末はSupabase SQL Editorが正式経路）。
+5. **`product_identifier = ''`（空文字）行が将来混入した場合の非対称性** — 新Indexは `COALESCE(…,'')` でnullと`''`を同一視するが、アプリの `.is(null)` は `''` 行を掴めない。現行実装は `''` を書き込まないため**構造的に発生しない**が、前提条件として維持する。
+6. **1 case に active 評価が複数件**存在し得る。GETは元々配列返却のため shape は不変だが、「active＝1件」を前提とする利用側を今後作らないこと。
+7. **Phase55は未着手のまま維持**。
 
 ---
 

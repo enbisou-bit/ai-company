@@ -2,11 +2,39 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。**docs更新中／commit前**。次工程＝**Instagram自動運営機能**（push・Render承認後）。以前: **Phase54 正式Complete維持**・**改善案件 工程A（設定保持）完了**（Auto Task／自律相談を端末内localStorage保持・**autoStart復元は設定と表示のみ＝起動時のWorkflow・AI自動実行なし**・端末間同期は非対象）・**localhost確認済み**。HEAD=origin/main=**8c9ed58**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-agent-settings-persistence**。**Phase55未着手・工程B以降は未着手**・**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-22（**Instagram自動運営 工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_product` 適用・旧 `uq_affiliate_eval_active_case` 廃止）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**・+36/-6）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）・**Decision 070**（069-3を改訂）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagram自動運営 工程1-B本体（Workflow Wiring）**・未着手）。以前: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。**docs更新中／commit前**。次工程＝**Instagram自動運営機能**（push・Render承認後）。以前: **Phase54 正式Complete維持**・**改善案件 工程A（設定保持）完了**（Auto Task／自律相談を端末内localStorage保持・**autoStart復元は設定と表示のみ＝起動時のWorkflow・AI自動実行なし**・端末間同期は非対象）・**localhost確認済み**。HEAD=origin/main=**8c9ed58**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-agent-settings-persistence**。**Phase55未着手・工程B以降は未着手**・**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
 
 ---
 
-## 【現在地・最優先】Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API **完了**（2026-07-21・Code commit 047f4d3）
+## 【現在地・最優先】Instagram自動運営 工程1-B-0a〜0d — Affiliate評価 Active一意性の商材単位化 **完了**（2026-07-22・Code commit 2ef2ad3）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
+- **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**（本工程でPhase55を開始しない）
+- **状態**：**工程1-B-0a（本番DB実測）／1-B-0b（最終設計確認）／1-B-0c（Migration）／1-B-0d（実装＋実DB検証）すべて完了**。**工程1-B本体（Workflow Wiring）は未着手**。
+- **変更範囲**：**`lib/affiliateEvalDb.js` の1ファイルのみ（+36/-6）**。`server.js`・`index.html`・`supabase/schema.sql`・他lib・他APIは**無変更**。**API shape維持**。
+- **Migration（適用済み）**：`uq_affiliate_eval_active_case` **廃止** → **`uq_affiliate_eval_active_product`**（`case_id, channel_scope, COALESCE(product_identifier,'')` WHERE `is_active`）。**Supabase SQL Editorで実行**（**Claude Code環境にDDL実行経路は無い**：service_roleキー／`DATABASE_URL`／`pg`／`psql`／Supabase CLI いずれも未存在。**今後も追加しない方針**）。
+- **実装**：`normalizeAffiliateKeyPart()`／`buildProductIdentifier()` 追加／`productIdentifier`＝**サーバー正本**・`JSON.stringify([normalizedProductName, normalizedAspName || null])`／**案A厳格**＝client送信 `productIdentifier` は**保存しない**・`productName` なしは **null**／旧active無効化は**同一subject限定**（値あり `.eq()`・null **`.is()`**）／**`_str()` 無変更**。
+- **確認済み**：`node --check` OK・**dev-check 200/200/200**・GET非回帰OK・**純関数テスト 15/15 PASS**・**実DB POST検証 全8ケース成功**（Active **5件共存**／Inactive 2件／履歴 7件／**23505なし**／**500なし**）・**`.eq()`／`.is()` を実DBで実証**・**専用テストデータ限定DELETE済み `remaining = 0`**。
+- **保護対象（未commit）**：`cost-logs.json`・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`。**`git add .` / `git add -A` は禁止**（ファイル明示指定のこと）。
+
+### 既知事項（次チャットへ必ず引き継ぐ）
+1. **`supabase/schema.sql` へ未記録** — `affiliate_evaluations` は**テーブル定義自体が schema.sql に存在しない**（工程1-A時にDBへ直接作成）。新Index含め記録は**別工程**。
+2. **`index.html` 配線は未着手** — `_affiliateCases` はメモリ保持のみで、当該APIへの `fetch` は**ゼロ**。**工程1-B本体**で実施。
+3. **DDL・テストデータ後始末の正式経路は Supabase SQL Editor**。限定DELETEは必ず `WHERE case_id = '<専用テストcaseId>'`。**条件なしDELETE禁止**。
+4. **inactive化／PATCH／DELETE API は未実装**。
+5. 旧active無効化→insert の**トランザクション化（RPC等）は未実施**（工程1-A由来の既知事項を継続）。
+6. **1 case に active 評価が複数件**存在し得る。GETは配列返却のため shape 不変だが、**「active＝1件」前提の利用側を作らない**こと。
+7. `product_identifier=''`（空文字）行が将来混入すると `.is(null)` で掴めない非対称性がある。**現行実装は `''` を書き込まない**ため構造的に発生しないが、前提として維持する。
+8. 日本語POSTは **UTF-8 JSONファイル＋`curl --data-binary @file.json`**（Windowsシェル経由の文字コード問題回避）。
+9. **Phase55は未着手のまま維持**。
+
+### 次工程（未着手）
+- **Instagram自動運営 工程1-B本体（Workflow Wiring）** — `index.html` の Affiliate Intelligence Core（`_affiliateCases`）と永続化APIの接続。**ユーザー承認後に開始**。
+- `supabase/schema.sql` への `affiliate_evaluations` 定義記録（別工程）。
+
+---
+
+## 【参考・完了済み】Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API **完了**（2026-07-21・Code commit 047f4d3）
 
 - **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
 - **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**（本工程でPhase55を開始しない）

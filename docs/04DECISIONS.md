@@ -2,12 +2,48 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-21（**Phase54 正式Complete維持**。**Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+更新日: 2026-07-22（**Phase54 正式Complete維持**。**Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 070
+## Affiliate評価のActive一意性を「商材単位」へ改訂（Decision 069-3 の改訂・2026-07-22）
+
+**背景**：Decision 069-3 は業務一意を **`(case_id, channel_scope)`** の partial UNIQUE（`uq_affiliate_eval_active_case`）と定めた。しかしこの単位では、**同一案件・同一チャネル内で2商材目のactive評価を保持できない**。Instagram自動運営では「1案件の中で複数商材を比較し、それぞれの最新評価を同時にactiveで持つ」ことが前提となるため、Active一意性の単位を見直す必要が生じた。
+
+**決定（正式）**：
+
+1. **Active一意性を商材単位へ改訂**する。正式単位は **`case_id + channel_scope + COALESCE(product_identifier, '')` WHERE `is_active`**（Index名 **`uq_affiliate_eval_active_product`**）。
+2. **旧Index `uq_affiliate_eval_active_case` は廃止**する。旧Indexを残したまま新Indexを追加しても、旧Indexの制約により2商材目のinsertが拒否され移行目的を達成できないため、**DROPが必須**である。
+3. **`product_identifier` の正本はサーバー側**（`lib/affiliateEvalDb.js`）とする。生成方式は **`JSON.stringify([normalizedProductName, normalizedAspName || null])`**。
+4. **案A（厳格）を採用**する。`productName` があればサーバー側で**必ず再生成**し、**client送信の `productIdentifier` は保存値として使用しない**。`productName` が無い場合は **`null`**。
+5. **正規化規則**：全角空白→半角／前後空白削除／連続空白を1つへ統一／英字小文字化。**Unicode NFKC・ASP別名辞書・商品名の記号除去・商品名変更時の自動統合は採用しない**。
+6. **区切り文字連結（`"商品名|ASP名"`）・hash・timestamp・random・`aic-<timestamp>` を subject key に採用しない**。`aic-<timestamp>` は既存UI／メモリ内IDとしてのみ維持する。
+7. **旧active無効化は同一subject限定**とする。値ありは `.eq('product_identifier', …)`、**nullは `.is('product_identifier', null)`**。`.eq(…, null)` は一致しないため**禁止**。
+8. **`_str()` 共通関数は変更しない**（他17列と共用のため）。`product_identifier` の空文字→null保証は `buildProductIdentifier()` 側で担保する（**`''` をDBへ保存しない**）。
+9. **API shape は変更しない**（必須項目・キー名・レスポンス構造すべて不変。`server.js` 無変更）。
+10. **Migrationの正式経路はSupabase SQL Editor**とする。Claude Code環境にはDDL実行経路が存在しない（service_roleキー／`DATABASE_URL`／`pg`／`psql`／Supabase CLI いずれも未導入）。**これらをClaude Code環境へ追加しない**方針を維持する。
+11. **テストデータの後始末も Supabase SQL Editor の限定DELETE**（`WHERE case_id = '<専用テストcaseId>'`）を正式経路とする。**条件なしDELETEは禁止**。
+
+**採用理由**：1案件×複数商材の同時評価はInstagram自動運営の必須要件であり、旧単位ではそもそも成立しない／`product_identifier` をサーバー正本にすることでPC・iPhone・将来の自動実行経路で表記揺れ重複を構造的に防止できる／JSON配列採用で区切り文字衝突を回避／NFKC・別名辞書を持ち込まないことで**誤統合による評価履歴の喪失**を避ける（誤って統合するより別subjectとして保持する方を優先）／`_str()` を変えないことで他17列への回帰リスクをゼロにする。
+
+**却下した案**：
+- **案B（折衷）**＝`productName` があれば再生成・無ければclient値を採用 — client由来の非正規化値がDBへ入り得るため却下。
+- **Unicode NFKC の同時採用** — 全角`Ａ`と半角`a`の統合など影響範囲が読み切れず、今回は不採用（将来ASPの商品ID・広告IDなど安定識別子が得られた時点で再検討）。
+- **ASP別名辞書**（`A8` / `A8.net` / `エーハチ` の統合） — 誤統合リスクを優先して不採用。
+
+**検証（実測）**：`node --check` OK／**dev-check 200/200/200**／GET非回帰OK／**純関数テスト 15/15 PASS**／**実DB POST検証 全8ケース成功**（Active **5件共存**・Inactive 2件・履歴 7件・**23505なし**・**HTTP 500なし**）／**`.eq()`・`.is()` を実DBで実証**（他商材・別ASP・null↔非null を巻き込まない）／**専用テストデータ限定DELETE済み `remaining = 0`**。
+
+**Git/反映**：Code commit **2ef2ad3**（`lib/affiliateEvalDb.js` のみ +36/-6）。**Phase54 Complete維持・Phase55未着手**。
+
+**残タスク**：`supabase/schema.sql` への定義記録（`affiliate_evaluations` は**テーブル定義自体が未記録**）・`index.html` 側の配線（工程1-B本体）・旧active無効化→insert のトランザクション化（RPC等）は、いずれも**別工程**とする。
 
 ---
 
 # Decision 069
 ## Affiliate評価の永続化方式（冪等キー・履歴保持・fallback契約）を正式化（2026-07-21）
+
+> **【改訂注記 2026-07-22】** 下記 **条項3（業務一意＝`(case_id, channel_scope)` partial UNIQUE）は Decision 070 により改訂**され、正式単位は **`(case_id, channel_scope, COALESCE(product_identifier,''))` WHERE `is_active`**（`uq_affiliate_eval_active_product`）となった。旧Index `uq_affiliate_eval_active_case` は廃止済み。**条項1・2・4〜9は引き続き有効**。履歴保持のため原文は削除せず残す。
 
 **背景**：Instagram自動運営の前提として、会社共通のAffiliate評価（商材・ASP・利益率・承認率・統合スコア・推奨判定など）を**案件単位で永続化**し、再評価しても過去判断を失わない基盤が必要。既存の `casesDb` / `outputDraftsDb` / `approvalsDb` と同じエラー処理・返却形式を踏襲する。
 
