@@ -1252,7 +1252,7 @@ app.post('/api/messages', express.json(), async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 // Supabase lib モジュール（遅延ロード）
 // ══════════════════════════════════════════════════════════════
-let _casesDb, _customersDb, _memberScoresDb, _learningDb, _companyMemoryDb, _knowledgeDb, _companyScoreDb, _approvalsDb, _outputDraftsDb;
+let _casesDb, _customersDb, _memberScoresDb, _learningDb, _companyMemoryDb, _knowledgeDb, _companyScoreDb, _approvalsDb, _outputDraftsDb, _affiliateEvalDb;
 const getCasesDb        = () => _casesDb        || (_casesDb        = require('./lib/casesDb'));
 const getCustomersDb    = () => _customersDb    || (_customersDb    = require('./lib/customersDb'));
 const getMemberScoresDb = () => _memberScoresDb || (_memberScoresDb = require('./lib/memberScoresDb'));
@@ -1262,6 +1262,7 @@ const getKnowledgeDb    = () => _knowledgeDb    || (_knowledgeDb    = require('.
 const getCompanyScoreDb = () => _companyScoreDb || (_companyScoreDb = require('./lib/companyScoreDb'));
 const getApprovalsDb    = () => _approvalsDb    || (_approvalsDb    = require('./lib/approvalsDb'));
 const getOutputDraftsDb = () => _outputDraftsDb || (_outputDraftsDb = require('./lib/outputDraftsDb'));
+const getAffiliateEvalDb = () => _affiliateEvalDb || (_affiliateEvalDb = require('./lib/affiliateEvalDb'));
 
 // ジャンル自動判定（/api/chat でも使用）
 function detectGenre(text) {
@@ -1394,6 +1395,38 @@ app.post('/api/output-drafts', async (req, res) => {
     const result = await getOutputDraftsDb().upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
     res.json({ ok: !result.error, error: result.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// ─────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// Affiliate評価 API（Instagram自動運営 工程1-A: 会社共通Affiliate Intelligence の永続化）
+// ══════════════════════════════════════════════════════════════
+// GET /api/affiliate-evaluations?caseId=xxx[&channelScope=all][&activeOnly=0|1]
+//   caseId必須。activeOnly既定=true（is_active=trueのみ）。activeOnly=0で履歴（inactive含む）。最新順。
+//   DB未設定/障害は source:'fallback'|'error' を返す（空配列と同一扱いにしない）。既存 /api/cases 等は無変更。
+app.get('/api/affiliate-evaluations', async (req, res) => {
+  const { caseId, channelScope } = req.query;
+  if (!caseId) return res.status(400).json({ ok: false, error: 'caseId is required' });
+  const activeOnly = !(req.query.activeOnly === '0' || req.query.activeOnly === 'false');
+  try {
+    const result = await getAffiliateEvalDb().getAffiliateEvaluations({ caseId, channelScope, activeOnly });
+    res.json({ ok: true, evaluations: result.evaluations, source: result.source, error: result.error });
+  } catch (e) { res.json({ ok: false, evaluations: [], source: 'error', error: e.message }); }
+});
+
+// POST /api/affiliate-evaluations { caseId, sourceFingerprint, [channelScope, productName, ...16項目, detail, source] }
+// ※ グローバル express.json() 済みのため per-route express.json() は付けない（Phase54-1b規約に統一）。
+// ※ caseId / sourceFingerprint 必須。channelScope 未指定時のみ 'all'。同一fingerprint再送は冪等（idempotent:true）。
+//   再評価は旧activeをfalse化して新active1件をinsert（履歴保持）。数値フィールドの不正値は保存しない（null化）。
+app.post('/api/affiliate-evaluations', async (req, res) => {
+  const b = req.body || {};
+  if (!b.caseId) return res.status(400).json({ ok: false, error: 'caseId is required' });
+  if (!b.sourceFingerprint) return res.status(400).json({ ok: false, error: 'sourceFingerprint is required' });
+  try {
+    const result = await getAffiliateEvalDb().saveAffiliateEvaluation(b);
+    if (result.error) return res.json({ ok: false, error: result.error, source: result.source, activeMayBeZero: result.activeMayBeZero });
+    res.json({ ok: true, evaluation: result.evaluation, idempotent: !!result.idempotent, source: result.source });
+  } catch (e) { res.json({ ok: false, error: e.message, source: 'error' }); }
 });
 // ─────────────────────────────────────────────────
 
