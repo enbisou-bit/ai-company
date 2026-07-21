@@ -6,7 +6,33 @@
 
 ---
 
-## 【現在地・最優先】社員向上B 正式完了 — 定義駆動基盤完成／13型中11型移行（2026-07-21・localhost検証完了・**docs更新中／commit前**・push前・Render未反映）
+## 【現在地・最優先】Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API **完了**（2026-07-21・Code commit 047f4d3）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
+- **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**（本工程でPhase55を開始しない）
+- **状態**：社員向上B完了後の最優先＝**Instagram自動運営機能**に着手し、**工程1-A（Affiliate評価の永続化API）を完了**。**localhost検証完了**。
+- **Git現在地**：branch **main**／Code commit **047f4d3**（`Add affiliate evaluation persistence API`）／docs commit＝本更新／記録時点で origin/main **908ed03**・**未push**（本docs commit後に main＋tag を push 予定）。
+- **変更範囲**：**`server.js`（+34/-1）＋ `lib/affiliateEvalDb.js`（新規110行）の2ファイルのみ**。index.html・schema.sql・他lib・他APIは**無変更**。
+- **実装**：`affiliate_evaluations` テーブル／`GET /api/affiliate-evaluations`（caseId必須・channelScope任意・activeOnly既定true／`0`で履歴込み）／`POST /api/affiliate-evaluations`（caseId・sourceFingerprint必須）／**`source_fingerprint` 冪等**／**旧active false化＋新active insert＝履歴保持**／**fallback契約**（`source:'db'|'fallback'|'error'`）／**JSONB `detail`**。
+- **確認済み**：`node --check` 2ファイル成功・**dev-check 200/200/200**・localhost GET成功（`source:"db"`）・localhost POST成功・同一fingerprint再送で **`idempotent:true`**・**履歴込み1件**確認・テストデータ削除後 **履歴込み0件**確認・**実案件／他テーブル影響なし**。
+- **保護対象（未commit）**：`cost-logs.json`・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`。**`git add .` / `git add -A` は禁止**（ファイル明示指定のこと）。
+
+### 既知事項（次チャットへ必ず引き継ぐ）
+1. 旧active無効化 → insert は**非トランザクション**（②update → ③insert）。
+2. insert失敗時は **active 0件**の可能性があり **`activeMayBeZero:true`** で通知（旧行は残存＝復元可）。
+3. **RPC／DB transaction化は別工程**。
+4. 日本語文字化けは**API不具合ではなく**、Windowsシェル→curl の**文字コード問題**。
+5. 日本語POST再確認は **UTF-8 JSONファイル＋`curl --data-binary @file.json`**。
+6. **inactive化／PATCH／DELETE API は未実装**。
+7. **Phase55は未着手のまま維持**。
+
+### 次工程（未着手）
+- **Instagram自動運営 工程1-B以降**（ユーザー承認後に決定）。
+- 社員向上Bの**Flyer／LP 移行は正式保留**（Instagram開発開始後に必要性を再評価）。
+
+---
+
+## 【参考・完了済み】社員向上B 正式完了 — 定義駆動基盤完成／13型中11型移行（2026-07-21・localhost検証完了・**docs更新中／commit前**・push前・Render未反映）
 
 - **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
 - **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**（本更新でPhase55を開始しない）

@@ -4,6 +4,21 @@
 
 ---
 
+## Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API（2026-07-21・Code commit **047f4d3**・localhost検証完了）
+
+**会社共通Affiliate評価の永続化APIを追加**。**`server.js`（+34/-1）＋ `lib/affiliateEvalDb.js`（新規110行）の2ファイルのみ**・index.html／schema.sql／他lib／他API **無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 069）。
+
+- **API**：`GET /api/affiliate-evaluations`（`caseId`必須・`channelScope`任意・`activeOnly` 既定true／`0`で履歴込み・`created_at`降順）／`POST /api/affiliate-evaluations`（`caseId`・`sourceFingerprint` 必須）。入力不備は **400**、それ以外は **200＋`ok:false`**（既存API方針を踏襲）。
+- **冪等性**：`source_fingerprint` UNIQUE。同一fingerprint再送は**新規登録せず既存を返す**（`idempotent:true`）。
+- **履歴保持**：同一 `case_id`＋`channel_scope` の**旧activeを`false`化**してから新active1件をinsert。**物理削除しない**。
+- **fallback契約**：`source:'db'|'fallback'|'error'` を区別（Supabase未設定・障害を空配列と同一扱いにしない）。
+- **データ健全性**：**JSONB `detail`** は構造保持／数値は有限数のみ（不正値null化）／`recommendation` は `adopt`/`watch`/`reject` のみ／生SQL不使用（supabase-jsのパラメータ化クエリのみ）／書込みは **`affiliate_evaluations` のみ**。
+- **確認**：`node --check` 2ファイル成功・**dev-check 200/200/200**・localhost GET成功（`source:"db"`）・localhost POST成功・再送 **`idempotent:true`**・**履歴込み1件**→テストデータ削除後 **履歴込み0件**・**実案件／他テーブル影響なし**。
+- **既知事項**：①旧active無効化→insert は**非トランザクション** ②insert失敗時 active 0件の可能性を **`activeMayBeZero:true`** で通知 ③RPC/transaction化は別工程 ④日本語文字化けは**API不具合ではなくWindowsシェル→curlの文字コード問題** ⑤日本語POST再確認は **UTF-8 JSONファイル＋`curl --data-binary @file.json`** ⑥**inactive化／PATCH／DELETE APIは未実装** ⑦**Phase55未着手を維持**。
+- **Git**：Code commit **047f4d3**／docs commit＝本更新（確定SHAは完了報告に記載）／tag **v1.01-affiliate-evaluation-step1a**（docs commit を指す）。
+
+---
+
 ## 社員向上B 正式完了 — 定義駆動セクション移行（2026-07-21・localhost検証完了・**push前・Render未反映**・HEAD **61dde05**）
 
 **改善案件「社員向上B」を正式完了**。定義分散を解消し、`OUTPUT_SECTION_DEFINITIONS` による定義駆動基盤を完成。**13型中11型移行済み**（Flyer/LP 正式保留）。**index.htmlのみ**・未push 7コミット・server.js/lib/DB/API/schema.sql **無変更**。**Phase54 Complete維持・Phase55未着手**。※本項は**push前・Render未反映**（本番実機確認は未実施）で、上記B-1までとは反映状態が異なる。

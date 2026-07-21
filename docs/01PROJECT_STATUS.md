@@ -6,6 +6,33 @@
 
 ---
 
+## Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API **完了**（2026-07-21・Code commit 047f4d3・localhost検証完了）
+
+> 記録日: 2026-07-21。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**（本工程でPhase55を開始しない）。社員向上B完了後の最優先＝**Instagram自動運営機能**の第一歩。変更は **`server.js` ＋ `lib/affiliateEvalDb.js` の2ファイルのみ**（index.html・schema.sql・他lib・他APIは無変更）。
+
+- **実装内容**：
+  - **`affiliate_evaluations` Supabaseテーブル**（会社共通Affiliate Intelligenceの永続化先）
+  - **`lib/affiliateEvalDb.js` 新規**（110行／export＝`getAffiliateEvaluations`・`saveAffiliateEvaluation` の2関数のみ）
+  - **`GET /api/affiliate-evaluations`**：`caseId`単位の評価取得（必須）／`channelScope`対応（任意）／`activeOnly` 既定true・`0`で履歴（inactive含む）／`created_at` 降順
+  - **`POST /api/affiliate-evaluations`**：`caseId`・`sourceFingerprint` 必須
+  - **`source_fingerprint` による冪等性**：同一fingerprint再送は新規登録せず既存を返す（`idempotent:true`）
+  - **同一 `case_id`＋`channel_scope` の旧activeを `false` 化**してから新active 1件をinsert＝**評価履歴を保持**（物理削除しない）
+  - **Supabase未設定・障害時のfallback**：`source:'db'|'fallback'|'error'` を区別（空配列と同一扱いにしない）
+  - **JSONB `detail` 対応**（`_str()` を通さず構造を保持）／数値は `_num()` で不正値をnull化／`recommendation` は `adopt`/`watch`/`reject` のみ許可
+- **確認済み**：`node --check` 2ファイルとも成功／**dev-check 200/200/200**／localhost **GET成功**（`source:"db"`）／localhost **POST成功**／2回目の同一POSTで **`idempotent:true`**（新規行なし）／**履歴込み1件**を確認／テストデータ削除後に **履歴込み0件**を確認／**実案件データ・他テーブルへの影響なし**（書込み対象は `affiliate_evaluations` のみ）。
+- **Git**：Code commit **047f4d3**（`server.js` +34/-1／`lib/affiliateEvalDb.js` 新規110行）。docs commit＝本更新。記録時点で origin/main **908ed03**・**未push**（本docs commit後に main＋tag を push 予定）。保護対象4件（`cost-logs.json`・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`）は**未stage・未commitで保護**。
+
+### 既知事項（隠さず記録）
+1. **旧active無効化 → 新規insert は現時点でDBトランザクションではない**（②update → ③insert の2段構成）。
+2. insert失敗時に **active 0件となり得る**。その場合レスポンスへ **`activeMayBeZero:true`** を付与して通知する（旧行は残存するため復元可能）。
+3. **RPC／DB transaction 化は別工程**（工程1-Aの範囲外）。
+4. 検証時の**日本語文字化けはAPI不具合ではない**。Windowsシェル経由でcurlへ渡した際の**文字コード問題**（ASCII・数値・JSONB構造はすべて正常動作）。
+5. 日本語POSTを再確認する場合は **UTF-8のJSONファイル＋`curl --data-binary @file.json`** を使用する。
+6. **inactive化／PATCH／DELETE API は今回未実装**（`is_active=false` への直接変更手段はAPIに存在しない）。
+7. **Phase55は未着手のまま維持**する。
+
+---
+
 ## 社員向上B 正式完了 — 定義駆動基盤完成／13型中11型移行（2026-07-21・localhost検証完了・push前・Render未反映・HEAD 61dde05）
 
 > 記録日: 2026-07-21。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**（本更新でPhase55を開始しない）。改善案件「社員向上B」の実装工程を**正式完了**として記録。**index.htmlのみ**（未push 7コミット・server.js／lib／DB／API／schema.sql 無変更）。

@@ -5,6 +5,19 @@
 
 ---
 
+## Instagram自動運営 工程1-A — Affiliate Evaluation Persistence API **完了**（2026-07-21・Code commit 047f4d3・localhost検証完了）
+
+> 記録日: 2026-07-21。**Phase54 Complete維持・Phase55未着手**（本工程でPhase55を開始しない）。社員向上B完了後の最優先である **Instagram自動運営機能** の第一工程。**`server.js` ＋ `lib/affiliateEvalDb.js` の2ファイルのみ**変更。
+
+- **Instagram自動運営 進捗**：**工程1-A（Affiliate評価の永続化API）完了** ／ 以降の工程は未着手。
+- **実装**：`affiliate_evaluations` テーブル／`lib/affiliateEvalDb.js`（新規110行・2関数export）／`GET /api/affiliate-evaluations`（caseId必須・channelScope任意・activeOnly既定true／0で履歴込み・created_at降順）／`POST /api/affiliate-evaluations`（caseId・sourceFingerprint必須）。
+- **設計要点**：`source_fingerprint` UNIQUE による**冪等性**（再送は既存を返す）／同一 `case_id`＋`channel_scope` の**旧activeをfalse化**して新active1件をinsert＝**履歴保持**／Supabase未設定・障害時の **fallback**（`source:'db'|'fallback'|'error'`）／**JSONB `detail`** 対応／数値の不正値はnull化／`recommendation` は `adopt`/`watch`/`reject` のみ。
+- **完了条件（実測）**：`node --check` 2ファイル成功・**dev-check 200/200/200**・localhost GET成功（`source:"db"`）・localhost POST成功・同一POST再送で **`idempotent:true`**・**履歴込み1件**確認・テストデータ削除後 **履歴込み0件**確認・**実案件／他テーブル影響なし**・Code commit **047f4d3**・保護対象4件は未stage。
+- **既知事項**：①旧active無効化→insert は**非トランザクション** ②insert失敗時 active 0件の可能性を **`activeMayBeZero:true`** で通知 ③RPC/transaction化は別工程 ④日本語文字化けは**API不具合ではなくWindowsシェル→curlの文字コード問題** ⑤日本語POST再確認は **UTF-8 JSONファイル＋`curl --data-binary @file.json`** ⑥**inactive化／PATCH／DELETE APIは未実装** ⑦**Phase55未着手を維持**。
+- **次工程**：Instagram自動運営 工程1-B以降（未着手・ユーザー承認後に決定）。
+
+---
+
 ## 社員向上B 正式完了 — 定義駆動基盤完成／セクション移行（2026-07-21・localhost検証完了・push前・Render未反映）
 
 > 記録日: 2026-07-21。**Phase54 Complete維持・Phase55未着手**（本更新でPhase55を開始しない）。改善案件「社員向上B」を**正式完了**として記録。**index.htmlのみ**・未push 7コミット・server.js／lib／DB／API／schema.sql 無変更。

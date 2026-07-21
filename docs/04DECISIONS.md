@@ -6,6 +6,28 @@
 
 ---
 
+# Decision 069
+## Affiliate評価の永続化方式（冪等キー・履歴保持・fallback契約）を正式化（2026-07-21）
+
+**背景**：Instagram自動運営の前提として、会社共通のAffiliate評価（商材・ASP・利益率・承認率・統合スコア・推奨判定など）を**案件単位で永続化**し、再評価しても過去判断を失わない基盤が必要。既存の `casesDb` / `outputDraftsDb` / `approvalsDb` と同じエラー処理・返却形式を踏襲する。
+
+**決定（正式）**：
+1. **保存先は新規テーブル `affiliate_evaluations`**（案件そのものの正本は引き続き `cases`）。
+2. **冪等キー＝`source_fingerprint` UNIQUE**。同一fingerprintの再送は**新規登録せず既存行を返す**（`idempotent:true`）。
+3. **業務一意＝`(case_id, channel_scope)` の partial UNIQUE WHERE `is_active`**。再評価時は**旧activeを`false`化**してから新active1件をinsertし、**履歴を物理削除しない**。
+4. **`channel_scope` を将来のチャネル別拡張の軸**とする（MVPは `'all'` 固定・未指定時のみ `'all'`）。
+5. **返却契約は `source:'db'|'fallback'|'error'`** を区別（Supabase未設定・障害を空配列と同一扱いにしない）。
+6. **入力検証**：`recommendation` は `adopt`/`watch`/`reject` のホワイトリスト、数値は有限数のみ（不正値はnull化＝ゴミを保存しない）、`detail` は **JSONB** として構造保持。
+7. **生SQL・文字列連結を使わない**（supabase-js のパラメータ化クエリのみ）。
+8. **今回はGET/POSTのみ実装**。`is_active=false` への直接変更手段（PATCH/DELETE API）は**実装しない**。
+9. **旧active無効化→insert のトランザクション化（RPC等）は別工程**とし、失敗時は **`activeMayBeZero:true`** で明示通知する。
+
+**採用理由**：既存lib群の規約を踏襲して学習コストと回帰リスクを最小化／冪等キーで二重計上を防止／履歴保持により再評価の判断根拠を失わない／fallback契約でDB障害を「0件」と誤認しない／Instagram自動運営の後続工程（商材選定・投稿計画）が参照できる正本を確立。
+
+**Git/反映**：Code commit **047f4d3**（`server.js` +34/-1・`lib/affiliateEvalDb.js` 新規110行）。**Phase54 Complete維持・Phase55未着手**。
+
+---
+
 # Decision 068
 ## 社員向上B の目的・完了条件・移行範囲・保留方針を正式化（2026-07-21）
 
