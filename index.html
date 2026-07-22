@@ -33933,6 +33933,19 @@ function _aicRenderSafe() {
   try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }
 }
 
+// Affiliate Evaluation 専用の「現在表示中の確定案件」。未確定は null。
+// ※ getCurrentApprovalCaseId() は使わない。同関数は _lastOutputDraft.caseId へフォールバックするため、
+//   案件未確定ビュー（latest / __caselist__）でも直前成果物の案件IDを返し、直前案件へ保存され得る。
+//   ここでは表示ビューの確定案件のみを正とし、フォールバックしない（getCurrentApprovalCaseId 自体は無変更）。
+function _aicCurrentCaseId() {
+  try {
+    if (currentMember && currentMember.id) {
+      return _ncActiveCaseId(currentMember.id) || null;   // latest / __caselist__ は undefined → null
+    }
+  } catch (e) { /* 取得不可 */ }
+  return null;                                            // 担当未選択（ホーム等）も未確定扱い
+}
+
 // fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
 // ※ productIdentifier はここでは生成しない（サーバー正本）
 function _aicNormalizeKeyPart(v) {
@@ -34184,7 +34197,7 @@ async function restoreAffiliateEvaluationsForCase(caseId, reason) {
 
   // token と現在caseId を再照合（案件Aの応答を案件Bへ反映しない）
   if (myToken !== _aicRestoreToken) return;
-  if (targetCaseId !== String(getCurrentApprovalCaseId() || '')) return;
+  if (targetCaseId !== String(_aicCurrentCaseId() || '')) return;
 
   // fallback / error は空配列と同一扱いにしない（Decision 069-5 の契約をclient側でも遵守）
   if (!(res && res.ok && res.source === 'db' && Array.isArray(res.evaluations))) {
@@ -34220,7 +34233,7 @@ function retryAffiliateSave(id) {
 
 // 同期失敗時の再取得
 function retryAffiliateRestore() {
-  var cid = getCurrentApprovalCaseId();
+  var cid = _aicCurrentCaseId();
   if (!cid) { clearAffiliateEvaluationsForNoCase(); return; }
   restoreAffiliateEvaluationsForCase(cid, 'retry');
 }
@@ -34410,7 +34423,7 @@ function addAffiliateCase() {
   function str(id) { var el = document.getElementById(id); return el ? el.value : ''; }
   // 工程1-B: 保存先の案件が未確定なら登録自体を開始しない
   //   （caseIdを持たない未所属評価をメモリ上へ作らない。fingerprint生成もPOSTも行わない）
-  var _aicCaseId = getCurrentApprovalCaseId();
+  var _aicCaseId = _aicCurrentCaseId();
   if (!_aicCaseId) {
     _aicSyncState = { caseId: null, status: 'no_case', message: '保存先の案件を選択してください' };
     _aicRenderSafe();
@@ -34579,7 +34592,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + '<div class="oe-aic-label">案件を追加（手動入力・* は必須）</div>'
     + inputGrid
     + '<div class="oe-aic-btnrow">'
-    +   (getCurrentApprovalCaseId()
+    +   (_aicCurrentCaseId()
         ? '<button class="oe-aic-btn" onclick="addAffiliateCase()">案件を追加</button>'
         : '<button class="oe-aic-btn" disabled style="opacity:.4;cursor:not-allowed;" title="保存先の案件を選択してください">案件を追加</button>')
     +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'leader\')">Copy Leader判断</button>'
