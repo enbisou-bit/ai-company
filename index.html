@@ -12913,6 +12913,11 @@ function switchCase(memberId, caseId) {
   scheduleOutputDraftRestore('caseSwitch');   // Phase54-2d: 案件切替時に切替先の最新Draftを復元（承認より先）
   scheduleApprovalSync('caseSwitch');    // Phase54-1c: 案件切替時に承認/公開状態をpull
   syncTasksFromServer('switchCase');   // Phase54-3a: 案件切替時にもTaskをpull・merge（in-flightガードで重複GET抑止）
+  // 工程1-B: Affiliate評価を案件単位で復元（案件未確定ビューは表示クリアのみ・GET/POSTしない）
+  try {
+    if (caseId && caseId !== 'latest' && caseId !== '__caselist__') restoreAffiliateEvaluationsForCase(caseId, 'switchCase');
+    else clearAffiliateEvaluationsForNoCase();
+  } catch (e) { /* 復元失敗でも案件切替を止めない */ }
   try { const _tp = document.getElementById('task-panel'); if (_tp && _tp.classList.contains('open')) renderTaskList(); } catch (e) {}   // Phase54-3a-2: パネル表示中は案件別に再描画
 }
 // Phase52-11.8c: 案件の最終更新日時を更新（先頭へ並べ替え用・localStorage cases のみ・履歴は不変）
@@ -13087,6 +13092,8 @@ function _homeOpenCase(caseId) {
   scheduleOutputDraftRestore('caseSwitch');   // Phase54-2d: ホームから案件を開いた時に最新Draftを復元（承認より先）
   scheduleApprovalSync('caseSwitch');   // Phase54-1c: ホームから案件を開いた時に承認/公開状態をpull
   syncTasksFromServer('homeOpenCase');   // Phase54-3a: ホームから案件を開いた時にもTaskをpull・merge（in-flightガードで重複GET抑止）
+  // 工程1-B: Affiliate評価を案件単位で復元（本関数は switchCase() を呼ばない独立経路＝二重GETにならない）
+  try { restoreAffiliateEvaluationsForCase(caseId, 'homeOpenCase'); } catch (e) { /* 復元失敗でも案件表示を止めない */ }
   try { const _tp = document.getElementById('task-panel'); if (_tp && _tp.classList.contains('open')) renderTaskList(); } catch (e) {}   // Phase54-3a-2: パネル表示中は案件別に再描画
 }
 function _homeOpenCaseList() {
@@ -13094,6 +13101,8 @@ function _homeOpenCaseList() {
   if (!leaderM) return;
   memberCaseView['leader'] = '__caselist__';   // 最新一覧（案件カード一覧ビュー）
   selectMember(leaderM);
+  // 工程1-B: 案件未確定ビューでは前案件の評価を表示し続けない（GET/POSTなし・退避バッファは保持）
+  try { clearAffiliateEvaluationsForNoCase(); } catch (e) { /* 表示クリア失敗でも一覧表示を止めない */ }
 }
 function _homeMakeCard(titleHtml, snippet, onOpen, openLabel) {
   const card = document.createElement('div');
@@ -13558,6 +13567,8 @@ async function createNewCaseFromForm() {
   reRenderChatArea(leaderM);                        // 新案件（空）を描画
   addBubble('ai', `新規案件「${name}」を作成しました。ご相談をどうぞ。`, leaderM, false);
   hideNewCaseForm();
+  // 工程1-B: 作成/再選択した案件のAffiliate評価へ表示を切替（本関数は switchCase() を呼ばない独立経路）
+  try { restoreAffiliateEvaluationsForCase(caseId, 'createNewCase'); } catch (e) { /* 復元失敗でも案件作成を止めない */ }
 }
 // ── Phase52-11.8b: ホームへ戻る（担当未選択のホーム画面へ・追加のみ・更新不要） ──
 function goHome() {
@@ -33904,6 +33915,316 @@ const AIC_CASE_MAX = 50;
 // 案件データはメモリ保持のみ（localStorage/DB/Asset Library/Learningへは書き込まない）
 let _affiliateCases = [];
 
+// ============================================================
+// 工程1-B本体: Affiliate評価 永続化配線（保存/復元）
+//   ・productIdentifier はサーバー正本（POSTで送信しない・Decision 070）
+//   ・sourceFingerprint は client生成（Version付き固定順配列・caseId と実効channelScope を必ず含める）
+//   ・recommendation / channelScope / source は POST body から省略し server既定へ委ねる
+//   ・案件境界 D-1: _affiliateCases は現在表示中案件のみ。未保存/保存失敗行は退避バッファで保持
+//   ・保存は addAffiliateCase() の明示追加時のみ。Leader Final / Workflow完了 / Export ではPOSTしない
+// ============================================================
+const AIC_FP_VERSION = 'affiliate-evaluation-v1:';
+const AIC_CHANNEL_SCOPE = 'all';          // 実効scope（POSTは省略・GETは明示・fingerprintにも使用）
+let _aicRestoreToken = 0;                  // 非同期GET競合防止（案件Aの応答で案件Bを上書きしない）
+let _affiliateUnsavedBuffer = [];          // 未保存/保存中/保存失敗行（caseId付き・案件横断で保持）
+let _aicSyncState = { caseId: null, status: 'no_case', message: '' };   // idle|loading|ok|failed|no_case
+
+function _aicRenderSafe() {
+  try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }
+}
+
+// fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
+// ※ productIdentifier はここでは生成しない（サーバー正本）
+function _aicNormalizeKeyPart(v) {
+  return String(v == null ? '' : v)
+    .replace(/　/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+// fingerprint専用の数値正規化。非有限はnull、有限数は小数2桁へ丸める（浮動小数誤差で別fingerprintにしない）。
+// ※ DBへ保存する元数値は丸めない（本関数はfingerprint生成内でのみ使用）
+function _aicFpNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var n = Number(v);
+  if (!isFinite(n)) return null;
+  return Number(n.toFixed(2));
+}
+
+// サーバー行の数値取り込み（型がstringで返る場合にも耐える）
+function _aicSrvNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+// 正式subject再送キー。固定順配列＋Version前置（オブジェクトの無条件JSON.stringifyは使わない）。
+// timestamp / Date.now() / random / client一時ID / createdAt / updatedAt / DB id / rank は含めない。
+function buildAffiliateSourceFingerprint(rec, caseId, sc, est) {
+  return AIC_FP_VERSION + JSON.stringify([
+    String(caseId), AIC_CHANNEL_SCOPE,
+    _aicNormalizeKeyPart(rec.name), _aicNormalizeKeyPart(rec.asp),
+    String(rec.market == null ? '' : rec.market).trim(),
+    String(rec.seasonality == null ? '' : rec.seasonality).trim(),
+    _aicFpNum(rec.payout), _aicFpNum(rec.profitRate), _aicFpNum(rec.approvalRate),
+    _aicFpNum(rec.epc), _aicFpNum(rec.cvr), _aicFpNum(rec.igFit),
+    _aicFpNum(rec.competitors), _aicFpNum(rec.lifespanMonths),
+    _aicFpNum(rec.saveRatePred), _aicFpNum(rec.clickRatePred), _aicFpNum(rec.monthlyClicks),
+    sc.score, est.estimatedSales, est.estimatedProfit,   // 既に Math.round 済み＝整数
+    sc.knownFactors, sc.totalFactors                     // 整数
+  ]);
+}
+
+// POST payload。productIdentifier / channelScope / recommendation / source は送らない（server既定・サーバー正本に委ねる）。
+// API未対応の評価補足7項目 ＋ origin ＋ メタ2項目は detail(JSONB) へ構造保持で格納する。
+function buildAffiliateEvalPayload(rec, caseId, sc, est) {
+  return {
+    caseId:           String(caseId),
+    sourceFingerprint: rec.sourceFingerprint,
+    productName:      rec.name,
+    aspName:          rec.asp,
+    market:           rec.market,
+    profitRate:       rec.profitRate,
+    approvalRate:     rec.approvalRate,
+    epc:              rec.epc,
+    cvr:              rec.cvr,
+    igFit:            rec.igFit,
+    competitors:      rec.competitors,
+    lifespanMonths:   rec.lifespanMonths,
+    integratedScore:  sc.score,
+    estimatedSales:   est.estimatedSales,
+    estimatedProfit:  est.estimatedProfit,
+    detail: {
+      origin:        'affiliate-intelligence-core',   // 生成元（source とは責務を分離）
+      seasonality:   (rec.seasonality || null),
+      payout:        rec.payout,
+      saveRatePred:  rec.saveRatePred,
+      clickRatePred: rec.clickRatePred,
+      monthlyClicks: rec.monthlyClicks,
+      knownFactors:  sc.knownFactors,
+      totalFactors:  sc.totalFactors,
+      aicVersion:    AFFILIATE_INTELLIGENCE_CORE_VERSION,
+      fpVersion:     AIC_FP_VERSION,
+    },
+  };
+}
+
+// ── 退避バッファ（未保存/保存中/保存失敗行のみ・案件切替で消さない） ──
+function _aicBufferForCase(caseId) {
+  var cid = String(caseId);
+  return _affiliateUnsavedBuffer.filter(function(b) { return String(b.caseId) === cid; });
+}
+function _aicBufferUpsert(rec) {
+  var idx = _affiliateUnsavedBuffer.indexOf(rec);
+  if (idx === -1) {
+    for (var i = 0; i < _affiliateUnsavedBuffer.length; i++) {
+      var b = _affiliateUnsavedBuffer[i];
+      if (String(b.caseId) === String(rec.caseId) && b.sourceFingerprint === rec.sourceFingerprint) { idx = i; break; }
+    }
+  }
+  if (idx === -1) _affiliateUnsavedBuffer.push(rec);
+  else _affiliateUnsavedBuffer[idx] = rec;
+}
+function _aicBufferRemoveByFp(caseId, fp) {
+  var cid = String(caseId);
+  _affiliateUnsavedBuffer = _affiliateUnsavedBuffer.filter(function(b) {
+    return !(String(b.caseId) === cid && b.sourceFingerprint === fp);
+  });
+}
+
+// DB保存済み判定（client側IDの存在では判定しない）
+function _aicIsPersisted(rec) {
+  return !!(rec && (rec.persistenceState === 'saved' || rec.serverId));
+}
+
+// 行の実効channelScope（未設定は現在の正式既定値 'all' へ正規化）
+function _aicScopeOf(r) {
+  return String((r && r.channelScope) || AIC_CHANNEL_SCOPE);
+}
+
+// POST成功後の一行統合。同一caseId内で、更新対象 rec 以外の重複行を除去する。
+//   ①同一serverId ②同一sourceFingerprint
+//   ③同一channelScope かつ 同一product_identifier（＝同一subject。サーバーのActive一意性単位は
+//     case_id + channel_scope + COALESCE(product_identifier,'') であり旧activeはfalse化済みのため、
+//     Active一覧には残さない）
+// ※ caseIdが異なる行は決して除去しない。別channelScopeの行もproductIdentifierだけでは除去しない。
+//    更新対象 rec 自身は必ず保持する。
+function _aicDedupeSavedRow(rec, caseId) {
+  var cid = String(caseId);
+  var recScope = _aicScopeOf(rec);
+  _affiliateCases = _affiliateCases.filter(function(r) {
+    if (r === rec) return true;                                   // 更新対象自身は保持
+    if (String(r.caseId) !== cid) return true;                    // 別案件は統合対象外
+    if (rec.serverId != null && r.serverId === rec.serverId) return false;
+    if (rec.sourceFingerprint && r.sourceFingerprint === rec.sourceFingerprint) return false;
+    if (rec.productIdentifier && r.productIdentifier === rec.productIdentifier
+        && _aicScopeOf(r) === recScope) return false;             // 同一scopeのsubjectのみ統合
+    return true;
+  });
+}
+
+// サーバー行(snake_case) → 既存client構造。ranking系の既存関数をそのまま再利用できる形へ揃える。
+function _aicFromServerRow(row) {
+  var d = (row && row.detail && typeof row.detail === 'object') ? row.detail : {};
+  return {
+    id:                 'srv-' + row.id,          // 既存 'aic-*' と衝突しない前置
+    serverId:           row.id,
+    caseId:             row.case_id,
+    channelScope:       row.channel_scope || AIC_CHANNEL_SCOPE,   // 重複判定はscope込みで行う
+    persistenceState:   'saved',
+    saveMessage:        '',
+    sourceFingerprint:  row.source_fingerprint,
+    productIdentifier:  row.product_identifier,
+    recordedAt:         row.created_at,
+    name:               row.product_name || '',
+    market:             row.market || '',
+    asp:                row.asp_name || '',
+    seasonality:        (d.seasonality != null ? String(d.seasonality) : ''),
+    payout:             _aicSrvNum(d.payout),
+    profitRate:         _aicSrvNum(row.profit_rate),
+    approvalRate:       _aicSrvNum(row.approval_rate),
+    epc:                _aicSrvNum(row.epc),
+    cvr:                _aicSrvNum(row.cvr),
+    igFit:              _aicSrvNum(row.ig_fit),
+    competitors:        _aicSrvNum(row.competitors),
+    lifespanMonths:     _aicSrvNum(row.lifespan_months),
+    saveRatePred:       _aicSrvNum(d.saveRatePred),
+    clickRatePred:      _aicSrvNum(d.clickRatePred),
+    monthlyClicks:      _aicSrvNum(d.monthlyClicks),
+  };
+}
+
+// 保存（POST）。一時行を応答内容で更新し、新規行は追加しない＝同一fingerprintの二重表示が発生しない。
+async function saveAffiliateEvaluationToServer(rec) {
+  if (!rec || !rec.caseId || !rec.sourceFingerprint) return;
+  var targetCaseId = String(rec.caseId);
+  rec.persistenceState = 'saving';
+  rec.saveMessage = '';
+  _aicBufferUpsert(rec);
+  _aicRenderSafe();
+
+  var sc = _aicIntegratedScore(rec);
+  var est = _aicEstimate(rec);
+  var payload = buildAffiliateEvalPayload(rec, targetCaseId, sc, est);
+
+  var res = null, errMsg = null;
+  try {
+    var r = await fetch('/api/affiliate-evaluations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    res = await r.json();
+  } catch (e) { errMsg = e.message; }
+
+  if (!(res && res.ok && res.evaluation)) {
+    rec.persistenceState = 'save_failed';
+    rec.saveMessage = (errMsg || (res && res.error) || '保存に失敗しました')
+      + ((res && res.activeMayBeZero) ? '（active一時0件の可能性あり）' : '');
+    _aicBufferUpsert(rec);
+    _aicRenderSafe();
+    return;
+  }
+
+  var row = res.evaluation;
+  if (String(row.case_id) !== targetCaseId) {
+    // source_fingerprint はテーブル全体でグローバルUNIQUE。別案件行が返った場合は統合しない。
+    rec.persistenceState = 'save_failed';
+    rec.saveMessage = '別案件の評価と冪等衝突しました（この案件には保存されていません）';
+    _aicBufferUpsert(rec);
+    _aicRenderSafe();
+    return;
+  }
+
+  // idempotent:true も同一処理。返却DB行を正本として一行へ統合する。
+  rec.serverId = row.id;
+  rec.sourceFingerprint = row.source_fingerprint || rec.sourceFingerprint;   // 応答値を正本とする
+  rec.channelScope = row.channel_scope || AIC_CHANNEL_SCOPE;                 // 応答値を正本とする
+  rec.productIdentifier = row.product_identifier;
+  rec.recordedAt = row.created_at || rec.recordedAt;
+  rec.persistenceState = 'saved';
+  rec.saveMessage = '';
+  _aicDedupeSavedRow(rec, targetCaseId);                       // 同一caseId内の重複行を除去して1行へ統合
+  _aicBufferRemoveByFp(targetCaseId, rec.sourceFingerprint);
+  _aicRenderSafe();
+}
+
+// 案件未確定ビュー（latest / __caselist__）。GET/POSTせず表示だけを消す。退避バッファは削除しない。
+function clearAffiliateEvaluationsForNoCase() {
+  _aicRestoreToken++;                      // in-flight GET の反映を無効化
+  _affiliateCases = [];
+  _aicSyncState = { caseId: null, status: 'no_case', message: '' };
+  _aicRenderSafe();
+}
+
+// 復元（GET）。caseId必須・channelScope=all・activeOnly=true を明示。
+// 同一案件の再同期では表示を消さない／別案件への切替では前案件を即時に消す。
+async function restoreAffiliateEvaluationsForCase(caseId, reason) {
+  if (!caseId) { clearAffiliateEvaluationsForNoCase(); return; }
+  var targetCaseId = String(caseId);
+  var myToken = ++_aicRestoreToken;
+  var sameCase = (_aicSyncState.caseId !== null && String(_aicSyncState.caseId) === targetCaseId);
+
+  if (!sameCase) {
+    // 別案件への切替: 前案件データを即クリアし、新案件の退避行だけを仮表示（前案件は表示しない）
+    _affiliateCases = _aicBufferForCase(targetCaseId).slice(0, AIC_CASE_MAX);
+  }
+  _aicSyncState = { caseId: targetCaseId, status: 'loading', message: '' };
+  _aicRenderSafe();
+
+  var res = null, errMsg = null;
+  try {
+    var url = '/api/affiliate-evaluations?caseId=' + encodeURIComponent(targetCaseId)
+      + '&channelScope=' + encodeURIComponent(AIC_CHANNEL_SCOPE)
+      + '&activeOnly=true';
+    var r = await fetch(url);
+    res = await r.json();
+  } catch (e) { errMsg = e.message; }
+
+  // token と現在caseId を再照合（案件Aの応答を案件Bへ反映しない）
+  if (myToken !== _aicRestoreToken) return;
+  if (targetCaseId !== String(getCurrentApprovalCaseId() || '')) return;
+
+  // fallback / error は空配列と同一扱いにしない（Decision 069-5 の契約をclient側でも遵守）
+  if (!(res && res.ok && res.source === 'db' && Array.isArray(res.evaluations))) {
+    _aicSyncState = {
+      caseId: targetCaseId, status: 'failed',
+      message: (errMsg || (res && res.error) || '評価の同期に失敗しました'),
+    };
+    if (!sameCase) _affiliateCases = _aicBufferForCase(targetCaseId).slice(0, AIC_CASE_MAX);
+    _aicRenderSafe();
+    return;
+  }
+
+  var serverRows = res.evaluations.map(_aicFromServerRow);
+  var serverFps = {};
+  serverRows.forEach(function(sr) { if (sr.sourceFingerprint) serverFps[sr.sourceFingerprint] = true; });
+  // 保存成功が確認できた退避行は破棄（二重表示防止）
+  _affiliateUnsavedBuffer = _affiliateUnsavedBuffer.filter(function(b) {
+    return !(String(b.caseId) === targetCaseId && serverFps[b.sourceFingerprint]);
+  });
+  // server行を正本として優先し、未保存・保存失敗行だけを追加。超過分は非表示のみ（DBは操作しない）。
+  _affiliateCases = serverRows.concat(_aicBufferForCase(targetCaseId)).slice(0, AIC_CASE_MAX);
+  _aicSyncState = { caseId: targetCaseId, status: 'ok', message: '' };
+  _aicRenderSafe();
+}
+
+// 保存失敗行の再送（同一fingerprintで再送＝内容不変ならサーバー側冪等が二重登録を防ぐ）
+function retryAffiliateSave(id) {
+  var rec = null;
+  for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === id) { rec = _affiliateCases[i]; break; } }
+  if (!rec || rec.persistenceState === 'saving' || _aicIsPersisted(rec)) return;
+  saveAffiliateEvaluationToServer(rec);
+}
+
+// 同期失敗時の再取得
+function retryAffiliateRestore() {
+  var cid = getCurrentApprovalCaseId();
+  if (!cid) { clearAffiliateEvaluationsForNoCase(); return; }
+  restoreAffiliateEvaluationsForCase(cid, 'retry');
+}
+
 function _aicNum(v) { return (typeof v === 'number' && !isNaN(v)) ? v : null; }
 
 function _aicNormalize(v, fullValue) {
@@ -33985,6 +34306,15 @@ function recordAffiliateCase(entry) {
 }
 
 function removeAffiliateCase(id) {
+  // 工程1-B: DB保存済み行は除外不可（inactive化/PATCH/DELETE APIが未実装のため、
+  //   除外してもGET復元で再表示され「削除したのに復活する」誤認を生む）。未保存/保存失敗行のみ除外可。
+  var target = null;
+  for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === id) { target = _affiliateCases[i]; break; } }
+  if (target) {
+    if (target.persistenceState === 'saving') return;               // 保存中は操作不可
+    if (_aicIsPersisted(target)) return;                            // 保存済みは除外不可（UI側でも無効化）
+    _aicBufferRemoveByFp(target.caseId, target.sourceFingerprint);  // 退避バッファからも削除
+  }
   _affiliateCases = _affiliateCases.filter(function(c) { return c.id !== id; });
   renderOutputEnginePanel();
 }
@@ -34078,6 +34408,14 @@ function addAffiliateCase() {
     return isNaN(v) ? null : v;
   }
   function str(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+  // 工程1-B: 保存先の案件が未確定なら登録自体を開始しない
+  //   （caseIdを持たない未所属評価をメモリ上へ作らない。fingerprint生成もPOSTも行わない）
+  var _aicCaseId = getCurrentApprovalCaseId();
+  if (!_aicCaseId) {
+    _aicSyncState = { caseId: null, status: 'no_case', message: '保存先の案件を選択してください' };
+    _aicRenderSafe();
+    return;
+  }
   var rec = recordAffiliateCase({
     name: str('aic-input-name'),
     market: str('aic-input-market'),
@@ -34100,6 +34438,16 @@ function addAffiliateCase() {
     if (nameEl) { nameEl.style.borderColor = 'rgba(255,90,90,0.7)'; setTimeout(function() { nameEl.style.borderColor = ''; }, 1500); }
     return;
   }
+  // 工程1-B: 内部管理フィールドを付与して永続化（client内部管理用でありAPIへは送らない）
+  var _sc = _aicIntegratedScore(rec);
+  var _est = _aicEstimate(rec);
+  rec.caseId = String(_aicCaseId);
+  rec.sourceFingerprint = buildAffiliateSourceFingerprint(rec, _aicCaseId, _sc, _est);
+  rec.persistenceState = 'unsaved';
+  rec.serverId = null;
+  rec.saveMessage = '';
+  _aicBufferUpsert(rec);
+  saveAffiliateEvaluationToServer(rec);   // 明示追加時のみPOST（非同期・UIは止めない）
   renderOutputEnginePanel();
 }
 
@@ -34152,6 +34500,25 @@ function buildAffiliateIntelligenceCoreHtml() {
     push('クリック率予測', r.clickRatePred, '%');
     push('想定売上', r.estimatedSales !== null ? '約' + r.estimatedSales.toLocaleString() : null, '円/月');
     push('想定利益', r.estimatedProfit !== null ? '約' + r.estimatedProfit.toLocaleString() : null, '円/月');
+    // 工程1-B: 保存状態は _affiliateCases 側の内部フィールドから逆引き（ranking関数の返却構造は変更しない）
+    var src = null;
+    for (var _i = 0; _i < _affiliateCases.length; _i++) { if (_affiliateCases[_i].id === r.id) { src = _affiliateCases[_i]; break; } }
+    var pState = (src && src.persistenceState) || 'unsaved';
+    var persisted = _aicIsPersisted(src);
+    var saveBadge = '';
+    if (pState === 'saved')            saveBadge = '<span class="oe-aic-badge" style="opacity:.75;">💾 保存済み</span>';
+    else if (pState === 'saving')      saveBadge = '<span class="oe-aic-badge" style="opacity:.75;">⏳ 保存中…</span>';
+    else if (pState === 'save_failed') saveBadge = '<span class="oe-aic-badge" style="color:#ff9a9a;">⚠ 未保存</span>';
+    else                               saveBadge = '<span class="oe-aic-badge" style="opacity:.6;">・未送信</span>';
+    var removeBtn = persisted
+      ? '<button class="oe-aic-btn remove" disabled style="opacity:.4;cursor:not-allowed;" title="保存済み評価は現在削除できません（inactive化API対応後に正式対応予定）">除外</button>'
+      : (pState === 'saving'
+        ? '<button class="oe-aic-btn remove" disabled style="opacity:.4;cursor:not-allowed;" title="保存中は操作できません">除外</button>'
+        : '<button class="oe-aic-btn remove" onclick="removeAffiliateCase(\'' + r.id + '\')">除外</button>');
+    var retryBtn = (pState === 'save_failed')
+      ? ' <button class="oe-aic-btn" onclick="retryAffiliateSave(\'' + r.id + '\')">再送</button>' : '';
+    var failMsg = (pState === 'save_failed' && src && src.saveMessage)
+      ? '<div class="oe-aic-warning">⚠ ' + esc(src.saveMessage) + '</div>' : '';
     return '<div class="oe-aic-card' + (r.rank === 1 ? ' rank1' : '') + '">'
       + '<div class="oe-aic-card-head">'
       +   '<span class="oe-aic-rank">#' + r.rank + '</span>'
@@ -34159,11 +34526,28 @@ function buildAffiliateIntelligenceCoreHtml() {
       +   '<span class="oe-aic-score ' + statusClass + '">' + r.integratedScore + '点</span>'
       + '</div>'
       + '<div class="oe-aic-metrics">' + metrics.join('') + '</div>'
-      + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目'
-      +   ' <button class="oe-aic-btn remove" onclick="removeAffiliateCase(\'' + r.id + '\')">除外</button></div>'
+      + failMsg
+      + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
+      +   ' ' + removeBtn + retryBtn + '</div>'
       + '</div>';
   }).join('');
-  if (!ranked.length) rankingHtml = '<div class="oe-aic-note">案件が未登録です。下のフォームから最初の案件を入力してください。</div>';
+  // 工程1-B: 同期状態に応じた空状態表示（案件未確定／同期失敗／読込中）
+  var _syncNoticeHtml = '';
+  if (_aicSyncState.status === 'no_case') {
+    _syncNoticeHtml = '<div class="oe-aic-warning">📁 保存先の案件を選択してください。案件を選ぶと、その案件のAffiliate評価を表示します。</div>';
+  } else if (_aicSyncState.status === 'loading') {
+    _syncNoticeHtml = '<div class="oe-aic-note">⏳ 評価を同期しています…</div>';
+  } else if (_aicSyncState.status === 'failed') {
+    _syncNoticeHtml = '<div class="oe-aic-warning">⚠ 評価の同期に失敗しました'
+      + (_aicSyncState.message ? '（' + esc(String(_aicSyncState.message)) + '）' : '')
+      + ' <button class="oe-aic-btn" onclick="retryAffiliateRestore()">再取得</button></div>';
+  }
+  if (!ranked.length) {
+    rankingHtml = (_aicSyncState.status === 'no_case')
+      ? '<div class="oe-aic-note">案件を選択すると、その案件の評価を表示します。</div>'
+      : '<div class="oe-aic-note">案件が未登録です。下のフォームから最初の案件を入力してください。</div>';
+  }
+  rankingHtml = _syncNoticeHtml + rankingHtml;
 
   var warningsHtml = _aicCaseWarnings(ranked).map(function(w) { return '<div class="oe-aic-warning">⚠ ' + esc(w) + '</div>'; }).join('');
 
@@ -34195,7 +34579,9 @@ function buildAffiliateIntelligenceCoreHtml() {
     + '<div class="oe-aic-label">案件を追加（手動入力・* は必須）</div>'
     + inputGrid
     + '<div class="oe-aic-btnrow">'
-    +   '<button class="oe-aic-btn" onclick="addAffiliateCase()">案件を追加</button>'
+    +   (getCurrentApprovalCaseId()
+        ? '<button class="oe-aic-btn" onclick="addAffiliateCase()">案件を追加</button>'
+        : '<button class="oe-aic-btn" disabled style="opacity:.4;cursor:not-allowed;" title="保存先の案件を選択してください">案件を追加</button>')
     +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'leader\')">Copy Leader判断</button>'
     +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'ranking\')">Copy ランキング</button>'
     +   '<button class="oe-aic-btn" onclick="copyAffiliateIntelligenceField(\'full\')">Copy Full Report</button>'
