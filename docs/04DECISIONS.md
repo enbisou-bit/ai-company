@@ -2,7 +2,32 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-22（**Phase54 正式Complete維持**。**Decision 071・Affiliate評価 Workflow Wiring の正式化**（案件境界D-1／保存は明示追加時のみ／`sourceFingerprint` はclient生成・`caseId`と実効scopeを必ず含む／`source_fingerprint` は**グローバルUNIQUE**／保存済み行は除外不可＝A案／POST成功時の一行統合条件／`recommendation`・`source`・`channelScope`・`productIdentifier` は送らない）。**localhost実DB検証 Case1〜9 全合格・テストデータ削除済み・未commit**。以前: **Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+更新日: 2026-07-22（**Phase54 正式Complete維持**。**Decision 072・Affiliate評価の保存先判定は「現在表示中の確定案件」のみを正とする**（`getCurrentApprovalCaseId()` は `_lastOutputDraft.caseId` へフォールバックするためAICでは使用しない／専用 `_aicCurrentCaseId()` を正本とする／未確定は必ず `null`）。以前: **Decision 071・Affiliate評価 Workflow Wiring の正式化**（案件境界D-1／保存は明示追加時のみ／`sourceFingerprint` はclient生成・`caseId`と実効scopeを必ず含む／`source_fingerprint` は**グローバルUNIQUE**／保存済み行は除外不可＝A案／POST成功時の一行統合条件／`recommendation`・`source`・`channelScope`・`productIdentifier` は送らない）。**localhost実DB検証 Case1〜9 全合格・テストデータ削除済み・未commit**。以前: **Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 072
+## Affiliate評価の保存先判定は「現在表示中の確定案件」のみを正とする（2026-07-22）
+
+**背景**：工程1-B本体の**本番通常経路の読み取り確認**において、実案件を1件開いた後に最新一覧（`__caselist__`）へ戻ると、**「案件を追加」ボタンが有効のまま**になり、押下すると**直前に開いていた案件へ保存され得る**ことが判明した。原因は、Affiliate側が案件判定に使っていた `getCurrentApprovalCaseId()` が、`_ncActiveCaseId()` の `undefined` 時に **`_lastOutputDraft.caseId` へフォールバック**する既存仕様を持つためである（ローカル検証では `_lastOutputDraft` が `null` で発火せず未検出だった）。
+
+**決定（正式）**：
+
+1. **Affiliate Evaluation の保存先判定は、成果物の直前案件ではなく「現在表示中の確定案件」だけを正とする**。
+2. **AICでは `getCurrentApprovalCaseId()` を使用しない**。同関数は `_lastOutputDraft.caseId` へフォールバックするため、表示中の案件ではなく直前成果物の案件を返す場合がある。
+3. **Affiliate専用の `_aicCurrentCaseId()` を正本とする**。`currentMember` 未選択（ホーム等）・`latest`・`__caselist__` はいずれも **`null`** を返し、**直前案件へフォールバックしない**。
+4. **統一対象は4箇所**：①復元応答適用前の案件再照合 ②復元リトライ対象の取得 ③`addAffiliateCase()` の保存前案件判定 ④「案件を追加」ボタンの有効/無効判定。
+5. **明示的に `caseId` を引数で受け取る関数（`restoreAffiliateEvaluationsForCase(caseId)` 等）は変更しない**（過剰変更を避ける）。
+6. **`getCurrentApprovalCaseId()` 自体は変更しない**。Approval／Output Draft／Leader dispatch／Agent consult など他機能が依存しており、フォールバック仕様はそれら本来の用途では妥当なため。今回はAffiliate側の参照のみを切り替える。
+7. 案件未確定時は **ボタン `disabled`（`onclick` なし）／`addAffiliateCase()` を直接呼んでも即時中止／POSTを発行しない／`_lastOutputDraft.caseId` の残存に影響されない**ことを必須挙動とする。
+
+**採用理由**：意図しない案件への保存はユーザーが気づきにくく、後から誤りを特定するのも困難な種類の事故であり、**UIの無効化と保存前判定の両方で二重に防ぐ**必要がある／`getCurrentApprovalCaseId()` を変更すると既存4機能へ回帰リスクが波及するため、影響範囲をAffiliate側に閉じた専用ヘッパの追加が最小かつ安全／表示ビューの確定案件を正とする方針は、Decision 071 の案件境界D-1（`_affiliateCases` は現在案件のみ）と一貫する。
+
+**却下した案**：`getCurrentApprovalCaseId()` からフォールバックを除去する案（既存4機能へ回帰リスクが及ぶため）／`_aicSyncState.status` のみで判定する案（表示状態と保存判定が別経路のままとなり、片方の更新漏れで再発し得るため）。
+
+**検証（実測）**：`node --check` OK・**dev-check 200/200/200**・**localhost Case 1〜4 全合格**（案件確定＝取得・ボタン有効・GET1回／最新一覧＝**`_lastOutputDraft.caseId` 残存下でも `null`**・`disabled`・GET0/POST0／未確定ビューで `addAffiliateCase()` 直接実行＝**即時中止・追加なし・POST0**／別案件切替＝混入なし）・補助（担当未選択・`latest` も `null`）・既存8関数の非回帰・**console error 0**・**POST/PATCH/DELETE 0回**・**実DB書込みなし**。
+
+**Git/反映**：`index.html` のみ **+17/-4**。**Phase54 Complete維持・Phase55未着手**（本Hotfixは工程1-B本体の一部であり、工程1-C・Phase55の開始ではない）。
 
 ---
 

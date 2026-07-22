@@ -4,6 +4,18 @@
 
 ---
 
+## 工程1-B本体 Active Case Hotfix — 案件未確定時の保存防止（2026-07-22・本番通常経路確認で検出）
+
+**案件未確定ビューから直前案件へAffiliate評価が保存され得る不具合を修正**。**`index.html`（+17/-4）の1ファイルのみ**・`server.js`／`lib`／DB／Migration／API shape **無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 072）。
+
+- **本番通常経路の読み取り確認（先行実施）**：通常ログイン→案件タブ操作で **1操作＝GET 1回**（`caseId`＋`channelScope=all`＋`activeOnly=true` → 200）・**最新一覧ではGET 0回**・**案件混入なし**・**console error 0**・**本番評価書込み 0件**。
+- **不具合**：案件を開いた後に最新一覧（`__caselist__`）へ戻ると「案件を追加」が有効のままで、押下すると**直前案件へ保存され得る**。表示クリア・GET/POST未発行は正常で、データ破損や別案件評価の表示は発生しない。
+- **原因**：`getCurrentApprovalCaseId()` が `_ncActiveCaseId()` の `undefined` 時に **`_lastOutputDraft.caseId` へフォールバック**する既存仕様。ローカルでは `_lastOutputDraft` が `null` のため未検出だった。
+- **修正**：Affiliate専用 **`_aicCurrentCaseId()`** を追加（担当未選択・`latest`・`__caselist__` は **`null`**・**フォールバックしない**）。AIC内**4箇所**（復元応答適用前の再照合／復元リトライ対象取得／`addAffiliateCase()` の保存前判定／ボタン有効判定）を統一。**`getCurrentApprovalCaseId()` は無変更**（総使用箇所17件を維持し既存機能を温存）。
+- **検証**：`node --check` OK・**dev-check 200/200/200**・**localhost Case 1〜4 全合格**（未確定ビューでボタン `disabled`／`addAffiliateCase()` 直接実行も即時中止／`_lastOutputDraft.caseId` 残存下でも `null`／別案件混入なし）・既存8関数の非回帰・**POST/PATCH/DELETE 0回**・**実DB書込みなし**。
+
+---
+
 ## Instagram自動運営 工程1-B本体（Workflow Wiring）（2026-07-22・localhost実DB検証完了・**未commit／Render未反映**）
 
 **Affiliate Intelligence Core（Phase53・従来はメモリ保持のみ）を永続化APIへ接続**。**`index.html`（+390/-4）の1ファイルのみ**・`server.js`／`lib`／DB／Migration／**API shape** 無変更。**Phase54 Complete維持・Phase55未着手**。

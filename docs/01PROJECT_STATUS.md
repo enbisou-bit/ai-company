@@ -2,11 +2,76 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-22（**Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・`server.js`／`lib`／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強を実装。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（`remaining = 0` 確認済み）**。**未commit**。以前の記録: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-22（**工程1-B本体 Active Case Hotfix**＝本番通常経路の読み取り確認で「案件未確定ビューでも『案件を追加』が有効になり直前案件へ保存され得る」不具合を検出し修正。原因＝`getCurrentApprovalCaseId()` の **`_lastOutputDraft.caseId` フォールバック**。Affiliate専用 **`_aicCurrentCaseId()`** を追加しAIC内4箇所を統一。**`getCurrentApprovalCaseId()` は無変更**。**index.htmlのみ +17/-4**・localhost Case1〜4合格・**POST/PATCH/DELETE 0回**。以前の記録: **Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・`server.js`／`lib`／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強を実装。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（`remaining = 0` 確認済み）**。**未commit**。以前の記録: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
 
 ---
 
-## Instagram自動運営 工程1-B本体（Workflow Wiring）**Complete**（2026-07-22・localhost実DB検証完了・**未commit**）
+## 工程1-B本体 Active Case Hotfix — 案件未確定時の保存防止（2026-07-22・本番通常経路確認で検出・localhost検証完了）
+
+> 記録日: 2026-07-22。**Phase54 Complete維持・Phase55未着手**（本Hotfixは工程1-B本体の一部であり、工程1-C・Phase55の開始ではない）。**`index.html` の1ファイルのみ（+17/-4）**。`server.js`・`lib/affiliateEvalDb.js`・DB・Migration・API shape は**無変更**。
+
+### 本番通常経路の読み取り確認（先行実施・書込みなし）
+
+Render本番（`https://ai-company-l45x.onrender.com`）へ最新コード配信済みを確認のうえ、**通常ログイン**（ユーザー実施）・**通常の案件タブ操作**で読み取りのみを確認した。
+
+- **案件選択1操作につき `GET /api/affiliate-evaluations` は1回**（`?caseId=…&channelScope=all&activeOnly=true` → 200）。重複GETなし。
+- **最新一覧（案件未確定ビュー）では GET 0回**。
+- 案件切替時に**別案件の評価は混入しない**（全行が現在案件に属する）。
+- 本番実案件の評価は**0件**のため0件表示の正常完了までを確認（既存評価の復元確認は未実施）。
+- **console error 0件**。**本番への評価書込み（POST/PATCH/DELETE）は0件**（`POST /api/login` はユーザーのログイン操作）。
+
+### 検出した不具合
+
+案件を1件開いた後に**最新一覧（`__caselist__`）へ戻ると、「案件を追加」ボタンが有効のまま**になり、押下すると**直前に開いていた案件へ保存され得る**。
+
+```
+memberCaseView['leader']   = "__caselist__"      ← 案件未確定
+_ncActiveCaseId('leader')  = undefined           ← 正しく未確定を返す
+_lastOutputDraft.caseId    = 直前案件のcaseId    ← 残存
+getCurrentApprovalCaseId() = 直前案件のcaseId    ← ★フォールバックで値を返す
+_aicSyncState.status       = "no_case"           ← 表示側は正しくクリア済み
+表示件数                    = 0                   ← 正しくクリア済み
+```
+
+**原因**：`getCurrentApprovalCaseId()` は `_ncActiveCaseId()` が `undefined` のとき **`_lastOutputDraft.caseId` へフォールバック**する既存仕様を持つ。Affiliate側がこれを案件判定に用いていたため、未確定ビューを「案件確定済み」と誤認していた。表示クリア・GET/POST未発行は設計どおり動作しており、**データ破損や別案件評価の表示は発生しない**。
+
+**localhostで検出できなかった理由**：ローカル検証では `_lastOutputDraft` が `null` でフォールバックが発火しなかった。本番の実案件（Output Draft保有）で初めて再現した。
+
+### 修正内容
+
+**Affiliate専用ヘルパ `_aicCurrentCaseId()` を追加**し、AIC内の案件判定4箇所を統一した。
+
+```javascript
+function _aicCurrentCaseId() {
+  try {
+    if (currentMember && currentMember.id) {
+      return _ncActiveCaseId(currentMember.id) || null;   // latest / __caselist__ は undefined → null
+    }
+  } catch (e) { /* 取得不可 */ }
+  return null;                                            // 担当未選択（ホーム等）も未確定扱い
+}
+```
+
+**統一した4箇所**：①復元応答適用前の案件再照合 ②復元リトライ対象の取得 ③`addAffiliateCase()` の保存前案件判定 ④「案件を追加」ボタンの有効/無効判定。`restoreAffiliateEvaluationsForCase(caseId)` のように**明示的に caseId を受け取る関数の引数は変更していない**。
+
+**`getCurrentApprovalCaseId()` は無変更**（他機能が依存するため。総使用箇所17件を維持し、Approval／Output Draft／Leader dispatch／Agent consult はすべて温存）。
+
+### localhost検証（Case 1〜4 全合格）
+
+| Case | 結果 |
+|---|---|
+| 1 案件を開いた状態 | `_aicCurrentCaseId()` が現在案件を返す／ボタン有効／**GET 1回**／`status=ok` |
+| 2 案件を開いた後に最新一覧へ戻る（`_lastOutputDraft.caseId` を残した再現条件） | `getCurrentApprovalCaseId()` は直前案件を返すが **`_aicCurrentCaseId()` は `null`**／`status=no_case`／表示0件／**ボタン `disabled`・onclickなし**／**GET 0・POST 0** |
+| 3 未確定ビューで `addAffiliateCase()` を直接実行 | **即時中止**／`_affiliateCases`・退避バッファへ追加なし／**POST 0**／「保存先の案件を選択してください」 |
+| 4 別案件へ切替 | 切替先caseIdを取得／**GET 1回**／前案件へ保存されず／**案件混入なし**／ボタン有効へ復帰 |
+
+**補助確認**：担当未選択（ホーム）でも `null`＝ボタン `disabled`／`latest` ビューでも `null`／既存関数（`getCurrentApprovalCaseId`・`getCurrentApprovalOutputId`・`scheduleApprovalSync`・`scheduleOutputDraftRestore`・`syncTasksFromServer`・`switchCase`・`recordAffiliateCase`・`buildAffiliateIntelligenceRanking`）はすべて非回帰。
+
+**通算**：GET 2／**POST 0・PATCH 0・DELETE 0**／**console error 0**／`node --check` OK／**dev-check 200/200/200**／**実DBへの書込みなし**。
+
+---
+
+## Instagram自動運営 工程1-B本体（Workflow Wiring）**Complete**（2026-07-22・localhost実DB検証完了・commit 69465f3 / d871f95）
 
 > 記録日: 2026-07-22。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**（本工程でPhase55を開始しない）。変更は **`index.html` の1ファイルのみ（+390/-4）**。`server.js`・`lib/affiliateEvalDb.js`・DB・Migration・**API shape** はすべて**無変更**。
 
