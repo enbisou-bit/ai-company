@@ -2,7 +2,71 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-22（**Instagram自動運営 工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-22（**Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・`server.js`／`lib`／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強を実装。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（`remaining = 0` 確認済み）**。**未commit**。以前の記録: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## Instagram自動運営 工程1-B本体（Workflow Wiring）**Complete**（2026-07-22・localhost実DB検証完了・**未commit**）
+
+> 記録日: 2026-07-22。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**（本工程でPhase55を開始しない）。変更は **`index.html` の1ファイルのみ（+390/-4）**。`server.js`・`lib/affiliateEvalDb.js`・DB・Migration・**API shape** はすべて**無変更**。
+
+### 実装内容
+
+Phase53の **Affiliate Intelligence Core**（`_affiliateCases`・従来はメモリ保持のみでDB接続ゼロ）と、工程1-A/1-Bで完成した**永続化API**を接続した。
+
+- **案件境界 D-1**：`_affiliateCases` は**現在表示中案件の評価のみ**を保持。未保存/保存中/保存失敗行は **`_affiliateUnsavedBuffer`（caseId付き）** で案件横断に保持し、案件切替でも失われない。
+- **保存**：`addAffiliateCase()` の**明示追加時のみ**POST。**Leader Final／Workflow完了／Export時にはPOSTしない**。案件未確定時は `recordAffiliateCase()` より**前に中止**し、fingerprint生成もPOSTも行わない（未所属評価をメモリ上に作らない）。
+- **復元**：案件確定4経路（`switchCase` / `_homeOpenCase` / `createNewCaseFromForm` / `_homeOpenCaseList`）に個別配線。**4経路は相互に呼び出しておらず1操作＝1GET**。GET条件は **`caseId` ＋ `channelScope=all` ＋ `activeOnly=true` を明示**。
+- **`sourceFingerprint`（client生成）**：`affiliate-evaluation-v1:` ＋ **固定順配列**（`caseId`・実効`channelScope`・正規化商品名/ASP名・評価入力値・算出結果・`detail`保存分をすべて含む）。timestamp／random／client一時ID／`createdAt`／DB id／`rank` は**含めない**。数値は **fingerprint内でのみ小数2桁へ正規化**（DB保存値は丸めない）。
+- **POST payload**：`productIdentifier`・`channelScope`・`recommendation`・`source` は**送らない**（サーバー正本／server既定に委ねる）。API未対応の**評価補足7項目＋`origin`＋メタ2項目**を `detail`(JSONB) へ格納（`origin: 'affiliate-intelligence-core'`）。
+- **保存状態**：`unsaved` / `saving` / `saved` / `save_failed` を内部管理（APIへは送らない）。保存済み判定は **`serverId` またはGET復元由来**で行い、client側IDでは判定しない。
+- **除外（A案）**：**DB保存済み行は除外不可**（ボタン `disabled` ＋理由表示）。inactive化APIが未実装で「削除したのに復活する」誤認を生むため。未保存/失敗行のみ除外可。
+- **失敗時**：`save_failed` で**無言消失させない**。エラーバッジ＋**同一fingerprintでの再送ボタン**を提供。
+
+### 重複表示修正（第2段階 Case 4 で検出→修正）
+
+復元済みサーバー行が表示中に同一内容を再登録すると、同一 `serverId`／同一 fingerprint の行が**UIに2行表示**される不具合を検出（**DBは正常・表示のみの不整合**）。原因は `_affiliateCases` 側の fingerprint 突合欠落。
+
+- **`_aicDedupeSavedRow()` 追加**：POST成功後、**同一caseId内**で更新対象以外の重複行を除去。条件＝①同一`serverId` ②同一`sourceFingerprint` ③同一`channelScope`かつ同一`productIdentifier`。
+- **`caseId` が異なる行は決して除去しない**。更新対象行自身は必ず保持。
+- POST応答の `serverId`・`source_fingerprint`・`channel_scope`・`product_identifier` を**正本として取り込む**。
+
+### channelScope 安全補強
+
+条件③に **`channelScope` 一致**を追加（`_aicScopeOf()` で未設定は `'all'` へ正規化）。サーバーのActive一意性単位が `case_id + channel_scope + COALESCE(product_identifier,'')` であるため、**将来 `all` 以外のscopeが追加されても別scopeの行を誤って除去しない**。
+
+### 第2段階 localhost実DB検証（Case 1〜9 全合格）
+
+専用テスト `caseId`（`aic-wiring-test-a/b-20260722`）・専用商品名（`__AIC_WIRING_TEST_PRODUCT_A/B__`）で実施。
+
+| Case | 結果 |
+|---|---|
+| 1 新規保存 | POST1回・`case_id`一致・`channel_scope=all`・`product_identifier` サーバー生成・**`recommendation=NULL`**・**`source=manual`**・`saved`・二重表示なし |
+| 2 F5後の復元 | GET1回（条件明示）・1件復元・snake→camel正常・二重なし |
+| 3 案件分離 | 案件B切替で**A行が即時消失**・混入なし・GET各1回・Bへの登録がAに無影響・A復帰でA行のみ |
+| 4 冪等再送 | POST1回・**DB行数不変**・返却serverId一致・**UI 1行**・重複なし |
+| 5 再評価 | 新fingerprint・新行active・**旧activeのみinactive**・**UI 1行（旧Active表示なし）**・案件B無影響 |
+| 6 保存済み行の除外不可 | 除去されず・**POST/PATCH/DELETE 0件**・DB不変・`disabled=true`＋理由表示・F5後も復元 |
+| 7 保存失敗・再送 | `save_failed` 保持（無言消失なし）・案件切替で混入なし・復帰で復活・**同一fingerprintで再送1回**→`saved`・バッファ除去・UI1行 |
+| 8 案件未確定ビュー | 表示0件・**GET 0/POST 0**・案内表示・登録ボタン無効・**退避バッファ保持** |
+| 9 同一案件GET失敗 | **既存表示を維持**（空にしない）・失敗表示＋再取得ボタン・復旧後成功・重複なし |
+
+**Network通算**：PATCH/DELETE **0件**／1操作1POST・1切替1GET を維持／**console error 0**／`node --check` OK／**dev-check 200/200/200**。
+
+### テストデータ削除完了
+
+Supabase SQL Editor で `WHERE case_id IN ('aic-wiring-test-a-20260722','aic-wiring-test-b-20260722')` の**限定DELETE**を実行し **`remaining = 0`** を確認。localhost GET（`activeOnly=0`）でも **A=0件 / B=0件**（`source:"db"`）を確認。**条件なしDELETE不使用・実案件データ無影響**。
+
+### 未確認事項（隠さず記録）
+
+1. **通常ログイン／通常案件選択経路での実操作確認は未実施** — 専用テストcaseIdはアプリの案件（`cases`）として存在せず、通常操作で開くには案件作成が必要なため。実運用案件は使用しない方針。検証は**ブラウザランタイムで案件選択をstubし実装関数を直接実行**する方式で行った（ソース・server.js・APIは無変更）。4経路への配線は実行時の関数ソースで確認済み。
+2. **F5後の `save_failed` 行の保持は保証対象外**（退避バッファはメモリ保持・**Known Limitation**）。
+3. **Render本番POSTは未実施**（本番書込み禁止のため）。
+4. **別 `channelScope` の実運用検証は未実施**（現時点 `'all'` 固定のため机上・ランタイム検証のみ）。
+
+### Git
+
+**未commit**（`index.html` のみ変更）。HEAD = origin/main = **d270ceb**。保護対象4件は未stage・未commitで保護。
 
 ---
 

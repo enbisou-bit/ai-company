@@ -4,6 +4,24 @@
 
 ---
 
+## Instagram自動運営 工程1-B本体（Workflow Wiring）（2026-07-22・localhost実DB検証完了・**未commit／Render未反映**）
+
+**Affiliate Intelligence Core（Phase53・従来はメモリ保持のみ）を永続化APIへ接続**。**`index.html`（+390/-4）の1ファイルのみ**・`server.js`／`lib`／DB／Migration／**API shape** 無変更。**Phase54 Complete維持・Phase55未着手**。
+
+- **案件境界 D-1**：`_affiliateCases` は現在案件のみ保持。未保存・保存失敗行は **caseId付き退避バッファ**で案件横断に保持し、案件切替でも消さない。
+- **保存**：`addAffiliateCase()` の明示追加時のみPOST。**Leader Final／Workflow完了／Export時はPOSTしない**。案件未確定時は登録自体を中止（未所属評価を作らない）。
+- **復元**：案件確定4経路へ個別配線（相互呼出なし＝**1操作1GET**）。GETは **`caseId`＋`channelScope=all`＋`activeOnly=true`** を明示。**同一案件の再同期は表示を消さず／別案件切替は前案件を即時クリア**。request tokenとcaseId再照合で**古い応答を破棄**。
+- **`sourceFingerprint`（client生成）**：`affiliate-evaluation-v1:` ＋固定順配列。**`caseId` と実効 `channelScope` を必ず含む**（`source_fingerprint` はテーブル全体でグローバルUNIQUEのため）。timestamp／random／client一時ID は含めない。fingerprint内のみ小数2桁正規化（**DB保存値は丸めない**）。
+- **POST payload**：`productIdentifier`・`channelScope`・`recommendation`・`source` は**送らず**サーバー正本／server既定に委ねる。`detail`(JSONB) に**評価補足7項目＋`origin='affiliate-intelligence-core'`＋メタ2項目**。
+- **重複表示修正**：`_aicDedupeSavedRow()` 追加。同一caseId内で ①同一`serverId` ②同一`sourceFingerprint` ③**同一`channelScope`かつ同一`productIdentifier`** の重複行を統合。**別caseId・別scopeは除去しない**。
+- **保存状態UI**：`unsaved|saving|saved|save_failed` バッジ／**保存済み行は除外不可**（inactive化API未実装のため誤認防止）／失敗行は**無言消失させず再送ボタン**を提供。
+- **検証**：`node --check` OK・**dev-check 200/200/200**・**純関数 46/46 PASS**・**localhost実DB Case 1〜9 全合格**（冪等でDB行数不変／再評価は旧activeのみinactive／案件分離・混入ゼロ／保存済み行は POST・PATCH・DELETE 0件／失敗→同一fingerprintで再送成功／案件未確定でGET0・POST0／同一案件GET失敗で表示維持）・**console error 0**・**PATCH/DELETE 通算0件**。
+- **後始末**：Supabase SQL Editorで専用caseIdの**限定DELETE**を実行し **`remaining = 0`**。localhost GETでも **A=0件／B=0件**を確認。
+- **未確認**：通常ログイン経路の実操作／F5後の `save_failed` 保持（**Known Limitation**）／Render本番POST／別scopeの実運用検証。
+- **Git**：**未commit**（HEAD = origin/main = **d270ceb**）。保護対象4件は未stage。
+
+---
+
 ## Instagram自動運営 工程1-B-0a〜0d — Affiliate評価 Active一意性の商材単位化（2026-07-22・Code commit **2ef2ad3**・Migration完了・実DB検証完了）
 
 **Affiliate評価のActive一意性を「案件×チャネル」から「案件×チャネル×商材」へ移行**。**`lib/affiliateEvalDb.js`（+36/-6）の1ファイルのみ**・`server.js`／`index.html`／`schema.sql`／他lib／他API **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**（Decision 070）。

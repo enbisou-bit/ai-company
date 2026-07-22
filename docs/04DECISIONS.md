@@ -2,7 +2,44 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-22（**Phase54 正式Complete維持**。**Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+更新日: 2026-07-22（**Phase54 正式Complete維持**。**Decision 071・Affiliate評価 Workflow Wiring の正式化**（案件境界D-1／保存は明示追加時のみ／`sourceFingerprint` はclient生成・`caseId`と実効scopeを必ず含む／`source_fingerprint` は**グローバルUNIQUE**／保存済み行は除外不可＝A案／POST成功時の一行統合条件／`recommendation`・`source`・`channelScope`・`productIdentifier` は送らない）。**localhost実DB検証 Case1〜9 全合格・テストデータ削除済み・未commit**。以前: **Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 071
+## Affiliate評価 Workflow Wiring（保存・復元・案件境界・冪等統合）を正式化（2026-07-22）
+
+**背景**：Phase53の Affiliate Intelligence Core は `_affiliateCases` による**メモリ保持のみ**で、案件を区別する情報を持たず、F5・案件切替で全消失していた。工程1-A／1-B-0a〜0dで永続化APIとActive一意性（商材単位）が確立したため、UIとAPIを安全に接続する必要があった。
+
+**決定（正式）**：
+
+1. **評価の正本単位は案件**。`_affiliateCases` は**現在表示中案件の評価のみ**を保持する（**D-1案**）。案件別Mapは採用しない（既存 ranking／Export 関数の参照先変更を強制するため）。
+2. **未保存・保存中・保存失敗行は `caseId` 付きの専用退避バッファ**で案件横断に保持し、案件切替でも**消さない**。保存失敗データを**無言で消す実装は禁止**とし、再送手段を必ず提供する。
+3. **保存は `addAffiliateCase()` による明示追加時のみ**。**Leader Final・Workflow完了・Export時にはPOSTしない**（Exportは読み取り操作であり副作用でDB書込みを起こさない）。
+4. **案件未確定時は登録処理自体を中止**する。`recordAffiliateCase()` より前に `getCurrentApprovalCaseId()` を確認し、`null` なら**メモリへの追加・fingerprint生成・POSTのいずれも行わない**（`caseId` を持たない未所属評価を作らない）。
+5. **復元は案件確定時**。`switchCase` / `_homeOpenCase` / `createNewCaseFromForm` / `_homeOpenCaseList` の4経路へ個別配線する（**相互に呼び出していないため1操作＝1GET**）。`showApp()` 時は案件未確定のため単独では機能せず、配線しない。
+6. **GET条件は明示する**：`caseId`（必須）＋ **`channelScope=all`** ＋ **`activeOnly=true`**。server既定への暗黙依存を避け、保存側の実効scopeと一致させる。
+7. **同一案件の再同期では表示を消さない／別案件への切替では前案件を即時クリア**する。応答待ちの間に前案件が新案件画面へ映る窓を作らない。**request token ＋ 取得時caseIdと現在caseIdの再照合**で、古い応答を破棄する。
+8. **GET失敗時（`source:'fallback'|'error'`）は空配列で上書きしない**。同一案件の再同期なら表示維持、別案件切替なら**前案件を残さず**当該案件の退避行のみを表示する。
+9. **`sourceFingerprint` は client 生成**とする。現行APIで必須かつ server 側生成が存在せず、`server.js` を変更しない方針のため。構成は **`affiliate-evaluation-v1:` ＋ 固定順配列**（`caseId`・実効`channelScope`・正規化商品名/ASP名・API保存値・算出結果・`detail`保存分をすべて含む）。**オブジェクトの無条件 `JSON.stringify` は使わない**。
+10. **`source_fingerprint` はテーブル全体でグローバルUNIQUE**（`affiliate_evaluations_fingerprint_key`）であり、冪等判定クエリに `case_id` フィルタが無い。したがって **fingerprint に `caseId` と実効 `channelScope` を含めることは必須**である（含めないと他案件の行が `idempotent:true` で返り、自案件に保存されないサイレント欠損が起きる）。POST応答の `case_id` が要求と異なる場合は**統合せず `save_failed`** とする。
+11. **fingerprint に含めない**：timestamp／`Date.now()`／random／client一時ID（`aic-*`）／`createdAt`／`updatedAt`／DB `id`／表示順の `rank`。数値は **fingerprint内でのみ小数2桁へ正規化**し（浮動小数誤差で別fingerprintにしない）、**DBへ保存する元数値は丸めない**。
+12. **`productIdentifier`（対象識別・サーバー正本）と `sourceFingerprint`（再送識別・client生成）は責務を分離**し、相互に代替しない。
+13. **POST body から `productIdentifier`・`channelScope`・`recommendation`・`source` を送らない**。`recommendation` は CHECK 制約が `NULL` を正式許容することを実測確認済みで、UIに採用判定が無い現段階では**値を捏造しない**。`source` は server既定 `manual` を使用し、生成元は **`detail.origin = 'affiliate-intelligence-core'`** に分離する（新しい正本値を作らない）。
+14. **API未対応項目は `detail`(JSONB) へ格納**する（評価補足7項目＋`origin`＋メタ2項目）。**専用列の追加＝DDLは行わない**。
+15. **DB保存済み行の除外操作は無効化する（A案）**。inactive化／PATCH／DELETE API が未実装のため、除外してもGET復元で再表示され「削除したのに復活する」誤認を生む。**未保存・保存失敗行のみ除外可**とし、保存済み行には理由を表示する。
+16. **POST成功時は一時行を応答内容で更新**し、新規行を追加しない。加えて**同一caseId内**で更新対象以外の重複行を除去する：①同一`serverId` ②同一`sourceFingerprint` ③**同一`channelScope`かつ同一`productIdentifier`**。**`caseId` が異なる行・`channelScope` が異なる行は決して除去しない**。
+17. **表示上限 `AIC_CASE_MAX`（50）超過分は非表示にするだけ**とし、**DBからの削除・inactive化は行わない**。
+
+**採用理由**：案件混入は本機能で最も重大なリスクであり、D-1＋即時クリア＋token照合で構造的に排除できる／退避バッファにより未保存データの消失を防ぎつつ案件境界を保てる／fingerprintに `caseId` を含めることでグローバルUNIQUEに起因するサイレント欠損を防止／除外操作の無効化は「文言で注意を促す」より確実に誤操作を防ぐ／API shape・server.js・DBを変更せず `index.html` のみで完結し回帰リスクを最小化。
+
+**却下した案**：`_affiliateCasesByCaseId` による案件別Map（既存 ranking／Export 関数の変更を強制）／除外を「一時除外」と表示して許可する案（再読込で復活し誤認を生む）／登録前に同一fingerprintならPOSTを止める案（サーバー側の正式な冪等結果を受け取れなくなる）。
+
+**検証（実測）**：`node --check` OK・**dev-check 200/200/200**・**純関数 46/46 PASS**・**localhost実DB Case 1〜9 全合格**（新規保存／F5復元／案件分離／冪等でDB行数不変／再評価は旧activeのみinactive／保存済み行は POST・PATCH・DELETE 0件／失敗→同一fingerprintで再送成功／案件未確定でGET0・POST0／同一案件GET失敗で表示維持）・**console error 0**・**テストデータ限定DELETE済み `remaining = 0`**。
+
+**Git/反映**：**未commit**（`index.html` のみ +390/-4）。HEAD = origin/main = **d270ceb**。**Phase54 Complete維持・Phase55未着手**。
+
+**未確認事項**：通常ログイン／通常案件選択経路の実操作（テストcaseIdが実案件として存在しないため未実施）／**F5後の `save_failed` 保持は保証対象外（Known Limitation）**／Render本番POST未実施／別 `channelScope` の実運用検証未実施。
 
 ---
 
