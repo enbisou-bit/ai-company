@@ -638,3 +638,79 @@ GROUP BY
     model,
     assignee,
     usage_type;
+
+-- ══════════════════════════════════════════════════════════════
+-- Affiliate Evaluation（Instagram自動運営 工程1-A〜1-C / 会社共通Affiliate Intelligence の永続化）
+-- ══════════════════════════════════════════════════════════════
+-- ※ 本節は「既存の実DB定義を記録するため」の純追記であり、実DBを変更するためのMigrationではない。
+--   実DBは工程1-A時にダッシュボードで作成済み・工程1-B-0cでActive一意性Indexを商材単位へ移行済み。
+--   ここに記載する内容は Supabase SQL Editor での実測結果（列30・PK・UNIQUE・CHECK・Index・RLS）と一致する。
+--   IF NOT EXISTS / 冪等DO block により再実行安全（既存の実DBを壊さない）。
+--   Active一意性 = (case_id, channel_scope, COALESCE(product_identifier,'')) WHERE is_active。
+--   冪等キー = source_fingerprint UNIQUE（テーブル全体でグローバル）。Decision 069/070/071/072 参照。
+CREATE TABLE IF NOT EXISTS public.affiliate_evaluations (
+  id                  BIGINT GENERATED ALWAYS AS IDENTITY,
+  case_id             TEXT NOT NULL,
+  evaluation_version  TEXT NOT NULL DEFAULT 'v1',
+  channel_scope       TEXT NOT NULL DEFAULT 'all',
+  product_name        TEXT,
+  product_identifier  TEXT,                         -- サーバー正本（productName/aspNameから生成・JSON配列文字列）
+  product_url         TEXT,
+  asp_name            TEXT,
+  category            TEXT,
+  target_audience     TEXT,
+  market              TEXT,
+  profit_rate         NUMERIC(6,2),
+  approval_rate       NUMERIC(6,2),
+  epc                 NUMERIC(12,4),
+  cvr                 NUMERIC(6,2),
+  ig_fit              NUMERIC(6,2),
+  competitors         INTEGER,
+  lifespan_months     INTEGER,
+  integrated_score    INTEGER,
+  estimated_sales     NUMERIC(14,2),
+  estimated_profit    NUMERIC(14,2),
+  recommendation      TEXT,                         -- adopt / watch / reject / NULL（下のCHECK制約）
+  adoption_reason     TEXT,
+  risks               TEXT,
+  detail              JSONB,                        -- API未対応項目（評価補足・origin・メタ）を構造保持
+  source              TEXT NOT NULL DEFAULT 'manual',
+  source_fingerprint  TEXT NOT NULL,                -- 冪等キー（グローバルUNIQUE）
+  is_active           BOOLEAN NOT NULL DEFAULT true,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT affiliate_evaluations_pkey PRIMARY KEY (id),
+  CONSTRAINT affiliate_evaluations_fingerprint_key UNIQUE (source_fingerprint),
+  CONSTRAINT affiliate_evaluations_reco_chk CHECK (
+    (recommendation IS NULL)
+    OR (recommendation = ANY (ARRAY['adopt'::text, 'watch'::text, 'reject'::text]))
+  )
+);
+
+-- case_id 検索用index（案件別取得）。IF NOT EXISTS で再実行安全。
+CREATE INDEX IF NOT EXISTS idx_affiliate_eval_case ON public.affiliate_evaluations (case_id);
+
+-- 業務一意（Active一意性）: 同一 case × channel_scope × 商材 で active は1件。
+-- COALESCE(product_identifier,'') により NULL と '' を同一視。旧 uq_affiliate_eval_active_case は工程1-B-0cで廃止済み。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_affiliate_eval_active_product
+  ON public.affiliate_evaluations (case_id, channel_scope, (COALESCE(product_identifier, ''::text)))
+  WHERE is_active;
+
+-- RLS: 既存の新テーブル群（cases / customers / api_cost_* ... FOR ALL TO anon USING(true) WITH CHECK(true)）と同一方式。
+-- ※ ENABLE は冪等。ポリシーは未存在時のみ作成（再実行で壊さない非破壊・冪等）。
+ALTER TABLE public.affiliate_evaluations ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'affiliate_evaluations' AND policyname = 'affiliate_evaluations_all'
+  ) THEN
+    CREATE POLICY "affiliate_evaluations_all"
+      ON public.affiliate_evaluations
+      FOR ALL
+      TO anon
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END
+$$;
