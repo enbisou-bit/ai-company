@@ -4,6 +4,17 @@
 
 ---
 
+## Affiliate Evaluation 工程1-C（案A）— 実DB定義を schema.sql へ記録（2026-07-23・commit未実施）
+
+**`affiliate_evaluations` の実DB定義を実測し、正本として `supabase/schema.sql` へ純追記**（P1解消）。**`supabase/schema.sql`（+76/-0）の1ファイルのみ**・`server.js`／`lib`／`index.html`／API shape／**実DB** 無変更。**Migrationではなく記録用**。**Phase54 Complete維持・Phase55未着手**（Decision 073）。
+
+- **実測（読み取りのみ）**：Supabase SQL Editorで列定義・PK・UNIQUE・Index・CHECK・RLS・Policy・Trigger・FKを取得。**30列**／`id` bigint IDENTITY／数値型 numeric(6,2)・(12,4)・(14,2)・integer／detail JSONB／**Trigger なし・FK なし**／RLS enabled・Policy `affiliate_evaluations_all`（FOR ALL TO anon）。
+- **記録要素**：CREATE TABLE(30列)・`affiliate_evaluations_pkey`・`affiliate_evaluations_fingerprint_key`・`affiliate_evaluations_reco_chk`・`idx_affiliate_eval_case`・`uq_affiliate_eval_active_product`・RLS有効化・Policy・冪等DO block・「記録用でありMigrationではない」コメント。**実測と全項目一致（drift なし）**。
+- **DDL実行なし・実DB無変更**。本工程は dev-check を必須完了条件とせず、中核検証は schema.sql記録内容と実DB実測値の一致。
+- **残課題（工程1-D以降候補・保留）**：P2 inactive化API未実装／P3 保存の非トランザクション／P4 `save_failed` のF5消失（Known Limitation）／P5 `channelScope='all'` 固定／P6 GET件数上限未設定。
+
+---
+
 ## 工程1-B本体 Active Case Hotfix — 案件未確定時の保存防止（2026-07-22・本番通常経路確認で検出）
 
 **案件未確定ビューから直前案件へAffiliate評価が保存され得る不具合を修正**。**`index.html`（+17/-4）の1ファイルのみ**・`server.js`／`lib`／DB／Migration／API shape **無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 072）。

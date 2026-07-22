@@ -2,7 +2,43 @@
 
 # ENBISOU AI COMPANY - 現在の開発状況
 
-更新日: 2026-07-22（**工程1-B本体 Active Case Hotfix**＝本番通常経路の読み取り確認で「案件未確定ビューでも『案件を追加』が有効になり直前案件へ保存され得る」不具合を検出し修正。原因＝`getCurrentApprovalCaseId()` の **`_lastOutputDraft.caseId` フォールバック**。Affiliate専用 **`_aicCurrentCaseId()`** を追加しAIC内4箇所を統一。**`getCurrentApprovalCaseId()` は無変更**。**index.htmlのみ +17/-4**・localhost Case1〜4合格・**POST/PATCH/DELETE 0回**。以前の記録: **Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・`server.js`／`lib`／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強を実装。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（`remaining = 0` 確認済み）**。**未commit**。以前の記録: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+更新日: 2026-07-23（**Affiliate Evaluation 工程1-C（案A）schema.sql記録 完了**＝実DB定義を読み取り専用SELECTで実測（30列・PK・UNIQUE・CHECK・Index・RLS・Trigger/FKなし）し、**正本として `supabase/schema.sql` へ純追記**（+76/-0・実測とdriftなし）。**記録用でありMigrationではない**。**DDL実行なし・実DB無変更・server.js/lib/index.html/API 無変更**。P2〜P6を工程1-D以降候補として保留（Decision 073）。**Phase54 Complete維持・Phase55未着手**・**commit未実施**。以前の記録: **工程1-B本体 Active Case Hotfix**＝本番通常経路の読み取り確認で「案件未確定ビューでも『案件を追加』が有効になり直前案件へ保存され得る」不具合を検出し修正。原因＝`getCurrentApprovalCaseId()` の **`_lastOutputDraft.caseId` フォールバック**。Affiliate専用 **`_aicCurrentCaseId()`** を追加しAIC内4箇所を統一。**`getCurrentApprovalCaseId()` は無変更**。**index.htmlのみ +17/-4**・localhost Case1〜4合格・**POST/PATCH/DELETE 0回**。以前の記録: **Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・`server.js`／`lib`／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強を実装。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（`remaining = 0` 確認済み）**。**未commit**。以前の記録: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_case` 廃止 → `uq_affiliate_eval_active_product` 適用）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**）。以前の記録: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**〔完全定義駆動6・ハイブリッド5〕・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。次の最優先＝**Instagram自動運営機能**。※本番実機確認は未実施）。以前の記録: 2026-07-17（**Phase54 正式Complete維持**。**改善案件 工程A（設定保持）完了・localhost確認済み**（commit **8c9ed58**・tag **v1.01-phase54-agent-settings-persistence**）＝Auto Task／自律相談の選択状態を**端末内**でlocalStorage保持。**autoStart復元は設定・表示のみで起動時のWorkflow・AI自動実行なし**（課金防止設計を維持）。**端末間同期は非対象**。**Phase55未着手・工程B以降は未着手**。**前工程Hotfixの本番実機確認は保留**。以前の記録：**Task新規作成 二重化 Hotfix 完了・本番反映済み・localhost確認済み**（commit **39b44d0**・tag **v1.01-phase54-task-create-dbid**）＝`submitTask()` の dbId 誤代入と `atCreateNextTasksFromItems()` の dbId 握り潰しを修正・**全7作成経路を統一**。既存の**重複16グループは未整理・別途判断**。以前の記録：**Task一括操作 Hotfix 完了・本番反映済み・localhost実機確認済み**（commit **deba2ed**・tag **v1.01-phase54-task-bulk-parallel**）＝一括アーカイブ／復元／完全削除を**同時5並列化**・**進捗表示／二重実行防止／成功ごとの保存**を追加。**Phase55未着手**。以前の記録：**Task表示仕様変更 完了・本番反映済み・PC/iPhone実機確認完了**（**Task Home Overview** commit **5fe2b64**・tag **v1.01-phase54-task-home-overview**／**Task Sort Order** commit **bbfbc73**・tag **v1.01-phase54-task-sort-newest**）。先行して **Case成功確認契約 完了**（aed5f7d・tag v1.01-phase54-case-sync-contract）・**案件系Known Issue 全Close＝Case同期系Complete**（tag v1.01-phase54-known-issue-case-closed）。HEAD = origin/main = **bbfbc73**（docs更新後は本更新commitが最新HEAD）。**Phase55未着手**。以前の記録：Phase54 Known Issue（Task表示不一致）Closed・tag v1.01-phase54-known-issue-c2／Phase54 Remaining Realtime Sync 正式Complete・tag v1.01-phase54-complete）
+
+---
+
+## Affiliate Evaluation 工程1-C（案A）— 実DB定義を schema.sql へ記録（2026-07-23・commit未実施）
+
+> 記録日: 2026-07-23。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**（本工程はPhase55開始ではない）。**`supabase/schema.sql` の1ファイルのみ純追記（+76/-0）**。`server.js`・`lib/affiliateEvalDb.js`・`index.html`・API shape・**実DB**は無変更。
+
+### 目的・位置付け
+
+`affiliate_evaluations` は工程1-A時にダッシュボードでDBへ直接作成されたため、**テーブル定義自体が `supabase/schema.sql` に未記録**（drift・再構築不能）だった。工程1-C（案A）は**新機能追加ではなく、既存実DB定義の正式記録工程**であり、Instagram自動運営ラインの**保守性・再構築性の改善**を目的とする。**Phase54 Complete維持・Phase55未着手**（工程1-CはPhase55の開始ではない）。
+
+### 実施内容（読み取りのみ→記録）
+
+- **実DB定義を読み取り専用SELECTで実測**（Supabase SQL Editor）：列定義・PK・UNIQUE・通常Index・Partial UNIQUE Index・CHECK・RLS状態・Policy全文・Trigger・外部キー。
+- **確定した実測結果**：**30列**／`id` は `bigint GENERATED ALWAYS AS IDENTITY`／`case_id`・`source_fingerprint` は `NOT NULL`／`evaluation_version='v1'`・`channel_scope='all'`・`source='manual'`・`is_active=true`・`created_at/updated_at=now()` の各DEFAULT／数値型（`profit_rate/approval_rate/cvr/ig_fit=numeric(6,2)`・`epc=numeric(12,4)`・`competitors/lifespan_months/integrated_score=integer`・`estimated_sales/estimated_profit=numeric(14,2)`）／`detail=JSONB`／**Trigger なし・外部キー なし**。
+- **実測を正本として `supabase/schema.sql` へ純追記**（実測と全項目一致＝drift なし）。
+
+### schema.sql 記録内容
+
+`CREATE TABLE IF NOT EXISTS public.affiliate_evaluations`（30列）／`affiliate_evaluations_pkey`／`affiliate_evaluations_fingerprint_key`（source_fingerprint グローバルUNIQUE）／`affiliate_evaluations_reco_chk`（recommendation は NULL 可＋adopt/watch/reject）／`idx_affiliate_eval_case`／`uq_affiliate_eval_active_product`（`(case_id, channel_scope, COALESCE(product_identifier,''))` WHERE `is_active`）／`ENABLE ROW LEVEL SECURITY`／`affiliate_evaluations_all` Policy（`FOR ALL TO anon USING(true) WITH CHECK(true)`・冪等DO block）。既存 Cost DB 節と同一スタイル・**IF NOT EXISTS / 冪等DO block で再実行安全**。冒頭コメントに**「実DB定義の記録用でありMigrationではない・実DBを自動変更しない」**旨を明記。
+
+### 完了条件（本工程は dev-check を必須としない）
+
+`node --check` は対象外（schema.sqlのみ）。server.js・lib・index.html・APIを変更しない工程のため **dev-check は必須完了条件としない**。中核の検証は**schema.sql の記録内容と実DB実測値の一致**（達成済み・全項目 drift なし）。
+
+### 残課題（工程1-D以降の候補・保留）
+
+- **P2**：保存済み評価の**inactive化API（PATCH/DELETE）未実装**。現在はUI除外抑止＋必要時のSQL Editor手動対応。実運用で必要性が出た時点で再評価。
+- **P3**：保存処理が**非トランザクション**（旧active無効化→新insert）。`activeMayBeZero:true` 通知あり。RPC化は未着手・現時点で優先度を上げない。
+- **P4**：`save_failed` 行がF5で消失（メモリ保持のみ・**Known Limitation**・保証対象外）。
+- **P5**：`channelScope` が `'all'` 固定。Instagram以外への拡張時に値体系を再設計・現時点では変更しない。
+- **P6**：GET件数上限の明示設定なし（PostgREST既定上限内・件数増加時に再評価）。
+
+### Git
+
+**commit未実施**（`supabase/schema.sql` のみ未commit）。HEAD = origin/main = **4a14ad5**。保護対象4件は未stage・未commitで保護。
 
 ---
 
