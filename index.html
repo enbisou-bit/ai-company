@@ -30666,6 +30666,18 @@ function scoreInstagramContentTheme(theme) {
 // outputDraftから企画テーマの母体となるトピック文字列を導出する（外部取得・捏造はしない。既存fieldsからのみ抽出）
 function _icpDeriveTopic(outputDraft) {
   var f = outputDraft.fields || {};
+  // Instagram自動運営 Workflow Wiring: 採用Affiliate商材があり、かつ現在Draftと caseId が一致する場合のみ最優先で使用。
+  //   caseId不一致・未設定は使わず既存導出へ安全にフォールバック（別案件混入防止）。非Affiliate Draftの挙動は不変。
+  var ac = f.affiliateContext;
+  if (ac && typeof ac === 'object' && ac.productName
+      && ac.caseId != null && outputDraft.caseId != null && String(ac.caseId) === String(outputDraft.caseId)) {
+    var _pn = String(ac.productName).trim();
+    if (_pn) {
+      var _mk = (typeof ac.market === 'string') ? ac.market.trim() : '';
+      var _t = _mk ? (_mk + 'の商品「' + _pn + '」') : _pn;
+      return _t.length > 40 ? _t.slice(0, 40) : _t;   // 既存の長さ抑制方針に準拠
+    }
+  }
   var caa = outputDraft.creativeAdAssembly;
   var candidates = [f.theme, f.topic, f.title, f.headline, f.mainMessage, f.benefit, f.targetAudience];
   if (caa && caa.campaignName) candidates.push(caa.campaignName);
@@ -34238,6 +34250,75 @@ function retryAffiliateRestore() {
   restoreAffiliateEvaluationsForCase(cid, 'retry');
 }
 
+// ── Instagram自動運営 Workflow Wiring: 採用商材の確定 ──
+// ユーザーが Affiliateランキングから1件を採用し、既存Output Draft の fields.affiliateContext へ
+// 非破壊でスナップショット保存 → Content Planning の topic導出へ反映（案D/E）。
+// AI実行・新API・server.js/lib/DB変更なし。Active かつ保存済み評価のみ採用可能。
+var _aicAdoptMsg = { id: null, text: '', ok: false };   // ランキングUIへ表示する採用結果メッセージ
+function adoptAffiliateForContentPlanning(evalId) {
+  _aicAdoptMsg = { id: evalId, text: '', ok: false };
+  // 採用元は _affiliateCases の実レコード（rank由来ではなく内部フィールドを持つ正本）
+  var src = null;
+  for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === evalId) { src = _affiliateCases[i]; break; } }
+  if (!src) { _aicAdoptMsg.text = '採用対象の評価が見つかりません。'; _aicRenderSafe(); return; }
+
+  // 保存済みActive評価のみ採用可（save_failed / 未保存は不可）
+  if (!(src.persistenceState === 'saved' && src.serverId)) {
+    _aicAdoptMsg.text = 'この評価はまだ保存されていません。保存完了後に採用できます。'; _aicRenderSafe(); return;
+  }
+
+  // caseId 安全確認: 現在案件が取得でき、採用評価が現在案件に属すること（別案件フォールバックしない）
+  var currentCase = _aicCurrentCaseId();
+  if (!currentCase) { _aicAdoptMsg.text = '案件を選択してから採用してください。'; _aicRenderSafe(); return; }
+  if (String(src.caseId) !== String(currentCase)) {
+    _aicAdoptMsg.text = '採用評価と現在案件が一致しません。'; _aicRenderSafe(); return;
+  }
+
+  // 反映先Draft: 現在案件に属する Instagram系 Output Draft が存在する場合のみ再利用（新規Draftは生成しない）。
+  //   通常のDraft生成経路はWorkflow（AI実行）と結合しており、AI実行は今回禁止のため、独自生成は行わない。
+  var draft = _lastOutputDraft;
+  var isInstagramType = draft && (draft.type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL || draft.type === OUTPUT_TYPES.INSTAGRAM_POST);
+  if (!draft || !isInstagramType || String(draft.caseId || '') !== String(currentCase)) {
+    _aicAdoptMsg.text = '先にInstagram成果物を生成してから、商材を投稿企画へ反映してください。';
+    _aicRenderSafe(); return;
+  }
+
+  // ランキングから rank / integratedScore / estimatedProfit を取得（存在する値のみ・推測しない）
+  var ranked = buildAffiliateIntelligenceRanking();
+  var rk = null;
+  for (var j = 0; j < ranked.length; j++) { if (ranked[j].id === evalId) { rk = ranked[j]; break; } }
+
+  // 採用時点のスナップショット（存在しない任意項目は生成しない）
+  var ctx = {
+    productName:       src.name,
+    market:            src.market,
+    caseId:            src.caseId,
+    evaluationId:      src.serverId,
+    productIdentifier: src.productIdentifier,
+    channelScope:      AIC_CHANNEL_SCOPE,
+    adoptedAt:         new Date().toISOString(),
+  };
+  if (src.asp) ctx.aspName = src.asp;
+  if (rk) {
+    if (rk.rank != null) ctx.rank = rk.rank;
+    if (rk.integratedScore != null) ctx.integratedScore = rk.integratedScore;
+    if (rk.estimatedProfit != null) ctx.estimatedProfit = rk.estimatedProfit;
+  }
+
+  // fields.affiliateContext へ非破壊付加（他fieldは保持）。別商材採用時は置換、同一商材は冪等。
+  if (!draft.fields) draft.fields = {};
+  draft.fields.affiliateContext = ctx;
+
+  // Content Planning を再生成（topicがaffiliateContextから導出される）。既存関数を再利用。
+  try { draft.instagramContentPlanning = createInstagramContentPlanningDraft(draft); } catch (e) { /* 生成失敗でもUI維持 */ }
+
+  // 既存の正式なDraft保存処理へ渡す（fields.affiliateContext が JSONB fields として永続化される）
+  try { pushOutputDraftToServer(draft); } catch (e) { /* fire-and-forget・失敗握り潰し */ }
+
+  _aicAdoptMsg = { id: evalId, ok: true, text: '「' + (src.name || '') + '」を投稿企画に反映しました。' };
+  renderOutputEnginePanel();
+}
+
 function _aicNum(v) { return (typeof v === 'number' && !isNaN(v)) ? v : null; }
 
 function _aicNormalize(v, fullValue) {
@@ -34532,6 +34613,12 @@ function buildAffiliateIntelligenceCoreHtml() {
       ? ' <button class="oe-aic-btn" onclick="retryAffiliateSave(\'' + r.id + '\')">再送</button>' : '';
     var failMsg = (pState === 'save_failed' && src && src.saveMessage)
       ? '<div class="oe-aic-warning">⚠ ' + esc(src.saveMessage) + '</div>' : '';
+    // Workflow Wiring: 保存済みActive評価のみ「この商材で投稿企画を作る」を有効化。rank1は既定候補として強調。
+    var adoptBtn = persisted
+      ? '<button class="oe-aic-btn" style="' + (r.rank === 1 ? 'font-weight:600;' : '') + '" onclick="adoptAffiliateForContentPlanning(\'' + r.id + '\')">この商材で投稿企画を作る' + (r.rank === 1 ? '（推奨）' : '') + '</button>'
+      : '<button class="oe-aic-btn" disabled style="opacity:.4;cursor:not-allowed;" title="保存済みのActive評価のみ採用できます">この商材で投稿企画を作る</button>';
+    var adoptMsg = (_aicAdoptMsg.id === r.id && _aicAdoptMsg.text)
+      ? '<div class="oe-aic-' + (_aicAdoptMsg.ok ? 'note' : 'warning') + '">' + (_aicAdoptMsg.ok ? '✅ ' : '⚠ ') + esc(_aicAdoptMsg.text) + '</div>' : '';
     return '<div class="oe-aic-card' + (r.rank === 1 ? ' rank1' : '') + '">'
       + '<div class="oe-aic-card-head">'
       +   '<span class="oe-aic-rank">#' + r.rank + '</span>'
@@ -34542,6 +34629,8 @@ function buildAffiliateIntelligenceCoreHtml() {
       + failMsg
       + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
       +   ' ' + removeBtn + retryBtn + '</div>'
+      + '<div class="oe-aic-note" style="margin-top:4px;">' + adoptBtn + '</div>'
+      + adoptMsg
       + '</div>';
   }).join('');
   // 工程1-B: 同期状態に応じた空状態表示（案件未確定／同期失敗／読込中）
