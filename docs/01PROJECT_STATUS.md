@@ -39,15 +39,17 @@
 - docs更新（本更新）→ docs commit → Annotated Tag **`v1.01-instagram-planning-wiring`** → tag push。
 - 保護対象4件（`cost-logs.json`・`claude-cost-logs.json`・`claude-quality-history.json`・`backup-dup-candidates-20260714/`）は**未stage・未commitで保護**。`git add .` / `git add -A` は不使用。
 
-### テストデータ削除（正式完了処理の最終手順）
+### テストデータ削除 **完了**（remaining = 0）
 
-検証で使用した専用テストcaseId **2件のみ**を対象に、Supabase SQL Editor で**限定DELETE**を実行し **`remaining = 0`** を確認する。**条件なしDELETE不使用・既存案件/既存データ無影響**。
+検証で使用した専用テストcaseId **2件のみ**を対象に、Supabase SQL Editor で**限定DELETE**を実行し **`remaining = 0`** を確認済み（**`affiliate_evaluations` / `output_drafts` とも remaining = 0**）。**条件なしDELETE不使用・既存案件/既存データ無影響**。
 
 - `case-mrxmpfx78ua2`（案件名 `WW_IPHONE_TEST_20260723`）
 - `WW_TEST_20260723`
 
 ```sql
-WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723')
+DELETE FROM public.affiliate_evaluations WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723');
+DELETE FROM public.output_drafts        WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723');
+-- 削除後: affiliate_evaluations_remaining = 0 / output_drafts_remaining = 0 を確認済み
 ```
 
 ### 次工程

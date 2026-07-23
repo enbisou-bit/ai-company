@@ -14,7 +14,7 @@
 - **安全設計（Manual Only・課金なし）**：採用元は `_affiliateCases` 実レコード／**保存済みActive評価のみ採用可**／案件判定は **`_aicCurrentCaseId()`**（Decision 072継承・現在案件取得＋評価所属＋Draft caseId一致の三条件）／**反映先は現在案件の既存 Instagram Draft（carousel/post）のみ再利用・新規Draft生成なし＝AI実行なし**／`affiliateContext` は非破壊付加（別商材は置換・同一は冪等・存在しない任意項目は生成しない）。
 - **無変更（保護）**：`getCurrentApprovalCaseId()`／`createInstagramContentPlanningDraft()`／`pushOutputDraftToServer()`／`buildAffiliateIntelligenceRanking()` 本体・server.js・lib・DB・schema.sql・API shape。**新API・新DB列なし**（既存 `output_drafts.fields`(JSONB) を利用）。
 - **Git・反映**：commit **745dd1e**（`index.html` のみ +89/-0）・**main push済み（HEAD=origin/main=745dd1e）**・**Render反映済み**・**iPhone実機確認完了**・docs commit（本更新）・Annotated Tag **v1.01-instagram-planning-wiring**・tag push。保護対象4件は未stage・未commitで保護。
-- **テストデータ削除（最終手順）**：専用テストcaseId **2件のみ**（`case-mrxmpfx78ua2`＝案件名 `WW_IPHONE_TEST_20260723`／`WW_TEST_20260723`）を Supabase SQL Editor の**限定DELETE**（`WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723')`）で削除し **`remaining = 0`** を確認。**条件なしDELETE不使用・既存無影響**。
+- **テストデータ削除 完了**：専用テストcaseId **2件のみ**（`case-mrxmpfx78ua2`＝案件名 `WW_IPHONE_TEST_20260723`／`WW_TEST_20260723`）を Supabase SQL Editor の**限定DELETE**（`WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723')`）で削除し、**`affiliate_evaluations` / `output_drafts` とも `remaining = 0`** を確認済み。**条件なしDELETE不使用・既存無影響**。
 - **次工程**：Instagramアカウント準備（ASP登録）→ 市場調査/競合分析/商品選定/投稿企画生成 → ユーザー確認 → Instagram手動投稿。**Manual Only維持**。**Phase55未着手のまま維持**（Decision 075）。
 
 ---

@@ -15,9 +15,8 @@
 - **実装要点**：`adoptAffiliateForContentPlanning()`（**保存済みActive評価のみ採用可**・rank1「（推奨）」）／`_icpDeriveTopic()` は **caseId一致時のみ** `affiliateContext` を最優先使用（不一致・未設定は既存導出へ安全フォールバック・非Affiliate Draft不変）／ランキングUIに「この商材で投稿企画を作る」ボタン。
 - **⚠ 重要な原則**：**反映先は現在案件の既存 Instagram Draft（`INSTAGRAM_CAROUSEL`/`INSTAGRAM_POST`）のみ再利用し、新規Draftは自動生成しない**（Draft生成は Workflow＝AI実行＝課金と結合するため。Manual Only・課金防止設計）。案件判定は必ず **`_aicCurrentCaseId()`**（`getCurrentApprovalCaseId()` は使わない・Decision 072/075）。
 - **Git現在地**：branch **main**／**HEAD = origin/main = 745dd1e**／docs更新後は本docs commitが最新HEAD。tag **v1.01-instagram-planning-wiring**。保護対象4件は未stage・未commitで保護。
-- **テストデータ削除（正式完了処理の最終手順）**：専用テストcaseId **2件のみ**を対象に Supabase SQL Editor で限定DELETE → `remaining = 0` 確認。**条件なしDELETE禁止・既存案件/既存データ無影響**。
-  - `case-mrxmpfx78ua2`（案件名 `WW_IPHONE_TEST_20260723`）／`WW_TEST_20260723`
-  - `WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723')`
+- **テストデータ削除 完了**：専用テストcaseId **2件のみ**（`case-mrxmpfx78ua2`＝案件名 `WW_IPHONE_TEST_20260723`／`WW_TEST_20260723`）を Supabase SQL Editor の限定DELETEで削除し、**`affiliate_evaluations` / `output_drafts` とも `remaining = 0`** を確認済み。**条件なしDELETE不使用・既存案件/既存データ無影響**。
+- **正式完了（クローズ）**：Instagram自動運営 Workflow Wiring 本体は **commit → main push → Render反映 → iPhone実機確認 → docs記録 → tag → tag push → テストデータ削除（remaining=0）** まで完了し、**正式クローズ済み**。
 
 ### 次工程ロードマップ（Instagram収益化・Manual Only維持）
 ```

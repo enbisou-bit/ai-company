@@ -11,7 +11,7 @@
 - **実装**：`adoptAffiliateForContentPlanning()`（**保存済みActive評価のみ採用可**・rank1「（推奨）」）／`_icpDeriveTopic()` が `fields.affiliateContext` を **caseId一致時のみ**最優先使用（不一致・未設定は既存導出へ安全フォールバック・非Affiliate Draft不変）／ランキングUIに「この商材で投稿企画を作る」ボタン追加。
 - **安全（Manual Only・課金なし）**：案件判定は **`_aicCurrentCaseId()`** で厳格一致（別案件フォールバックなし）／反映先は**現在案件の既存 Instagram Draft（carousel/post）のみ再利用・新規Draft生成なし＝AI実行なし**／`affiliateContext` は非破壊スナップショット（別商材は置換・同一は冪等）／既存 `pushOutputDraftToServer()` で `fields`(JSONB) として永続化。
 - **Git・反映**：commit **745dd1e**・**main push済み（HEAD=origin/main=745dd1e）**・**Render反映済み**・**iPhone実機確認完了**・tag **v1.01-instagram-planning-wiring**。
-- **テストデータ削除**：専用テストcaseId 2件（`case-mrxmpfx78ua2`／`WW_TEST_20260723`）を**限定DELETE**（`WHERE case_id IN (...)`）で削除・`remaining = 0` 確認（条件なしDELETE不使用・既存無影響）。
+- **テストデータ削除 完了**：専用テストcaseId 2件（`case-mrxmpfx78ua2`／`WW_TEST_20260723`）を**限定DELETE**（`WHERE case_id IN (...)`）で削除し、**`affiliate_evaluations` / `output_drafts` とも `remaining = 0`** を確認（条件なしDELETE不使用・既存無影響）。
 
 ---
 
