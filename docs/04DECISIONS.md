@@ -2,7 +2,39 @@
 
 # ENBISOU AI COMPANY - 設計判断・意思決定ログ
 
-更新日: 2026-07-23（**Phase54 正式Complete維持**。**Decision 073・工程1-C は案A（schema.sql記録のみ）を採用**（`affiliate_evaluations` の実DB定義を実測し正本として `supabase/schema.sql` へ純追記／Migrationではなく再構築・保守用の記録／実DB・API・アプリコード無変更／inactive化API・RPCは現時点で実装しない／P2〜P6を工程1-D以降候補として保留）。以前: **Decision 072・Affiliate評価の保存先判定は「現在表示中の確定案件」のみを正とする**（`getCurrentApprovalCaseId()` は `_lastOutputDraft.caseId` へフォールバックするためAICでは使用しない／専用 `_aicCurrentCaseId()` を正本とする／未確定は必ず `null`）。以前: **Decision 071・Affiliate評価 Workflow Wiring の正式化**（案件境界D-1／保存は明示追加時のみ／`sourceFingerprint` はclient生成・`caseId`と実効scopeを必ず含む／`source_fingerprint` は**グローバルUNIQUE**／保存済み行は除外不可＝A案／POST成功時の一行統合条件／`recommendation`・`source`・`channelScope`・`productIdentifier` は送らない）。**localhost実DB検証 Case1〜9 全合格・テストデータ削除済み・未commit**。以前: **Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+更新日: 2026-07-23（**Phase54 正式Complete維持**。**Decision 074・Affiliate Evaluation 工程1 クローズ**（工程1-D調査の結論としてP2〜P6は現時点で実装不要・保留継続を正式決定／工程1-A〜1-Dをもって Affiliate Evaluation 工程1 完了／次工程は Instagram自動運営 Workflow Wiring）。以前: **Decision 073・工程1-C は案A（schema.sql記録のみ）を採用**（`affiliate_evaluations` の実DB定義を実測し正本として `supabase/schema.sql` へ純追記／Migrationではなく再構築・保守用の記録／実DB・API・アプリコード無変更／inactive化API・RPCは現時点で実装しない／P2〜P6を工程1-D以降候補として保留）。以前: **Decision 072・Affiliate評価の保存先判定は「現在表示中の確定案件」のみを正とする**（`getCurrentApprovalCaseId()` は `_lastOutputDraft.caseId` へフォールバックするためAICでは使用しない／専用 `_aicCurrentCaseId()` を正本とする／未確定は必ず `null`）。以前: **Decision 071・Affiliate評価 Workflow Wiring の正式化**（案件境界D-1／保存は明示追加時のみ／`sourceFingerprint` はclient生成・`caseId`と実効scopeを必ず含む／`source_fingerprint` は**グローバルUNIQUE**／保存済み行は除外不可＝A案／POST成功時の一行統合条件／`recommendation`・`source`・`channelScope`・`productIdentifier` は送らない）。**localhost実DB検証 Case1〜9 全合格・テストデータ削除済み・未commit**。以前: **Decision 070・Affiliate評価のActive一意性を商材単位へ改訂**（`case_id + channel_scope + COALESCE(product_identifier,'')`／Decision 069-3 を改訂・**旧Index廃止・新Index適用済み**／`productIdentifier` はサーバー正本・**案A厳格**／`.eq()`・`.is()` によるsubject限定無効化／Code commit **2ef2ad3**／実DB POST検証 全8ケース成功／テストデータ削除済み）。**Phase55未着手**。以前: **Decision 068・社員向上B 正式完了**（目的は13型完全統一ではなく実用上十分な定義駆動基盤完成／13型中11型移行済み／**Flyer・LP 正式保留**／Instagram収益化を最優先の判断基準／次工程＝Instagram自動運営機能）。**localhost検証完了・push前・Render未反映**・HEAD 61dde05・**Phase55未着手**。以前: **Decision 064/065・Task表示仕様変更 完了**・本番反映済み・PC/iPhone実機確認完了・HEAD **bbfbc73**・tag v1.01-phase54-task-home-overview／v1.01-phase54-task-sort-newest。先行して **Decision 063・Case成功確認契約 完了**（aed5f7d）・**Decision 060/061/062・案件系Known Issue 全Close＝Case同期系Complete**。**Phase55未着手**。以前：Decision 059・Phase54 Known Issue（Task表示不一致）Closed／Decision 058・Phase54 Hotfix／Decision 057・3b-3 Completed）
+
+---
+
+# Decision 074
+## Affiliate Evaluation 工程1 をクローズし、P2〜P6の保留継続を正式決定する（2026-07-23）
+
+**背景**：工程1-D（開始前調査）で、Decision 073 が保留とした P2〜P6 を個別評価した。Affiliate Evaluation の実運用特性は **手動入力のみ・小規模（1案件あたり商材数件〜十数件・表示上限50）・低頻度・本番現状0件** であり、この土台のもとで各項目の実害・必要性・後回し可否・影響範囲・推奨順位を精査した。
+
+**評価結果（工程1-D調査）**：
+
+| 項目 | 実害 | IG開始前に必要 | 影響範囲 | 推奨順位 | 判定 |
+|---|---|---|---|---|---|
+| **P2** inactive化API（PATCH/DELETE） | なし | 不要 | 中（新API・API shape拡張） | 中 | 保留継続 |
+| **P3** 保存のトランザクション化（RPC） | 限定的（`activeMayBeZero` で緩和済） | 不要 | 大（DBへRPCデプロイ＝Migration相当・前例なし） | 低 | 保留継続 |
+| **P4** save_failed 永続化（F5消失） | 軽微（再送で復旧・Known Limitation） | 不要 | 小（localStorage肥大の新リスク） | 低 | 保留継続 |
+| **P5** channelScope 拡張 | なし | 不要（IGは単一運用・DB側は対応済） | 小 | 低 | 保留継続 |
+| **P6** GET件数上限 | なし | 不要（手動・小規模） | 最小（1行） | 低 | 保留継続 |
+
+**決定（正式）**：
+
+1. **P2〜P6 は現時点で実装不要とし、保留を継続する**。いずれも実害が無いか緩和済みで、Instagram自動運営の開始を妨げない。
+2. **工程1-D の成果は「実装」ではなく「保留の正式決定」**とする。工程1-D を保留課題の消化に充てない。特に **P3（RPC）は対策コストとリスクが実害を上回るため、安易に採用しない**。
+3. **P2〜P6 は実運用で必要性が生じた場合に、個別工程（工程1-E以降）として再評価**する（社員向上BのFlyer/LP保留と同じ「優先順位判断による保留」）。
+4. **工程1-A〜1-D をもって Affiliate Evaluation 工程1 を完了（クローズ）**とする。永続化API（1-A）・Active一意性の商材単位化（1-B-0a〜0d）・Workflow Wiring（1-B本体）・Active Case Hotfix・schema.sql記録（1-C）・保留課題の正式決定（1-D）が揃い、**商材選定→投稿企画への接続に必要な基盤は完成**している。
+5. **次工程は Instagram自動運営（Workflow Wiring）**とする。Version1の最優先目的「Instagram収益化支援」に直結する、Affiliate評価ランキング → Instagram Content Planning への接続を優先する。
+6. **Phase54 Complete維持・Phase55未着手**（工程1のクローズはPhaseの進行ではない）。
+
+**採用理由**：Version1の最優先目的はInstagram収益化支援であり、次の実質価値は「評価結果を実際のInstagram運用へ流す」ことにある。P2〜P6は保守・堅牢化の課題で収益化を前進させず、実運用で実害が出た時に個別対応する方が投資対効果が高い。保守課題を先回りで実装すると、特にRPC等で回帰リスクを不要に増やす。
+
+**却下した案**：P2〜P6 を工程1-Dでまとめて実装する案（RPCを巻き込みリスクが跳ねる・収益化を1歩も前進させない）。
+
+**Git/反映**：docs更新のみ（実装なし）。**Phase54 Complete維持・Phase55未着手**。
 
 ---
 

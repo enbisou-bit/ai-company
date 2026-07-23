@@ -4,6 +4,16 @@
 
 ---
 
+## Affiliate Evaluation 工程1 完了（クローズ）— 工程1-D 保留課題の正式決定（2026-07-23・docs更新のみ）
+
+**Affiliate Evaluation 工程1 を完了（クローズ）**。工程1-D調査の結論として **P2〜P6 は現時点で実装不要・保留継続を正式決定**（Decision 074）。**実装なし・docs更新のみ**（index.html/server.js/lib/DB/schema.sql/API 無変更）。**Phase54 Complete維持・Phase55未着手**。
+
+- **工程1 完了内容（1-A〜1-D）**：永続化API／Active一意性の商材単位化（`uq_affiliate_eval_active_product`）／Workflow Wiring（D-1・退避バッファ・冪等統合・channelScope安全補強）／Active Case Hotfix（`_aicCurrentCaseId()`）／schema.sql記録／保留の正式決定。
+- **保留（工程1-E以降候補・Decision 074）**：P2 inactive化API／P3 RPCトランザクション化／P4 save_failed永続化／P5 channelScope拡張／P6 GET件数上限。実害なし/緩和済みでIG開始を妨げないため、実運用で必要性が生じた時に個別再評価。
+- **次工程**：**Instagram自動運営（Workflow Wiring）**（Affiliate評価ランキング→Instagram Content Planning接続・Manual Only維持）。
+
+---
+
 ## Affiliate Evaluation 工程1-C（案A）— 実DB定義を schema.sql へ記録（2026-07-23・commit未実施）
 
 **`affiliate_evaluations` の実DB定義を実測し、正本として `supabase/schema.sql` へ純追記**（P1解消）。**`supabase/schema.sql`（+76/-0）の1ファイルのみ**・`server.js`／`lib`／`index.html`／API shape／**実DB** 無変更。**Migrationではなく記録用**。**Phase54 Complete維持・Phase55未着手**（Decision 073）。
