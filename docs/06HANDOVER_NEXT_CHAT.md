@@ -2,11 +2,40 @@
 
 # ENBISOU AI COMPANY - 次チャット引き継ぎ書
 
-更新日: 2026-07-23（**Affiliate Evaluation 工程1 完了（クローズ）**＝工程1-D調査の結論として **P2〜P6は実装不要・保留継続を正式決定**（Decision 074）。工程1-A〜1-Dが揃い商材選定→投稿企画への接続基盤が完成。**実装なし・docs更新のみ**。次工程＝**Instagram自動運営（Workflow Wiring）**へ移行可能。**Phase54 Complete維持・Phase55未着手**）。以前: **Affiliate Evaluation 工程1-C（案A）schema.sql記録 完了**＝実DB定義を読み取り専用SELECTで実測（30列・PK・UNIQUE・CHECK・Index・RLS・Trigger/FKなし）し正本として **`supabase/schema.sql` へ純追記**（+76/-0・driftなし）。**記録用でありMigrationではない**・**DDL実行なし・実DB無変更・server.js/lib/index.html/API 無変更**。P2〜P6を工程1-D以降候補として保留（Decision 073）。次工程＝**commit・tag・push**（ユーザー承認後）。**Phase54 Complete維持・Phase55未着手**・**commit未実施**）。以前: **工程1-B本体 Active Case Hotfix**＝本番通常経路の読み取り確認で「案件未確定ビューでも『案件を追加』が有効＝直前案件へ保存され得る」不具合を検出・修正。原因＝`getCurrentApprovalCaseId()` の **`_lastOutputDraft.caseId` フォールバック**。Affiliate専用 **`_aicCurrentCaseId()`** を追加しAIC内4箇所を統一・**`getCurrentApprovalCaseId()` は無変更**。**index.htmlのみ +17/-4**・localhost Case1〜4合格・**POST/PATCH/DELETE 0回**（Decision 072）。以前: **Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・server.js／lib／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（remaining = 0）**・**未commit／未push／Render未反映**。次工程＝**commit・tag・push・Render反映**（ユーザー承認後）。**Phase54 Complete維持・Phase55未着手**）。以前: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_product` 適用・旧 `uq_affiliate_eval_active_case` 廃止）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**・+36/-6）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）・**Decision 070**（069-3を改訂）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagram自動運営 工程1-B本体（Workflow Wiring）**・未着手）。以前: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。**docs更新中／commit前**。次工程＝**Instagram自動運営機能**（push・Render承認後）。以前: **Phase54 正式Complete維持**・**改善案件 工程A（設定保持）完了**（Auto Task／自律相談を端末内localStorage保持・**autoStart復元は設定と表示のみ＝起動時のWorkflow・AI自動実行なし**・端末間同期は非対象）・**localhost確認済み**。HEAD=origin/main=**8c9ed58**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-agent-settings-persistence**。**Phase55未着手・工程B以降は未着手**・**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
+更新日: 2026-07-24（**Instagram自動運営 Workflow Wiring 本体 完了・本番反映済み**＝採用Affiliate商材を既存Instagram Output Draftの `fields.affiliateContext` へ非破壊スナップショットし Content Planning の topic導出へ接続。**index.htmlのみ +89/-0**・**AI実行/新API/server.js/lib/DB/schema.sql/API shape 無変更**・**commit 745dd1e・main push済み（HEAD=origin/main=745dd1e）・Render反映済み・iPhone実機確認完了**・tag **v1.01-instagram-planning-wiring**（Decision 075）。テストデータは専用caseId 2件（`case-mrxmpfx78ua2`／`WW_TEST_20260723`）を限定DELETEで削除。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagramアカウント準備（ASP登録）→ 実運用**）。以前: 2026-07-23（**Affiliate Evaluation 工程1 完了（クローズ）**＝工程1-D調査の結論として **P2〜P6は実装不要・保留継続を正式決定**（Decision 074）。工程1-A〜1-Dが揃い商材選定→投稿企画への接続基盤が完成。**実装なし・docs更新のみ**。次工程＝**Instagram自動運営（Workflow Wiring）**へ移行可能。**Phase54 Complete維持・Phase55未着手**）。以前: **Affiliate Evaluation 工程1-C（案A）schema.sql記録 完了**＝実DB定義を読み取り専用SELECTで実測（30列・PK・UNIQUE・CHECK・Index・RLS・Trigger/FKなし）し正本として **`supabase/schema.sql` へ純追記**（+76/-0・driftなし）。**記録用でありMigrationではない**・**DDL実行なし・実DB無変更・server.js/lib/index.html/API 無変更**。P2〜P6を工程1-D以降候補として保留（Decision 073）。次工程＝**commit・tag・push**（ユーザー承認後）。**Phase54 Complete維持・Phase55未着手**・**commit未実施**）。以前: **工程1-B本体 Active Case Hotfix**＝本番通常経路の読み取り確認で「案件未確定ビューでも『案件を追加』が有効＝直前案件へ保存され得る」不具合を検出・修正。原因＝`getCurrentApprovalCaseId()` の **`_lastOutputDraft.caseId` フォールバック**。Affiliate専用 **`_aicCurrentCaseId()`** を追加しAIC内4箇所を統一・**`getCurrentApprovalCaseId()` は無変更**。**index.htmlのみ +17/-4**・localhost Case1〜4合格・**POST/PATCH/DELETE 0回**（Decision 072）。以前: **Instagram自動運営 工程1-B本体（Workflow Wiring）Complete**＝Affiliate Intelligence Core と永続化APIを接続。**index.htmlのみ +390/-4**・server.js／lib／DB／Migration／API shape **無変更**。案件境界D-1・退避バッファ・冪等統合・channelScope安全補強。**第2段階 localhost実DB検証 Case1〜9 全合格**・**テストデータ削除完了（remaining = 0）**・**未commit／未push／Render未反映**。次工程＝**commit・tag・push・Render反映**（ユーザー承認後）。**Phase54 Complete維持・Phase55未着手**）。以前: **工程1-B-0a〜0d 完了**＝Affiliate評価のActive一意性を**商材単位**へ移行。**Migration完了**（`uq_affiliate_eval_active_product` 適用・旧 `uq_affiliate_eval_active_case` 廃止）・**`lib/affiliateEvalDb.js` 実装完了**（Code commit **2ef2ad3**・+36/-6）・**実DB POST検証 全8ケース成功**・**専用テストデータ削除済み**（`remaining = 0`）・**Decision 070**（069-3を改訂）。`server.js`／`index.html`／`schema.sql` **無変更**・**API shape維持**。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagram自動運営 工程1-B本体（Workflow Wiring）**・未着手）。以前: 2026-07-21（**社員向上B 正式完了**（定義駆動基盤完成・**13型中11型移行済み**・**Flyer/LP 正式保留**）・**localhost検証完了・push前・Render未反映**。HEAD **61dde05**／origin/main **ac2f5da**／local ahead **7**／最新Tag **v1.01-phase54-video-html-section-migration**。**Phase54 Complete維持・Phase55未着手**。**docs更新中／commit前**。次工程＝**Instagram自動運営機能**（push・Render承認後）。以前: **Phase54 正式Complete維持**・**改善案件 工程A（設定保持）完了**（Auto Task／自律相談を端末内localStorage保持・**autoStart復元は設定と表示のみ＝起動時のWorkflow・AI自動実行なし**・端末間同期は非対象）・**localhost確認済み**。HEAD=origin/main=**8c9ed58**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-agent-settings-persistence**。**Phase55未着手・工程B以降は未着手**・**前工程Hotfixの本番実機確認は保留**。以前：**Task新規作成 二重化 Hotfix 完了**（`submitTask()` の dbId 誤代入／`atCreateNextTasksFromItems()` の dbId 握り潰しを修正・全7作成経路を統一）・**localhost確認済み**・**本番反映済み**。HEAD=origin/main=**39b44d0**（本docs更新commitが以降の最新HEAD）・最新code tag=**v1.01-phase54-task-create-dbid**。先行して Task一括操作 Hotfix（同時5並列化）／Taskホーム表示改善／Task並び順統一／Case同期 Complete／Case Known Issue Complete／Case成功確認契約 完了。**Phase55未着手**・次工程はユーザー承認後に決定）
 
 ---
 
-## 【現在地・最優先】Affiliate Evaluation 工程1 完了（クローズ）— Instagram自動運営（Workflow Wiring）へ移行可能（2026-07-23）
+## 【現在地・最優先】Instagram自動運営 Workflow Wiring 本体 完了・本番反映済み（2026-07-24・commit 745dd1e）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
+- **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**（本工程でPhase55を開始しない）
+- **状態**：Affiliate Evaluation 工程1 完了後の次工程「Instagram自動運営（Workflow Wiring）」の**本体を完了・本番反映済み**。採用したAffiliate商材を既存Instagram Output Draft の `fields.affiliateContext` へ非破壊スナップショットし、Content Planning の topic導出へ接続。**commit 745dd1e・main push済み・Render反映済み・iPhone実機確認完了**。
+- **変更範囲**：**`index.html` の1ファイルのみ（+89/-0・純追加）**。**AI実行・新API・`server.js`・`lib`・DB・Migration・`supabase/schema.sql`・API shape はすべて無変更**。
+- **実装要点**：`adoptAffiliateForContentPlanning()`（**保存済みActive評価のみ採用可**・rank1「（推奨）」）／`_icpDeriveTopic()` は **caseId一致時のみ** `affiliateContext` を最優先使用（不一致・未設定は既存導出へ安全フォールバック・非Affiliate Draft不変）／ランキングUIに「この商材で投稿企画を作る」ボタン。
+- **⚠ 重要な原則**：**反映先は現在案件の既存 Instagram Draft（`INSTAGRAM_CAROUSEL`/`INSTAGRAM_POST`）のみ再利用し、新規Draftは自動生成しない**（Draft生成は Workflow＝AI実行＝課金と結合するため。Manual Only・課金防止設計）。案件判定は必ず **`_aicCurrentCaseId()`**（`getCurrentApprovalCaseId()` は使わない・Decision 072/075）。
+- **Git現在地**：branch **main**／**HEAD = origin/main = 745dd1e**／docs更新後は本docs commitが最新HEAD。tag **v1.01-instagram-planning-wiring**。保護対象4件は未stage・未commitで保護。
+- **テストデータ削除（正式完了処理の最終手順）**：専用テストcaseId **2件のみ**を対象に Supabase SQL Editor で限定DELETE → `remaining = 0` 確認。**条件なしDELETE禁止・既存案件/既存データ無影響**。
+  - `case-mrxmpfx78ua2`（案件名 `WW_IPHONE_TEST_20260723`）／`WW_TEST_20260723`
+  - `WHERE case_id IN ('case-mrxmpfx78ua2','WW_TEST_20260723')`
+
+### 次工程ロードマップ（Instagram収益化・Manual Only維持）
+```
+Instagram自動運営 Workflow Wiring 本体 完了（本番反映済み）  ← 現在地
+  ↓
+Instagramアカウント準備（A8.net等ASP登録）  ← 次工程
+  ↓
+AI会社による 市場調査/競合分析/商品選定/投稿企画/カルーセル/キャプション/ハッシュタグ生成
+  ↓
+ユーザー確認
+  ↓
+Instagramへ手動投稿（運用開始）
+```
+- **Phase55には進まない**（Version1.1 Instagram自動運営ラインの追加実装）。
+
+---
+
+## 【参考・完了済み】Affiliate Evaluation 工程1 完了（クローズ）— Instagram自動運営（Workflow Wiring）へ移行可能（2026-07-23）
 
 - **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**
 - **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**（工程1のクローズはPhaseの進行ではない）
