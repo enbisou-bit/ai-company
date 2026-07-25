@@ -33958,6 +33958,377 @@ function _aicCurrentCaseId() {
   return null;                                            // 担当未選択（ホーム等）も未確定扱い
 }
 
+// ============================================================
+// 工程2: Evidence / Confidence 共通基盤（Affiliate Intelligence Company 横断層 A）
+//   ・目的: 今後追加する Market/ASP/Product/Instagram/User Pain/Opportunity/Business/
+//           Brand/Account/Content/Publishing/Learning が、同じ根拠形式・信頼度形式・
+//           保存構造を安全に使える共通土台のみを完成させる（B〜D層の本体は対象外）。
+//   ・保存先: 既存 outputDraft.fields.intelligenceContext（JSONB）。新API/新DB列なし。
+//   ・非破壊: 既存 fields / affiliateContext / _icpDeriveTopic / Workflow Wiring は一切変更しない。
+//   ・Manual Only維持・自動保存しない（保存は明示呼び出し時のみ・caseId一致必須）。
+//   ・Decision 032（未入力は中立値・knownFactors併記・予測明示・過信させない）を Confidence へ統合。
+// ============================================================
+const INTELLIGENCE_CONTEXT_VERSION = '1';
+const INTEL_CHANNEL_SCOPE_DEFAULT = 'instagram';                 // 将来 tiktok / youtube_shorts を妨げない
+const INTEL_EVIDENCE_TYPES = ['public_fact','manual_observation','user_input','calculated','heuristic','learning_result','ai_interpretation'];
+const INTEL_DERIVED_EVIDENCE_TYPES = ['calculated','heuristic','ai_interpretation'];   // 派生候補（親Evidenceから生成され得る）
+const INTEL_RELIABILITY_VALUES = ['high','medium','low','unknown'];                     // 未指定は unknown（medium扱いにしない）
+const INTEL_CONFIDENCE_LEVELS = ['High','Medium','Low','Insufficient'];
+// しきい値・下限は定数化（各所へ直書きしない）。将来Learning実績に応じて調整する前提の初期ヒューリスティック。
+const INTEL_CONFIDENCE_THRESHOLDS = { high: 75, medium: 55, low: 35 };
+const INTEL_CONFIDENCE_MIN_EVIDENCE = 3;        // 独立Evidenceがこの数未満なら点数に関わらず Insufficient
+const INTEL_EVIDENCE_SOFT_LIMIT = 200;          // 警告のみ（自動削除しない）
+const INTEL_MODULE_KEYS = ['market','asp','product','instagram','userPain','opportunity','business','brand','account','content','publishing','learning'];
+
+function _intelStr(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
+function _intelUniq(arr) {
+  var seen = {}, out = [];
+  (arr || []).forEach(function(x) { var k = String(x); if (!seen[k]) { seen[k] = 1; out.push(k); } });
+  return out;
+}
+
+// ---- intelligenceContext（初期化・正規化・取得・非破壊確定・保存） ----
+// 空の intelligenceContext を生成（副作用なし）。
+function _intelBlankContext(caseId, channelScope) {
+  var now = new Date().toISOString();
+  var ctx = {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    generatedAt: now,
+    updatedAt: now,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    evidence: [],
+    confidence: { overall: {}, byModule: {} },
+  };
+  INTEL_MODULE_KEYS.forEach(function(k) { ctx[k] = {}; });    // market〜learning を空の受け皿として初期化
+  return ctx;
+}
+
+// 既存 ctx を安全化（欠落キー補完・型保証）。破壊せず新オブジェクトを返す。古いDraftでも安全な初期値になる。
+function _intelNormalizeContext(ctx, caseId, channelScope) {
+  var out = _intelBlankContext(caseId, channelScope);
+  if (!ctx || typeof ctx !== 'object') return out;
+  if (ctx.version) out.version = String(ctx.version);
+  if (ctx.generatedAt) out.generatedAt = String(ctx.generatedAt);
+  if (ctx.updatedAt) out.updatedAt = String(ctx.updatedAt);
+  if (ctx.caseId != null && ctx.caseId !== '') out.caseId = String(ctx.caseId);
+  if (ctx.channelScope) out.channelScope = String(ctx.channelScope);
+  INTEL_MODULE_KEYS.forEach(function(k) { if (ctx[k] && typeof ctx[k] === 'object') out[k] = ctx[k]; });
+  out.evidence = Array.isArray(ctx.evidence) ? ctx.evidence.slice() : [];
+  if (ctx.confidence && typeof ctx.confidence === 'object') {
+    out.confidence = {
+      overall: (ctx.confidence.overall && typeof ctx.confidence.overall === 'object') ? ctx.confidence.overall : {},
+      byModule: (ctx.confidence.byModule && typeof ctx.confidence.byModule === 'object') ? ctx.confidence.byModule : {},
+    };
+  }
+  return out;
+}
+
+// Draftから intelligenceContext を取得（無ければ安全な空初期値）。※副作用なし・保存しない・draftへ書かない。
+function _intelGetContext(draft) {
+  if (!draft) return _intelBlankContext('', INTEL_CHANNEL_SCOPE_DEFAULT);
+  var f = draft.fields || {};
+  var caseId = (draft.caseId != null ? draft.caseId : '');
+  return _intelNormalizeContext(f.intelligenceContext, caseId, INTEL_CHANNEL_SCOPE_DEFAULT);
+}
+
+// caseId一致チェック（Draft.caseId と ctx.caseId が一致する場合のみ true）。不一致は保存不可。
+function _intelContextCaseMatches(ctx, draft) {
+  if (!ctx || !draft) return false;
+  var dc = (draft.caseId != null ? String(draft.caseId) : '');
+  var cc = (ctx.caseId != null ? String(ctx.caseId) : '');
+  return dc !== '' && cc !== '' && dc === cc;
+}
+
+// Draft.fields へ intelligenceContext を非破壊確定（メモリのみ・保存しない）。他fieldは保持（affiliateContext含む）。
+function _intelAttachContext(draft, ctx) {
+  if (!draft) return null;
+  if (!draft.fields) draft.fields = {};
+  draft.fields.intelligenceContext = ctx;
+  return ctx;
+}
+
+// 明示保存: caseId一致時のみ既存 pushOutputDraftToServer で保存。自動連続保存はしない（本工程では自動呼び出ししない）。
+function _intelSaveContext(draft, ctx, reason) {
+  try {
+    if (!draft || !draft.id) { console.log('[intel] save skipped: no draft/id', reason || ''); return { ok: false, reason: 'no_draft' }; }
+    if (!_intelContextCaseMatches(ctx, draft)) {
+      console.log('[intel] save skipped: caseId mismatch', { draftCaseId: draft.caseId, ctxCaseId: ctx && ctx.caseId, reason: reason || '' });
+      return { ok: false, reason: 'case_mismatch' };
+    }
+    ctx.updatedAt = new Date().toISOString();
+    _intelAttachContext(draft, ctx);
+    pushOutputDraftToServer(draft);   // 既存経路（fire-and-forget・新API/新DB列なし・fields空なら送らない）
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'exception' }; }
+}
+
+// ---- Evidence ----
+// Evidence ID: crypto.randomUUID 優先・不可時のみ timestamp+random。'ev-' 接頭辞。PC/iPhone/複数タブでも衝突しにくい。
+function _intelNewEvidenceId() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') return 'ev-' + crypto.randomUUID();
+  } catch (e) { /* fallback */ }
+  return 'ev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+// 個人情報・URLパラメータの簡易検出（保存前チェック・警告のみ。高度な自動削除はしない）。
+function _intelLooksLikePII(s) {
+  if (!s) return false;
+  var t = String(s);
+  if (/[?&][\w%.\-]+=/.test(t)) return true;                        // URLクエリパラメータ
+  if (/[\w.+\-]+@[\w.\-]+\.[A-Za-z]{2,}/.test(t)) return true;      // メール
+  if (/\b0\d{1,3}[-\s]?\d{2,4}[-\s]?\d{3,4}\b/.test(t)) return true; // 電話番号らしき
+  return false;
+}
+
+// Evidence 生成（正規化済みオブジェクトを返す・保存はしない）。
+function _intelCreateEvidence(input) {
+  input = input || {};
+  var ev = {
+    evidenceId:             input.evidenceId ? String(input.evidenceId) : _intelNewEvidenceId(),
+    evidenceType:           _intelStr(input.evidenceType),
+    sourceName:             _intelStr(input.sourceName),
+    sourceReference:        _intelStr(input.sourceReference),
+    observedAt:             _intelStr(input.observedAt),
+    recordedAt:             input.recordedAt ? String(input.recordedAt) : new Date().toISOString(),
+    channelScope:           _intelStr(input.channelScope) || INTEL_CHANNEL_SCOPE_DEFAULT,
+    market:                 input.market != null ? _intelStr(input.market) : null,
+    aspName:                input.aspName != null ? _intelStr(input.aspName) : null,
+    productIdentifier:      input.productIdentifier != null ? _intelStr(input.productIdentifier) : null,
+    accountIdentifier:      input.accountIdentifier != null ? _intelStr(input.accountIdentifier) : null,
+    contentIdentifier:      input.contentIdentifier != null ? _intelStr(input.contentIdentifier) : null,
+    rawValue:               (input.rawValue !== undefined ? input.rawValue : null),
+    normalizedValue:        (typeof input.normalizedValue === 'number' && !isNaN(input.normalizedValue)) ? input.normalizedValue : null,
+    unit:                   input.unit != null ? _intelStr(input.unit) : null,
+    notes:                  _intelStr(input.notes),
+    reliability:            _intelStr(input.reliability),
+    usedBy:                 Array.isArray(input.usedBy) ? input.usedBy.map(String) : [],
+    derivedFromEvidenceIds: Array.isArray(input.derivedFromEvidenceIds) ? input.derivedFromEvidenceIds.map(String) : [],
+    caseId:                 input.caseId != null ? String(input.caseId) : '',
+  };
+  return _intelNormalizeEvidence(ev);
+}
+
+// 正規化: reliability 未指定/不正は 'unknown'（medium扱いにしない）／usedBy・derivedFromEvidenceIds 重複除去。
+function _intelNormalizeEvidence(ev) {
+  if (!ev || typeof ev !== 'object') return ev;
+  if (INTEL_RELIABILITY_VALUES.indexOf(ev.reliability) === -1) ev.reliability = 'unknown';
+  ev.usedBy = _intelUniq(ev.usedBy);
+  ev.derivedFromEvidenceIds = _intelUniq(ev.derivedFromEvidenceIds);
+  return ev;
+}
+
+// 循環検出（ev を ctx へ仮想追加した状態で親を辿る）。
+function _intelHasCycle(ev, ctx) {
+  var map = {};
+  ((ctx && ctx.evidence) || []).forEach(function(e) { if (e && e.evidenceId) map[e.evidenceId] = e.derivedFromEvidenceIds || []; });
+  map[ev.evidenceId] = ev.derivedFromEvidenceIds || [];
+  var visiting = {}, done = {};
+  function dfs(id) {
+    if (done[id]) return false;
+    if (visiting[id]) return true;
+    visiting[id] = true;
+    var parents = map[id] || [];
+    for (var i = 0; i < parents.length; i++) { if (dfs(parents[i])) return true; }
+    visiting[id] = false; done[id] = true;
+    return false;
+  }
+  return dfs(ev.evidenceId);
+}
+
+// 検証: {ok, errors[], warnings[]}。evidenceType不正・caseId不一致・日付不正・ID重複・自己参照・親不在・循環・PII を検出。
+function _intelValidateEvidence(ev, ctx) {
+  var errors = [], warnings = [];
+  if (!ev || typeof ev !== 'object') return { ok: false, errors: ['evidence is not an object'], warnings: warnings };
+  if (!ev.evidenceId) errors.push('evidenceId missing');
+  if (INTEL_EVIDENCE_TYPES.indexOf(ev.evidenceType) === -1) errors.push('invalid evidenceType: ' + ev.evidenceType);
+  if (ctx && ctx.caseId) {
+    if (!ev.caseId) errors.push('evidence.caseId missing');
+    else if (String(ev.caseId) !== String(ctx.caseId)) errors.push('caseId mismatch (evidence=' + ev.caseId + ' ctx=' + ctx.caseId + ')');
+  }
+  ['observedAt', 'recordedAt'].forEach(function(k) {
+    if (ev[k] && isNaN(Date.parse(ev[k]))) errors.push('invalid date: ' + k + '=' + ev[k]);
+  });
+  if (ctx && Array.isArray(ctx.evidence)) {
+    if (ctx.evidence.some(function(e) { return e && e.evidenceId === ev.evidenceId; })) errors.push('duplicate evidenceId: ' + ev.evidenceId);
+  }
+  if (Array.isArray(ev.derivedFromEvidenceIds) && ev.derivedFromEvidenceIds.indexOf(ev.evidenceId) !== -1) errors.push('self-reference in derivedFromEvidenceIds');
+  if (ctx && Array.isArray(ctx.evidence) && Array.isArray(ev.derivedFromEvidenceIds) && ev.derivedFromEvidenceIds.length) {
+    ev.derivedFromEvidenceIds.forEach(function(pid) {
+      if (!ctx.evidence.some(function(e) { return e && e.evidenceId === pid; })) warnings.push('parent evidence not found: ' + pid);
+    });
+    if (_intelHasCycle(ev, ctx)) errors.push('cycle detected in derivedFromEvidenceIds');
+  }
+  if (_intelLooksLikePII(ev.sourceReference) || _intelLooksLikePII(ev.notes)) warnings.push('possible PII / URL-parameter — 保存しない方針。内容を確認してください');
+  return { ok: errors.length === 0, errors: errors, warnings: warnings };
+}
+
+// ctx.evidence へ追加（検証OK時のみ）。上限超過は警告のみ（自動削除しない）。※保存は呼び出し側が別途 _intelSaveContext。
+function _intelAddEvidence(ctx, ev) {
+  if (!ctx) return { ok: false, errors: ['no ctx'], warnings: [] };
+  if (!Array.isArray(ctx.evidence)) ctx.evidence = [];
+  var norm = _intelNormalizeEvidence(ev);
+  var v = _intelValidateEvidence(norm, ctx);
+  if (!v.ok) return { ok: false, errors: v.errors, warnings: v.warnings };
+  var warnings = v.warnings.slice();
+  if (ctx.evidence.length + 1 > INTEL_EVIDENCE_SOFT_LIMIT) {
+    warnings.push('evidence soft limit exceeded (' + (ctx.evidence.length + 1) + '/' + INTEL_EVIDENCE_SOFT_LIMIT + ') — 自動削除しません。未参照Evidenceの整理を検討してください');
+  }
+  ctx.evidence.push(norm);
+  return { ok: true, evidenceId: norm.evidenceId, warnings: warnings };
+}
+
+function _intelFindEvidence(ctx, evidenceId) {
+  if (!ctx || !Array.isArray(ctx.evidence)) return null;
+  return ctx.evidence.filter(function(e) { return e && e.evidenceId === evidenceId; })[0] || null;
+}
+
+function _intelListEvidenceForModule(ctx, moduleKey) {
+  if (!ctx || !Array.isArray(ctx.evidence)) return [];
+  return ctx.evidence.filter(function(e) { return e && Array.isArray(e.usedBy) && e.usedBy.indexOf(moduleKey) !== -1; });
+}
+
+function _intelMarkEvidenceUsedBy(ctx, evidenceId, moduleKey) {
+  var ev = _intelFindEvidence(ctx, evidenceId);
+  if (!ev) return false;
+  if (!Array.isArray(ev.usedBy)) ev.usedBy = [];
+  if (ev.usedBy.indexOf(moduleKey) === -1) ev.usedBy.push(moduleKey);
+  return true;
+}
+
+// 独立（一次）Evidence判定: 派生元を持たない かつ 派生タイプでない。
+function _intelIsIndependentEvidence(ev) {
+  if (!ev) return false;
+  if (Array.isArray(ev.derivedFromEvidenceIds) && ev.derivedFromEvidenceIds.length > 0) return false;
+  if (INTEL_DERIVED_EVIDENCE_TYPES.indexOf(ev.evidenceType) !== -1) return false;
+  return true;
+}
+
+// 独立Evidence数（同一 sourceReference＋対象＋observedAt の重複は1件に畳む＝重複カウント防止）。
+function _intelCountIndependentEvidence(list) {
+  var arr = Array.isArray(list) ? list : [];
+  var seen = {}, count = 0;
+  arr.forEach(function(e) {
+    if (!_intelIsIndependentEvidence(e)) return;
+    var key = [_intelStr(e.sourceReference), _intelStr(e.productIdentifier), _intelStr(e.accountIdentifier), _intelStr(e.contentIdentifier), _intelStr(e.observedAt)].join('|');
+    if (key === '||||') { count++; return; }         // 識別材料なし→畳まず個別カウント
+    if (!seen[key]) { seen[key] = 1; count++; }
+  });
+  return count;
+}
+
+// ---- Confidence（初期ヒューリスティック・Decision 032統合・副作用なし） ----
+function _intelCalculateEvidenceCoverage(independentCount, requiredCount) {
+  var req = (typeof requiredCount === 'number' && requiredCount > 0) ? requiredCount : INTEL_CONFIDENCE_MIN_EVIDENCE;
+  return Math.max(0, Math.min(100, Math.round((independentCount / req) * 100)));
+}
+
+// 最新 observedAt の新しさ（初期ヒューリスティック: 0日=100・180日で0へ線形）。根拠なしは0。
+function _intelCalculateDataFreshness(list) {
+  var arr = Array.isArray(list) ? list : [];
+  var newest = null;
+  arr.forEach(function(e) { var t = (e && e.observedAt) ? Date.parse(e.observedAt) : NaN; if (!isNaN(t) && (newest === null || t > newest)) newest = t; });
+  if (newest === null) return 0;
+  var days = (Date.now() - newest) / (1000 * 60 * 60 * 24);
+  return Math.max(0, Math.min(100, Math.round(100 - (days / 180) * 100)));
+}
+
+// 推定・派生（heuristic/calculated/ai_interpretation）の割合（高いほど信頼↓）。根拠ゼロは100（推定依存最大）。
+function _intelCalculateHeuristicDependency(list) {
+  var arr = Array.isArray(list) ? list : [];
+  if (!arr.length) return 100;
+  var dep = 0;
+  arr.forEach(function(e) { if (e && INTEL_DERIVED_EVIDENCE_TYPES.indexOf(e.evidenceType) !== -1) dep++; });
+  return Math.max(0, Math.min(100, Math.round((dep / arr.length) * 100)));
+}
+
+function _intelConfidenceLevelFromScore(score, independentCount) {
+  if ((independentCount || 0) < INTEL_CONFIDENCE_MIN_EVIDENCE) return 'Insufficient';   // 件数不足は点数不問で Insufficient
+  if (score >= INTEL_CONFIDENCE_THRESHOLDS.high) return 'High';
+  if (score >= INTEL_CONFIDENCE_THRESHOLDS.medium) return 'Medium';
+  if (score >= INTEL_CONFIDENCE_THRESHOLDS.low) return 'Low';
+  return 'Insufficient';
+}
+
+function _intelBuildConfidenceReason(x) {
+  var parts = [];
+  if (x.independentEvidenceCount < INTEL_CONFIDENCE_MIN_EVIDENCE) parts.push('独立した一次根拠が不足（' + x.independentEvidenceCount + '/' + INTEL_CONFIDENCE_MIN_EVIDENCE + '件）');
+  parts.push('入力充足 ' + x.known + '/' + x.total + '項目');
+  parts.push('根拠 ' + x.evidenceCount + '件（独立 ' + x.independentEvidenceCount + '件）');
+  parts.push(x.learningSampleCount > 0 ? ('実績 ' + x.learningSampleCount + '件') : '実績データなし');
+  if (x.heuristicDependency >= 50) parts.push('推定依存 ' + x.heuristicDependency + '%（高）');
+  return '信頼度 ' + x.level + '（' + x.score + '点）: ' + parts.join(' / ');
+}
+
+// Confidence計算。input: { knownFactors, totalFactors, evidenceList, learningSampleCount, requiredEvidence }
+// ※本工程は初期ヒューリスティック。最終的な業務精度は未確定（Learning実績に応じて将来調整する前提）。
+function _intelCalculateConfidence(input) {
+  input = input || {};
+  var list = Array.isArray(input.evidenceList) ? input.evidenceList : [];
+  var evidenceCount = list.length;
+  var independentEvidenceCount = _intelCountIndependentEvidence(list);
+  var known = (typeof input.knownFactors === 'number') ? input.knownFactors : 0;
+  var total = (typeof input.totalFactors === 'number' && input.totalFactors > 0) ? input.totalFactors : 0;
+  var inputFillRate = total > 0 ? (known / total) * 100 : 0;
+  var typeVariety = {};
+  list.forEach(function(e) { if (e && e.evidenceType) typeVariety[e.evidenceType] = 1; });
+  var typeCount = Object.keys(typeVariety).length;
+  var coverage = _intelCalculateEvidenceCoverage(independentEvidenceCount, input.requiredEvidence);
+  var freshness = _intelCalculateDataFreshness(list);
+  var heuristicDependency = _intelCalculateHeuristicDependency(list);
+  var learningSampleCount = (typeof input.learningSampleCount === 'number') ? input.learningSampleCount
+    : list.filter(function(e) { return e && e.evidenceType === 'learning_result'; }).length;
+  var relMap = { high: 100, medium: 60, low: 30, unknown: 10 };
+  var relSum = 0, relN = 0;
+  list.forEach(function(e) { if (e) { relSum += (relMap[e.reliability] != null ? relMap[e.reliability] : 10); relN++; } });
+  var reliabilityAvg = relN > 0 ? (relSum / relN) : 0;
+  var raw = inputFillRate * 0.25
+          + coverage * 0.25
+          + reliabilityAvg * 0.15
+          + freshness * 0.10
+          + Math.min(100, typeCount * 20) * 0.10
+          + Math.min(100, learningSampleCount * 20) * 0.15;
+  raw = raw * (1 - (heuristicDependency / 100) * 0.30);   // 推定依存が高いほど減点
+  var score = Math.max(0, Math.min(100, Math.round(raw)));
+  var level = _intelConfidenceLevelFromScore(score, independentEvidenceCount);
+  var unknownFactors = Math.max(0, total - known);
+  return {
+    confidenceScore: score,
+    confidenceLevel: level,
+    knownFactors: known,
+    unknownFactors: unknownFactors,
+    evidenceCount: evidenceCount,
+    independentEvidenceCount: independentEvidenceCount,
+    evidenceCoverage: coverage,
+    dataFreshness: freshness,
+    learningSampleCount: learningSampleCount,
+    heuristicDependency: heuristicDependency,
+    confidenceReason: _intelBuildConfidenceReason({
+      level: level, score: score, known: known, total: total, evidenceCount: evidenceCount,
+      independentEvidenceCount: independentEvidenceCount, learningSampleCount: learningSampleCount, heuristicDependency: heuristicDependency,
+    }),
+    calculatedAt: new Date().toISOString(),
+  };
+}
+
+// ---- 最小確認表示（読み取り専用・空データ時は必ず Insufficient・高評価を誤表示しない） ----
+function _intelBuildContextSummaryHtml() {
+  var esc = escapeHtml;
+  var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  var ctx = _intelGetContext(draft);
+  var evAll = Array.isArray(ctx.evidence) ? ctx.evidence : [];
+  var indep = _intelCountIndependentEvidence(evAll);
+  var conf = _intelCalculateConfidence({ knownFactors: 0, totalFactors: 0, evidenceList: evAll });   // 本体入力は次工程・空なら Insufficient
+  var caseTxt = ctx.caseId ? esc(ctx.caseId) : '（案件未確定）';
+  return '<div class="oe-aic-note" style="margin-top:6px;border-top:1px dashed rgba(255,255,255,.15);padding-top:6px;">'
+    + '<div style="opacity:.7;">Intelligence Context <span style="opacity:.55;">v' + esc(ctx.version) + ' / ' + esc(ctx.channelScope) + '</span></div>'
+    + '<div>Evidence: ' + evAll.length + '件 ／ Independent Evidence: ' + indep + '件</div>'
+    + '<div>Overall Confidence: ' + esc(conf.confidenceLevel) + '（' + conf.confidenceScore + '点） ／ Known Factors: ' + conf.knownFactors + '</div>'
+    + '<div style="opacity:.5;">対象案件: ' + caseTxt + ' ／ 工程2: 共通基盤のみ（入力UI・各Intelligence本体は次工程）</div>'
+    + '</div>';
+}
+
 // fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
 // ※ productIdentifier はここでは生成しない（サーバー正本）
 function _aicNormalizeKeyPart(v) {
@@ -34675,6 +35046,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + '<div class="oe-aic-title">🏆 Affiliate Intelligence Core <span style="font-weight:400;opacity:.5;">v' + AFFILIATE_INTELLIGENCE_CORE_VERSION + ' / Version2 Core</span></div>'
     + '<div>' + safetyBadgesHtml + '</div>'
     + leaderSummaryHtml
+    + _intelBuildContextSummaryHtml()
     + '<div class="oe-aic-label">おすすめ順位ランキング（統合スコア順）</div>'
     + rankingHtml
     + (warningsHtml ? '<div class="oe-aic-label">Warnings</div>' + warningsHtml : '')
