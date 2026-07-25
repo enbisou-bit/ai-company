@@ -4,7 +4,7 @@
 
 ---
 
-## Affiliate Intelligence Company 工程2 — Evidence / Confidence 共通基盤（2026-07-26・Code commit 29d82c1・main push・Render自動デプロイ・iPhone実機確認待ち）
+## Affiliate Intelligence Company 工程2 — Evidence / Confidence 共通基盤 **正式Complete**（2026-07-26・Code commit 29d82c1・main push・Render反映済み・iPhone実機確認完了）
 
 **全Intelligence横断の Evidence（根拠）/ Confidence（信頼度）共通基盤を追加**。保存先は既存 `outputDraft.fields.intelligenceContext`（JSONB）。**`index.html`（+372/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API 無変更・新DB列/新APIなし**。**Phase54 Complete維持・Phase55未着手**（Decision 076）。
 
@@ -12,7 +12,7 @@
 - **Confidence共通型**：Level High/Medium/Low/Insufficient・**独立Evidence3件未満は点数不問で Insufficient**・推定依存で減点・**Decision 032統合**。しきい値/重み/最低件数は定数化（将来Learning調整前提）。
 - **AICパネル最小表示**（Leader判断直下・読み取り専用・空データは Insufficient）。**`affiliateContext`/`_icpDeriveTopic()`/Workflow Wiring は未変更**（採用商材正本は当面 `affiliateContext`）。
 - **検証**：純関数18/18・dev-check 200/200/200・console error 0・AICパネル実描画OK（PC/375pxモバイル）・**実Supabase保存(POST1回)/F5復元/affiliateContext併存/テストデータ削除 remaining=0** 確認。
-- **Git**：Code commit **29d82c1**・tag **v1.01-affiliate-intelligence-evidence-confidence**・main push・Render自動デプロイ。**iPhone実機確認は未実施**（Render後）。
+- **Git**：Code commit **29d82c1**・tag **v1.01-affiliate-intelligence-evidence-confidence**・main push・Render反映済み。**iPhone実機確認完了（2026-07-26）＝工程2 正式Complete**。
 
 ---
 
