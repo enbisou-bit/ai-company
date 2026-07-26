@@ -4,6 +4,18 @@
 
 ---
 
+## Affiliate Intelligence Company 工程3 — Product Intelligence 正式化（3-1/3-2/3-3）**工程3-3 正式Complete**（2026-07-27・Code commit 3ef7495・main push・Render反映）
+
+**採用商材の Product Intelligence を永続化**。ユーザーが保存済みAffiliate評価を採用すると、`fields.affiliateContext` と `fields.intelligenceContext.product` を**同一Output Draftへ両書き**し、既存 `pushOutputDraftToServer` で**1回保存**（採用1回=POST1回）。**`index.html` の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/ランキング順位/Confidence計算式/工程3-2表示関数 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 077）。
+
+- **工程3-1**（**28fa51c**・+159/-0）：`intelligenceContext.product` スキーマ・Product Evidence配線・calculated Evidence・`product.confidence`（工程2ロジック再利用）・生成helper `_intelSyncProductFromAffiliate`（自動実行なし）・後方互換。
+- **工程3-2**（**1d04f31**・+49/-0）：ランキングカードへ表示時Confidenceプレビュー（`_aicBuildProductConfidence`/`_aicBuildConfidenceHtml`・使い捨てctx・非永続・順位不変）。
+- **工程3-3**（**3ef7495**・+58/-10）：`adoptAffiliateForContentPlanning()` 両書き化。一時変数で構築→必須項目・**caseId 6項目一致**ガード→全成功時のみ一括反映（片方だけ書かない）→既存保存1回（`_intelSaveContext`不使用）。deep copy後にproduct生成し実evidence非破壊。失敗/欠落/不一致は反映も保存もせずエラー表示。
+- **検証**：隔離テスト A〜F 全合格・dev-check 200/200/200・Console 0・回帰なし・**実Supabase保存（POST1回）**・**F5復元成功**（product子項目/calculated Evidence/confidence/evidence履歴維持）・**同一商品Evidence 14→14**・**別商品Product置換・Evidence 14→28（旧保持）・新usedは旧非参照**・**テストデータ限定削除 remaining=0（API読戻し draft=null・ユーザーがSQL Editorで限定DELETE）**。
+- **Git・反映**：Code commit 28fa51c/1d04f31/3ef7495・tag **v1.01-affiliate-product-intelligence-persistence**・main push・Render反映。**iPhone実機確認はユーザー実施**。
+
+---
+
 ## Affiliate Intelligence Company 工程2 — Evidence / Confidence 共通基盤 **正式Complete**（2026-07-26・Code commit 29d82c1・main push・Render反映済み・iPhone実機確認完了）
 
 **全Intelligence横断の Evidence（根拠）/ Confidence（信頼度）共通基盤を追加**。保存先は既存 `outputDraft.fields.intelligenceContext`（JSONB）。**`index.html`（+372/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API 無変更・新DB列/新APIなし**。**Phase54 Complete維持・Phase55未着手**（Decision 076）。
