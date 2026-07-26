@@ -34968,6 +34968,52 @@ function buildAffiliateIntelligenceRanking() {
   return ranked;
 }
 
+// ============================================================
+// 工程3-2: Product Intelligence Confidence 表示（表示層のみ・追加のみ）
+//   ・工程3-1 の _intelSyncProductFromAffiliate → product.confidence をそのまま利用する。
+//     新しいConfidence計算・新Evidence生成は行わない（_intelCalculateConfidence は工程3-1が内部で実行）。
+//   ・使い捨ての blank context へ同期して算出するため、実 intelligenceContext / _lastOutputDraft /
+//     保存(Supabase) には一切影響しない（副作用なし・非永続・Product保存変更なし）。
+//   ・ランキング順位(integratedScore→estimatedProfit)は変更しない。Confidenceは説明情報として表示のみ。
+//   ・非変更: buildAffiliateIntelligenceRanking / affiliateContext / _icpDeriveTopic /
+//     Workflow Wiring / 採用処理 / server.js / lib / DB / API。
+// ============================================================
+
+// 表示専用: 1商材のConfidenceを取得（工程3-1のproduct.confidenceをそのまま返す）。失敗時はnull。
+function _aicBuildProductConfidence(rec) {
+  if (!rec) return null;
+  try {
+    var caseId = (rec.caseId != null ? rec.caseId : (_aicCurrentCaseId() || ''));
+    var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);   // 使い捨て・非永続（実contextへ書かない）
+    var product = _intelSyncProductFromAffiliate(ctx, rec);    // 工程3-1: product.confidence を生成
+    return (product && product.confidence) ? product.confidence : null;
+  } catch (e) {
+    return null;   // 失敗しても既存ランキング表示を止めない
+  }
+}
+
+// 表示専用: Confidence情報のHTML（Level / Score / Independent / Evidence総数 / Insufficient / Known Factors / Reason）。
+function _aicBuildConfidenceHtml(conf) {
+  var esc = escapeHtml;
+  if (!conf) return '<div class="oe-aic-note" style="margin-top:4px;opacity:.6;">🔎 Confidence: 情報なし</div>';
+  var isInsuf = (conf.confidenceLevel === 'Insufficient');
+  var levelTxt = isInsuf ? 'Insufficient' : (esc(String(conf.confidenceLevel)) + '（' + conf.confidenceScore + '点）');
+  var color = isInsuf ? '#ff9a9a' : 'rgba(150,220,150,0.95)';
+  var known = (typeof conf.knownFactors === 'number') ? conf.knownFactors : 0;
+  var unknown = (typeof conf.unknownFactors === 'number') ? conf.unknownFactors : 0;
+  var total = known + unknown;
+  var evCount = (typeof conf.evidenceCount === 'number') ? conf.evidenceCount : 0;
+  var indep = (typeof conf.independentEvidenceCount === 'number') ? conf.independentEvidenceCount : 0;
+  var reason = conf.confidenceReason ? '<div style="opacity:.55;margin-top:2px;">' + esc(String(conf.confidenceReason)) + '</div>' : '';
+  return '<div class="oe-aic-note" style="margin-top:4px;border-top:1px dashed rgba(255,255,255,.15);padding-top:4px;">'
+    + '<div>🔎 Confidence: <strong style="color:' + color + ';">' + levelTxt + '</strong>'
+    +   ' ／ Evidence ' + evCount + '件（Independent ' + indep + '件）'
+    +   ' ／ Known ' + known + ' / ' + total + '</div>'
+    + (isInsuf ? '<div style="color:#ff9a9a;opacity:.85;">⚠ 独立した一次根拠が' + INTEL_CONFIDENCE_MIN_EVIDENCE + '件未満のため Insufficient（工程2仕様）</div>' : '')
+    + reason
+    + '</div>';
+}
+
 // Leaderへ「今一番利益が出る案件は？」に答える統合サマリー
 function _aicBuildLeaderSummary(ranked) {
   if (!ranked.length) return '案件が未登録です。下のフォームから案件を手動入力すると、統合スコアとおすすめ順位を算出します。';
@@ -35127,6 +35173,8 @@ function buildAffiliateIntelligenceCoreHtml() {
     // 工程1-B: 保存状態は _affiliateCases 側の内部フィールドから逆引き（ranking関数の返却構造は変更しない）
     var src = null;
     for (var _i = 0; _i < _affiliateCases.length; _i++) { if (_affiliateCases[_i].id === r.id) { src = _affiliateCases[_i]; break; } }
+    // 工程3-2: 表示専用Confidence（工程3-1のproduct.confidence・副作用なし・順位は変更しない）
+    var confHtml = _aicBuildConfidenceHtml(_aicBuildProductConfidence(src));
     var pState = (src && src.persistenceState) || 'unsaved';
     var persisted = _aicIsPersisted(src);
     var saveBadge = '';
@@ -35156,6 +35204,7 @@ function buildAffiliateIntelligenceCoreHtml() {
       +   '<span class="oe-aic-score ' + statusClass + '">' + r.integratedScore + '点</span>'
       + '</div>'
       + '<div class="oe-aic-metrics">' + metrics.join('') + '</div>'
+      + confHtml
       + failMsg
       + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
       +   ' ' + removeBtn + retryBtn + '</div>'
