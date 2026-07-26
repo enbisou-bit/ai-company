@@ -33998,6 +33998,7 @@ function _intelBlankContext(caseId, channelScope) {
     caseId: (caseId != null ? String(caseId) : ''),
     channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
     evidence: [],
+    products: [],                                            // 工程3-1: 同一case配下の複数商材コレクション（将来用・初期空・自動投入しない）
     confidence: { overall: {}, byModule: {} },
   };
   INTEL_MODULE_KEYS.forEach(function(k) { ctx[k] = {}; });    // market〜learning を空の受け皿として初期化
@@ -34015,6 +34016,7 @@ function _intelNormalizeContext(ctx, caseId, channelScope) {
   if (ctx.channelScope) out.channelScope = String(ctx.channelScope);
   INTEL_MODULE_KEYS.forEach(function(k) { if (ctx[k] && typeof ctx[k] === 'object') out[k] = ctx[k]; });
   out.evidence = Array.isArray(ctx.evidence) ? ctx.evidence.slice() : [];
+  out.products = Array.isArray(ctx.products) ? ctx.products.slice() : [];   // 工程3-1: 旧Draft(products無し)でも安全に []
   if (ctx.confidence && typeof ctx.confidence === 'object') {
     out.confidence = {
       overall: (ctx.confidence.overall && typeof ctx.confidence.overall === 'object') ? ctx.confidence.overall : {},
@@ -34327,6 +34329,163 @@ function _intelBuildContextSummaryHtml() {
     + '<div>Overall Confidence: ' + esc(conf.confidenceLevel) + '（' + conf.confidenceScore + '点） ／ Known Factors: ' + conf.knownFactors + '</div>'
     + '<div style="opacity:.5;">対象案件: ' + caseTxt + ' ／ 工程2: 共通基盤のみ（入力UI・各Intelligence本体は次工程）</div>'
     + '</div>';
+}
+
+// ============================================================
+// 工程3-1: Product Intelligence スキーマ確定・Evidence配線（案C 段階移行）
+//   ・intelligenceContext.product をリッチ正本として"生成"するhelperのみ。
+//     ★本工程では render / F5 / パネル再表示から自動実行しない（呼び出しは工程3-2以降）。
+//   ・非変更: affiliateContext / _icpDeriveTopic / Workflow Wiring / Affiliate Evaluation /
+//     affiliate_evaluations / output_drafts / API / 既存評価ロジック(_aicIntegratedScore 等・重み) は一切変更しない。
+//   ・Evidenceは工程2の _intel* を利用（新Evidence構造は作らない）。calculated は独立件数に含めない。
+//   ・冪等: 安定 sourceReference キーで再構築時も同一Evidenceを重複生成しない（再描画/F5で増殖しない）。
+//   ・productStatus(運用ライフサイクル) と derived.status(評価結果) は別物として保持。
+// ============================================================
+const INTEL_PRODUCT_STATUS_VALUES = ['candidate','testing','active','paused','retired'];
+const INTEL_PRODUCT_INPUT_FIELDS = ['payout','profitRate','approvalRate','epc','cvr','igFit','competitors','lifespanMonths','saveRatePred','clickRatePred','monthlyClicks'];
+const INTEL_PRODUCT_PRIORITY_FIELDS = ['profitRate','igFit','approvalRate','epc','cvr','competitors','lifespanMonths'];   // 優先Evidence化対象（参考）
+const INTEL_PRODUCT_DERIVED_FIELDS = ['integratedScore','estimatedSales','estimatedProfit'];
+
+// productIdentifier: サーバー正本を優先。無い場合のみ既存正規化規則で構築（server仕様と一致・独自再定義しない）。
+function _intelProductIdentifier(rec) {
+  if (rec && rec.productIdentifier != null && String(rec.productIdentifier) !== '') return String(rec.productIdentifier);
+  if (!rec) return '';
+  var name = _aicNormalizeKeyPart(rec.name);
+  if (!name) return '';                                    // productName なしは空（呼び出し側で扱う）
+  var asp = rec.asp ? _aicNormalizeKeyPart(rec.asp) : '';
+  return JSON.stringify([name, asp || null]);              // server: JSON.stringify([normName, normAsp||null]) と同形
+}
+
+// 空の product 構造（副作用なし・正式スキーマ）。
+function _intelBlankProduct(caseId, channelScope) {
+  var inputs = {}; INTEL_PRODUCT_INPUT_FIELDS.forEach(function(f){ inputs[f] = null; });
+  var fe = {};     INTEL_PRODUCT_INPUT_FIELDS.forEach(function(f){ fe[f] = []; });
+  return {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    productIdentifier: '',
+    productName: '', aspName: '', market: '', seasonality: '',
+    productStatus: 'candidate',        // 運用ライフサイクル（derived.status とは別物）
+    confidenceOwner: 'product',        // 将来 market/opportunity/brand/asp/content 等でも共用するための識別
+    learningSummary: null,             // 将来Learning接続用予約（本工程は null のみ）
+    inputs: inputs,
+    derived: { integratedScore: null, estimatedSales: null, estimatedProfit: null, knownFactors: null, totalFactors: null, status: 'insufficient' },
+    fieldEvidence: fe,
+    usedEvidenceIds: [],
+    confidence: null,
+    evaluationId: null,
+    rank: null,
+    updatedAt: '',
+  };
+}
+
+// product用Evidenceの安定キー（冪等突合用）: 同一 caseId×productIdentifier×field で常に1件。
+function _intelProductEvidenceRef(kind, productIdentifier, field) {
+  return 'product-' + kind + ':' + (productIdentifier || '(no-id)') + ':' + field;
+}
+
+// ctx.evidence から安定キー一致のEvidenceを探す（冪等突合）。
+function _intelFindEvidenceByRef(ctx, sourceReference, caseId) {
+  if (!ctx || !Array.isArray(ctx.evidence)) return null;
+  for (var i = 0; i < ctx.evidence.length; i++) {
+    var e = ctx.evidence[i];
+    if (e && e.sourceReference === sourceReference && String(e.caseId) === String(caseId)) return e;
+  }
+  return null;
+}
+
+// Affiliate評価レコード(rec)から product 構造を生成し、入力/派生Evidenceを ctx へ冪等同期する。
+// ★呼び出し側が明示実行（本工程では自動実行しない）。ctx.evidence は安定キーで upsert＝再実行で増殖しない。
+// 既存評価ロジック(_aicIntegratedScore/_aicEstimate/_aicStatusFromScore・重み)は変更せず再利用。
+function _intelSyncProductFromAffiliate(ctx, rec) {
+  if (!ctx || !rec) return null;
+  if (!Array.isArray(ctx.evidence)) ctx.evidence = [];
+  var caseId = String(rec.caseId != null ? rec.caseId : (ctx.caseId || ''));
+  var pid = _intelProductIdentifier(rec);
+  var scope = ctx.channelScope || INTEL_CHANNEL_SCOPE_DEFAULT;   // intelligenceContext のスコープ（instagram）に合わせる
+  var recordedAt = rec.recordedAt || new Date().toISOString();
+
+  var product = _intelBlankProduct(caseId, scope);
+  product.productIdentifier = pid;
+  product.productName = _intelStr(rec.name);
+  product.aspName     = _intelStr(rec.asp);
+  product.market      = _intelStr(rec.market);
+  product.seasonality = _intelStr(rec.seasonality);
+  product.evaluationId = (rec.serverId != null ? rec.serverId : null);
+  if (rec.productStatus && INTEL_PRODUCT_STATUS_VALUES.indexOf(rec.productStatus) !== -1) product.productStatus = rec.productStatus;
+
+  var inputEvidenceIds = [];
+
+  // 入力Evidence（有効な数値のみ＝虚偽Evidence生成防止）。冪等: 安定キーで upsert（重複生成しない）。
+  INTEL_PRODUCT_INPUT_FIELDS.forEach(function(field) {
+    var val = _aicNum(rec[field]);
+    product.inputs[field] = val;                            // 生値（未入力/非数値は null）
+    if (val === null) return;                               // 未入力はEvidence化しない
+    var ref = _intelProductEvidenceRef('input', pid, field);
+    var existing = _intelFindEvidenceByRef(ctx, ref, caseId);
+    if (existing) {
+      existing.rawValue = val; existing.normalizedValue = val; existing.recordedAt = recordedAt;
+      _intelMarkEvidenceUsedBy(ctx, existing.evidenceId, 'product');
+      product.fieldEvidence[field] = [existing.evidenceId];
+      inputEvidenceIds.push(existing.evidenceId);
+    } else {
+      var ev = _intelCreateEvidence({
+        evidenceType: 'user_input', reliability: 'unknown',
+        sourceName: 'Affiliate Evaluation', sourceReference: ref,
+        observedAt: recordedAt, recordedAt: recordedAt, channelScope: scope,
+        market: product.market, aspName: product.aspName, productIdentifier: pid,
+        rawValue: val, normalizedValue: val, notes: 'product input: ' + field,
+        usedBy: ['product'], caseId: caseId,
+      });
+      var r = _intelAddEvidence(ctx, ev);
+      if (r.ok) { product.fieldEvidence[field] = [ev.evidenceId]; inputEvidenceIds.push(ev.evidenceId); }
+    }
+  });
+
+  // 派生値（calculated）: integratedScore / estimatedSales / estimatedProfit（親=入力Evidence）。独立件数に含めない。
+  var sc = _aicIntegratedScore(rec), est = _aicEstimate(rec);
+  product.derived.integratedScore = sc.score;
+  product.derived.knownFactors    = sc.knownFactors;
+  product.derived.totalFactors    = sc.totalFactors;
+  product.derived.status          = _aicStatusFromScore(sc.score);
+  product.derived.estimatedSales  = est.estimatedSales;
+  product.derived.estimatedProfit = est.estimatedProfit;
+  var derivedVals = { integratedScore: sc.score, estimatedSales: est.estimatedSales, estimatedProfit: est.estimatedProfit };
+  INTEL_PRODUCT_DERIVED_FIELDS.forEach(function(field) {
+    var val = derivedVals[field];
+    if (val === null || val === undefined) return;
+    var ref = _intelProductEvidenceRef('derived', pid, field);
+    var existing = _intelFindEvidenceByRef(ctx, ref, caseId);
+    if (existing) {
+      existing.rawValue = val; existing.normalizedValue = (typeof val === 'number' ? val : null);
+      existing.recordedAt = recordedAt; existing.derivedFromEvidenceIds = _intelUniq(inputEvidenceIds);
+      _intelMarkEvidenceUsedBy(ctx, existing.evidenceId, 'product');
+    } else {
+      var ev = _intelCreateEvidence({
+        evidenceType: 'calculated', reliability: 'unknown',
+        sourceName: 'Affiliate Intelligence Core', sourceReference: ref,
+        observedAt: recordedAt, recordedAt: recordedAt, channelScope: scope,
+        productIdentifier: pid, rawValue: val, normalizedValue: (typeof val === 'number' ? val : null),
+        notes: 'product derived: ' + field, usedBy: ['product'],
+        derivedFromEvidenceIds: _intelUniq(inputEvidenceIds), caseId: caseId,
+      });
+      _intelAddEvidence(ctx, ev);
+    }
+  });
+
+  // この商材が使う全Evidence（入力＋派生・同一caseId×productIdentifierのみ・重複なし）
+  var used = ctx.evidence.filter(function(e) {
+    return e && Array.isArray(e.usedBy) && e.usedBy.indexOf('product') !== -1
+      && String(e.caseId) === caseId && String(e.productIdentifier || '') === String(pid || '');
+  }).map(function(e) { return e.evidenceId; });
+  product.usedEvidenceIds = _intelUniq(used);
+
+  // Confidence（この商材のEvidenceのみ対象・独立3件未満は工程2仕様どおり Insufficient）
+  var evList = product.usedEvidenceIds.map(function(id) { return _intelFindEvidence(ctx, id); }).filter(Boolean);
+  product.confidence = _intelCalculateConfidence({ knownFactors: sc.knownFactors, totalFactors: sc.totalFactors, evidenceList: evList });
+  product.updatedAt = new Date().toISOString();
+  return product;
 }
 
 // fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
