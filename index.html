@@ -34818,8 +34818,16 @@ function adoptAffiliateForContentPlanning(evalId) {
   var rk = null;
   for (var j = 0; j < ranked.length; j++) { if (ranked[j].id === evalId) { rk = ranked[j]; break; } }
 
-  // 採用時点のスナップショット（存在しない任意項目は生成しない）
-  var ctx = {
+  // ============================================================
+  // 工程3-3: 両書き（affiliateContext ＋ intelligenceContext.product）を同一Draftの1保存で確定する。
+  //   ・両方を一時変数で完成 → 全caseId一致確認 → 成功時のみ実Draftへ一括反映（片方だけ書かない）。
+  //   ・intelligenceContextは実Draftのcontextをdeep copyしてから商品生成（実Draftのevidenceを途中で破壊しない）。
+  //   ・保存は既存 pushOutputDraftToServer を1回のみ（_intelSaveContext は使わない＝POST二重化しない）。
+  //   ・非変更: pushOutputDraftToServer / _icpDeriveTopic / Content Planning本体 / ランキング順位 / Confidence計算式 / 工程3-2表示関数。
+  // ============================================================
+
+  // (a) affiliateContext（既存と同一の軽量サブセット・フィールド名/用途は不変）
+  var nextAffiliateContext = {
     productName:       src.name,
     market:            src.market,
     caseId:            src.caseId,
@@ -34828,21 +34836,61 @@ function adoptAffiliateForContentPlanning(evalId) {
     channelScope:      AIC_CHANNEL_SCOPE,
     adoptedAt:         new Date().toISOString(),
   };
-  if (src.asp) ctx.aspName = src.asp;
+  if (src.asp) nextAffiliateContext.aspName = src.asp;
   if (rk) {
-    if (rk.rank != null) ctx.rank = rk.rank;
-    if (rk.integratedScore != null) ctx.integratedScore = rk.integratedScore;
-    if (rk.estimatedProfit != null) ctx.estimatedProfit = rk.estimatedProfit;
+    if (rk.rank != null) nextAffiliateContext.rank = rk.rank;
+    if (rk.integratedScore != null) nextAffiliateContext.integratedScore = rk.integratedScore;
+    if (rk.estimatedProfit != null) nextAffiliateContext.estimatedProfit = rk.estimatedProfit;
   }
 
-  // fields.affiliateContext へ非破壊付加（他fieldは保持）。別商材採用時は置換、同一商材は冪等。
-  if (!draft.fields) draft.fields = {};
-  draft.fields.affiliateContext = ctx;
+  // (b) intelligenceContext（実Draftのcontextを正規化→deep copyしてから商品生成。実Draftへ途中で書かない）
+  var nextIntelligenceContext, product;
+  try {
+    var baseCtx = _intelGetContext(draft);                          // 正規化コピー（evidence履歴含む・副作用なし・draftへ書かない）
+    nextIntelligenceContext = JSON.parse(JSON.stringify(baseCtx));  // JSON互換deep copy（実Draftのevidence objへ触れない）
+    product = _intelSyncProductFromAffiliate(nextIntelligenceContext, src);  // 工程3-1: evidence冪等upsert＋Confidence算出（正式レコードsrcから生成）
+    if (!product) throw new Error('product build returned null');
+    // 補完（正式値優先・client別形式のIdentifierで上書きしない）
+    if (rk && rk.rank != null) product.rank = rk.rank;
+    product.evaluationId = (src.serverId != null ? src.serverId : product.evaluationId);
+    if (src.productIdentifier != null && String(src.productIdentifier) !== '') product.productIdentifier = String(src.productIdentifier);
+    product.caseId = String(src.caseId);
+    product.updatedAt = new Date().toISOString();
+    nextIntelligenceContext.product = product;                      // ★戻り値を ctx.product へ明示代入（自動代入されないため）
+    // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
+  } catch (e) {
+    if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
+    _aicAdoptMsg = { id: evalId, ok: false, text: '商品情報の生成に失敗したため反映しませんでした。もう一度お試しください。' };
+    _aicRenderSafe(); return;                                       // 片方だけ保存しない・Draft未変更・push呼ばない
+  }
 
-  // Content Planning を再生成（topicがaffiliateContextから導出される）。既存関数を再利用。
+  // 必須項目（productIdentifier / evaluationId）欠落は保存しない（片方だけの保存を禁止）
+  if (!product.productIdentifier || product.evaluationId == null) {
+    if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] missing productIdentifier/evaluationId', { pid: product.productIdentifier, evaluationId: product.evaluationId });
+    _aicAdoptMsg = { id: evalId, ok: false, text: '商品識別情報が不足しているため反映できません。' };
+    _aicRenderSafe(); return;
+  }
+
+  // caseId 6項目一致ガード（すべて文字列化して一致・1件でも不一致なら反映も保存もしない）
+  var _cids = [ String(currentCase), String(draft.caseId || ''), String(src.caseId || ''),
+                String(nextAffiliateContext.caseId || ''), String(nextIntelligenceContext.caseId || ''), String(product.caseId || '') ];
+  var _caseAllMatch = _cids.every(function(x) { return x !== '' && x === _cids[0]; });
+  if (!_caseAllMatch || !_intelContextCaseMatches(nextIntelligenceContext, draft)) {
+    if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] caseId mismatch (adopt aborted):', _cids);
+    _aicAdoptMsg = { id: evalId, ok: false, text: '案件が一致しないため反映できません。案件を確認してください。' };
+    _aicRenderSafe(); return;
+  }
+
+  // ---- 全検証成功後にのみ、実Draftへ一括反映（他fieldsは保持・片方だけにならない）----
+  if (!draft.fields) draft.fields = {};
+  draft.fields.affiliateContext = nextAffiliateContext;              // 既存フィールド名/用途は不変（別商材採用時は置換・同一商材は冪等）
+  _intelAttachContext(draft, nextIntelligenceContext);              // draft.fields.intelligenceContext（メモリ確定・保存しない）
+
+  // Content Planning を再生成（topicがaffiliateContextから導出される）。既存関数を再利用（_icpDeriveTopic不変）。
   try { draft.instagramContentPlanning = createInstagramContentPlanningDraft(draft); } catch (e) { /* 生成失敗でもUI維持 */ }
 
-  // 既存の正式なDraft保存処理へ渡す（fields.affiliateContext が JSONB fields として永続化される）
+  // 既存の正式なDraft保存処理へ渡す（affiliateContext＋intelligenceContext が JSONB fields として1回で永続化）。
+  //   _intelSaveContext は使わない（attach＋pushを内包しPOSTが二重化するため）。採用1回＝pushOutputDraftToServer 1回。
   try { pushOutputDraftToServer(draft); } catch (e) { /* fire-and-forget・失敗握り潰し */ }
 
   _aicAdoptMsg = { id: evalId, ok: true, text: '「' + (src.name || '') + '」を投稿企画に反映しました。' };
