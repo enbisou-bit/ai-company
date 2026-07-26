@@ -12,7 +12,7 @@
 - **工程3-2**（**1d04f31**・+49/-0）：ランキングカードへ表示時Confidenceプレビュー（`_aicBuildProductConfidence`/`_aicBuildConfidenceHtml`・使い捨てctx・非永続・順位不変）。
 - **工程3-3**（**3ef7495**・+58/-10）：`adoptAffiliateForContentPlanning()` 両書き化。一時変数で構築→必須項目・**caseId 6項目一致**ガード→全成功時のみ一括反映（片方だけ書かない）→既存保存1回（`_intelSaveContext`不使用）。deep copy後にproduct生成し実evidence非破壊。失敗/欠落/不一致は反映も保存もせずエラー表示。
 - **検証**：隔離テスト A〜F 全合格・dev-check 200/200/200・Console 0・回帰なし・**実Supabase保存（POST1回）**・**F5復元成功**（product子項目/calculated Evidence/confidence/evidence履歴維持）・**同一商品Evidence 14→14**・**別商品Product置換・Evidence 14→28（旧保持）・新usedは旧非参照**・**テストデータ限定削除 remaining=0（API読戻し draft=null・ユーザーがSQL Editorで限定DELETE）**。
-- **Git・反映**：Code commit 28fa51c/1d04f31/3ef7495・tag **v1.01-affiliate-product-intelligence-persistence**・main push・Render反映。**iPhone実機確認はユーザー実施**。
+- **Git・反映**：Code commit 28fa51c/1d04f31/3ef7495・tag **v1.01-affiliate-product-intelligence-persistence**・main push・Render反映。**iPhone実機確認 完了（2026-07-27・ユーザー実施・崩れなし・空状態正常）**。
 
 ---
 
