@@ -4,6 +4,19 @@
 
 ---
 
+## Affiliate Intelligence Company 工程4 — Revenue Intelligence（⑤層）**正式リリースComplete（4-1〜4-4）**（2026-07-27・Code commit 8cde936・main push・Render反映）
+
+**Version2 Core ⑤ Revenue Intelligence を Product Intelligence 上の読み取り専用説明層として追加**。`intelligenceContext.revenue`（財務入力7＋派生2）へ Product Evidence を `usedBy:'revenue'` で共有参照。**`index.html`（+230/-1）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/ランキング順位/`_intelCalculateConfidence`本体/Product 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 078）。
+
+- **4-1 スキーマ/Evidence**：`INTEL_MODULE_KEYS`へ`'revenue'`追加（後方互換）・Revenue定数・`_intelBlankRevenue`/`_intelSyncRevenueFromProduct`（Product Evidence共有・**新規生成なし**・件数不変・Product非破壊）。
+- **4-2 Confidence**：`_intelCalculateRevenueConfidence`＝**財務入力Evidenceのみ**で`_intelCalculateConfidence`再利用（派生二重計上なし）・独立3件未満Insufficient・status既存ヘルパ再利用・Product Confidenceと分離。
+- **4-3 表示**：AIC最小パネル＋カードRevenueライン（使い捨てプレビュー・非永続・POST0・円/月・null情報なし・0有効・**順位不変**・HTMLエスケープ・375px対応）。
+- **4-4 両書き永続化**：採用時に `affiliateContext`＋`product`＋`revenue` を同一Draftへ既存push1回で保存（**採用1回=POST1回**）・**保存済みRevenue優先表示💾**・旧Draトはプレビューfallback。
+- **検証**：純関数31＋31・表示12・永続化15 全PASS・dev-check 200/200/200・Console 0・回帰なし・**実Supabase保存（POST1）/F5復元（Confidence保存値維持・再計算なし）/表示復元POST0/Evidence件数不変（総数10・Revenue専用生成なし）/テストデータ限定削除 remaining=0（draft=null・既存データ無影響）**。
+- **Git・反映**：Code commit **8cde936**・tag **v1.01-affiliate-revenue-intelligence**・main push・Render反映。**iPhone実機確認はユーザー実施（待ち）**。次工程＝ASP Intelligence 開始前調査・設計。
+
+---
+
 ## Affiliate Intelligence Company 工程3 — Product Intelligence 正式化（3-1/3-2/3-3）**工程3-3 正式Complete**（2026-07-27・Code commit 3ef7495・main push・Render反映）
 
 **採用商材の Product Intelligence を永続化**。ユーザーが保存済みAffiliate評価を採用すると、`fields.affiliateContext` と `fields.intelligenceContext.product` を**同一Output Draftへ両書き**し、既存 `pushOutputDraftToServer` で**1回保存**（採用1回=POST1回）。**`index.html` の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/ランキング順位/Confidence計算式/工程3-2表示関数 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 077）。
