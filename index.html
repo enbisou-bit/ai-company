@@ -34607,6 +34607,218 @@ function _intelSyncRevenueFromProduct(ctx, product) {
   return revenue;
 }
 
+// ============================================================
+// 工程5-1: ASP Intelligence（③層）スキーマ＋Evidence配線（Confidence計算・表示・永続化はしない）
+//   ・比較単位: 正規化商品名 × market（ASP名を比較グループキーへ含めない）。
+//     同一グループに属する複数ASP評価(Active)を比較用に集計する。
+//   ・★Evidenceを新規生成しない。採用商品(product)が参照する共有Evidenceにのみ usedBy:'asp' を
+//     既存ルール（_intelMarkEvidenceUsedBy・冪等）で追記する。他ASP候補のEvidenceは読み取りのみ
+//     （永続Evidenceへ書き戻さない・使い捨てcandidate構造内でのみ参照）。
+//   ・新しい利益計算式・加重式・ASP専用スコアは作らない。estimatedProfitは既存 _aicEstimate を再利用。
+//   ・推奨ASPはランキング(buildAffiliateIntelligenceRanking)・integratedScore・Product/Revenue Confidence
+//     へは一切影響しない（説明レイヤー）。
+//   ・工程5-2: ASP Confidence を既存 _intelCalculateConfidence の再利用で算出（usedBy:'asp'のEvidenceのみ・
+//     独立3件未満はInsufficient）。Product/Revenue Confidenceとは独立。表示・永続化への接続は5-3以降で実施。
+// ============================================================
+const INTEL_ASP_CANDIDATE_INPUT_FIELDS = ['approvalRate', 'epc', 'payout', 'cvr'];   // Confidence母集団直接入力4項目
+const INTEL_ASP_MIN_COMPARE_COUNT = 2;   // 比較成立・推奨判定の最低ASP数（工程2 Insufficient思想を継承）
+
+// 比較グループキー: 正規化商品名 × market（ASP名を含めない）。商品名が空はグループ構築不可（null）。
+function _intelAspGroupKey(productName, market) {
+  var nameKey = _aicNormalizeKeyPart(productName);
+  if (!nameKey) return null;
+  var mk = _intelStr(market);
+  var marketKey = mk ? _aicNormalizeKeyPart(mk) : null;
+  return { productNameKey: nameKey, marketKey: marketKey, groupKey: JSON.stringify([nameKey, marketKey]) };
+}
+
+// 空の asp 構造（副作用なし・正式スキーマ）。_intelBlankProduct/_intelBlankRevenue と同系。
+function _intelBlankAsp(caseId, channelScope) {
+  return {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    productNameKey: '', marketKey: null, groupKey: '',
+    candidates: [],
+    recommendedAspName: null,
+    recommendationBasis: null,
+    comparedAspCount: 0,
+    derived: { knownFactors: 0, totalFactors: 0, status: 'insufficient' },
+    confidence: null,               // 5-2で算出（本工程では _intelCalculateAspConfidence を呼ばない）
+    confidenceOwner: 'asp',
+    learningSummary: null,          // 将来Learning接続用予約（本工程は null）
+    updatedAt: '',
+  };
+}
+
+// Active評価レコード1件からASP候補を構築（読み取り専用・新規Evidence生成なし）。
+//   fieldEvidence は既存 product-input Evidence（_intelProductEvidenceRef('input',...)）を安定キーで参照するのみ。
+//   見つからない場合は空配列（＝この候補にはまだEvidenceが同期されていない＝虚偽Evidence参照を作らない）。
+function _intelBuildAspCandidate(ctx, rec) {
+  var pid = _intelProductIdentifier(rec);
+  var caseId = String((rec && rec.caseId != null) ? rec.caseId : ((ctx && ctx.caseId) || ''));
+  var est = _aicEstimate(rec);
+  var fe = {}, usedIds = [];
+  INTEL_ASP_CANDIDATE_INPUT_FIELDS.forEach(function(field) {
+    var ref = _intelProductEvidenceRef('input', pid, field);
+    var ev = _intelFindEvidenceByRef(ctx, ref, caseId);
+    fe[field] = ev ? [ev.evidenceId] : [];
+    if (ev) usedIds.push(ev.evidenceId);
+  });
+  return {
+    aspName:           _intelStr(rec.asp),
+    productIdentifier: pid,
+    evaluationId:      (rec.serverId != null ? rec.serverId : null),
+    approvalRate:      _aicNum(rec.approvalRate),
+    epc:                _aicNum(rec.epc),
+    payout:             _aicNum(rec.payout),
+    cvr:                _aicNum(rec.cvr),
+    estimatedProfit:    est.estimatedProfit,
+    fieldEvidence:      fe,
+    usedEvidenceIds:    _intelUniq(usedIds),
+  };
+}
+
+// 降順比較（数値以外/nullは最下位）。タイブレークの決定的な順序付けに使用。
+function _intelAspCompareDesc(a, b) {
+  var av = (typeof a === 'number' && !isNaN(a)) ? a : -Infinity;
+  var bv = (typeof b === 'number' && !isNaN(b)) ? b : -Infinity;
+  return bv - av;
+}
+
+// 推奨ASP判定: 有効な estimatedProfit を持つ候補のみを対象に最大値を推奨する。
+//   同値は approvalRate → epc → payout → 正規化aspName の順で決定的にタイブレークする。
+//   新しい加重式・乗算式・ASP専用スコアは作らない。有効候補が2件未満は推奨判定不可（null）。
+function _intelDetermineAspRecommendation(candidates) {
+  var eligible = (candidates || []).filter(function(c) { return typeof c.estimatedProfit === 'number' && !isNaN(c.estimatedProfit); });
+  if (eligible.length < INTEL_ASP_MIN_COMPARE_COUNT) {
+    return { recommendedAspName: null, recommendationBasis: null, eligibleCount: eligible.length };
+  }
+  var sorted = eligible.slice().sort(function(a, b) {
+    var d;
+    d = _intelAspCompareDesc(a.estimatedProfit, b.estimatedProfit); if (d !== 0) return d;
+    d = _intelAspCompareDesc(a.approvalRate, b.approvalRate); if (d !== 0) return d;
+    d = _intelAspCompareDesc(a.epc, b.epc); if (d !== 0) return d;
+    d = _intelAspCompareDesc(a.payout, b.payout); if (d !== 0) return d;
+    var an = _aicNormalizeKeyPart(a.aspName), bn = _aicNormalizeKeyPart(b.aspName);
+    if (an < bn) return -1; if (an > bn) return 1;
+    return 0;
+  });
+  var top = sorted[0];
+  var tieBreakUsed = eligible.filter(function(c) { return c.estimatedProfit === top.estimatedProfit; }).length > 1;
+  return {
+    recommendedAspName: top.aspName || null,
+    recommendationBasis: {
+      metric: 'estimatedProfit',
+      estimatedProfit: top.estimatedProfit,
+      tieBreakUsed: tieBreakUsed,
+      tieBreakOrder: tieBreakUsed ? ['approvalRate', 'epc', 'payout', 'aspName'] : null,
+      eligibleCount: eligible.length,
+    },
+    eligibleCount: eligible.length,
+  };
+}
+
+// Active評価一覧(records)から、product(採用商品)と同一グループ（正規化商品名×market）のASP比較を構築する。
+//   ★呼び出し側が明示実行（本工程では自動実行しない・render/F5から呼ばない）。
+//   ★新規Evidence生成なし。採用商品(product)が参照する共有Evidenceにのみ usedBy:'asp' を冪等追記
+//     （_intelMarkEvidenceUsedBy は追記済みなら何もしない＝重複追記なし・Evidence件数不変）。
+//   ★他ASP候補のEvidenceは読み取りのみ（usedByへ書き戻さない・使い捨てcandidate構造内でのみ保持）。
+//   ★Active評価のみを対象（_aicIsPersisted＝GET activeOnly=trueで復元された保存済み行、または保存成功済み行）。
+//   ★同一productIdentifier（Active一意性の単位）の重複は1件に限定し、不定な候補を黙って作らない。
+//   ★工程5-2でConfidence計算(_intelCalculateAspConfidence)を接続済み。derived.statusはConfidence連動
+//     （Insufficientは必ず insufficient＝空データ・単一ASPで高評価を作らない）。
+function _intelBuildAspFromProduct(ctx, product, records) {
+  if (!ctx) return null;
+  if (!Array.isArray(ctx.evidence)) ctx.evidence = [];
+  var scope = (product && product.channelScope) || ctx.channelScope || INTEL_CHANNEL_SCOPE_DEFAULT;
+  var caseId = String((product && product.caseId != null) ? product.caseId : (ctx.caseId || ''));
+  var asp = _intelBlankAsp(caseId, scope);
+
+  var productName = (product && product.productName) ? product.productName : '';
+  var market = (product && product.market) ? product.market : '';
+  var keyInfo = _intelAspGroupKey(productName, market);
+  if (!keyInfo) {                                       // 商品名不足・グループ構築不可＝insufficientのまま返す
+    asp.updatedAt = new Date().toISOString();
+    return asp;
+  }
+  asp.productNameKey = keyInfo.productNameKey;
+  asp.marketKey = keyInfo.marketKey;
+  asp.groupKey = keyInfo.groupKey;
+
+  // 同一グループ（正規化商品名×market）・Active評価のみを候補化。ASP名は比較グループキーへ含めない。
+  var list = Array.isArray(records) ? records : [];
+  var seenPid = {};
+  var candidates = [];
+  list.forEach(function(rec) {
+    if (!rec || !_aicIsPersisted(rec)) return;          // Active（保存済み）評価のみを対象とする
+    var recKey = _intelAspGroupKey(rec.name, rec.market);
+    if (!recKey || recKey.groupKey !== asp.groupKey) return;
+    var pid = _intelProductIdentifier(rec);
+    if (pid && seenPid[pid]) return;                    // productIdentifier重複は1件に限定（Active一意性前提・不定候補を作らない）
+    if (pid) seenPid[pid] = true;
+    candidates.push(_intelBuildAspCandidate(ctx, rec));
+  });
+  asp.candidates = candidates;
+  asp.comparedAspCount = candidates.length;
+
+  // 採用商品(product)のみ、共有Evidenceへ usedBy:'asp' を冪等追記（新規Evidence生成なし・件数不変）。
+  if (product && product.fieldEvidence) {
+    INTEL_ASP_CANDIDATE_INPUT_FIELDS.forEach(function(field) {
+      var ids = Array.isArray(product.fieldEvidence[field]) ? product.fieldEvidence[field] : [];
+      ids.forEach(function(id) { _intelMarkEvidenceUsedBy(ctx, id, 'asp'); });
+    });
+  }
+
+  // Confidence用母集団データ（5-1では値のみ構築・スコア化は5-2）。totalFactors=有効な比較ASP数×4。
+  var known = 0;
+  candidates.forEach(function(c) {
+    INTEL_ASP_CANDIDATE_INPUT_FIELDS.forEach(function(field) {
+      if (c[field] !== null && c[field] !== undefined) known++;
+    });
+  });
+  asp.derived.knownFactors = known;
+  asp.derived.totalFactors = candidates.length * INTEL_ASP_CANDIDATE_INPUT_FIELDS.length;
+
+  var rec2 = _intelDetermineAspRecommendation(candidates);
+  asp.recommendedAspName = rec2.recommendedAspName;
+  asp.recommendationBasis = rec2.recommendationBasis;
+
+  // 工程5-2: ASP Confidence（usedBy:'asp'で共有参照されたEvidenceのみ・独立3件未満はInsufficient）。
+  //   knownFactors/totalFactorsは本関数内で既に構築済みの値（comparedAspCount×4）をそのまま再利用する。
+  asp.confidence = _intelCalculateAspConfidence(ctx, asp);
+  // status は Confidence連動（Insufficientは必ず insufficient）に加え、工程5-1由来の比較成立要件
+  // （比較ASP数・有効estimatedProfit候補数が最低数INTEL_ASP_MIN_COMPARE_COUNT未満）も引き続き強制する。
+  // 単一ASP・有効利益候補1件以下では、Evidenceが充実していても高評価・推奨を確定させない（過信させない）。
+  var compareInsufficient = (asp.comparedAspCount < INTEL_ASP_MIN_COMPARE_COUNT)
+    || (rec2.eligibleCount < INTEL_ASP_MIN_COMPARE_COUNT);
+  asp.derived.status = (compareInsufficient || (asp.confidence && asp.confidence.confidenceLevel === 'Insufficient'))
+    ? 'insufficient'
+    : _aicStatusFromScore(asp.confidence.confidenceScore);
+
+  asp.updatedAt = new Date().toISOString();
+  return asp;
+}
+
+// ============================================================
+// 工程5-2: ASP Confidence（既存 _intelCalculateConfidence を再利用・新式/新しきい値/新独立性判定を作らない）
+//   ・母集団＝ usedBy:'asp' で共有参照された Evidence のみ（採用商品(product)のEvidenceのみが対象。
+//     他ASP候補のEvidenceは工程5-1の設計どおり usedBy:'asp' を書かないため、自然に母集団へ含まれない
+//     ＝二重計上・水増しなし・Product/Revenue用母集団も書き換えない）。
+//   ・knownFactors/totalFactorsは工程5-1で構築済みの値（比較ASP数×4の入力充足度）をそのまま再利用し、
+//     ASP専用の新しい加重・しきい値は作らない。
+//   ・独立Evidence3件未満は工程2ルールで Insufficient（_intelCalculateConfidence 内 _intelCountIndependentEvidence が判定）。
+//   ・Product Confidence（confidenceOwner:'product'）・Revenue Confidence（confidenceOwner:'revenue'）とは完全に独立。
+// ============================================================
+function _intelCalculateAspConfidence(ctx, asp) {
+  var evList = (ctx && Array.isArray(ctx.evidence)) ? ctx.evidence.filter(function(e) {
+    return e && Array.isArray(e.usedBy) && e.usedBy.indexOf('asp') !== -1;
+  }) : [];
+  var known = (asp && asp.derived && typeof asp.derived.knownFactors === 'number') ? asp.derived.knownFactors : 0;
+  var total = (asp && asp.derived && typeof asp.derived.totalFactors === 'number') ? asp.derived.totalFactors : 0;
+  return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
+}
+
 // fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
 // ※ productIdentifier はここでは生成しない（サーバー正本）
 function _aicNormalizeKeyPart(v) {
