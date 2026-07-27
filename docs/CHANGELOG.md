@@ -4,6 +4,17 @@
 
 ---
 
+## Affiliate Intelligence Company 工程5-1・5-2 — ASP Intelligence（③層）**正式リリースComplete**（2026-07-28・Code commit 17587296c9413f53dcc05e4c72897ac4e8d0643a・main push・Render反映）
+
+**Version2 Core ③ ASP Intelligence を Product Intelligence 上の比較説明レイヤーとして追加**。`intelligenceContext.asp`（既存受け皿）へ正規化商品名×market単位でグルーピングし、Active評価のみを候補化。**`index.html`（+212/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue Intelligence 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 079）。
+
+- **工程5-1 データ構造・Evidence配線**：`_intelAspGroupKey`（正規化商品名×market・ASP名は含めない）・`_intelBlankAsp`・`_intelBuildAspCandidate`（Active評価のみ・読み取り専用）・`_intelDetermineAspRecommendation`（既存`estimatedProfit`最大＋決定的タイブレーク）・`_intelBuildAspFromProduct`（採用商品のEvidenceにのみ`usedBy:'asp'`冪等追記）。純関数18 PASS。
+- **工程5-2 ASP Confidence**：`_intelCalculateAspConfidence`＝**`usedBy:'asp'`Evidenceのみ**を母集団に既存`_intelCalculateConfidence`再利用（派生Evidence二重計上なし）・独立3件未満Insufficient・**比較ASP数/有効利益候補2件未満は強制insufficient**・`confidenceOwner:'asp'`でProduct/Revenue Confidenceと分離。追加テスト26 PASS（合計44/44）。
+- **対象外**：ASP Confidence表示UI・Output Draft永続化・F5復元・端末同期は**工程5-3へ分離・今回未実装**。
+- **検証**：純関数44/44 PASS・JavaScript構文OK・dev-check 200/200/200・Console 0・回帰なし・実ブラウザ確認で**Supabase書込み0（GETのみ）・AI API実行0**。
+
+---
+
 ## Affiliate Intelligence Company 工程4 — Revenue Intelligence（⑤層）**正式リリースComplete（4-1〜4-4）**（2026-07-27・Code commit 8cde936・main push・Render反映）
 
 **Version2 Core ⑤ Revenue Intelligence を Product Intelligence 上の読み取り専用説明層として追加**。`intelligenceContext.revenue`（財務入力7＋派生2）へ Product Evidence を `usedBy:'revenue'` で共有参照。**`index.html`（+230/-1）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/ランキング順位/`_intelCalculateConfidence`本体/Product 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 078）。
