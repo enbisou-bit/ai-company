@@ -12,6 +12,7 @@
 - **工程5-2 ASP Confidence**：`_intelCalculateAspConfidence`＝**`usedBy:'asp'`Evidenceのみ**を母集団に既存`_intelCalculateConfidence`再利用（派生Evidence二重計上なし）・独立3件未満Insufficient・**比較ASP数/有効利益候補2件未満は強制insufficient**・`confidenceOwner:'asp'`でProduct/Revenue Confidenceと分離。追加テスト26 PASS（合計44/44）。
 - **対象外**：ASP Confidence表示UI・Output Draft永続化・F5復元・端末同期は**工程5-3へ分離・今回未実装**。
 - **検証**：純関数44/44 PASS・JavaScript構文OK・dev-check 200/200/200・Console 0・回帰なし・実ブラウザ確認で**Supabase書込み0（GETのみ）・AI API実行0**。
+- **Git・反映**：Code commit **17587296c9413f53dcc05e4c72897ac4e8d0643a**・docs commit **a1f9753**・tag **v1.01-affiliate-asp-intelligence**・main push・Render反映。**iPhone実機確認 完了（2026-07-28・ユーザー実施・崩れなし・横スクロールなし・空状態正常）＝ASP Intelligence 工程5-1・5-2 正式リリースComplete**。次工程＝ASP Intelligence 工程5-3（表示UI・永続化・F5復元、仕様未確定）。
 
 ---
 
