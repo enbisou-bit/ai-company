@@ -33978,7 +33978,7 @@ const INTEL_CONFIDENCE_LEVELS = ['High','Medium','Low','Insufficient'];
 const INTEL_CONFIDENCE_THRESHOLDS = { high: 75, medium: 55, low: 35 };
 const INTEL_CONFIDENCE_MIN_EVIDENCE = 3;        // 独立Evidenceがこの数未満なら点数に関わらず Insufficient
 const INTEL_EVIDENCE_SOFT_LIMIT = 200;          // 警告のみ（自動削除しない）
-const INTEL_MODULE_KEYS = ['market','asp','product','instagram','userPain','opportunity','business','brand','account','content','publishing','learning'];
+const INTEL_MODULE_KEYS = ['market','asp','product','revenue','instagram','userPain','opportunity','business','brand','account','content','publishing','learning'];
 
 function _intelStr(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
 function _intelUniq(arr) {
@@ -34346,6 +34346,11 @@ const INTEL_PRODUCT_INPUT_FIELDS = ['payout','profitRate','approvalRate','epc','
 const INTEL_PRODUCT_PRIORITY_FIELDS = ['profitRate','igFit','approvalRate','epc','cvr','competitors','lifespanMonths'];   // 優先Evidence化対象（参考）
 const INTEL_PRODUCT_DERIVED_FIELDS = ['integratedScore','estimatedSales','estimatedProfit'];
 
+// 工程4-1: Revenue Intelligence（⑤層）が扱う財務フィールド。Productの財務サブ集合（新規算出しない・productから複製）。
+//   入力7項目＝利益/効率/量/寿命。派生2項目＝estimatedSales/estimatedProfit（integratedScoreは②正本のため除外）。
+const INTEL_REVENUE_INPUT_FIELDS = ['profitRate','approvalRate','epc','cvr','payout','monthlyClicks','lifespanMonths'];
+const INTEL_REVENUE_DERIVED_FIELDS = ['estimatedSales','estimatedProfit'];
+
 // productIdentifier: サーバー正本を優先。無い場合のみ既存正規化規則で構築（server仕様と一致・独自再定義しない）。
 function _intelProductIdentifier(rec) {
   if (rec && rec.productIdentifier != null && String(rec.productIdentifier) !== '') return String(rec.productIdentifier);
@@ -34486,6 +34491,120 @@ function _intelSyncProductFromAffiliate(ctx, rec) {
   product.confidence = _intelCalculateConfidence({ knownFactors: sc.knownFactors, totalFactors: sc.totalFactors, evidenceList: evList });
   product.updatedAt = new Date().toISOString();
   return product;
+}
+
+// ============================================================
+// 工程4-1: Revenue Intelligence（⑤層）スキーマ＋Evidence配線（表示・Confidence・永続化はしない）
+//   ・Revenueは Product Intelligence の財務サブ集合を「複製＋既存Evidence参照」する専任層。
+//   ・★Evidenceを新規生成しない（_intelCreateEvidence/_intelAddEvidence を呼ばない）。既存Product Evidence の usedBy へ 'revenue' を冪等追記して共有参照する。
+//   ・非破壊: Product本体（inputs/derived/fieldEvidence/usedEvidenceIds/confidence）は変更しない（共有Evidenceの usedBy に 'revenue' が増えるのみ）。
+//   ・integratedScore は複製しない（②正本）。新しい収益式・ランキング式・Confidence式は作らない。
+//   ・工程4-2: Revenue Confidence を既存 _intelCalculateConfidence の再利用で算出（財務入力Evidenceのみ・独立3件未満は Insufficient）。Product Confidenceとは独立・integratedScore/順位へは反映しない。
+//   ・呼び出し側（表示/永続化）への接続は 4-3/4-4（本工程では接続しない＝挙動変化ゼロ）。
+// ============================================================
+
+// 空の revenue 構造（副作用なし・正式スキーマ）。_intelBlankProduct と同系（既存コードを正本）。
+function _intelBlankRevenue(caseId, channelScope) {
+  var inputs = {}; INTEL_REVENUE_INPUT_FIELDS.forEach(function(f){ inputs[f] = null; });
+  var fe = {};
+  INTEL_REVENUE_INPUT_FIELDS.forEach(function(f){ fe[f] = []; });
+  INTEL_REVENUE_DERIVED_FIELDS.forEach(function(f){ fe[f] = []; });
+  return {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    productIdentifier: '',
+    evaluationId: null,
+    inputs: inputs,
+    derived: { estimatedSales: null, estimatedProfit: null, knownFactors: 0, totalFactors: 0, status: 'insufficient' },
+    fieldEvidence: fe,
+    usedEvidenceIds: [],
+    confidence: null,               // 4-2で算出（本工程では _intelCalculateConfidence を呼ばない）
+    confidenceOwner: 'revenue',
+    learningSummary: null,          // ⑦接続用予約（本工程は null）
+    updatedAt: '',
+  };
+}
+
+// 工程4-2: Revenue Confidence を算出（既存 _intelCalculateConfidence を再利用・新式/新しきい値なし）。
+//   母集団＝財務入力7項目のEvidenceのみ（派生 estimatedSales/estimatedProfit は根拠参照可だが独立件数へ二重計上しない）。
+//   独立Evidence3件未満は工程2ルールで Insufficient（_intelCalculateConfidence 内 _intelCountIndependentEvidence が判定）。
+function _intelCalculateRevenueConfidence(ctx, revenue) {
+  var ids = [];
+  INTEL_REVENUE_INPUT_FIELDS.forEach(function(f) {
+    var arr = (revenue && revenue.fieldEvidence && Array.isArray(revenue.fieldEvidence[f])) ? revenue.fieldEvidence[f] : [];
+    arr.forEach(function(id) { if (ids.indexOf(id) === -1) ids.push(id); });
+  });
+  var evList = ids.map(function(id) { return _intelFindEvidence(ctx, id); }).filter(Boolean);
+  var known = (revenue && revenue.derived && typeof revenue.derived.knownFactors === 'number') ? revenue.derived.knownFactors : 0;
+  var total = (revenue && revenue.derived && typeof revenue.derived.totalFactors === 'number') ? revenue.derived.totalFactors : INTEL_REVENUE_INPUT_FIELDS.length;
+  return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
+}
+
+// Product Context から Revenue Context を生成・同期。既存Product Evidence を参照し usedBy へ 'revenue' を冪等追記する。
+//   ★product同期後に呼ぶ前提（財務Evidenceが ctx.evidence に存在すること）。product/ctx が空・不正でも crash しない。
+//   ★Product本体は破壊しない（読み取りのみ・共有Evidenceの usedBy 追記のみ）。冪等（複数回実行で件数・usedBy不変）。
+//   ★工程4-2: Evidence配線後に Revenue Confidence を算出し revenue.confidence / revenue.derived.status を確定する。
+function _intelSyncRevenueFromProduct(ctx, product) {
+  if (!ctx) return null;
+  if (!Array.isArray(ctx.evidence)) ctx.evidence = [];
+  var scope = (product && product.channelScope) || ctx.channelScope || INTEL_CHANNEL_SCOPE_DEFAULT;
+  var caseId = String((product && product.caseId != null) ? product.caseId : (ctx.caseId || ''));
+  var revenue = _intelBlankRevenue(caseId, scope);
+  if (!product || typeof product !== 'object') {                 // 空/不正product＝財務値null・Evidence0・crashなし
+    revenue.confidence = _intelCalculateRevenueConfidence(ctx, revenue);   // Evidence0 → Insufficient（工程2ルール）
+    revenue.derived.status = 'insufficient';
+    revenue.updatedAt = new Date().toISOString();
+    return revenue;
+  }
+
+  var pid = (product.productIdentifier != null) ? String(product.productIdentifier) : '';
+  revenue.productIdentifier = pid;
+  revenue.evaluationId = (product.evaluationId != null) ? product.evaluationId : null;
+
+  var pInputs  = (product.inputs && typeof product.inputs === 'object') ? product.inputs : {};
+  var pDerived = (product.derived && typeof product.derived === 'object') ? product.derived : {};
+  var pFieldEv = (product.fieldEvidence && typeof product.fieldEvidence === 'object') ? product.fieldEvidence : {};
+
+  var usedIds = [], known = 0;
+
+  // 財務入力: 値を複製（再算出しない）＋既存 product.fieldEvidence[field] を参照し usedBy へ 'revenue' 追記
+  INTEL_REVENUE_INPUT_FIELDS.forEach(function(field) {
+    var val = (pInputs[field] !== undefined) ? pInputs[field] : null;
+    revenue.inputs[field] = val;
+    if (val !== null && val !== undefined) known++;
+    var ids = Array.isArray(pFieldEv[field]) ? pFieldEv[field] : [];
+    ids.forEach(function(id) {
+      if (_intelMarkEvidenceUsedBy(ctx, id, 'revenue')) {            // 既存Evidenceにのみ追記（新規生成しない）
+        if (revenue.fieldEvidence[field].indexOf(id) === -1) revenue.fieldEvidence[field].push(id);
+        usedIds.push(id);
+      }
+    });
+  });
+
+  // 財務派生: 値を複製＋安定ref（product-derived:pid:field）で既存Evidenceを特定し usedBy 追記
+  revenue.derived.estimatedSales  = (pDerived.estimatedSales  !== undefined) ? pDerived.estimatedSales  : null;
+  revenue.derived.estimatedProfit = (pDerived.estimatedProfit !== undefined) ? pDerived.estimatedProfit : null;
+  INTEL_REVENUE_DERIVED_FIELDS.forEach(function(field) {
+    var ref = _intelProductEvidenceRef('derived', pid, field);
+    var ev = _intelFindEvidenceByRef(ctx, ref, caseId);
+    if (ev && ev.evidenceId && _intelMarkEvidenceUsedBy(ctx, ev.evidenceId, 'revenue')) {
+      if (revenue.fieldEvidence[field].indexOf(ev.evidenceId) === -1) revenue.fieldEvidence[field].push(ev.evidenceId);
+      usedIds.push(ev.evidenceId);
+    }
+  });
+
+  revenue.usedEvidenceIds = _intelUniq(usedIds);
+  revenue.derived.knownFactors = known;                              // 財務入力の充足数（0〜7）
+  revenue.derived.totalFactors = INTEL_REVENUE_INPUT_FIELDS.length;  // 7（入力基準・派生は二重計上しない＝Product同様入力基準）
+  // 工程4-2: Revenue Confidence（財務入力Evidenceのみ・独立3件未満は Insufficient）。Product Confidenceとは独立。
+  revenue.confidence = _intelCalculateRevenueConfidence(ctx, revenue);
+  // status は Confidence連動（Insufficientは必ず insufficient＝空データで good/high を誤表示しない・それ以外は既存 _aicStatusFromScore を再利用＝独自status体系を作らない）。
+  revenue.derived.status = (revenue.confidence && revenue.confidence.confidenceLevel === 'Insufficient')
+    ? 'insufficient'
+    : _aicStatusFromScore(revenue.confidence.confidenceScore);
+  revenue.updatedAt = new Date().toISOString();
+  return revenue;
 }
 
 // fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
@@ -34857,6 +34976,8 @@ function adoptAffiliateForContentPlanning(evalId) {
     product.caseId = String(src.caseId);
     product.updatedAt = new Date().toISOString();
     nextIntelligenceContext.product = product;                      // ★戻り値を ctx.product へ明示代入（自動代入されないため）
+    // 工程4-4: Revenue も同一 intelligenceContext へ両書き（同一ctxのproductから同期・財務Evidenceを共有参照・新規Evidence/新規POSTなし）。
+    nextIntelligenceContext.revenue = _intelSyncRevenueFromProduct(nextIntelligenceContext, product);
     // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
@@ -35062,6 +35183,110 @@ function _aicBuildConfidenceHtml(conf) {
     + '</div>';
 }
 
+// ============================================================
+// 工程4-3: Revenue Intelligence 表示（読み取り専用・非永続プレビュー・順位/保存/採用は変更しない）
+//   ・表示は使い捨て context 上で _intelSyncProductFromAffiliate → _intelSyncRevenueFromProduct を実行して生成する。
+//     ★実 intelligenceContext / _lastOutputDraft / 本体Evidenceの usedBy には一切書かない（副作用なし・POSTなし・永続化なし）。
+//   ・保存済みRevenueの復元表示は工程4-4（本工程は現Product/Evidenceからのプレビューのみ）。
+//   ・数値は既存表記（.toLocaleString()＋円/月・estimatedSales/Profitは既存コードで月額扱い）。null＝情報なし・0は有効値。
+// ============================================================
+
+// 表示専用: 1商材のRevenueプレビュー（Confidence含む）を使い捨てctxで生成。実contextへ書かない。失敗時null。
+function _aicBuildRevenueForRow(rec) {
+  if (!rec) return null;
+  try {
+    var caseId = (rec.caseId != null ? rec.caseId : (_aicCurrentCaseId() || ''));
+    var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);        // 使い捨て・非永続（実contextへ書かない）
+    var product = _intelSyncProductFromAffiliate(ctx, rec);          // productを使い捨てctxへ生成
+    return _intelSyncRevenueFromProduct(ctx, product);              // revenue（confidence含む）・usedByは使い捨てctx内のみ
+  } catch (e) { return null; }
+}
+
+// 工程4-4: 現在Draftに保存済みで、現在案件に一致する採用商材のRevenue（正本）を返す。無ければnull。副作用なし・再計算しない。
+function _aicCurrentSavedRevenue() {
+  try {
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!draft || !draft.fields || !draft.fields.intelligenceContext) return null;
+    var rev = draft.fields.intelligenceContext.revenue;
+    if (!rev || typeof rev !== 'object' || !rev.productIdentifier) return null;   // 空受け皿({})は不採用
+    var cur = _aicCurrentCaseId();
+    if (!cur || String(draft.caseId || '') !== String(cur) || String(rev.caseId || '') !== String(cur)) return null;
+    return rev;
+  } catch (e) { return null; }
+}
+
+// 工程4-4: src商材が採用済み（保存済みRevenueと productIdentifier 一致）なら保存済みRevenueを返す。他商材はnull（→プレビュー）。
+function _aicSavedRevenueForRow(src) {
+  var saved = _aicCurrentSavedRevenue();
+  if (!saved || !src || src.productIdentifier == null) return null;
+  return (String(saved.productIdentifier) === String(src.productIdentifier)) ? saved : null;
+}
+
+// 表示専用: Revenue情報の共通整形（想定利益/Confidence/Known/Independent）。
+function _aicRevenueParts(rev) {
+  var esc = escapeHtml;
+  var d = (rev && rev.derived) || {}, conf = (rev && rev.confidence) || {};
+  var isInsuf = (conf.confidenceLevel === 'Insufficient');
+  return {
+    salesTxt:  (typeof d.estimatedSales  === 'number') ? ('約' + d.estimatedSales.toLocaleString()  + '円/月') : '情報なし',
+    profitTxt: (typeof d.estimatedProfit === 'number') ? ('約' + d.estimatedProfit.toLocaleString() + '円/月') : '情報なし',
+    isInsuf: isInsuf,
+    confTxt: isInsuf ? 'Insufficient' : (esc(String(conf.confidenceLevel || '-')) + '（' + (conf.confidenceScore != null ? conf.confidenceScore : '-') + '点）'),
+    confColor: isInsuf ? '#ff9a9a' : 'rgba(150,220,150,0.95)',
+    known: (typeof conf.knownFactors === 'number') ? conf.knownFactors : (typeof d.knownFactors === 'number' ? d.knownFactors : 0),
+    total: (typeof d.totalFactors === 'number') ? d.totalFactors : INTEL_REVENUE_INPUT_FIELDS.length,
+    indep: (typeof conf.independentEvidenceCount === 'number') ? conf.independentEvidenceCount : 0,
+    status: esc(String(d.status || 'insufficient')),
+  };
+}
+
+// 表示専用: ランキングカード内の Revenue 1行（値不足でもレイアウトを壊さない・順位/採用に非影響）。
+//   工程4-4: 採用済み商材（保存済みRevenueと productIdentifier 一致）は保存値を正本表示・再計算しない。他商材は使い捨てプレビュー。
+function _aicBuildRevenueCardLine(rec) {
+  var saved = _aicSavedRevenueForRow(rec);
+  var rev = saved || _aicBuildRevenueForRow(rec);
+  if (!rev) return '';                                              // 生成不可はライン非表示
+  var p = _aicRevenueParts(rev);
+  var tag = saved ? ' <span style="opacity:.6;">💾保存済み</span>' : '';
+  return '<div class="oe-aic-note" style="margin-top:4px;">'
+    + '💰 Revenue: 想定利益 <strong>' + p.profitTxt + '</strong>'
+    + ' ／ Confidence <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    + ' ／ Known ' + p.known + ' / ' + p.total
+    + ' ／ Independent ' + p.indep + '件' + tag
+    + '</div>';
+}
+
+// 表示専用: AICセクション内の Revenue Intelligence 最小パネル（読み取り専用）。
+//   工程4-4: 現在案件の採用商材に保存済みRevenueがあれば正本表示（💾）。無ければ rank1 の使い捨てプレビュー。
+function _aicBuildRevenueHtml(ranked) {
+  var esc = escapeHtml;
+  var base = 'margin-top:6px;border-top:1px dashed rgba(255,255,255,.15);padding-top:6px;';
+  var rev, labelHtml;
+  var saved = _aicCurrentSavedRevenue();
+  if (saved) {
+    rev = saved;
+    var draft = _lastOutputDraft;
+    var acName = (draft && draft.fields && draft.fields.affiliateContext && draft.fields.affiliateContext.productName) ? draft.fields.affiliateContext.productName : '採用商材';
+    labelHtml = '<span style="opacity:.55;">採用商材「' + esc(acName) + '」 💾保存済み</span>';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    rev = _aicBuildRevenueForRow(src);
+    labelHtml = '<span style="opacity:.55;">トップ商材「' + esc(top.name) + '」（プレビュー）</span>';
+  } else {
+    return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">💰 Revenue Intelligence: 案件・商材が未登録のため情報なし</div>';
+  }
+  if (!rev) return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">💰 Revenue Intelligence: 情報なし</div>';
+  var p = _aicRevenueParts(rev);
+  return '<div class="oe-aic-note" style="' + base + '">'
+    + '<div style="opacity:.8;">💰 <strong>Revenue Intelligence</strong> ' + labelHtml + '</div>'
+    + '<div>想定売上 ' + p.salesTxt + ' ／ 想定利益 ' + p.profitTxt + '</div>'
+    + '<div>Revenue Confidence: <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    +   ' ／ Known ' + p.known + ' / ' + p.total + ' ／ Independent ' + p.indep + '件 ／ status: ' + p.status + '</div>'
+    + (p.isInsuf ? '<div style="color:#ff9a9a;opacity:.85;">⚠ 独立した財務根拠が' + INTEL_CONFIDENCE_MIN_EVIDENCE + '件未満のため Insufficient</div>' : '')
+    + '</div>';
+}
+
 // Leaderへ「今一番利益が出る案件は？」に答える統合サマリー
 function _aicBuildLeaderSummary(ranked) {
   if (!ranked.length) return '案件が未登録です。下のフォームから案件を手動入力すると、統合スコアとおすすめ順位を算出します。';
@@ -35223,6 +35448,8 @@ function buildAffiliateIntelligenceCoreHtml() {
     for (var _i = 0; _i < _affiliateCases.length; _i++) { if (_affiliateCases[_i].id === r.id) { src = _affiliateCases[_i]; break; } }
     // 工程3-2: 表示専用Confidence（工程3-1のproduct.confidence・副作用なし・順位は変更しない）
     var confHtml = _aicBuildConfidenceHtml(_aicBuildProductConfidence(src));
+    // 工程4-3: 表示専用Revenueライン（使い捨てctxプレビュー・副作用なし・順位/採用は変更しない）
+    var revLine = _aicBuildRevenueCardLine(src);
     var pState = (src && src.persistenceState) || 'unsaved';
     var persisted = _aicIsPersisted(src);
     var saveBadge = '';
@@ -35253,6 +35480,7 @@ function buildAffiliateIntelligenceCoreHtml() {
       + '</div>'
       + '<div class="oe-aic-metrics">' + metrics.join('') + '</div>'
       + confHtml
+      + revLine
       + failMsg
       + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
       +   ' ' + removeBtn + retryBtn + '</div>'
@@ -35303,6 +35531,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + '<div>' + safetyBadgesHtml + '</div>'
     + leaderSummaryHtml
     + _intelBuildContextSummaryHtml()
+    + _aicBuildRevenueHtml(ranked)
     + '<div class="oe-aic-label">おすすめ順位ランキング（統合スコア順）</div>'
     + rankingHtml
     + (warningsHtml ? '<div class="oe-aic-label">Warnings</div>' + warningsHtml : '')
