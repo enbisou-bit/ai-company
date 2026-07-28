@@ -12,7 +12,7 @@
 - **工程5-3B 永続化・Copy**：採用時`affiliateContext`＋`product`＋`revenue`＋`asp`を同一Output Draftへ**四書き**・既存push1回（**採用1回=POST1回・ASP専用POSTなし**）。`_aicBuildAspReportText`をCopy Full Reportへ追記（新規Copyボタンなし）。
 - **工程5-3C 実Supabase検証**（専用caseId）：Output Draft POST2回（scaffold1＋採用四書き1）／Evidence12件不変（product12/revenue9/asp4・重複なし）／F5復元で推奨ASP・Confidence・比較数・Independent・`updatedAt`完全一致（再計算なし実証）／caseId分離／Copy Full Report確認／Product・Revenue・ranking回帰なし／**テストデータ限定削除 remaining=0（affiliate_evaluations・output_drafts とも）**。
 - **検証**：純関数 工程5-3A/5-3B新規27＋工程5-1/5-2再実行44＝**71/71 PASS**・JavaScript構文OK・dev-check 200/200/200・Console 0・回帰なし・実ブラウザ確認でSupabase書込みは意図した2回のみ・AI API実行0。
-- **Git・反映**：Code commit **b473053**・docs commit＝本更新・tag **v1.01-affiliate-asp-intelligence-persistence**・main push・Render反映。**iPhone実機確認は本docs更新時点では未実施（待ち）**。次工程＝未定（ASP Intelligence 7層構想の残り等）。
+- **Git・反映**：Code commit **b473053**・docs commit＝本更新・tag **v1.01-affiliate-asp-intelligence-persistence**・main push・Render反映。**PC本番確認・iPhone実機確認 完了（2026-07-28・ユーザー実施・崩れなし・横スクロールなし・白画面/無限ロードなし。保存済み案件なしのためProduct Intelligence保存済み表示/💾表示は確認対象外）＝ASP Intelligence 工程5-3 正式リリースComplete**。次工程＝未定（ASP Intelligence 7層構想の残り等）。
 
 ---
 
