@@ -35294,6 +35294,8 @@ function adoptAffiliateForContentPlanning(evalId) {
     // 工程5-3B: ASP も同一 intelligenceContext へ書く（採用商品のEvidenceにのみ usedBy:'asp' 冪等追記・他ASP候補は読み取りのみ・新規Evidence/新規POSTなし）。
     //   _affiliateCases 全件を比較母集団として渡す（正規化商品名×market グループで採用商品と同一の複数ASP評価を比較）。
     nextIntelligenceContext.asp = _intelBuildAspFromProduct(nextIntelligenceContext, product, (Array.isArray(_affiliateCases) ? _affiliateCases : []));
+    // 工程6-3B: Content も同一 intelligenceContext へ書く（採用商品のEvidenceにのみ usedBy:'content' 冪等追記・新規Evidence/新規POSTなし）。
+    nextIntelligenceContext.content = _intelSyncContentFromProduct(nextIntelligenceContext, product);
     // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
@@ -35729,6 +35731,124 @@ function _aicBuildAspHtml(ranked) {
     + '</div>';
 }
 
+// ============================================================
+// 工程6-3A: Content Intelligence 表示（読み取り専用・非永続プレビュー＋保存済み正本表示）
+//   ・単一商材紐づき（Revenue型）のため、保存済み正本判定は productIdentifier + caseId で行う（ASPのgroupKey方式は使わない）。
+//   ・採用商材は保存済み intelligenceContext.content を正本表示（💾・再計算しない）。未採用は使い捨てctxプレビュー（_aicBuildContentForRow）。
+//   ・saveRatePred/clickRatePred は予測値（実測ではない）ことを表示上も明示する。
+//   ・順位/integratedScore/estimatedProfit/Product/Revenue/ASP は変更しない（説明レイヤー）。
+// ============================================================
+
+// 現在Draftに保存済みで、現在案件に一致する採用商材のContent（正本）を返す。無ければnull。副作用なし・再計算しない。
+function _aicCurrentSavedContent() {
+  try {
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!draft || !draft.fields || !draft.fields.intelligenceContext) return null;
+    var content = draft.fields.intelligenceContext.content;
+    if (!content || typeof content !== 'object' || !content.productIdentifier) return null;   // 空受け皿({})は不採用
+    var cur = _aicCurrentCaseId();
+    if (!cur || String(draft.caseId || '') !== String(cur) || String(content.caseId || '') !== String(cur)) return null;
+    return content;
+  } catch (e) { return null; }
+}
+
+// src商材が採用済み（保存済みContentと productIdentifier 一致）なら保存済みContentを返す。他商材はnull（→プレビュー）。
+function _aicSavedContentForRow(src) {
+  var saved = _aicCurrentSavedContent();
+  if (!saved || !src || src.productIdentifier == null) return null;
+  return (String(saved.productIdentifier) === String(src.productIdentifier)) ? saved : null;
+}
+
+// 表示専用: Content情報の共通整形（保存率予測/クリック率予測/IG適性/Confidence/Known/Independent）。値は予測値のため明示する。
+function _aicContentParts(content) {
+  var esc = escapeHtml;
+  var inp = (content && content.inputs) || {}, d = (content && content.derived) || {}, conf = (content && content.confidence) || {};
+  var isInsuf = !conf || (conf.confidenceLevel === 'Insufficient') || (d.status === 'insufficient');
+  function pctTxt(v) { return (typeof v === 'number') ? (v + '%') : '情報なし'; }
+  return {
+    saveRateTxt: pctTxt(inp.saveRatePred),
+    clickRateTxt: pctTxt(inp.clickRatePred),
+    igFitTxt: (typeof inp.igFit === 'number') ? String(inp.igFit) : '情報なし',
+    isInsuf: isInsuf,
+    confTxt: isInsuf ? 'Insufficient' : (esc(String(conf.confidenceLevel || '-')) + '（' + (conf.confidenceScore != null ? conf.confidenceScore : '-') + '点）'),
+    confColor: isInsuf ? '#ff9a9a' : 'rgba(150,220,150,0.95)',
+    known: (typeof conf.knownFactors === 'number') ? conf.knownFactors : (typeof d.knownFactors === 'number' ? d.knownFactors : 0),
+    total: (typeof d.totalFactors === 'number') ? d.totalFactors : INTEL_CONTENT_INPUT_FIELDS.length,
+    indep: (typeof conf.independentEvidenceCount === 'number') ? conf.independentEvidenceCount : 0,
+    status: esc(String(d.status || 'insufficient')),
+  };
+}
+
+// 表示専用: ランキングカード内の Content 1行（値不足でもレイアウトを壊さない・順位/採用に非影響）。
+//   採用済み商材（保存済みContentとproductIdentifier一致）は保存値を正本表示・再計算しない。他商材は使い捨てプレビュー。
+function _aicBuildContentCardLine(rec) {
+  var saved = _aicSavedContentForRow(rec);
+  var content = saved || _aicBuildContentForRow(rec);
+  if (!content) return '';                                          // 生成不可はライン非表示
+  var p = _aicContentParts(content);
+  var tag = saved ? ' <span style="opacity:.6;">💾保存済み</span>' : '';
+  return '<div class="oe-aic-note" style="margin-top:4px;">'
+    + '📝 Content: 保存率予測 <strong>' + p.saveRateTxt + '</strong>'
+    + ' ／ クリック率予測 <strong>' + p.clickRateTxt + '</strong>'
+    + ' ／ Confidence <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    + ' ／ Independent ' + p.indep + '件' + tag
+    + '</div>';
+}
+
+// 表示専用: AICセクション内の Content Intelligence 最小パネル（読み取り専用）。
+//   現在案件の採用商材に保存済みContentがあれば正本表示（💾）。無ければ rank1 の使い捨てプレビュー。
+function _aicBuildContentHtml(ranked) {
+  var esc = escapeHtml;
+  var base = 'margin-top:6px;border-top:1px dashed rgba(255,255,255,.15);padding-top:6px;';
+  var content, labelHtml;
+  var saved = _aicCurrentSavedContent();
+  if (saved) {
+    content = saved;
+    var draft = _lastOutputDraft;
+    var acName = (draft && draft.fields && draft.fields.affiliateContext && draft.fields.affiliateContext.productName) ? draft.fields.affiliateContext.productName : '採用商材';
+    labelHtml = '<span style="opacity:.55;">採用商材「' + esc(acName) + '」 💾保存済み</span>';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    content = _aicBuildContentForRow(src);
+    labelHtml = '<span style="opacity:.55;">トップ商材「' + esc(top.name) + '」（プレビュー）</span>';
+  } else {
+    return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">📝 Content Intelligence: 投稿適性の入力（保存率予測・クリック率予測・IG適性）が不足のため情報なし</div>';
+  }
+  if (!content) return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">📝 Content Intelligence: 投稿適性の入力（保存率予測・クリック率予測・IG適性）が不足のため情報なし</div>';
+  var p = _aicContentParts(content);
+  return '<div class="oe-aic-note" style="' + base + '">'
+    + '<div style="opacity:.8;">📝 <strong>Content Intelligence</strong> ' + labelHtml + '</div>'
+    + '<div style="opacity:.6;font-size:.85em;">※保存率予測・クリック率予測は予測値です（実測ではありません）</div>'
+    + '<div>保存率予測 ' + p.saveRateTxt + ' ／ クリック率予測 ' + p.clickRateTxt + ' ／ IG適性 ' + p.igFitTxt + '</div>'
+    + '<div>Content Confidence: <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    +   ' ／ Known ' + p.known + ' / ' + p.total + ' ／ Independent ' + p.indep + '件 ／ status: ' + p.status + '</div>'
+    + (p.isInsuf ? '<div style="color:#ff9a9a;opacity:.85;">⚠ 独立した投稿適性根拠が' + INTEL_CONFIDENCE_MIN_EVIDENCE + '件未満のため Insufficient</div>' : '')
+    + '</div>';
+}
+
+// 工程6-3B: Copy Full Report 用の Content Intelligence テキスト（採用済み💾/プレビュー・保存率予測/クリック率予測/IG適性/Confidence）。
+function _aicBuildContentReportText(ranked) {
+  var saved = _aicCurrentSavedContent();
+  var content = saved, label = '';
+  if (saved) {
+    var draft = _lastOutputDraft;
+    var acName = (draft && draft.fields && draft.fields.affiliateContext && draft.fields.affiliateContext.productName) ? draft.fields.affiliateContext.productName : '採用商材';
+    label = '採用商材「' + acName + '」（💾保存済み）';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    content = _aicBuildContentForRow(src);
+    label = 'トップ商材「' + top.name + '」（プレビュー）';
+  }
+  if (!content) return '■ Content Intelligence\n投稿適性の入力（保存率予測・クリック率予測・IG適性）が不足のため情報なし';
+  var p = _aicContentParts(content);
+  var out = ['■ Content Intelligence ' + label];
+  out.push('保存率予測: ' + p.saveRateTxt + ' ／ クリック率予測: ' + p.clickRateTxt + ' ／ IG適性: ' + p.igFitTxt + '（※予測値・実測ではありません）');
+  out.push('Content Confidence: ' + p.confTxt + ' ／ Independent ' + p.indep + '件 ／ status: ' + p.status);
+  return out.join('\n');
+}
+
 // Leaderへ「今一番利益が出る案件は？」に答える統合サマリー
 function _aicBuildLeaderSummary(ranked) {
   if (!ranked.length) return '案件が未登録です。下のフォームから案件を手動入力すると、統合スコアとおすすめ順位を算出します。';
@@ -35804,6 +35924,8 @@ function _aicBuildFullReport(ranked) {
   lines.push(_aicBuildLeaderSummary(ranked));
   lines.push('');
   lines.push(_aicBuildAspReportText(ranked));
+  lines.push('');
+  lines.push(_aicBuildContentReportText(ranked));
   lines.push('');
   lines.push(_aicBuildRankingText(ranked));
   return lines.join('\n');
@@ -35919,6 +36041,8 @@ function buildAffiliateIntelligenceCoreHtml() {
     var revLine = _aicBuildRevenueCardLine(src);
     // 工程5-3A: 表示専用ASPライン（採用済みは保存値正本💾・未採用は使い捨てプレビュー・順位/採用は変更しない）
     var aspLine = _aicBuildAspCardLine(src);
+    // 工程6-3A: 表示専用Contentライン（採用済みは保存値正本💾・未採用は使い捨てプレビュー・順位/採用は変更しない）
+    var contentLine = _aicBuildContentCardLine(src);
     var pState = (src && src.persistenceState) || 'unsaved';
     var persisted = _aicIsPersisted(src);
     var saveBadge = '';
@@ -35951,6 +36075,7 @@ function buildAffiliateIntelligenceCoreHtml() {
       + confHtml
       + revLine
       + aspLine
+      + contentLine
       + failMsg
       + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
       +   ' ' + removeBtn + retryBtn + '</div>'
@@ -36003,6 +36128,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + _intelBuildContextSummaryHtml()
     + _aicBuildRevenueHtml(ranked)
     + _aicBuildAspHtml(ranked)
+    + _aicBuildContentHtml(ranked)
     + '<div class="oe-aic-label">おすすめ順位ランキング（統合スコア順）</div>'
     + rankingHtml
     + (warningsHtml ? '<div class="oe-aic-label">Warnings</div>' + warningsHtml : '')
