@@ -35190,6 +35190,9 @@ function adoptAffiliateForContentPlanning(evalId) {
     nextIntelligenceContext.product = product;                      // ★戻り値を ctx.product へ明示代入（自動代入されないため）
     // 工程4-4: Revenue も同一 intelligenceContext へ両書き（同一ctxのproductから同期・財務Evidenceを共有参照・新規Evidence/新規POSTなし）。
     nextIntelligenceContext.revenue = _intelSyncRevenueFromProduct(nextIntelligenceContext, product);
+    // 工程5-3B: ASP も同一 intelligenceContext へ書く（採用商品のEvidenceにのみ usedBy:'asp' 冪等追記・他ASP候補は読み取りのみ・新規Evidence/新規POSTなし）。
+    //   _affiliateCases 全件を比較母集団として渡す（正規化商品名×market グループで採用商品と同一の複数ASP評価を比較）。
+    nextIntelligenceContext.asp = _intelBuildAspFromProduct(nextIntelligenceContext, product, (Array.isArray(_affiliateCases) ? _affiliateCases : []));
     // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
@@ -35499,6 +35502,120 @@ function _aicBuildRevenueHtml(ranked) {
     + '</div>';
 }
 
+// ============================================================
+// 工程5-3A: ASP Intelligence 表示（読み取り専用・非永続プレビュー＋保存済み正本表示）
+//   ・比較単位は正規化商品名×market。採用商材は保存済み intelligenceContext.asp を正本表示（💾・再計算しない）。
+//     未採用商材は使い捨てctxプレビュー（_intelBuildAspFromProduct・POSTなし・実contextへ書かない）。
+//   ・順位/integratedScore/estimatedProfit/Product/Revenue は変更しない（説明レイヤー）。
+//   ・_affiliatecases 未同期（配列でない/空）でも例外を出さない・誤った推奨を確定しない（データなし表示）。
+// ============================================================
+
+// 表示専用: 1商材のASPプレビュー（Confidence含む）を使い捨てctxで生成。実contextへ書かない。失敗/同期前はnull。
+function _aicBuildAspForRow(rec) {
+  if (!rec) return null;
+  try {
+    if (!Array.isArray(_affiliateCases) || _affiliateCases.length === 0) return null;   // 同期前は誤った推奨を確定しない
+    var caseId = (rec.caseId != null ? rec.caseId : (_aicCurrentCaseId() || ''));
+    var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);        // 使い捨て・非永続（実contextへ書かない）
+    var product = _intelSyncProductFromAffiliate(ctx, rec);          // productを使い捨てctxへ生成
+    return _intelBuildAspFromProduct(ctx, product, _affiliateCases); // asp（confidence含む）・usedByは使い捨てctx内のみ
+  } catch (e) { return null; }
+}
+
+// 現在Draftに保存済みで、現在案件に一致する採用商材のASP（正本）を返す。無ければnull。副作用なし・再計算しない。
+function _aicCurrentSavedAsp() {
+  try {
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!draft || !draft.fields || !draft.fields.intelligenceContext) return null;
+    var asp = draft.fields.intelligenceContext.asp;
+    if (!asp || typeof asp !== 'object' || !asp.groupKey) return null;              // 空受け皿({})は不採用
+    var cur = _aicCurrentCaseId();
+    if (!cur || String(draft.caseId || '') !== String(cur) || String(asp.caseId || '') !== String(cur)) return null;
+    return asp;
+  } catch (e) { return null; }
+}
+
+// src商材が採用済み（保存済みASPと同一グループ＝正規化商品名×market一致）なら保存済みASPを返す。他商材はnull（→プレビュー）。
+function _aicSavedAspForRow(src) {
+  var saved = _aicCurrentSavedAsp();
+  if (!saved || !src) return null;
+  var key = _intelAspGroupKey(src.name, src.market);
+  if (!key) return null;
+  return (String(saved.groupKey) === String(key.groupKey)) ? saved : null;
+}
+
+// 表示専用: ASP情報の共通整形（推奨ASP/Confidence/比較数/Independent/Insufficient理由）。
+function _aicAspParts(asp) {
+  var esc = escapeHtml;
+  var d = (asp && asp.derived) || {}, conf = (asp && asp.confidence) || {};
+  var isInsuf = !conf || (conf.confidenceLevel === 'Insufficient') || (d.status === 'insufficient');
+  var compared = (typeof asp.comparedAspCount === 'number') ? asp.comparedAspCount : 0;
+  var eligible = (asp && asp.recommendationBasis && typeof asp.recommendationBasis.eligibleCount === 'number') ? asp.recommendationBasis.eligibleCount : 0;
+  var indep = (conf && typeof conf.independentEvidenceCount === 'number') ? conf.independentEvidenceCount : 0;
+  // Insufficient理由の区別（比較ASP不足 / 有効利益候補不足 / 独立Evidence不足）
+  var reasons = [];
+  if (compared < INTEL_ASP_MIN_COMPARE_COUNT) reasons.push('比較ASPが' + INTEL_ASP_MIN_COMPARE_COUNT + '件未満');
+  if (eligible < INTEL_ASP_MIN_COMPARE_COUNT) reasons.push('有効な想定利益の候補が' + INTEL_ASP_MIN_COMPARE_COUNT + '件未満');
+  if (indep < INTEL_CONFIDENCE_MIN_EVIDENCE) reasons.push('独立した一次根拠が' + INTEL_CONFIDENCE_MIN_EVIDENCE + '件未満');
+  return {
+    recommendedTxt: asp.recommendedAspName ? esc(String(asp.recommendedAspName)) : '判定不可',
+    isInsuf: isInsuf,
+    confTxt: isInsuf ? 'Insufficient' : (esc(String(conf.confidenceLevel || '-')) + '（' + (conf.confidenceScore != null ? conf.confidenceScore : '-') + '点）'),
+    confColor: isInsuf ? '#ff9a9a' : 'rgba(150,220,150,0.95)',
+    compared: compared,
+    indep: indep,
+    status: esc(String(d.status || 'insufficient')),
+    insufReason: reasons.length ? reasons.join(' / ') : '',
+  };
+}
+
+// 表示専用: ランキングカード内の ASP 1行（値不足でもレイアウトを壊さない・順位/採用に非影響）。
+//   採用済み商材（保存済みASPと同一グループ）は保存値を正本表示・再計算しない。他商材は使い捨てプレビュー。
+function _aicBuildAspCardLine(rec) {
+  var saved = _aicSavedAspForRow(rec);
+  var asp = saved || _aicBuildAspForRow(rec);
+  if (!asp) return '';                                              // 生成不可/同期前はライン非表示
+  var p = _aicAspParts(asp);
+  var tag = saved ? ' <span style="opacity:.6;">💾保存済み</span>' : '';
+  return '<div class="oe-aic-note" style="margin-top:4px;">'
+    + '🔀 ASP: 推奨 <strong>' + p.recommendedTxt + '</strong>'
+    + ' ／ Confidence <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    + ' ／ 比較ASP ' + p.compared + '件'
+    + ' ／ Independent ' + p.indep + '件' + tag
+    + '</div>';
+}
+
+// 表示専用: AICセクション内の ASP Intelligence 最小パネル（読み取り専用）。
+//   現在案件の採用商材に保存済みASPがあれば正本表示（💾）。無ければ rank1 の使い捨てプレビュー。
+function _aicBuildAspHtml(ranked) {
+  var esc = escapeHtml;
+  var base = 'margin-top:6px;border-top:1px dashed rgba(255,255,255,.15);padding-top:6px;';
+  var asp, labelHtml;
+  var saved = _aicCurrentSavedAsp();
+  if (saved) {
+    asp = saved;
+    var draft = _lastOutputDraft;
+    var acName = (draft && draft.fields && draft.fields.affiliateContext && draft.fields.affiliateContext.productName) ? draft.fields.affiliateContext.productName : '採用商材';
+    labelHtml = '<span style="opacity:.55;">採用商材「' + esc(acName) + '」 💾保存済み</span>';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    asp = _aicBuildAspForRow(src);
+    labelHtml = '<span style="opacity:.55;">トップ商材「' + esc(top.name) + '」（プレビュー）</span>';
+  } else {
+    return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">🔀 ASP Intelligence: 比較対象の商材が未登録のため情報なし</div>';
+  }
+  if (!asp) return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">🔀 ASP Intelligence: 比較対象の商材が未登録のため情報なし</div>';
+  var p = _aicAspParts(asp);
+  return '<div class="oe-aic-note" style="' + base + '">'
+    + '<div style="opacity:.8;">🔀 <strong>ASP Intelligence</strong> ' + labelHtml + '</div>'
+    + '<div>推奨ASP: <strong>' + p.recommendedTxt + '</strong> ／ 比較ASP ' + p.compared + '件</div>'
+    + '<div>ASP Confidence: <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    +   ' ／ Independent ' + p.indep + '件 ／ status: ' + p.status + '</div>'
+    + (p.isInsuf ? '<div style="color:#ff9a9a;opacity:.85;">⚠ ' + (p.insufReason || 'Insufficient') + '</div>' : '')
+    + '</div>';
+}
+
 // Leaderへ「今一番利益が出る案件は？」に答える統合サマリー
 function _aicBuildLeaderSummary(ranked) {
   if (!ranked.length) return '案件が未登録です。下のフォームから案件を手動入力すると、統合スコアとおすすめ順位を算出します。';
@@ -35543,12 +35660,37 @@ function _aicBuildRankingText(ranked) {
   return lines.join('\n');
 }
 
+// 工程5-3B: Copy Full Report 用の ASP Intelligence テキスト（採用済み💾/プレビュー・推奨/Confidence/比較数/Independent/Insufficient理由）。
+function _aicBuildAspReportText(ranked) {
+  var saved = _aicCurrentSavedAsp();
+  var asp = saved, label = '';
+  if (saved) {
+    var draft = _lastOutputDraft;
+    var acName = (draft && draft.fields && draft.fields.affiliateContext && draft.fields.affiliateContext.productName) ? draft.fields.affiliateContext.productName : '採用商材';
+    label = '採用商材「' + acName + '」（💾保存済み）';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    asp = _aicBuildAspForRow(src);
+    label = 'トップ商材「' + top.name + '」（プレビュー）';
+  }
+  if (!asp) return '■ ASP Intelligence\n比較対象の商材が未登録のため情報なし';
+  var p = _aicAspParts(asp);
+  var out = ['■ ASP Intelligence ' + label];
+  out.push('推奨ASP: ' + (asp.recommendedAspName || '判定不可') + ' ／ 比較ASP ' + p.compared + '件');
+  out.push('ASP Confidence: ' + p.confTxt + ' ／ Independent ' + p.indep + '件 ／ status: ' + p.status);
+  if (p.isInsuf && p.insufReason) out.push('Insufficient理由: ' + p.insufReason);
+  return out.join('\n');
+}
+
 function _aicBuildFullReport(ranked) {
   var lines = ['【Affiliate Intelligence Core】 v' + AFFILIATE_INTELLIGENCE_CORE_VERSION, ''];
   lines.push('Safety: ' + AIC_SAFETY_LABELS.join(' / '));
   lines.push('');
   lines.push('■ Leader統合判断（今一番利益が出る案件は？）');
   lines.push(_aicBuildLeaderSummary(ranked));
+  lines.push('');
+  lines.push(_aicBuildAspReportText(ranked));
   lines.push('');
   lines.push(_aicBuildRankingText(ranked));
   return lines.join('\n');
@@ -35662,6 +35804,8 @@ function buildAffiliateIntelligenceCoreHtml() {
     var confHtml = _aicBuildConfidenceHtml(_aicBuildProductConfidence(src));
     // 工程4-3: 表示専用Revenueライン（使い捨てctxプレビュー・副作用なし・順位/採用は変更しない）
     var revLine = _aicBuildRevenueCardLine(src);
+    // 工程5-3A: 表示専用ASPライン（採用済みは保存値正本💾・未採用は使い捨てプレビュー・順位/採用は変更しない）
+    var aspLine = _aicBuildAspCardLine(src);
     var pState = (src && src.persistenceState) || 'unsaved';
     var persisted = _aicIsPersisted(src);
     var saveBadge = '';
@@ -35693,6 +35837,7 @@ function buildAffiliateIntelligenceCoreHtml() {
       + '<div class="oe-aic-metrics">' + metrics.join('') + '</div>'
       + confHtml
       + revLine
+      + aspLine
       + failMsg
       + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
       +   ' ' + removeBtn + retryBtn + '</div>'
@@ -35744,6 +35889,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + leaderSummaryHtml
     + _intelBuildContextSummaryHtml()
     + _aicBuildRevenueHtml(ranked)
+    + _aicBuildAspHtml(ranked)
     + '<div class="oe-aic-label">おすすめ順位ランキング（統合スコア順）</div>'
     + rankingHtml
     + (warningsHtml ? '<div class="oe-aic-label">Warnings</div>' + warningsHtml : '')
