@@ -4,6 +4,19 @@
 
 ---
 
+## Affiliate Intelligence Company 工程6-1/6-2/6-3A/6-3B/6-3C — Content Intelligence（⑥層） **正式リリースComplete**（2026-07-29・Code commit 2b3fdd0/f2b0b5e・main push・Render反映）
+
+**Version2 Core ⑥ Content Intelligence を Product Intelligence 上の投稿適性説明層として追加**。`intelligenceContext.content`（既存受け皿）へInstagram投稿適性3項目（保存率予測・クリック率予測・IG適性）をProduct Evidence共有参照で保存。ランキングカード・AIC最小パネル・Copy Full ReportへContent Intelligenceを表示（ASP直下）。**`index.html`（foundation +113/-0・ui +126/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue/ASP Intelligence/ランキング順位/integratedScore/estimatedProfit 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 081）。
+
+- **工程6-1/6-2 データ構造・Evidence共有・Confidence**：`INTEL_CONTENT_INPUT_FIELDS`（saveRatePred/clickRatePred/igFit）・`_intelBlankContent`・`_intelSyncContentFromProduct`（既存Product Evidenceにのみ`usedBy:'content'`冪等追記・新規Evidence生成なし）・`_intelCalculateContentConfidence`（既存`_intelCalculateConfidence`再利用・独立3件未満Insufficient・`confidenceOwner:'content'`で分離）。
+- **工程6-3A 表示UI**：`_aicBuildContentForRow`（使い捨てプレビュー）・`_aicCurrentSavedContent`/`_aicSavedContentForRow`（保存済み`intelligenceContext.content`をproductIdentifier＋caseId一致で正本表示・再計算しない）・`_aicContentParts`・`_aicBuildContentCardLine`・`_aicBuildContentHtml`（保存率予測・クリック率予測は予測値であることを明示表示）。
+- **工程6-3B 永続化・Copy**：採用時`affiliateContext`＋`product`＋`revenue`＋`asp`＋`content`を同一Output Draftへ**五書き**・既存push1回（**採用1回=POST1回・Content専用POSTなし**）。`_aicBuildContentReportText`をCopy Full Reportへ追記（新規Copyボタンなし）。
+- **工程6-3C 実Supabase検証**（専用caseId `case-ms3t75suuo2i`）：採用後`fields.intelligenceContext`に`product`/`revenue`/`asp`/`content`が揃うことを確認・Evidence総数14件不変（product14/revenue9/asp4/content3・重複なし）・Content Confidence Medium（64点・independent3件）。**テストデータ限定削除 remaining=0（affiliate_evaluations・output_drafts とも）**確認。
+- **検証**：回帰テスト118/118 PASS・JavaScript構文OK・dev-check 200/200/200・Console 0・白画面/無限ロード/横スクロールなし・回帰なし。
+- **Git・反映**：Code commit **2b3fdd0**（foundation）＋**f2b0b5e**（ui）・docs commit＝本更新・tag **v1.01-affiliate-content-intelligence-persistence**・main push・Render反映。**PC本番確認・iPhone実機確認 待ち**（ユーザー承認後）。次工程＝未定（Competition/Market/Self Improvement Intelligence等）。
+
+---
+
 ## Affiliate Intelligence Company 工程5-3（5-3A/5-3B/5-3C） — ASP Intelligence 表示UI・永続化 **正式リリースComplete**（2026-07-28・Code commit b473053・main push・Render反映）
 
 **Version2 Core ③ ASP Intelligence の表示UI・Output Draft永続化を追加**。ランキングカード・AIC最小パネル・Copy Full ReportへASP Intelligenceを表示（Revenue直下）。**`index.html`（+146/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue Intelligence/ランキング順位/integratedScore/estimatedProfit 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 080）。
