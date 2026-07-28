@@ -34608,6 +34608,107 @@ function _intelSyncRevenueFromProduct(ctx, product) {
 }
 
 // ============================================================
+// 工程6-1/6-2: Content Intelligence（⑥層）スキーマ＋Evidence共有＋Confidence（表示UI・永続化は工程6-3）
+//   ・Content は Product Intelligence の Instagram投稿適性サブ集合を「複製＋既存Product Evidence参照」する専任層。
+//   ・★Evidenceを新規生成しない（_intelCreateEvidence/_intelAddEvidence を呼ばない）。既存Product Evidence の usedBy へ 'content' を冪等追記して共有参照する（Revenue工程4と同一方針）。
+//   ・非破壊: Product本体（inputs/derived/fieldEvidence/usedEvidenceIds/confidence）は変更しない（共有Evidenceの usedBy に 'content' が増えるのみ）。
+//   ・母集団は saveRatePred/clickRatePred/igFit の3項目のみ。Content Planning のスコア（priorityScore等）は一切含めない（責務分離）。
+//   ・Content Confidence は既存 _intelCalculateConfidence を再利用（新式・新しきい値なし）。独立3件未満は Insufficient。
+//   ・★saveRatePred/clickRatePred は予測値（実測値ではない）。将来 actualSaveRate 等の実測は別構造で保持（工程6では実装しない）。
+//   ・ランキング順位・integratedScore・estimatedProfit・Product/Revenue/ASP は変更しない（説明レイヤー）。
+//   ・igFit は _aicIntegratedScore（順位用）でも使用されるが、Content Confidence では「入力の根拠充足度」という別目的で参照する（二重加算しない）。
+// ============================================================
+const INTEL_CONTENT_INPUT_FIELDS = ['saveRatePred', 'clickRatePred', 'igFit'];   // Confidence母集団（Instagram投稿適性・予測値2＋IG適性1）
+
+// 空の content 構造（副作用なし・正式スキーマ）。_intelBlankRevenue と同系（既存コードを正本）。
+function _intelBlankContent(caseId, channelScope) {
+  var inputs = {}; INTEL_CONTENT_INPUT_FIELDS.forEach(function(f){ inputs[f] = null; });
+  var fe = {};     INTEL_CONTENT_INPUT_FIELDS.forEach(function(f){ fe[f] = []; });
+  return {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    productIdentifier: '',
+    evaluationId: null,
+    inputs: inputs,
+    derived: { knownFactors: 0, totalFactors: INTEL_CONTENT_INPUT_FIELDS.length, status: 'insufficient' },
+    fieldEvidence: fe,
+    usedEvidenceIds: [],
+    confidence: null,               // 下で算出（_intelCalculateConfidence 再利用）
+    confidenceOwner: 'content',
+    learningSummary: null,          // ⑦Learning接続用予約（本工程は null・実測値/補正は別構造で将来対応）
+    updatedAt: '',
+  };
+}
+
+// 工程6-2: Content Confidence を算出（既存 _intelCalculateConfidence を再利用・新式/新しきい値なし）。
+//   母集団＝Instagram投稿適性3項目（saveRatePred/clickRatePred/igFit）の共有Evidenceのみ。独立3件未満は Insufficient。
+function _intelCalculateContentConfidence(ctx, content) {
+  var ids = [];
+  INTEL_CONTENT_INPUT_FIELDS.forEach(function(f) {
+    var arr = (content && content.fieldEvidence && Array.isArray(content.fieldEvidence[f])) ? content.fieldEvidence[f] : [];
+    arr.forEach(function(id) { if (ids.indexOf(id) === -1) ids.push(id); });
+  });
+  var evList = ids.map(function(id) { return _intelFindEvidence(ctx, id); }).filter(Boolean);
+  var known = (content && content.derived && typeof content.derived.knownFactors === 'number') ? content.derived.knownFactors : 0;
+  var total = (content && content.derived && typeof content.derived.totalFactors === 'number') ? content.derived.totalFactors : INTEL_CONTENT_INPUT_FIELDS.length;
+  return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
+}
+
+// Product Context から Content Context を生成・同期。既存Product Evidence を参照し usedBy へ 'content' を冪等追記する。
+//   ★product同期後に呼ぶ前提（saveRatePred/clickRatePred/igFit Evidenceが ctx.evidence に存在すること）。product/ctx が空・不正でも crash しない。
+//   ★Product本体は破壊しない（読み取りのみ・共有Evidenceの usedBy 追記のみ）。冪等（複数回実行で件数・usedBy不変）。
+//   ★Evidenceは新規生成しない。Content Planning のスコアは母集団へ含めない。
+function _intelSyncContentFromProduct(ctx, product) {
+  if (!ctx) return null;
+  if (!Array.isArray(ctx.evidence)) ctx.evidence = [];
+  var scope = (product && product.channelScope) || ctx.channelScope || INTEL_CHANNEL_SCOPE_DEFAULT;
+  var caseId = String((product && product.caseId != null) ? product.caseId : (ctx.caseId || ''));
+  var content = _intelBlankContent(caseId, scope);
+  if (!product || typeof product !== 'object') {                 // 空/不正product＝入力値null・Evidence0・crashなし
+    content.confidence = _intelCalculateContentConfidence(ctx, content);   // Evidence0 → Insufficient（工程2ルール）
+    content.derived.status = 'insufficient';
+    content.updatedAt = new Date().toISOString();
+    return content;
+  }
+
+  var pid = (product.productIdentifier != null) ? String(product.productIdentifier) : '';
+  content.productIdentifier = pid;
+  content.evaluationId = (product.evaluationId != null) ? product.evaluationId : null;
+
+  var pInputs  = (product.inputs && typeof product.inputs === 'object') ? product.inputs : {};
+  var pFieldEv = (product.fieldEvidence && typeof product.fieldEvidence === 'object') ? product.fieldEvidence : {};
+
+  var usedIds = [], known = 0;
+
+  // Instagram投稿適性入力: 値を複製（再算出しない）＋既存 product.fieldEvidence[field] を参照し usedBy へ 'content' 追記
+  INTEL_CONTENT_INPUT_FIELDS.forEach(function(field) {
+    var val = (pInputs[field] !== undefined) ? pInputs[field] : null;
+    content.inputs[field] = val;
+    if (val !== null && val !== undefined) known++;
+    var ids = Array.isArray(pFieldEv[field]) ? pFieldEv[field] : [];
+    ids.forEach(function(id) {
+      if (_intelMarkEvidenceUsedBy(ctx, id, 'content')) {           // 既存Evidenceにのみ追記（新規生成しない）
+        if (content.fieldEvidence[field].indexOf(id) === -1) content.fieldEvidence[field].push(id);
+        usedIds.push(id);
+      }
+    });
+  });
+
+  content.usedEvidenceIds = _intelUniq(usedIds);
+  content.derived.knownFactors = known;                              // 投稿適性入力の充足数（0〜3）
+  content.derived.totalFactors = INTEL_CONTENT_INPUT_FIELDS.length;  // 3（入力基準）
+  // 工程6-2: Content Confidence（投稿適性Evidenceのみ・独立3件未満は Insufficient）。Product/Revenue/ASP Confidenceとは独立。
+  content.confidence = _intelCalculateContentConfidence(ctx, content);
+  // status は Confidence連動（Insufficientは必ず insufficient＝空データで good/high を誤表示しない・それ以外は既存 _aicStatusFromScore を再利用）。
+  content.derived.status = (content.confidence && content.confidence.confidenceLevel === 'Insufficient')
+    ? 'insufficient'
+    : _aicStatusFromScore(content.confidence.confidenceScore);
+  content.updatedAt = new Date().toISOString();
+  return content;
+}
+
+// ============================================================
 // 工程5-1: ASP Intelligence（③層）スキーマ＋Evidence配線（Confidence計算・表示・永続化はしない）
 //   ・比較単位: 正規化商品名 × market（ASP名を比較グループキーへ含めない）。
 //     同一グループに属する複数ASP評価(Active)を比較用に集計する。
@@ -35414,6 +35515,18 @@ function _aicBuildRevenueForRow(rec) {
     var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);        // 使い捨て・非永続（実contextへ書かない）
     var product = _intelSyncProductFromAffiliate(ctx, rec);          // productを使い捨てctxへ生成
     return _intelSyncRevenueFromProduct(ctx, product);              // revenue（confidence含む）・usedByは使い捨てctx内のみ
+  } catch (e) { return null; }
+}
+
+// 工程6-1/6-2: 1商材のContentプレビュー（Confidence含む）を使い捨てctxで生成。実contextへ書かない。失敗時null。
+//   ★本保存Context/Evidenceへ一切書かない（使い捨てctx内でのみ usedBy:'content' 追記・POSTなし）。表示UIは工程6-3A/6-3B。
+function _aicBuildContentForRow(rec) {
+  if (!rec) return null;
+  try {
+    var caseId = (rec.caseId != null ? rec.caseId : (_aicCurrentCaseId() || ''));
+    var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);        // 使い捨て・非永続（実contextへ書かない）
+    var product = _intelSyncProductFromAffiliate(ctx, rec);          // productを使い捨てctxへ生成
+    return _intelSyncContentFromProduct(ctx, product);             // content（confidence含む）・usedByは使い捨てctx内のみ
   } catch (e) { return null; }
 }
 
