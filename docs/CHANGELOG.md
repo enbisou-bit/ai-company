@@ -4,6 +4,18 @@
 
 ---
 
+## Affiliate Intelligence Company 工程5-3（5-3A/5-3B/5-3C） — ASP Intelligence 表示UI・永続化 **正式リリースComplete**（2026-07-28・Code commit b473053・main push・Render反映）
+
+**Version2 Core ③ ASP Intelligence の表示UI・Output Draft永続化を追加**。ランキングカード・AIC最小パネル・Copy Full ReportへASP Intelligenceを表示（Revenue直下）。**`index.html`（+146/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue Intelligence/ランキング順位/integratedScore/estimatedProfit 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 080）。
+
+- **工程5-3A 表示UI**：`_aicBuildAspForRow`（使い捨てctxプレビュー・`_affiliateCases`空/非配列でも例外なし）・`_aicCurrentSavedAsp`/`_aicSavedAspForRow`（保存済み`intelligenceContext.asp`を正本表示・再計算しない）・`_aicAspParts`・`_aicBuildAspCardLine`・`_aicBuildAspHtml`。
+- **工程5-3B 永続化・Copy**：採用時`affiliateContext`＋`product`＋`revenue`＋`asp`を同一Output Draftへ**四書き**・既存push1回（**採用1回=POST1回・ASP専用POSTなし**）。`_aicBuildAspReportText`をCopy Full Reportへ追記（新規Copyボタンなし）。
+- **工程5-3C 実Supabase検証**（専用caseId）：Output Draft POST2回（scaffold1＋採用四書き1）／Evidence12件不変（product12/revenue9/asp4・重複なし）／F5復元で推奨ASP・Confidence・比較数・Independent・`updatedAt`完全一致（再計算なし実証）／caseId分離／Copy Full Report確認／Product・Revenue・ranking回帰なし／**テストデータ限定削除 remaining=0（affiliate_evaluations・output_drafts とも）**。
+- **検証**：純関数 工程5-3A/5-3B新規27＋工程5-1/5-2再実行44＝**71/71 PASS**・JavaScript構文OK・dev-check 200/200/200・Console 0・回帰なし・実ブラウザ確認でSupabase書込みは意図した2回のみ・AI API実行0。
+- **Git・反映**：Code commit **b473053**・docs commit＝本更新・tag **v1.01-affiliate-asp-intelligence-persistence**・main push・Render反映。**iPhone実機確認は本docs更新時点では未実施（待ち）**。次工程＝未定（ASP Intelligence 7層構想の残り等）。
+
+---
+
 ## Affiliate Intelligence Company 工程5-1・5-2 — ASP Intelligence（③層）**正式リリースComplete**（2026-07-28・Code commit 17587296c9413f53dcc05e4c72897ac4e8d0643a・main push・Render反映）
 
 **Version2 Core ③ ASP Intelligence を Product Intelligence 上の比較説明レイヤーとして追加**。`intelligenceContext.asp`（既存受け皿）へ正規化商品名×market単位でグルーピングし、Active評価のみを候補化。**`index.html`（+212/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue Intelligence 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 079）。
