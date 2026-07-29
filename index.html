@@ -33978,7 +33978,7 @@ const INTEL_CONFIDENCE_LEVELS = ['High','Medium','Low','Insufficient'];
 const INTEL_CONFIDENCE_THRESHOLDS = { high: 75, medium: 55, low: 35 };
 const INTEL_CONFIDENCE_MIN_EVIDENCE = 3;        // 独立Evidenceがこの数未満なら点数に関わらず Insufficient
 const INTEL_EVIDENCE_SOFT_LIMIT = 200;          // 警告のみ（自動削除しない）
-const INTEL_MODULE_KEYS = ['market','asp','product','revenue','instagram','userPain','opportunity','business','brand','account','content','publishing','learning'];
+const INTEL_MODULE_KEYS = ['market','asp','product','revenue','instagram','userPain','opportunity','business','brand','account','content','competition','publishing','learning'];
 
 function _intelStr(v) { return (v === null || v === undefined) ? '' : String(v).trim(); }
 function _intelUniq(arr) {
@@ -34706,6 +34706,112 @@ function _intelSyncContentFromProduct(ctx, product) {
     : _aicStatusFromScore(content.confidence.confidenceScore);
   content.updatedAt = new Date().toISOString();
   return content;
+}
+
+// ============================================================
+// 工程7-1/7-2: Competition Intelligence（④層）スキーマ＋Evidence共有＋Confidence（表示UI・永続化は工程7-3）
+//   ・Competition は Product Intelligence の競合環境サブ集合を「複製＋既存Product Evidence参照」する専任層。
+//   ・★Evidenceを新規生成しない（_intelCreateEvidence/_intelAddEvidence を呼ばない）。既存Product Evidence の usedBy へ 'competition' を冪等追記して共有参照する（Revenue工程4・Content工程6と同一方針）。
+//   ・非破壊: Product本体（inputs/derived/fieldEvidence/usedEvidenceIds/confidence）は変更しない（共有Evidenceの usedBy に 'competition' が増えるのみ）。
+//   ・母集団は competitors/lifespanMonths/igFit の3項目のみ（正式母集団・Decision準拠）。
+//   ・Competition Confidence は既存 _intelCalculateConfidence を再利用（新式・新しきい値なし）。独立3件未満は Insufficient。
+//   ・★Competition Confidenceは「競合環境を判断するためのEvidenceがどの程度揃っているか」を示すものであり、
+//     競合が弱い／参入余地が大きい／売れやすい／推奨商品である、を示すものではない。good/watch/insufficientはConfidence状態であり競争の有利・不利の評価ではない。
+//   ・★competitorsは入力された競合数の生値のまま保持する。激戦/普通/参入余地あり等のヒューリスティック判定・独自ランク・Competition Score・Entry Opportunity Scoreは本工程では作らない。
+//   ・ランキング順位・integratedScore・estimatedProfit・Product/Revenue/ASP/Content は変更しない（説明レイヤー）。
+//   ・工程7-3（UI表示・adoptAffiliateForContentPlanning()接続・pushOutputDraftToServer接続・Copy Full Report）までは一切接続しない。
+// ============================================================
+const INTEL_COMPETITION_INPUT_FIELDS = ['competitors', 'lifespanMonths', 'igFit'];   // Confidence母集団（競合数・案件寿命・IG適性の3項目）
+
+// 空の competition 構造（副作用なし・正式スキーマ）。_intelBlankContent と同系（既存コードを正本）。
+function _intelBlankCompetition(caseId, channelScope) {
+  var inputs = {}; INTEL_COMPETITION_INPUT_FIELDS.forEach(function(f){ inputs[f] = null; });
+  var fe = {};     INTEL_COMPETITION_INPUT_FIELDS.forEach(function(f){ fe[f] = []; });
+  return {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    productIdentifier: '',
+    evaluationId: null,
+    inputs: inputs,
+    derived: { knownFactors: 0, totalFactors: INTEL_COMPETITION_INPUT_FIELDS.length, status: 'insufficient' },
+    fieldEvidence: fe,
+    usedEvidenceIds: [],
+    confidence: null,               // 下で算出（_intelCalculateConfidence 再利用）
+    confidenceOwner: 'competition',
+    learningSummary: null,          // ⑦Learning接続用予約（本工程は null）
+    updatedAt: '',
+  };
+}
+
+// 工程7-2: Competition Confidence を算出（既存 _intelCalculateConfidence を再利用・新式/新しきい値なし）。
+//   母集団＝competitors/lifespanMonths/igFitの共有Evidenceのみ。独立3件未満は Insufficient。
+//   ★このConfidenceは「競合環境Evidenceの充足度」を示すのみであり、競合の強弱・参入余地・推奨可否の判定ではない。
+function _intelCalculateCompetitionConfidence(ctx, competition) {
+  var ids = [];
+  INTEL_COMPETITION_INPUT_FIELDS.forEach(function(f) {
+    var arr = (competition && competition.fieldEvidence && Array.isArray(competition.fieldEvidence[f])) ? competition.fieldEvidence[f] : [];
+    arr.forEach(function(id) { if (ids.indexOf(id) === -1) ids.push(id); });
+  });
+  var evList = ids.map(function(id) { return _intelFindEvidence(ctx, id); }).filter(Boolean);
+  var known = (competition && competition.derived && typeof competition.derived.knownFactors === 'number') ? competition.derived.knownFactors : 0;
+  var total = (competition && competition.derived && typeof competition.derived.totalFactors === 'number') ? competition.derived.totalFactors : INTEL_COMPETITION_INPUT_FIELDS.length;
+  return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
+}
+
+// Product Context から Competition Context を生成・同期。既存Product Evidence を参照し usedBy へ 'competition' を冪等追記する。
+//   ★product同期後に呼ぶ前提（competitors/lifespanMonths/igFit Evidenceが ctx.evidence に存在すること）。product/ctx が空・不正でも crash しない。
+//   ★Product本体は破壊しない（読み取りのみ・共有Evidenceの usedBy 追記のみ）。冪等（複数回実行で件数・usedBy不変）。
+//   ★Evidenceは新規生成しない。競合の強弱・参入余地の新規ヒューリスティックは作らない（competitorsは生値のまま保持）。
+//   ★工程7-3Bまで adoptAffiliateForContentPlanning() / pushOutputDraftToServer / UI へは接続しない（本関数はこの工程では未呼び出し）。
+function _intelSyncCompetitionFromProduct(ctx, product) {
+  if (!ctx) return null;
+  if (!Array.isArray(ctx.evidence)) ctx.evidence = [];
+  var scope = (product && product.channelScope) || ctx.channelScope || INTEL_CHANNEL_SCOPE_DEFAULT;
+  var caseId = String((product && product.caseId != null) ? product.caseId : (ctx.caseId || ''));
+  var competition = _intelBlankCompetition(caseId, scope);
+  if (!product || typeof product !== 'object') {                 // 空/不正product＝入力値null・Evidence0・crashなし
+    competition.confidence = _intelCalculateCompetitionConfidence(ctx, competition);   // Evidence0 → Insufficient（工程2ルール）
+    competition.derived.status = 'insufficient';
+    competition.updatedAt = new Date().toISOString();
+    return competition;
+  }
+
+  var pid = (product.productIdentifier != null) ? String(product.productIdentifier) : '';
+  competition.productIdentifier = pid;
+  competition.evaluationId = (product.evaluationId != null) ? product.evaluationId : null;
+
+  var pInputs  = (product.inputs && typeof product.inputs === 'object') ? product.inputs : {};
+  var pFieldEv = (product.fieldEvidence && typeof product.fieldEvidence === 'object') ? product.fieldEvidence : {};
+
+  var usedIds = [], known = 0;
+
+  // 競合環境入力: 値を複製（再算出しない）＋既存 product.fieldEvidence[field] を参照し usedBy へ 'competition' 追記
+  INTEL_COMPETITION_INPUT_FIELDS.forEach(function(field) {
+    var val = (pInputs[field] !== undefined) ? pInputs[field] : null;
+    competition.inputs[field] = val;
+    if (val !== null && val !== undefined) known++;
+    var ids = Array.isArray(pFieldEv[field]) ? pFieldEv[field] : [];
+    ids.forEach(function(id) {
+      if (_intelMarkEvidenceUsedBy(ctx, id, 'competition')) {           // 既存Evidenceにのみ追記（新規生成しない）
+        if (competition.fieldEvidence[field].indexOf(id) === -1) competition.fieldEvidence[field].push(id);
+        usedIds.push(id);
+      }
+    });
+  });
+
+  competition.usedEvidenceIds = _intelUniq(usedIds);
+  competition.derived.knownFactors = known;                              // 競合環境入力の充足数（0〜3）
+  competition.derived.totalFactors = INTEL_COMPETITION_INPUT_FIELDS.length;  // 3（入力基準）
+  // 工程7-2: Competition Confidence（競合環境Evidenceのみ・独立3件未満は Insufficient）。Product/Revenue/ASP/Content Confidenceとは独立。
+  competition.confidence = _intelCalculateCompetitionConfidence(ctx, competition);
+  // status は Confidence連動（Insufficientは必ず insufficient＝空データで good/high を誤表示しない・それ以外は既存 _aicStatusFromScore を再利用）。
+  //   ★statusはConfidence状態を表すのみであり、競争環境の有利・不利を示す評価ではない。
+  competition.derived.status = (competition.confidence && competition.confidence.confidenceLevel === 'Insufficient')
+    ? 'insufficient'
+    : _aicStatusFromScore(competition.confidence.confidenceScore);
+  competition.updatedAt = new Date().toISOString();
+  return competition;
 }
 
 // ============================================================
