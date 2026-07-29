@@ -35402,6 +35402,8 @@ function adoptAffiliateForContentPlanning(evalId) {
     nextIntelligenceContext.asp = _intelBuildAspFromProduct(nextIntelligenceContext, product, (Array.isArray(_affiliateCases) ? _affiliateCases : []));
     // 工程6-3B: Content も同一 intelligenceContext へ書く（採用商品のEvidenceにのみ usedBy:'content' 冪等追記・新規Evidence/新規POSTなし）。
     nextIntelligenceContext.content = _intelSyncContentFromProduct(nextIntelligenceContext, product);
+    // 工程7-3B: Competition も同一 intelligenceContext へ書く（採用商品のEvidenceにのみ usedBy:'competition' 冪等追記・新規Evidence/新規POSTなし）。
+    nextIntelligenceContext.competition = _intelSyncCompetitionFromProduct(nextIntelligenceContext, product);
     // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
@@ -35955,6 +35957,30 @@ function _aicBuildContentReportText(ranked) {
   return out.join('\n');
 }
 
+// 工程7-3B: Copy Full Report 用の Competition Intelligence テキスト（採用済み💾/プレビュー・競合数/案件寿命/IG適性/Confidence）。
+//   ★Confidenceは競合環境を判断する根拠の充足度を示すのみであり、競合の強弱・参入余地・推奨可否を示すものではない。
+function _aicBuildCompetitionReportText(ranked) {
+  var saved = _aicCurrentSavedCompetition();
+  var competition = saved, label = '';
+  if (saved) {
+    var draft = _lastOutputDraft;
+    var acName = (draft && draft.fields && draft.fields.affiliateContext && draft.fields.affiliateContext.productName) ? draft.fields.affiliateContext.productName : '採用商材';
+    label = '採用商材「' + acName + '」（💾保存済み）';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    competition = _aicBuildCompetitionForRow(src);
+    label = 'トップ商材「' + top.name + '」（プレビュー）';
+  }
+  if (!competition) return '■ Competition Intelligence\n競合環境の入力（競合数・案件寿命・IG適性）が不足のため情報なし';
+  var p = _aicCompetitionParts(competition);
+  var evCount = (competition.confidence && typeof competition.confidence.evidenceCount === 'number') ? competition.confidence.evidenceCount : 0;
+  var out = ['■ Competition Intelligence ' + label];
+  out.push('競合数: ' + p.competitorsTxt + ' ／ 案件寿命: ' + p.lifespanTxt + ' ／ IG適性: ' + p.igFitTxt);
+  out.push('Competition Confidence: ' + p.confTxt + ' ／ Evidence ' + evCount + '件 ／ Independent ' + p.indep + '件 ／ status: ' + p.status);
+  return out.join('\n');
+}
+
 // ============================================================
 // 工程7-3A: Competition Intelligence 表示（読み取り専用・非永続プレビュー＋保存済み正本表示）
 //   ・単一商材紐づき（Content/Revenue型）のため、保存済み正本判定は productIdentifier + caseId で行う（ASPのgroupKey方式は使わない）。
@@ -36145,6 +36171,8 @@ function _aicBuildFullReport(ranked) {
   lines.push(_aicBuildAspReportText(ranked));
   lines.push('');
   lines.push(_aicBuildContentReportText(ranked));
+  lines.push('');
+  lines.push(_aicBuildCompetitionReportText(ranked));
   lines.push('');
   lines.push(_aicBuildRankingText(ranked));
   return lines.join('\n');
