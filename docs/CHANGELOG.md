@@ -4,6 +4,19 @@
 
 ---
 
+## Affiliate Intelligence Company 工程7-1/7-2/7-3A/7-3B/7-3C — Competition Intelligence（④層） **正式リリースComplete**（2026-07-29・Code commit 675b3d0/3feec7b/d941cfd・main push・Render反映）
+
+**Version2 Core ④ Competition Intelligence を Product Intelligence 上の競合環境説明層として追加**。`intelligenceContext.competition`（新規モジュールキー）へ競合環境3項目（競合数・案件寿命・IG適性）をProduct Evidence共有参照で保存。ランキングカード・AIC最小パネル・Copy Full ReportへCompetition Intelligenceを表示（Content直下）。**`index.html`（foundation +107/-1・ui +117/-0・wire +28/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue/ASP/Content Intelligence/ランキング順位/integratedScore/estimatedProfit 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 082）。
+
+- **工程7-1/7-2 データ構造・Evidence共有・Confidence**：`INTEL_MODULE_KEYS`へ`'competition'`追加（後方互換）・`INTEL_COMPETITION_INPUT_FIELDS`（competitors/lifespanMonths/igFit）・`_intelBlankCompetition`・`_intelSyncCompetitionFromProduct`（既存Product Evidenceにのみ`usedBy:'competition'`冪等追記・新規Evidence生成なし）・`_intelCalculateCompetitionConfidence`（既存`_intelCalculateConfidence`再利用・独立3件未満Insufficient・`confidenceOwner:'competition'`で分離）。純関数23 PASS。
+- **工程7-3A 表示UI**：`_aicBuildCompetitionForRow`（使い捨てプレビュー）・`_aicCurrentSavedCompetition`/`_aicSavedCompetitionForRow`（保存済み`intelligenceContext.competition`をproductIdentifier＋caseId一致で正本表示・再計算しない）・`_aicCompetitionParts`・`_aicBuildCompetitionCardLine`・`_aicBuildCompetitionHtml`（★Confidenceは競合環境の根拠充足度を示すのみで競合の強弱・参入余地・推奨可否は示さない旨を明示）。
+- **工程7-3B 永続化・Copy**：採用時`affiliateContext`＋`product`＋`revenue`＋`asp`＋`content`＋`competition`を同一Output Draftへ**六書き**・既存push1回（**採用1回=POST1回・Competition専用POSTなし**）。`_aicBuildCompetitionReportText`をCopy Full Reportへ追記（Product→Revenue→ASP→Content→Competition→Ranking）。
+- **工程7-3C 実Supabase検証**（専用caseId `case-ms5zz5g65x1p`）：六書き保存確認・Evidence総数14件不変（product14/revenue9/asp4/content3/competition3・新規生成0）・Competition Confidence Medium（64点・independent3件）・F5復元完全一致・caseId分離・Copy Full Report順序。**テストデータ限定削除 remaining=0（affiliate_evaluations・output_drafts・cases の3テーブルとも）**確認。
+- **検証**：純関数23/23 PASS・JavaScript構文OK・dev-check 200/200/200・Console 0・白画面/無限ロード/横スクロールなし・回帰なし。
+- **Git・反映**：Code commit **675b3d0**（foundation）＋**3feec7b**（ui）＋**d941cfd**（wire）・docs commit＝本更新・tag **v1.01-affiliate-competition-intelligence-persistence**・main push・Render反映。**PC本番確認・iPhone実機確認 待ち**（ユーザー承認後）。次工程＝未定（Market Opportunity/Self Improvement Intelligence等）。
+
+---
+
 ## Affiliate Intelligence Company 工程6-1/6-2/6-3A/6-3B/6-3C — Content Intelligence（⑥層） **正式リリースComplete**（2026-07-29・Code commit 2b3fdd0/f2b0b5e・main push・Render反映）
 
 **Version2 Core ⑥ Content Intelligence を Product Intelligence 上の投稿適性説明層として追加**。`intelligenceContext.content`（既存受け皿）へInstagram投稿適性3項目（保存率予測・クリック率予測・IG適性）をProduct Evidence共有参照で保存。ランキングカード・AIC最小パネル・Copy Full ReportへContent Intelligenceを表示（ASP直下）。**`index.html`（foundation +113/-0・ui +126/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue/ASP Intelligence/ランキング順位/integratedScore/estimatedProfit 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 081）。
