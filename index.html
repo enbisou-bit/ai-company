@@ -35026,6 +35026,178 @@ function _intelCalculateAspConfidence(ctx, asp) {
   return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
 }
 
+// ============================================================
+// 工程8-1/8-2: Market Opportunity Intelligence（①層）Foundation＋案件内市場集約＋Evidence共有＋Confidence（表示UI・永続化は工程8-3）
+//   ・責務: 現在案件内に登録されたActive候補商材を market 単位で集約し「その市場にどんな候補が揃っているか」を説明する。
+//   ・★外部データ（実検索数・実トレンド・市場規模・成長率・実需要）は一切扱わない。AI会社内の登録候補情報の集計のみ。
+//   ・集約単位は案C（案件内集約）: 現在案件(caseId)・Active(_aicIsPersisted)・market正規化キー一致のみ。案件横断しない。
+//   ・集約キーは既存 _aicNormalizeKeyPart(market)（ASPと同一・新規正規化関数を作らない）。意味的表記揺れ（美容/ビューティー）は自動統合しない。
+//   ・★Evidenceを新規生成しない。各商材の既存 product-input Evidence（存在するもの）にのみ usedBy:'market' を冪等追記して共有参照する。
+//     calculated派生値・Revenue/Content/Competition結果・件数・平均・合計・seasonality自由記述は独立Evidenceとして数えない（二重計上防止）。
+//   ・Market Confidence は既存 _intelCalculateConfidence を再利用（新式・新しきい値なし）。独立3件未満は Insufficient。
+//   ・★強制Insufficientゲート: 市場内Active商材数が INTEL_MARKET_MIN_PRODUCT_COUNT 未満なら、Confidence値に関わらず status=insufficient
+//     （1商材に11件のEvidenceがあっても市場比較には不十分＝ASPの INTEL_ASP_MIN_COMPARE_COUNT と同型）。
+//   ・★1商材市場でも構造・derived集計は空にせず保持し、statusのみ insufficient にする（情報は表示可能・比較としては不十分）。
+//   ・ランキング順位・_aicIntegratedScore・estimatedProfit・Product/Revenue/ASP/Content/Competition は変更しない（説明レイヤー）。
+//   ・命名は既存5層との整合を優先し confidenceOwner:'market' をモジュール識別子とする。derived集計名は候補情報由来と分かる名称のみ（searchVolume等の外部データ風名称は使わない）。
+//   ・learningSummary は今回も null 予約のみ（Self Improvement は実装しない）。表示UI・七書き保存・Copy Full Report は工程8-3。
+// ============================================================
+const INTEL_MARKET_MIN_PRODUCT_COUNT = 2;   // 市場比較成立の最低Active商材数（未満は強制insufficient・ASP同型）
+
+// 有効数値のみの集計（null/空文字/NaNは除外・0は有効値として保持・分母を明確化）。
+function _intelMarketNumStats(values) {
+  var nums = (values || []).filter(function(v) { return typeof v === 'number' && !isNaN(v); });
+  if (!nums.length) return { count: 0, total: null, max: null, average: null };
+  var total = 0, max = -Infinity;
+  nums.forEach(function(n) { total += n; if (n > max) max = n; });
+  return { count: nums.length, total: total, max: max, average: Math.round((total / nums.length) * 100) / 100 };
+}
+
+// 空の market 構造（副作用なし・正式スキーマ）。_intelBlankAsp と同系。
+function _intelBlankMarket(caseId, channelScope, marketRaw, marketKey) {
+  return {
+    version: INTELLIGENCE_CONTEXT_VERSION,
+    caseId: (caseId != null ? String(caseId) : ''),
+    channelScope: channelScope || INTEL_CHANNEL_SCOPE_DEFAULT,
+    market: (marketRaw != null ? String(marketRaw) : ''),
+    marketKey: (marketKey != null ? marketKey : null),
+    productCount: 0,
+    productIdentifiers: [],
+    evidenceIds: [],
+    derived: {
+      productCount: 0,
+      estimatedProfitTotal: null, estimatedProfitMax: null, estimatedProfitAverage: null,
+      integratedScoreAverage: null, integratedScoreMax: null,
+      igFitAverage: null, competitorsAverage: null, lifespanMonthsAverage: null,
+      seasonalityValues: [],
+      knownFactors: 0, totalFactors: 0, status: 'insufficient',
+    },
+    confidence: null,
+    confidenceOwner: 'market',       // モジュール識別子（既存5層のconfidenceOwnerと整合）
+    status: 'insufficient',
+    insufficientReasons: [],
+    learningSummary: null,           // ⑦Self Improvement接続用予約（本工程は null）
+    updatedAt: '',
+  };
+}
+
+// 工程8-2: Market Confidence を算出（既存 _intelCalculateConfidence を再利用・新式/新しきい値なし）。
+//   母集団＝ usedBy:'market' で共有参照された Evidence のみ（_intelCalculateAspConfidence と同型）。独立3件未満は Insufficient。
+function _intelCalculateMarketConfidence(ctx, market) {
+  var evList = (ctx && Array.isArray(ctx.evidence)) ? ctx.evidence.filter(function(e) {
+    return e && Array.isArray(e.usedBy) && e.usedBy.indexOf('market') !== -1;
+  }) : [];
+  var known = (market && market.derived && typeof market.derived.knownFactors === 'number') ? market.derived.knownFactors : 0;
+  var total = (market && market.derived && typeof market.derived.totalFactors === 'number') ? market.derived.totalFactors : 0;
+  return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
+}
+
+// 案件内の候補評価(records)から、指定 market の市場集約を構築する。
+//   ★呼び出し側が明示実行（本工程では自動実行しない・render/F5から呼ばない）。
+//   ★新規Evidence生成なし。各商材の既存 product-input Evidence（存在するもの）にのみ usedBy:'market' を冪等追記。
+//   ★案件境界: records のうち ctx.caseId と一致する行のみ集約（別案件混入防止・Decision 071/072の案件境界原則を維持）。
+//   ★Active(_aicIsPersisted)・market正規化キー一致・productIdentifier重複排除。market未入力(marketKey空)は集約対象外。
+function _intelBuildMarketFromCases(ctx, marketRaw, records) {
+  var scope = (ctx && ctx.channelScope) || INTEL_CHANNEL_SCOPE_DEFAULT;
+  var caseId = String((ctx && ctx.caseId != null) ? ctx.caseId : '');
+  var marketKey = _aicNormalizeKeyPart(marketRaw);
+  var market = _intelBlankMarket(caseId, scope, _intelStr(marketRaw), marketKey || null);
+
+  if (!marketKey) {                                              // 市場未設定＝集約対象外（推測値を作らない）
+    market.insufficientReasons = ['market_unset'];
+    market.derived.status = 'insufficient';
+    market.status = 'insufficient';
+    market.confidence = _intelCalculateMarketConfidence(ctx, market);   // 母集団0 → Insufficient
+    market.updatedAt = new Date().toISOString();
+    return market;
+  }
+
+  // 案件内・Active・同一market・pid重複排除で候補群を確定
+  var list = Array.isArray(records) ? records : [];
+  var seenPid = {}, group = [];
+  list.forEach(function(rec) {
+    if (!rec || !_aicIsPersisted(rec)) return;                  // Active（保存済み）評価のみ
+    if (String(rec.caseId || '') !== caseId) return;            // 案件境界（現在案件のみ・別案件混入防止）
+    if (_aicNormalizeKeyPart(rec.market) !== marketKey) return; // 同一market正規化キーのみ
+    var pid = _intelProductIdentifier(rec);
+    if (pid && seenPid[pid]) return;                            // productIdentifier重複は1件に畳む（水増し防止）
+    if (pid) seenPid[pid] = true;
+    group.push(rec);
+  });
+
+  // Evidence共有: 各商材の既存 product-input Evidence（存在するもの）にのみ usedBy:'market' を冪等追記（新規生成なし）
+  var evidenceIds = [], productIdentifiers = [];
+  var ipVals = [], isVals = [], igVals = [], compVals = [], lifeVals = [], seasonVals = [];
+  group.forEach(function(rec) {
+    var pid = _intelProductIdentifier(rec);
+    if (pid) productIdentifiers.push(pid);
+    INTEL_PRODUCT_INPUT_FIELDS.forEach(function(field) {
+      var ref = _intelProductEvidenceRef('input', pid, field);
+      var ev = _intelFindEvidenceByRef(ctx, ref, caseId);       // 既存Evidenceのみ参照（無ければ何もしない＝虚偽参照を作らない）
+      if (ev && _intelMarkEvidenceUsedBy(ctx, ev.evidenceId, 'market')) {
+        if (evidenceIds.indexOf(ev.evidenceId) === -1) evidenceIds.push(ev.evidenceId);
+      }
+    });
+    // derived集計用の生値収集（有効数値のみ・派生値はEvidenceに数えず集計値としてのみ利用）
+    var est = _aicEstimate(rec);
+    var sc = _aicIntegratedScore(rec);
+    ipVals.push(est.estimatedProfit);
+    isVals.push(sc.score);
+    igVals.push(_aicNum(rec.igFit));
+    compVals.push(_aicNum(rec.competitors));
+    lifeVals.push(_aicNum(rec.lifespanMonths));
+    var s = _intelStr(rec.seasonality);
+    if (s) seasonVals.push(s);
+  });
+
+  market.productCount = group.length;
+  market.productIdentifiers = _intelUniq(productIdentifiers);
+  market.evidenceIds = evidenceIds;
+
+  var ipStat = _intelMarketNumStats(ipVals);
+  var isStat = _intelMarketNumStats(isVals);
+  var igStat = _intelMarketNumStats(igVals);
+  var compStat = _intelMarketNumStats(compVals);
+  var lifeStat = _intelMarketNumStats(lifeVals);
+
+  market.derived.productCount = group.length;
+  market.derived.estimatedProfitTotal = ipStat.total;
+  market.derived.estimatedProfitMax = ipStat.max;
+  market.derived.estimatedProfitAverage = ipStat.average;
+  market.derived.integratedScoreAverage = isStat.average;
+  market.derived.integratedScoreMax = isStat.max;
+  market.derived.igFitAverage = igStat.average;
+  market.derived.competitorsAverage = compStat.average;
+  market.derived.lifespanMonthsAverage = lifeStat.average;
+  market.derived.seasonalityValues = seasonVals.slice();
+
+  // Confidence母集団の入力充足度: 実際に共有できたEvidence数 / 理論上限（商材数×商材入力項目数）
+  market.derived.knownFactors = evidenceIds.length;
+  market.derived.totalFactors = group.length * INTEL_PRODUCT_INPUT_FIELDS.length;
+
+  // 工程8-2: Market Confidence（usedBy:'market'のEvidenceのみ・独立3件未満はInsufficient）。他層Confidenceとは独立。
+  market.confidence = _intelCalculateMarketConfidence(ctx, market);
+
+  // Insufficient理由（重複なく統合）。市場固有理由＋Confidence由来理由。
+  var reasons = [];
+  if (group.length < INTEL_MARKET_MIN_PRODUCT_COUNT) reasons.push('market_min_product');
+  var conf = market.confidence;
+  if (!conf || conf.evidenceCount === 0) reasons.push('no_evidence');
+  else if (conf.independentEvidenceCount < INTEL_CONFIDENCE_MIN_EVIDENCE) reasons.push('independent_evidence');
+  if (ipStat.count === 0 && isStat.count === 0 && igStat.count === 0) reasons.push('no_valid_metrics');
+  market.insufficientReasons = _intelUniq(reasons);
+
+  // 強制Insufficientゲート: 商材数不足はConfidence値に関わらず insufficient（過信させない）。
+  var forceInsuf = (group.length < INTEL_MARKET_MIN_PRODUCT_COUNT);
+  market.derived.status = (forceInsuf || !conf || conf.confidenceLevel === 'Insufficient')
+    ? 'insufficient'
+    : _aicStatusFromScore(conf.confidenceScore);
+  market.status = market.derived.status;   // トップレベルstatusはderived.statusと同値
+
+  market.updatedAt = new Date().toISOString();
+  return market;
+}
+
 // fingerprint専用の文字列正規化（lib/affiliateEvalDb.js の normalizeAffiliateKeyPart と同一規則）
 // ※ productIdentifier はここでは生成しない（サーバー正本）
 function _aicNormalizeKeyPart(v) {
