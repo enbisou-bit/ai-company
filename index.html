@@ -36266,6 +36266,176 @@ function _aicBuildCompetitionHtml(ranked) {
     + '</div>';
 }
 
+// ============================================================
+// 工程8-3A: Market Opportunity Intelligence 表示（読み取り専用・非永続プレビュー＋保存済み正本表示）
+//   ・Marketは market 単位集約（Content/Competitionの単一商材紐づきとは異なる）。保存済み正本判定は
+//     productIdentifierではなく marketKey + caseId で行う。
+//   ・★本表示はAI会社内に登録された候補情報の集計であり、外部の実検索数・実トレンド・市場規模を取得したものではない
+//     （Safety表記を画面上に必ず表示・ツールチップに隠さない）。
+//   ・「登録候補商材数」（AI会社内の自社候補件数）と Competitionの「競合数」（他社競合数）は明確に区別する。
+//   ・1商材市場でもパネルは非表示にしない。ただし status は必ず insufficient（商材数不足を明示）。
+//   ・順位/integratedScore/estimatedProfit/Product/Revenue/ASP/Content/Competition は変更しない（説明レイヤー）。
+//   ・工程8-3Aは表示のみ。七書き保存・adoptAffiliateForContentPlanning・pushOutputDraftToServer・
+//     Copy Full Reportへは未接続（工程8-3Bで実施）。
+// ============================================================
+
+// Insufficient理由コード→表示文言（技術文字列をそのまま出さない・同一理由の重複表示なし）。
+function _aicMarketReasonText(code) {
+  var map = {
+    market_unset: '市場が未設定です',
+    market_min_product: '市場内の登録候補商材が2件未満です',
+    no_evidence: '有効なEvidence（根拠）が不足しています',
+    independent_evidence: '独立した根拠（Evidence）が3件未満です',
+    no_valid_metrics: '有効な集計対象値が不足しています',
+  };
+  return map[code] || null;
+}
+
+// 工程8-1/8-2: 1商材が属する market の集約プレビューを使い捨てctxで生成。実contextへ書かない。失敗時null。
+//   ★市場内の登録候補商材（同一案件・Active・同一market）すべてを使い捨てctxへ同期してからMarketを集約する
+//     （Marketは複数商材の集約のため、Content/Competitionの単一商材同期とは異なる）。usedByはctx内のみ・POSTなし。
+//   ★_affiliateCasesが空/非配列でも例外を出さない。
+function _aicBuildMarketForRow(rec) {
+  if (!rec) return null;
+  try {
+    var caseId = (rec.caseId != null ? rec.caseId : (_aicCurrentCaseId() || ''));
+    var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);        // 使い捨て・非永続（実contextへ書かない）
+    var list = Array.isArray(_affiliateCases) ? _affiliateCases : [];
+    var marketKey = _aicNormalizeKeyPart(rec.market);
+    if (marketKey) {
+      list.forEach(function(r) {
+        if (!r || !_aicIsPersisted(r)) return;                      // Active（保存済み）のみ同期
+        if (String(r.caseId || '') !== String(caseId)) return;      // 案件内のみ（案件横断なし）
+        if (_aicNormalizeKeyPart(r.market) !== marketKey) return;    // 同一market正規化キーのみ
+        _intelSyncProductFromAffiliate(ctx, r);                      // 市場内候補のEvidenceを使い捨てctxへ同期
+      });
+    }
+    return _intelBuildMarketFromCases(ctx, rec.market, list);        // 集約本体（工程8-1/8-2・新規Evidence生成なし）
+  } catch (e) { return null; }
+}
+
+// 現在Draftに保存済みで、現在案件に一致するMarket（正本）を返す。無ければnull。副作用なし・再計算しない。
+//   ★工程8-3A時点では保存経路（工程8-3B）が未接続のため、通常は常にnullを返す（保存値が存在しない）。
+//   ★Product等と異なりmarketKey単位（productIdentifierではない）。
+function _aicCurrentSavedMarket() {
+  try {
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!draft || !draft.fields || !draft.fields.intelligenceContext) return null;
+    var market = draft.fields.intelligenceContext.market;
+    if (!market || typeof market !== 'object' || !market.marketKey) return null;   // 空受け皿({})・marketKeyなしは不採用
+    var cur = _aicCurrentCaseId();
+    if (!cur || String(draft.caseId || '') !== String(cur) || String(market.caseId || '') !== String(cur)) return null;
+    return market;
+  } catch (e) { return null; }
+}
+
+// rec.marketが保存済みMarketと同一marketKeyなら保存済みMarketを返す。他市場はnull（→プレビュー）。
+function _aicSavedMarketForRow(rec) {
+  var saved = _aicCurrentSavedMarket();
+  if (!saved || !rec) return null;
+  var recKey = _aicNormalizeKeyPart(rec.market);
+  if (!recKey) return null;
+  return (String(saved.marketKey) === recKey) ? saved : null;
+}
+
+// 表示専用: Market情報の共通整形（登録候補商材数/想定利益/Integrated Score/IG適性/他社競合数/案件寿命/seasonality/Confidence）。
+//   ★productCount(登録候補商材数=AI会社内の自社候補件数)はCompetitionのcompetitors(他社競合数)と明確に区別する。
+function _aicMarketParts(market) {
+  var esc = escapeHtml;
+  var d = (market && market.derived) || {}, conf = (market && market.confidence) || {};
+  var isInsuf = !conf || (conf.confidenceLevel === 'Insufficient') || (market && market.status === 'insufficient');
+  function numTxt(v, unit) { return (typeof v === 'number' && !isNaN(v)) ? (v + (unit || '')) : '情報なし'; }
+  function moneyTxt(v) { return (typeof v === 'number' && !isNaN(v)) ? ('約' + Math.round(v).toLocaleString() + '円') : '情報なし'; }
+  var seasonList = Array.isArray(d.seasonalityValues) ? d.seasonalityValues : [];
+  var seasonShown = seasonList.slice(0, 3).map(function(s) { return esc(s); });
+  var seasonTxt = seasonShown.length ? (seasonShown.join(' / ') + (seasonList.length > 3 ? ' 他' + (seasonList.length - 3) + '件' : '')) : '記載なし';
+  var reasons = Array.isArray(market && market.insufficientReasons) ? market.insufficientReasons : [];
+  var reasonTexts = [];
+  reasons.forEach(function(code) {
+    var t = _aicMarketReasonText(code);
+    if (t && reasonTexts.indexOf(t) === -1) reasonTexts.push(t);
+  });
+  return {
+    marketNameTxt: esc(String((market && market.market) || '') || '（市場未設定）'),
+    productCountTxt: (typeof (market && market.productCount) === 'number') ? (market.productCount + '件') : '0件',
+    profitTotalTxt: moneyTxt(d.estimatedProfitTotal),
+    profitMaxTxt: moneyTxt(d.estimatedProfitMax),
+    profitAvgTxt: moneyTxt(d.estimatedProfitAverage),
+    scoreAvgTxt: numTxt(d.integratedScoreAverage, '点'),
+    scoreMaxTxt: numTxt(d.integratedScoreMax, '点'),
+    igFitAvgTxt: numTxt(d.igFitAverage),
+    competitorsAvgTxt: numTxt(d.competitorsAverage),
+    lifespanAvgTxt: numTxt(d.lifespanMonthsAverage, 'ヶ月'),
+    seasonalityTxt: seasonTxt,
+    isInsuf: isInsuf,
+    confTxt: isInsuf ? 'Insufficient' : (esc(String(conf.confidenceLevel || '-')) + '（' + (conf.confidenceScore != null ? conf.confidenceScore : '-') + '点）'),
+    confColor: isInsuf ? '#ff9a9a' : 'rgba(150,220,150,0.95)',
+    indep: (conf && typeof conf.independentEvidenceCount === 'number') ? conf.independentEvidenceCount : 0,
+    evCount: (conf && typeof conf.evidenceCount === 'number') ? conf.evidenceCount : 0,
+    status: esc(String((market && market.status) || 'insufficient')),
+    reasonsTxt: reasonTexts.length ? reasonTexts.join(' / ') : '',
+    isSingleProduct: (market && market.productCount === 1),
+  };
+}
+
+// 表示専用: ランキングカード内の Market 1行（値不足でもレイアウトを壊さない・順位/採用に非影響）。
+//   保存済みMarket（marketKey一致）は正本表示・再計算しない。他はmarket単位の使い捨てプレビュー。
+function _aicBuildMarketCardLine(rec) {
+  var saved = _aicSavedMarketForRow(rec);
+  var market = saved || _aicBuildMarketForRow(rec);
+  if (!market) return '';                                          // 生成不可（market未設定含む）はライン非表示
+  if (!market.marketKey) return '';                                // 市場未設定は行を出さない（推測表示をしない）
+  var p = _aicMarketParts(market);
+  var tag = saved ? ' <span style="opacity:.6;">💾保存済み</span>' : '';
+  return '<div class="oe-aic-note" style="margin-top:4px;">'
+    + '🗺️ Market: ' + p.marketNameTxt + ' 登録候補商材数 <strong>' + p.productCountTxt + '</strong>'
+    + ' ／ 想定利益(平均) <strong>' + p.profitAvgTxt + '</strong>'
+    + ' ／ Confidence <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    + ' ／ Independent ' + p.indep + '件' + tag
+    + '</div>';
+}
+
+// 表示専用: AICセクション内の Market Opportunity Intelligence 最小パネル（読み取り専用）。
+//   現在案件の採用商材に保存済みMarket（marketKey一致）があれば正本表示（💾）。無ければ rank1 の市場を使い捨てプレビュー。
+//   ★本パネルはAI会社内に登録された候補情報の集計のみを表示する。実検索数・実トレンド・市場規模・市場成長率は扱わない。
+function _aicBuildMarketHtml(ranked) {
+  var esc = escapeHtml;
+  var base = 'margin-top:6px;border-top:1px dashed rgba(255,255,255,.15);padding-top:6px;';
+  var safetyLine = '<div style="opacity:.6;font-size:.85em;">※本表示はAI会社に登録された候補情報の集計であり、外部の実検索数・実トレンド・市場規模を取得したものではありません</div>';
+  var market, labelHtml;
+  var saved = _aicCurrentSavedMarket();
+  if (saved) {
+    market = saved;
+    labelHtml = '<span style="opacity:.55;">採用商材の市場「' + esc(saved.market || '') + '」 💾保存済み</span>';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    market = _aicBuildMarketForRow(src);
+    labelHtml = '<span style="opacity:.55;">トップ商材の市場「' + esc(top.market || '') + '」（プレビュー）</span>';
+  } else {
+    return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">🗺️ Market Opportunity Intelligence: 登録候補商材が不足のため情報なし</div>'
+      + safetyLine.replace('<div style="opacity:.6;font-size:.85em;">', '<div style="opacity:.5;font-size:.8em;">');
+  }
+  if (!market || !market.marketKey) {
+    return '<div class="oe-aic-note" style="' + base + 'opacity:.6;">🗺️ Market Opportunity Intelligence: 市場が未設定のため情報なし</div>'
+      + safetyLine;
+  }
+  var p = _aicMarketParts(market);
+  return '<div class="oe-aic-note" style="' + base + '">'
+    + '<div style="opacity:.8;">🗺️ <strong>Market Opportunity Intelligence</strong> ' + labelHtml + '</div>'
+    + safetyLine
+    + '<div>登録候補商材数 <strong>' + p.productCountTxt + '</strong>（AI会社内の自社候補件数・他社競合数とは別）</div>'
+    + '<div>想定利益: 合計 ' + p.profitTotalTxt + ' ／ 最大 ' + p.profitMaxTxt + ' ／ 平均 ' + p.profitAvgTxt + '</div>'
+    + '<div>Integrated Score: 平均 ' + p.scoreAvgTxt + ' ／ 最大 ' + p.scoreMaxTxt + ' ／ IG適性平均 ' + p.igFitAvgTxt + '</div>'
+    + '<div>他社競合数平均 ' + p.competitorsAvgTxt + ' ／ 案件寿命平均 ' + p.lifespanAvgTxt + '</div>'
+    + '<div>seasonality（原文）: ' + p.seasonalityTxt + '</div>'
+    + '<div>Market Confidence: <strong style="color:' + p.confColor + ';">' + p.confTxt + '</strong>'
+    +   ' ／ Evidence ' + p.evCount + '件 ／ Independent ' + p.indep + '件 ／ status: ' + p.status + '</div>'
+    + (p.isSingleProduct ? '<div style="color:#ff9a9a;opacity:.85;">⚠ 候補商材は1件です。市場比較として判断するには情報が不足しています。</div>' : '')
+    + (p.reasonsTxt ? '<div style="color:#ff9a9a;opacity:.85;">⚠ ' + p.reasonsTxt + '</div>' : '')
+    + '</div>';
+}
+
 // Leaderへ「今一番利益が出る案件は？」に答える統合サマリー
 function _aicBuildLeaderSummary(ranked) {
   if (!ranked.length) return '案件が未登録です。下のフォームから案件を手動入力すると、統合スコアとおすすめ順位を算出します。';
@@ -36464,6 +36634,8 @@ function buildAffiliateIntelligenceCoreHtml() {
     var contentLine = _aicBuildContentCardLine(src);
     // 工程7-3A: 表示専用Competitionライン（採用済みは保存値正本💾・未採用は使い捨てプレビュー・順位/採用は変更しない）
     var competitionLine = _aicBuildCompetitionCardLine(src);
+    // 工程8-3A: 表示専用Marketライン（保存済みはmarketKey一致で正本💾・未保存は使い捨てプレビュー・順位/採用は変更しない）
+    var marketLine = _aicBuildMarketCardLine(src);
     var pState = (src && src.persistenceState) || 'unsaved';
     var persisted = _aicIsPersisted(src);
     var saveBadge = '';
@@ -36498,6 +36670,7 @@ function buildAffiliateIntelligenceCoreHtml() {
       + aspLine
       + contentLine
       + competitionLine
+      + marketLine
       + failMsg
       + '<div class="oe-aic-note">入力充足度 ' + r.knownFactors + '/' + r.totalFactors + '項目 ' + saveBadge
       +   ' ' + removeBtn + retryBtn + '</div>'
@@ -36552,6 +36725,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + _aicBuildAspHtml(ranked)
     + _aicBuildContentHtml(ranked)
     + _aicBuildCompetitionHtml(ranked)
+    + _aicBuildMarketHtml(ranked)
     + '<div class="oe-aic-label">おすすめ順位ランキング（統合スコア順）</div>'
     + rankingHtml
     + (warningsHtml ? '<div class="oe-aic-label">Warnings</div>' + warningsHtml : '')
