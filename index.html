@@ -35092,6 +35092,25 @@ function _intelCalculateMarketConfidence(ctx, market) {
   return _intelCalculateConfidence({ knownFactors: known, totalFactors: total, evidenceList: evList });
 }
 
+// 工程8-3B補正: 市場内対象商材（現在案件・Active・同一marketKey・productIdentifier重複排除は呼び出さない＝
+//   _intelSyncProductFromAffiliateが安定キーupsertのため重複しても冪等）のProduct Evidenceをctxへ冪等同期する共通ヘルパー。
+//   ★_aicBuildMarketForRow（工程8-3A・プレビュー）と adoptAffiliateForContentPlanning（工程8-3B・実保存）の
+//     双方から共通利用する正本ロジック（重複実装しない）。
+//   ★Market集計対象(derived)とEvidence/Confidence母集団を一致させるための処理。新規Evidence生成の判定自体は
+//     既存 _intelSyncProductFromAffiliate の安定キーupsert（冪等・虚偽Evidence不作成）にすべて委ねる。
+//   ★呼び出し側の ctx.product（採用商品の正本）・ctx.revenue/asp/content/competition は一切上書きしない
+//     （本関数は戻り値を使用せず、ctx.evidenceへの同期という副作用のみを利用する）。
+function _intelSyncMarketGroupProductEvidence(ctx, caseId, marketKey, records) {
+  if (!ctx || !marketKey) return;
+  var list = Array.isArray(records) ? records : [];
+  list.forEach(function(r) {
+    if (!r || !_aicIsPersisted(r)) return;                       // Active（保存済み）評価のみ
+    if (String(r.caseId || '') !== String(caseId)) return;       // 案件内のみ（案件横断なし・Decision 071/072維持）
+    if (_aicNormalizeKeyPart(r.market) !== marketKey) return;     // 同一market正規化キーのみ
+    _intelSyncProductFromAffiliate(ctx, r);                       // 既存Evidenceへ冪等upsert（虚偽Evidence不作成・null値field不生成）
+  });
+}
+
 // 案件内の候補評価(records)から、指定 market の市場集約を構築する。
 //   ★呼び出し側が明示実行（本工程では自動実行しない・render/F5から呼ばない）。
 //   ★新規Evidence生成なし。各商材の既存 product-input Evidence（存在するもの）にのみ usedBy:'market' を冪等追記。
@@ -35578,7 +35597,12 @@ function adoptAffiliateForContentPlanning(evalId) {
     nextIntelligenceContext.competition = _intelSyncCompetitionFromProduct(nextIntelligenceContext, product);
     // 工程8-3B: Market Opportunity も同一 intelligenceContext へ書く（採用商品のmarketに属する現在案件内Active候補群を集約・
     //   ASPと同じくrecords全件を渡し生値で集計・新規Evidence生成なし・採用商品のEvidenceにのみ usedBy:'market' 冪等追記・新規POSTなし）。
-    nextIntelligenceContext.market = _intelBuildMarketFromCases(nextIntelligenceContext, product.market, (Array.isArray(_affiliateCases) ? _affiliateCases : []));
+    // 工程8-3B補正: derived集計対象（市場内対象商材群）とEvidence/Confidence母集団を一致させるため、
+    //   Market集約の直前に市場内対象商材（採用商品以外を含む）のProduct Evidenceを同一ctxへ冪等同期する
+    //   （_aicBuildMarketForRowと同一の正本ロジックを共通ヘルパーで再利用・ctx.productなど他layerは上書きしない）。
+    var _marketRecords = (Array.isArray(_affiliateCases) ? _affiliateCases : []);
+    _intelSyncMarketGroupProductEvidence(nextIntelligenceContext, product.caseId, _aicNormalizeKeyPart(product.market), _marketRecords);
+    nextIntelligenceContext.market = _intelBuildMarketFromCases(nextIntelligenceContext, product.market, _marketRecords);
     // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
@@ -36325,6 +36349,8 @@ function _aicMarketReasonText(code) {
 //   ★市場内の登録候補商材（同一案件・Active・同一market）すべてを使い捨てctxへ同期してからMarketを集約する
 //     （Marketは複数商材の集約のため、Content/Competitionの単一商材同期とは異なる）。usedByはctx内のみ・POSTなし。
 //   ★_affiliateCasesが空/非配列でも例外を出さない。
+//   ★工程8-3B補正: 市場内対象商材の同期は共通ヘルパー _intelSyncMarketGroupProductEvidence へ集約
+//     （adoptAffiliateForContentPlanningの実保存経路と同一の正本ロジックを共有・重複実装を解消）。
 function _aicBuildMarketForRow(rec) {
   if (!rec) return null;
   try {
@@ -36332,14 +36358,7 @@ function _aicBuildMarketForRow(rec) {
     var ctx = _intelBlankContext(caseId, AIC_CHANNEL_SCOPE);        // 使い捨て・非永続（実contextへ書かない）
     var list = Array.isArray(_affiliateCases) ? _affiliateCases : [];
     var marketKey = _aicNormalizeKeyPart(rec.market);
-    if (marketKey) {
-      list.forEach(function(r) {
-        if (!r || !_aicIsPersisted(r)) return;                      // Active（保存済み）のみ同期
-        if (String(r.caseId || '') !== String(caseId)) return;      // 案件内のみ（案件横断なし）
-        if (_aicNormalizeKeyPart(r.market) !== marketKey) return;    // 同一market正規化キーのみ
-        _intelSyncProductFromAffiliate(ctx, r);                      // 市場内候補のEvidenceを使い捨てctxへ同期
-      });
-    }
+    _intelSyncMarketGroupProductEvidence(ctx, caseId, marketKey, list);   // 市場内対象商材のEvidenceを使い捨てctxへ同期
     return _intelBuildMarketFromCases(ctx, rec.market, list);        // 集約本体（工程8-1/8-2・新規Evidence生成なし）
   } catch (e) { return null; }
 }
