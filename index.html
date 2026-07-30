@@ -35576,6 +35576,9 @@ function adoptAffiliateForContentPlanning(evalId) {
     nextIntelligenceContext.content = _intelSyncContentFromProduct(nextIntelligenceContext, product);
     // 工程7-3B: Competition も同一 intelligenceContext へ書く（採用商品のEvidenceにのみ usedBy:'competition' 冪等追記・新規Evidence/新規POSTなし）。
     nextIntelligenceContext.competition = _intelSyncCompetitionFromProduct(nextIntelligenceContext, product);
+    // 工程8-3B: Market Opportunity も同一 intelligenceContext へ書く（採用商品のmarketに属する現在案件内Active候補群を集約・
+    //   ASPと同じくrecords全件を渡し生値で集計・新規Evidence生成なし・採用商品のEvidenceにのみ usedBy:'market' 冪等追記・新規POSTなし）。
+    nextIntelligenceContext.market = _intelBuildMarketFromCases(nextIntelligenceContext, product.market, (Array.isArray(_affiliateCases) ? _affiliateCases : []));
     // products[] は後方互換のため既存値を deep copy で維持。新規履歴追加はしない（工程3-3対象外）。
   } catch (e) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[aic-adopt] intelligenceContext build failed:', e && e.message);
@@ -36153,6 +36156,33 @@ function _aicBuildCompetitionReportText(ranked) {
   return out.join('\n');
 }
 
+// 工程8-3B: Copy Full Report 用の Market Opportunity Intelligence テキスト（採用済み💾/プレビュー・市場集約・Confidence・Safety表記）。
+//   ★プレーンテキストのみ生成（HTMLは生成しない）。保存済みMarketがあれば正本・なければ使い捨てプレビュー。
+function _aicBuildMarketReportText(ranked) {
+  var saved = _aicCurrentSavedMarket();
+  var market = saved, label = '';
+  if (saved) {
+    label = '採用商材の市場「' + (saved.market || '') + '」（💾保存済み）';
+  } else if (ranked && ranked.length) {
+    var top = ranked[0], src = null;
+    for (var i = 0; i < _affiliateCases.length; i++) { if (_affiliateCases[i].id === top.id) { src = _affiliateCases[i]; break; } }
+    market = _aicBuildMarketForRow(src);
+    label = 'トップ商材の市場「' + (top.market || '') + '」（プレビュー）';
+  }
+  if (!market || !market.marketKey) return '■ Market Opportunity Intelligence\n市場が未設定、または登録候補商材が不足のため情報なし';
+  var p = _aicMarketParts(market);
+  var out = ['■ Market Opportunity Intelligence ' + label];
+  out.push('登録候補商材数: ' + p.productCountTxt + '（AI会社内の自社候補件数・他社競合数とは別）');
+  out.push('想定利益: 合計 ' + p.profitTotalTxt + ' ／ 最大 ' + p.profitMaxTxt + ' ／ 平均 ' + p.profitAvgTxt);
+  out.push('IG適性平均: ' + p.igFitAvgTxt + ' ／ 他社競合数平均: ' + p.competitorsAvgTxt);
+  out.push('seasonality（原文）: ' + p.seasonalityTxt);
+  out.push('Market Confidence: ' + p.confTxt + ' ／ Evidence ' + p.evCount + '件 ／ Independent ' + p.indep + '件 ／ status: ' + p.status);
+  if (p.isSingleProduct) out.push('※候補商材は1件です。市場比較として判断するには情報が不足しています。');
+  if (p.reasonsTxt) out.push('Insufficient理由: ' + p.reasonsTxt);
+  out.push('※本表示はAI会社に登録された候補情報の集計であり、外部の実検索数・実トレンド・市場規模を取得したものではありません');
+  return out.join('\n');
+}
+
 // ============================================================
 // 工程7-3A: Competition Intelligence 表示（読み取り専用・非永続プレビュー＋保存済み正本表示）
 //   ・単一商材紐づき（Content/Revenue型）のため、保存済み正本判定は productIdentifier + caseId で行う（ASPのgroupKey方式は使わない）。
@@ -36515,6 +36545,8 @@ function _aicBuildFullReport(ranked) {
   lines.push(_aicBuildContentReportText(ranked));
   lines.push('');
   lines.push(_aicBuildCompetitionReportText(ranked));
+  lines.push('');
+  lines.push(_aicBuildMarketReportText(ranked));
   lines.push('');
   lines.push(_aicBuildRankingText(ranked));
   return lines.join('\n');
