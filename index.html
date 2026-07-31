@@ -12493,6 +12493,17 @@ async function atTriggerLeaderFinal() {
   btn.textContent = '⏳ Leader最終提案 生成中…';
   resultEl.innerHTML = '';
 
+  // Hotfix: 案件混入防止ガード。案件切替後も前案件の .at-result-card を使ってLeader Finalを
+  // 再生成できてしまう既存不具合（Output Draft復元保護ロジックとの相互作用）を局所的に防止する。
+  // 現在案件とAuto Task結果生成時案件が一致しない場合、AI実行・保存処理へ進まず安全停止する。
+  const _liGuardCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+  if (!_liGuardCaseId || !_liLastPathAResultsCaseId || _liGuardCaseId !== _liLastPathAResultsCaseId) {
+    resultEl.innerHTML = '<div class="at-leader-final-card">⚠️ このLeader最終提案は別案件の実行結果です。現在案件でAuto Taskを再実行してください。</div>';
+    btn.disabled = false;
+    btn.textContent = '🎯 Leader最終提案を生成';
+    return;
+  }
+
   // 完了済みタスクの結果を memberReplies 形式に変換
   const cards = document.querySelectorAll('.at-result-card');
   const memberReplies = [];
