@@ -4,6 +4,18 @@
 
 ---
 
+## AI COMPANY Leader Integration Layer（Phase A） **正式リリースComplete**（2026-07-31・Code commit ad5eaf7/af43263・main push・Render反映）
+
+**LeaderをPath A（Auto Task）／Path B（Leader手動チャット）双方の成果物を回収・比較・矛盾候補検出・採否候補判定する統合管理層へ拡張**。`_liCollectIntegration()`が各Pathの末尾（Leader Final受領直後・手動Leader Final再生成直後）から1回だけ呼ばれ、既存処理は無変更のまま`_liAdaptPathA`/`_liAdaptPathB`が既存データを共通Leader Inbox形式へ変換。保存はクライアント一時メモリ（`_leaderIntegration`）のみ。**`index.html`（Phase A本体 +336/-6・Hotfix +11/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/既存Path A・Path B内部処理/switchCase()/chatHistory構造/Output Draft保存仕様 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 084）。
+
+- **Phase A本体（A-1a〜A-1e）**：`_leaderIntegration`／`_liPathBSessions`／`_liLastPathAResultsCaseId`／`_liCurrentCaseId()`（`_aicCurrentCaseId()`方式踏襲・フォールバックなし）／Leader Inbox・artifact・comparison・conflict・decision構造／`_liAdaptPathA()`（`_wlLastResults`ソース）／`_liAdaptPathB()`（`interactionId`＋`_liPathBSession`でchatHistory非接触）／`_liCompareArtifacts()`・`_liDetectConflictCandidates()`（ルールベースのみ・矛盾は必ずcandidate）／`_liDecideAdoptionCandidates()`（情報不足時hold既定値）／`_liCollectIntegration()`をPath A・Path B・手動Leader Final再生成の3箇所へ接続。
+- **案件混入Hotfix**：既存のOutput Draft復元保護ロジック（Phase54-2d）と手動Leader Final再生成（`atTriggerLeaderFinal()`）の相互作用により、案件切替後も前案件のOutput Draftが別案件へ混入し得る既存不具合を実装検証中に発見。`atTriggerLeaderFinal()`冒頭に`_liCurrentCaseId()`と`_liLastPathAResultsCaseId`の厳格一致ガードを追加し、不一致時はAPI呼び出し・保存を一切行わず安全停止・再実行を案内。
+- **実機検証**：Hotfix適用前に実際の混入事故（診断用Output Draft`out_1785449189461`が検証専用案件から既存案件「テスト」へ移動）を確認し、既存POST経路で復旧。Hotfix適用後は同一条件で`/api/leader-summary`・`/api/output-drafts`とも呼び出しなし・chatHistory追加なし・Draft移動なしを実測。孤立Draft・検証専用案件はSupabase SQL Editor／既存案件削除経路で限定削除。既存案件・Leader横断ログは無変更。
+- **検証**：JavaScript構文OK・dev-check 200/200/200・git diff --check問題なし・回帰なし。
+- **Git・反映**：Code commit **ad5eaf7**（`feat: add leader integration layer`）＋**af43263**（`fix: prevent cross-case leader final draft overwrite`）・docs commit＝本更新・tag **v1.01-leader-integration-phase-a**・main push・Render反映。**PC本番確認・iPhone実機確認 待ち**（ユーザー承認後）。次工程＝未定（Phase A-2 AI社員間再依頼／Phase A-3 成果物受け渡し／Phase A-4 Quality Loopは設計のみ完了・実装未着手）。
+
+---
+
 ## Affiliate Intelligence Company 工程8-1/8-2/8-3A/8-3B/8-3B補正/8-3C — Market Opportunity Intelligence（①層） **正式リリースComplete**（2026-07-30・Code commit 2de9317/4ef70ca/e61e7d5/3b1e5b7・main push・Render反映）
 
 **Version2 Core ① Market Opportunity Intelligence を案件内市場集約による説明層として追加**。`intelligenceContext.market`（既存受け皿）へ現在案件内の同一市場候補商材群を集約保存。ランキングカード・AIC最小パネル・Copy Full ReportへMarket Opportunity Intelligenceを表示（Competition直下）。**`index.html`（foundation +172/-0・ui +174/-0・persist +32/-0・fix +28/-9）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/`_icpDeriveTopic`/Workflow Wiring/Affiliate Evaluation/Product/Revenue/ASP/Content/Competition Intelligence/ランキング順位/integratedScore/estimatedProfit 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 083）。

@@ -8,6 +8,45 @@
 
 ---
 
+## AI COMPANY Leader Experience — Leader Integration Layer（Phase A完了・2026-07-31・Decision 084）
+
+> 追記日: 2026-07-31。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。
+
+Leaderを「各AI社員の回答を要約する司会者」から「成果物を回収・比較・矛盾候補検出・採否候補判定する統合管理層」へ進化させるLeader Experience再設計に着手し、**Phase A（Leader Integration Layer）を正式リリースComplete**。Path A（Auto Task）／Path B（Leader手動チャット）共通の回収・比較・矛盾候補・採否候補構造化を実現し、実装検証中に発見した既存の案件混入不具合も同一リリースでHotfix。詳細はDecision 084・01PROJECT_STATUS・02PHASE_PROGRESS・06HANDOVER_NEXT_CHATを参照。
+
+**正式ロードマップ（確定・実装順）**：
+
+```
+Phase A   Leader Integration Layer ── Complete（2026-07-31）
+  ↓
+Phase A-2 AI社員間再依頼（Employee Rework Request） ── 未着手
+  ↓
+Phase A-3 成果物受け渡し（Artifact Handoff・workflowContext汎用化） ── 未着手
+  ↓
+Phase A-4 Quality Loop（品質ループ・上限付き） ── 未着手
+  ↓
+Phase B   Leader成果物表示（Deliverable Card・Progress UI・Knowledge Summary） ── 未着手
+  ↓
+Phase C   Output Engine Knowledge Base化 ── 未着手
+  ↓
+Phase D-safety  自律実行安全ゲート ── 未着手
+  ↓
+Phase D   自律Workflow ── 未着手
+  ↓
+Phase E   毎日自律実行 ── 未着手
+  ↓
+Phase F   Self Improvement Intelligence（実運用データ後・Version2 Core⑦層と共通） ── 未着手
+```
+
+**Phase A完了内容**：
+- `_liCollectIntegration()`を共通オーケストレーションとし、Path A Adapter（`_wlLastResults`ソース）・Path B Adapter（`interactionId`＋`_liPathBSession`）で差異吸収。保存はクライアント一時メモリ（`_leaderIntegration`）のみ・新DB/新API/追加AI実行なし。
+- 比較・矛盾候補検出はルールベースのみ・矛盾は必ず`candidate`。採否候補は情報不足時`hold`が既定値（Reviewer未実行を合格扱いにしない）。
+- **案件混入Hotfix**：`atTriggerLeaderFinal()`（手動Leader Final再生成）冒頭に厳格caseId一致ガードを追加し、既存のOutput Draft復元保護ロジックとの相互作用による案件混入事故を防止。
+
+**Phase A-2以降は未着手**。着手前に必ずユーザー確認を取る（本Roadmapへの追記のみでは着手権限としない）。
+
+---
+
 ## 社員向上B 正式完了 → Instagram自動運営へ優先移行（2026-07-21・push前・Render未反映）
 
 > 追記日: 2026-07-21。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。
