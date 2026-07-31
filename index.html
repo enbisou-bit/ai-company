@@ -8114,6 +8114,10 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
   const shortTitle = userText.length > 30 ? userText.slice(0, 30) + '…' : userText;
   const dispatchTs = new Date().toISOString();
   const cardId = 'dispatch-card-' + Date.now();
+  // Phase A: Leader Integration用セッション（chatHistory非接触・クライアントのみ・Path B識別子はcardId流用しない）
+  const _liSession = (typeof _liCreatePathBSession === 'function')
+    ? _liCreatePathBSession(caseId, cardId, dispatchTs, assignedIds, userText)
+    : null;
 
   // Leader画面に振り分けカードを表示（自動切替しない）
   const chat = document.getElementById('chat-area');
@@ -8233,7 +8237,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
         // 完了リストに追加 → 全員完了で統合意見（Strategy監視はconsolidateで一括）
         completedReplies.push({ id: m.id, name: m.name, reply });
         if (completedReplies.length === assignedMembers.length) {
-          triggerStrategyConsolidate(userText, completedReplies, cardId);
+          triggerStrategyConsolidate(userText, completedReplies, cardId, _liSession && _liSession.interactionId);
           // autoStart（自動開始）ON の場合は Auto Task を自動実行
           atAutoStartWorkflow(userText, assignedIds);
         }
@@ -8242,7 +8246,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
         if (tag) { tag.dataset.status = 'error'; updateCard(); }
         completedReplies.push({ id: m.id, name: m.name, reply: '（エラー）' });
         if (completedReplies.length === assignedMembers.length) {
-          triggerStrategyConsolidate(userText, completedReplies.filter(r => r.reply !== '（エラー）'), cardId);
+          triggerStrategyConsolidate(userText, completedReplies.filter(r => r.reply !== '（エラー）'), cardId, _liSession && _liSession.interactionId);
           atAutoStartWorkflow(userText, assignedIds);
         }
       }
@@ -8252,7 +8256,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
       if (tag) { tag.dataset.status = 'error'; updateCard(); }
       completedReplies.push({ id: m.id, name: m.name, reply: '（エラー）' });
       if (completedReplies.length === assignedMembers.length) {
-        triggerStrategyConsolidate(userText, completedReplies.filter(r => r.reply !== '（エラー）'), cardId);
+        triggerStrategyConsolidate(userText, completedReplies.filter(r => r.reply !== '（エラー）'), cardId, _liSession && _liSession.interactionId);
         atAutoStartWorkflow(userText, assignedIds);
       }
     } finally {
@@ -8262,7 +8266,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
 }
 
 // ── Strategy 全担当統合意見 ────────────────────────
-async function triggerStrategyConsolidate(userText, memberReplies, cardId) {
+async function triggerStrategyConsolidate(userText, memberReplies, cardId, interactionId) {
   if (!memberReplies || memberReplies.length === 0) return;
   try {
     const res = await fetch('/api/strategy-consolidate', {
@@ -8291,13 +8295,13 @@ async function triggerStrategyConsolidate(userText, memberReplies, cardId) {
       if (noteText) noteText.textContent = '✅ 全担当返答完了 ・ ♟️ 戦略顧問が統合意見を提案しました';
     }
     // Leader推奨方針サマリーを生成して表示
-    triggerLeaderSummary(userText, memberReplies, data.reply);
+    triggerLeaderSummary(userText, memberReplies, data.reply, interactionId);
   } catch (e) {
     console.warn('[consolidate] error:', e.message);
   }
 }
 
-async function triggerLeaderSummary(userText, memberReplies, strategyReply) {
+async function triggerLeaderSummary(userText, memberReplies, strategyReply, interactionId) {
   try {
     const res = await fetch('/api/leader-summary', {
       method: 'POST',
@@ -8320,9 +8324,328 @@ async function triggerLeaderSummary(userText, memberReplies, strategyReply) {
     if (!chatHistory['leader']) chatHistory['leader'] = [];
     chatHistory['leader'].push({ role: 'assistant', content: data.reply, timestamp: ts, fromLeaderSummary: true });
     saveToStorage();
+    // Phase A: Leader Integration（Path B）— triggerLeaderSummary完了後に1回だけ収集。既存表示・保存には無関係（追加のみ）。
+    try {
+      if (interactionId && typeof _liCollectIntegration === 'function') {
+        var _liSession = (_liPathBSessions || []).find(function(s) { return s.interactionId === interactionId; });
+        if (_liSession) _liCollectIntegration('pathB', userText, { session: _liSession });
+      }
+    } catch (_liErr) { console.warn('[LeaderIntegration] pathB collect error:', _liErr.message); }
   } catch (e) {
     console.warn('[leader-summary] error:', e.message);
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase A: Leader Integration Layer（Leader統合層・共通基盤 A-1a〜A-1e）
+// 目的: Path A(Auto Task)／Path B(Leader手動チャット)双方の実行結果を共通形式へ変換し、
+//       比較・矛盾候補・採否候補まで構造化する（表示・永続化はPhase B以降・今回は対象外）。
+// 非接触: server.js／openaiClient.js／DB／API／既存Path A・Path Bの内部処理・表示・保存は無変更。
+//         保存はクライアント一時メモリ（_leaderIntegration）のみ。追加AI実行なし。
+// ══════════════════════════════════════════════════════════════
+const LEADER_INTEGRATION_VERSION = '1.0.0';
+// 既存コードに「全文保存用」の統一文字数上限定数が見当たらないため新規提案する値。
+// 比較・矛盾候補検出に十分な分量を確保しつつ、AI回答全文の無制限保持を避ける目的の上限。
+const LI_RAWTEXT_MAX_LENGTH = 2000;
+const LI_REVIEWER_REJECTION_KEYWORDS = ['不合格', 'NG', '要修正', '却下', '差し戻し'];
+const LI_PATH_B_SESSION_MAX = 10; // 直近セッションのみ保持（無制限成長防止）
+
+let _leaderIntegration = null;   // Phase A: クライアント一時メモリのみ（F5で消失・永続化はPhase B以降）
+let _liPathBSessions   = [];     // Path B: 1回のLeader手動依頼を識別するセッション（chatHistory非接触）
+let _liLastPathAResultsCaseId = null; // _wlLastResults確定時点のcaseId（Leader Integration専用・陳腐化検出用。_wlLastResults自体は変更しない）
+
+// A-1a: 現在Leader Integrationが対象とすべきcaseIdのみを返す（Decision072方式を踏襲・フォールバックなし）
+function _liCurrentCaseId() {
+  try {
+    if (currentMember && currentMember.id) {
+      return _ncActiveCaseId(currentMember.id) || null;
+    }
+  } catch (e) { /* 取得不可 */ }
+  return null;
+}
+
+// A-1a: rawTextを安全な長さへ切り詰める（テキストのみ・HTML/data URI/バイナリを含めない）
+function _liSafeRawText(sourceText) {
+  var text = String(sourceText || '');
+  var truncated = text.length > LI_RAWTEXT_MAX_LENGTH;
+  return {
+    rawText: truncated ? text.slice(0, LI_RAWTEXT_MAX_LENGTH) : text,
+    rawTextTruncated: truncated,
+  };
+}
+
+// A-1a: Reviewer等の自由文に不合格を示すキーワードが含まれるか（確定判定ではなく候補検出用）
+function _liTextHasRejectionKeyword(text) {
+  var t = String(text || '');
+  return LI_REVIEWER_REJECTION_KEYWORDS.some(function(kw) { return t.indexOf(kw) !== -1; });
+}
+
+// A-1a: 空のLeader Inbox（副作用なし）
+function _liBlankInbox(caseId, pathSource) {
+  return {
+    version: LEADER_INTEGRATION_VERSION,
+    caseId: caseId,
+    workflowId: null,
+    interactionId: null,
+    pathSource: pathSource,
+    requestText: '',
+    collectedAt: new Date().toISOString(),
+    artifacts: [],
+    comparisons: [],
+    conflicts: [],
+    decisions: [],
+    finalSummary: null,
+  };
+}
+
+// A-1a: 1件のartifactを正式構造へ整形（副作用なし）
+function _liBuildArtifact(input) {
+  input = input || {};
+  var rt = _liSafeRawText(input.rawText);
+  return {
+    agentId: input.agentId || '',
+    agentName: input.agentName || '',
+    role: input.role || '',
+    rawText: rt.rawText,
+    rawTextTruncated: rt.rawTextTruncated,
+    status: input.status || 'completed',
+    timestamp: input.timestamp || '',
+    sourceTaskId: input.sourceTaskId || null,
+    isPostProcess: !!input.isPostProcess,
+    isLeaderFinal: !!input.isLeaderFinal,
+    hasReviewerEvaluation: !!input.hasReviewerEvaluation,
+  };
+}
+
+// A-1a: Path B用セッション生成（chatHistoryは一切変更しない・DB保存なし・クライアントのみ）
+function _liCreatePathBSession(caseId, cardId, dispatchTs, memberIds, requestText) {
+  var session = {
+    interactionId: 'li-' + genId(),
+    caseId: caseId || null,
+    cardId: cardId || '',
+    dispatchTs: dispatchTs || new Date().toISOString(),
+    memberIds: Array.isArray(memberIds) ? memberIds.slice() : [],
+    requestText: requestText || '',
+  };
+  _liPathBSessions = [session].concat(_liPathBSessions).slice(0, LI_PATH_B_SESSION_MAX);
+  return session;
+}
+
+// A-1b: Path A Adapter（読み取り専用）。
+// 注記: _atTaskHistory（サーバーtaskHistoryログ）は agentId/result を持たないため実測確認のうえソースに採用しない。
+//       実際に完了task結果（agentId/result/status/isPostProcess/isLeaderFinal）を保持するのは
+//       直近Auto Task実行結果である _wlLastResults（= data.results）のため、こちらを正本として使用する。
+function _liAdaptPathA(caseId, requestText) {
+  var inbox = _liBlankInbox(caseId, 'pathA');
+  inbox.workflowId = (typeof _atCurrentWorkflowId !== 'undefined' && _atCurrentWorkflowId) ? _atCurrentWorkflowId : null;
+  inbox.requestText = requestText || '';
+
+  var results = (typeof _wlLastResults !== 'undefined' && Array.isArray(_wlLastResults)) ? _wlLastResults : [];
+  var reviewerCompleted = results.some(function(r) { return r && r.agentId === 'reviewer' && r.status === 'completed' && r.result; });
+
+  inbox.artifacts = results
+    .filter(function(t) { return t && t.agentId && !t.isPrePopulated; })
+    .map(function(t) {
+      var m = (typeof ALL_MEMBERS !== 'undefined' && ALL_MEMBERS[t.agentId]) || {};
+      return _liBuildArtifact({
+        agentId: t.agentId,
+        agentName: m.name || t.agentId,
+        role: m.role || '',
+        rawText: t.result || '',
+        status: t.status || 'pending',
+        timestamp: t.completedAt || t.startedAt || '',
+        sourceTaskId: t.id || null,
+        isPostProcess: !!t.isPostProcess,
+        isLeaderFinal: !!t.isLeaderFinal,
+        hasReviewerEvaluation: !t.isPostProcess && reviewerCompleted,
+      });
+    });
+
+  return inbox;
+}
+
+// A-1c: Path B Adapter（読み取り専用）。chatHistoryの構造・内容は一切変更しない。
+// dispatchTs以前／別caseId／セッション外memberIdの回答を除外することで、過去回答・別依頼の混入を防ぐ。
+function _liAdaptPathB(session) {
+  var inbox = _liBlankInbox(session.caseId, 'pathB');
+  inbox.interactionId = session.interactionId;
+  inbox.requestText = session.requestText || '';
+
+  var artifacts = [];
+
+  (session.memberIds || []).forEach(function(mid) {
+    var hist = (typeof chatHistory !== 'undefined' && chatHistory[mid]) ? chatHistory[mid] : null;
+    if (!Array.isArray(hist)) return;
+    var m = (typeof ALL_MEMBERS !== 'undefined' && ALL_MEMBERS[mid]) || {};
+    // 最新の該当回答のみを採用（同一メンバーへの重複計上を避ける）
+    var msg = null;
+    for (var i = hist.length - 1; i >= 0; i--) {
+      var h = hist[i];
+      if (h && h.role === 'assistant' && h.timestamp >= session.dispatchTs && h.caseId === session.caseId) { msg = h; break; }
+    }
+    if (!msg) return;
+    artifacts.push(_liBuildArtifact({
+      agentId: mid,
+      agentName: m.name || mid,
+      role: m.role || '',
+      rawText: msg.content || '',
+      status: (msg.content === '（エラー）') ? 'error' : 'completed',
+      timestamp: msg.timestamp || '',
+      sourceTaskId: null,
+      isPostProcess: false,
+      isLeaderFinal: false,
+      hasReviewerEvaluation: false, // Path Bは既定でReviewer未実行扱い（reviewerがdispatch対象の場合を除く）
+    }));
+  });
+
+  // Strategy統合・Leader Summaryは chatHistory['leader'] に caseId なしで記録される既存仕様のため、
+  // timestamp（dispatchTs以降）のみで対応付ける（caseId比較はできない・既存chatHistory構造は変更しない）。
+  var leaderHist = (typeof chatHistory !== 'undefined' && chatHistory['leader']) ? chatHistory['leader'] : null;
+  if (Array.isArray(leaderHist)) {
+    var strategyMsg = null, summaryMsg = null;
+    for (var j = leaderHist.length - 1; j >= 0; j--) {
+      var lh = leaderHist[j];
+      if (!lh || !lh.timestamp || lh.timestamp < session.dispatchTs) continue;
+      if (!strategyMsg && lh.fromStrategy) strategyMsg = lh;
+      if (!summaryMsg && lh.fromLeaderSummary) summaryMsg = lh;
+    }
+    if (strategyMsg) {
+      artifacts.push(_liBuildArtifact({
+        agentId: 'strategy', agentName: 'Strategy統合', role: '戦略顧問',
+        rawText: strategyMsg.content || '', status: 'completed', timestamp: strategyMsg.timestamp || '',
+        isPostProcess: true, isLeaderFinal: false, hasReviewerEvaluation: false,
+      }));
+    }
+    if (summaryMsg) {
+      artifacts.push(_liBuildArtifact({
+        agentId: 'leader', agentName: 'Leader Summary', role: 'マーケリーダー',
+        rawText: summaryMsg.content || '', status: 'completed', timestamp: summaryMsg.timestamp || '',
+        isPostProcess: true, isLeaderFinal: true, hasReviewerEvaluation: false,
+      }));
+    }
+  }
+
+  inbox.artifacts = artifacts;
+  return inbox;
+}
+
+// A-1d: 比較（ルールベースのみ。AI追加実行なし・DOM変更なし・グローバル状態への直接書き込みなし）
+function _liCompareArtifacts(artifacts) {
+  artifacts = artifacts || [];
+  var comparisons = [];
+  var completed = artifacts.filter(function(a) { return a.status === 'completed'; });
+  comparisons.push({
+    axis: 'completionCount',
+    value: completed.length + '/' + artifacts.length,
+    detail: '完了 ' + completed.length + '件 / 全体 ' + artifacts.length + '件',
+  });
+
+  var writer = artifacts.find(function(a) { return a.agentId === 'writer'; });
+  var designer = artifacts.find(function(a) { return a.agentId === 'designer'; });
+  if (writer && designer && typeof extractSlides === 'function') {
+    try {
+      var wCount = extractSlides(writer.rawText).length;
+      var dMentionCount = (designer.rawText.match(/(スライド|Slide)\s*\d+/gi) || []).length;
+      comparisons.push({
+        axis: 'slideCountWriterVsDesigner',
+        value: wCount + ' / ' + dMentionCount,
+        detail: 'Writerスライド数 ' + wCount + '件 / Designer言及数 ' + dMentionCount + '件',
+      });
+    } catch (e) { /* extractSlides失敗時は比較をスキップ（既存関数を汚染しない） */ }
+  }
+  return comparisons;
+}
+
+// A-1d: 矛盾候補検出（すべて label:'candidate'。確定判定は行わない）
+function _liDetectConflictCandidates(artifacts, comparisons) {
+  artifacts = artifacts || []; comparisons = comparisons || [];
+  var conflicts = [];
+
+  var reviewer = artifacts.find(function(a) { return a.agentId === 'reviewer' && a.status === 'completed'; });
+  if (reviewer && _liTextHasRejectionKeyword(reviewer.rawText)) {
+    artifacts.forEach(function(a) {
+      if (a.agentId === 'reviewer' || a.isPostProcess) return;
+      if (a.status === 'completed') {
+        conflicts.push({
+          type: 'reviewer_rejection_but_completed',
+          involvedAgentIds: [a.agentId, 'reviewer'],
+          detail: 'Reviewerの回答に不合格を示すキーワードが含まれていますが、' + (a.agentName || a.agentId) + 'の成果物はcompleted扱いです。',
+          confidence: 'low',
+          label: 'candidate',
+        });
+      }
+    });
+  }
+
+  var slideComp = comparisons.find(function(c) { return c.axis === 'slideCountWriterVsDesigner'; });
+  if (slideComp) {
+    var parts = slideComp.value.split(' / ');
+    if (parts[0] !== parts[1]) {
+      conflicts.push({
+        type: 'slide_count_mismatch',
+        involvedAgentIds: ['writer', 'designer'],
+        detail: 'Writerのスライド数とDesignerの言及数が一致しません（' + slideComp.value + '）。',
+        confidence: 'low',
+        label: 'candidate',
+      });
+    }
+  }
+  return conflicts;
+}
+
+// A-1d: 採否候補判定（情報不足時は必ずhold＝安全側既定値。自由文だけで確定採否は出さない）
+function _liDecideAdoptionCandidates(artifacts) {
+  artifacts = artifacts || [];
+  return artifacts.filter(function(a) { return !a.isPostProcess; }).map(function(a) {
+    var decision = 'hold';
+    var reason = '判定材料が不十分なため保留';
+    if (a.status === 'error' || a.status === 'skipped') {
+      decision = 'reject';
+      reason = 'status=' + a.status + 'のため除外候補';
+    } else if (a.hasReviewerEvaluation) {
+      decision = 'hold';
+      reason = 'Reviewer評価あり。内容を確認のうえLeaderが最終判断してください（自動採用しない）';
+    } else {
+      decision = 'hold';
+      reason = 'Reviewer評価・Confidence情報がないため保留（安全側既定値）';
+    }
+    return {
+      agentId: a.agentId,
+      artifactRef: a.sourceTaskId || (a.agentId + '@' + a.timestamp),
+      decision: decision,
+      reason: reason,
+      label: 'candidate',
+    };
+  });
+}
+
+// A-1e: 共通オーケストレーション。Path A／Path Bの末尾から1回だけ呼ぶ（既存処理は変更しない）。
+// caseId取得不能・caseId不一致（Path Bはdispatch時点のセッションと現在caseIdが異なる場合を含む）は
+// Leader Integrationを生成せず安全停止する（エラーにはしない）。
+function _liCollectIntegration(pathSource, requestText, extra) {
+  extra = extra || {};
+  var caseId = _liCurrentCaseId();
+  if (!caseId) { _leaderIntegration = null; return null; }
+
+  var inbox = null;
+  if (pathSource === 'pathA') {
+    // 陳腐化防止: _wlLastResults確定時点のcaseIdと現在caseIdが異なる場合は古い成果物とみなし生成しない
+    // （atRunWorkflow自身の接続は同一同期継続内のため常に一致・atTriggerLeaderFinalの手動再生成でのみ発動し得る）
+    if (_liLastPathAResultsCaseId !== caseId) { _leaderIntegration = null; return null; }
+    inbox = _liAdaptPathA(caseId, requestText);
+  } else if (pathSource === 'pathB') {
+    if (!extra.session || extra.session.caseId !== caseId) { _leaderIntegration = null; return null; }
+    inbox = _liAdaptPathB(extra.session);
+  } else {
+    return null;
+  }
+
+  inbox.comparisons = _liCompareArtifacts(inbox.artifacts);
+  inbox.conflicts   = _liDetectConflictCandidates(inbox.artifacts, inbox.comparisons);
+  inbox.decisions   = _liDecideAdoptionCandidates(inbox.artifacts);
+
+  _leaderIntegration = inbox;
+  return inbox;
 }
 
 // ── 対応括弧カウンタ（parseAIResponse と共有） ──
@@ -11863,6 +12186,8 @@ async function atRunWorkflow() {
     wlProgressStopPolling(); // Phase42修正: WLポーリング停止（APIが完了したため）
     // Phase38: Workflow Live Panel へ結果を反映（グローバル保存 → render）
     _wlLastResults  = Array.isArray(data.results)     ? data.results     : [];
+    // Phase A: Leader Integration専用の陳腐化検出用スナップショット（_wlLastResults自体・他の用途には無関係）
+    _liLastPathAResultsCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
     _wlLastHistory  = Array.isArray(data.taskHistory) ? data.taskHistory : [];
     _wlLastBrain    = data.brainResult || null; // Phase40: Company Brain 解析結果
     renderWorkflowLive();
@@ -11914,6 +12239,8 @@ async function atRunWorkflow() {
       _phase42Success = true;
       // Phase46-8: Output Draft + Compare Log を Path A でも記録する
       try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text); } catch(_e) {}
+      // Phase A: Leader Integration（Path A）— Leader Final受領直後に1回だけ収集。既存表示・保存には無関係（追加のみ）。
+      try { if (typeof _liCollectIntegration === 'function') _liCollectIntegration('pathA', userMessage); } catch (_liErr) { console.warn('[LeaderIntegration] pathA collect error:', _liErr.message); }
     }
 
     _atMarkComplete(); // ✅ 自動タスク完了 — ボタン状態を更新
@@ -12251,6 +12578,9 @@ async function atTriggerLeaderFinal() {
 
     // Phase44-4: Output Draft Builder — Leader Final結果をdraft.fieldsに格納
     buildOutputDraftFromLeaderFinal(data.reply);
+    // Phase A: Leader Integration（Path A・手動Leader Final再生成経路）— 既存Path A Adapterを再利用。
+    // Leader Final/Output Draftの成功をLeader Integration失敗で損なわないよう独立try/catchで隔離。
+    try { if (typeof _liCollectIntegration === 'function') _liCollectIntegration('pathA', userMessage); } catch (_liErr) { console.warn('[LeaderIntegration] pathA(manual) collect error:', _liErr.message); }
 
     // 次タスク自動作成（auto-create next tasks from leader proposal）
     await atAutoCreateNextTasks(data.reply);
