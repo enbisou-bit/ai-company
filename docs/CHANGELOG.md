@@ -4,6 +4,19 @@
 
 ---
 
+## AI COMPANY Leader Integration Layer（Phase A）後半 **正式リリースComplete**（2026-08-01・Code commit 5401b68/6032893/0d125e7・main push・Render反映）
+
+Phase A本体（Decision084）に続き、**3工程を正式リリース**。①**messages案件別正本化**：`server.js`の`/api/auto-task`・`/api/consult`の`saveMessage()`計4箇所へ既存受領済みの`caseId`を追加（`caseId: caseId || null`・既存`/api/messages`と同一形式・API/DB無変更）。②**Leader Final状態サマリー分離**：`runLeaderFinalResponse()`で`completed`成果は既存どおり統合しつつ、`error`/`skipped`を状態サマリーとして分離しLeaderへ渡す（全員成功時は既存プロンプトと完全一致・error理由は1行80文字以内に安全短文化）。③**Output Draft誤認防止**：`buildOutputDraftFromLeaderFinal()`へ`noCompletedResults`判定を追加し、completed成果0件時はOutput Draftを`status:'error'`・Package Qualityを`score:0・insufficient`へ固定（従来は`status:'ready'`・機械評価で「良好87点」と誤表示されうる問題を工程3統合検証で発見し解消）。**`index.html`＋`openaiClient.js`のみ**・**server.js（messages案件別正本化を除き）・DB・schema.sql・API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 085）。
+
+- **工程1（messages案件別正本化）**：`/api/auto-task`のuser/assistant保存・`/api/consult`のuser/assistant保存、計4箇所へcaseId追加。保存対象・保存回数・`saveMessage()`本体は無変更。
+- **工程2（Leader Final状態サマリー）**：`_lfShortReason()`・`_lfStatusLine()`をローカル追加し、`error`/`skipped`（`!isPostProcess`）の状態サマリーを構築。全員成功／一部成功／completed成果0件の3分岐でLeaderプロンプトを構築。
+- **工程3（統合検証）**：正常系・一部成功・completed成果0件をlocalhost実DBで検証し、一部成功時の状態サマリーが独立セクション化されない問題・completed成果0件時のOutput Draft誤評価を発見。
+- **工程3-2（誤認防止修正）**：`buildOutputDraftFromLeaderFinal(finalText, opts)`に`opts.noCompletedResults`を追加（`integratedCount===0`で判定・返却形式は無変更）。Leader Finalプロンプトへ「完成成果物出力後、必ず末尾に独立見出し『## 担当実行状況』を追加」の指示を強化。再検証で正常系71点needs_work（従来どおり）・一部成功で独立見出し出力・completed成果0件でstatus:'error'/score:0/insufficientを実測確認。
+- **検証**：JavaScript構文OK・dev-check 200/200/200・git diff --check問題なし・Cross-case混入なし・新規`case_id=NULL`なし・二重保存なし・Console Error 0（全パターン）。error/skipped再現はlocalhost限定で`AGENT_WORKFLOW_CONFIG.enabled`を一時変更し検証直後に完全復元（永続コード差分なし）。
+- **Git・反映**：Code commit **5401b68**（`fix: scope auto task messages by case`）＋**6032893**（`feat: include task status in leader final`）＋**0d125e7**（`fix: prevent output misrepresentation on zero completed tasks`）・docs commit＝本更新・tag **v1.01-leader-integration-phase-a-complete**・main push・Render反映。**PC本番確認・iPhone実機確認 待ち**（ユーザー承認後）。次工程＝未定（Phase A-2〜A-4は設計のみ完了・実装未着手。またはmessages RLS対応・Task skipped同期ギャップ対応等の残課題）。
+
+---
+
 ## AI COMPANY Leader Integration Layer（Phase A） **正式リリースComplete**（2026-07-31・Code commit ad5eaf7/af43263・main push・Render反映）
 
 **LeaderをPath A（Auto Task）／Path B（Leader手動チャット）双方の成果物を回収・比較・矛盾候補検出・採否候補判定する統合管理層へ拡張**。`_liCollectIntegration()`が各Pathの末尾（Leader Final受領直後・手動Leader Final再生成直後）から1回だけ呼ばれ、既存処理は無変更のまま`_liAdaptPathA`/`_liAdaptPathB`が既存データを共通Leader Inbox形式へ変換。保存はクライアント一時メモリ（`_leaderIntegration`）のみ。**`index.html`（Phase A本体 +336/-6・Hotfix +11/-0）の1ファイルのみ**・**server.js/lib/DB/schema.sql/API/既存Path A・Path B内部処理/switchCase()/chatHistory構造/Output Draft保存仕様 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 084）。
