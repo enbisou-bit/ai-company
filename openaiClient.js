@@ -1746,6 +1746,35 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   const reviewerTask = (workflowTasks || []).find(function(t) { return t.agentId === 'reviewer' && t.isPostProcess; });
   const strategyTask = (workflowTasks || []).find(function(t) { return t.agentId === 'strategy' && t.isPostProcess; });
 
+  // 工程2: error・skippedとなったメイン担当の状態サマリー（成果本文には混ぜない・後処理タスク自身は対象外）
+  function _lfShortReason(raw) {
+    if (!raw) return '';
+    var s = String(raw).split(/\r?\n/)[0];               // スタック等の後半を除外（1行目のみ）
+    s = s.replace(/^(エラー|Error)\s*[:：]\s*/i, '');      // 先頭の「エラー:」等を除去
+    s = s.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim(); // 改行正規化・連続空白整理
+    if (s.length > 80) s = s.slice(0, 80) + '…';          // 長さを安全な範囲へ制限
+    return s;
+  }
+  function _lfStatusLine(t) {
+    var profile = LINE_AGENT_PROFILES[t.agentId];
+    var name = profile ? profile.name : t.agentId;
+    if (t.status === 'error') {
+      return '- ' + name + '：error：' + (_lfShortReason(t.result) || '実行中にエラーが発生');
+    }
+    if (t.status === 'skipped') {
+      var reason;
+      if (t.skippedReason)      reason = _lfShortReason(t.skippedReason);
+      else if (t.enabled === false) reason = '担当が無効に設定されているためスキップ';
+      else                       reason = '実行条件を満たさなかったためスキップ';
+      return '- ' + name + '：skipped：' + reason;
+    }
+    return null;
+  }
+  const statusTasks = (workflowTasks || []).filter(function(t) {
+    return (t.status === 'error' || t.status === 'skipped') && !t.isPostProcess;
+  });
+  const statusSummaryText = statusTasks.map(_lfStatusLine).filter(Boolean).join('\n');
+
   // Claude が JSON形式 {"reply":"...","suggestions":[...]} で返す場合は reply フィールドを抽出する
   function _extractReply(raw) {
     if (!raw) return '';
@@ -1780,20 +1809,39 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
 
   // 統合プロンプト
   var repliesText = memberReplies.map(function(r) { return '【' + r.name + '】\n' + r.reply; }).join('\n\n');
-  var parts = [
-    '【依頼内容（これが案件の核心）】', userMessage, '',
-    brainCtx ? '【Company Brain解析】' + brainCtx : '',
-    knCount > 0 ? '【参照Knowledge】' + knCount + '件' : '',
-    '',
-    '【AI社員の成果（これを統合して完成成果物を作ること）】',
-    repliesText, '',
-    reviewerText ? '【Reviewerの品質フィードバック】\n' + reviewerText : '',
-    strategyText ? '【Strategyの統合提言】\n' + strategyText : '',
-    '',
-    '上記AI社員の成果を統合し、「そのまま使える完成成果物」を指定フォーマットで出力してください。',
-    '要約・方針・提案は不要。完成した文章・コピー・構成をそのまま出力してください。',
-  ].filter(Boolean);
-  var question = parts.join('\n');
+  var question;
+  if (mainTasks.length === 0) {
+    // 工程2: completed成果0件 — 完成成果物を装わず、実行状況の説明のみを指示する（安全側分岐）
+    var parts0 = [
+      '【依頼内容】', userMessage, '',
+      brainCtx ? '【Company Brain解析】' + brainCtx : '',
+      '',
+      '【担当実行状況】',
+      statusSummaryText || '（詳細不明）', '',
+      '正常完了した担当成果がないため、完成成果物を作成しないでください。',
+      '各担当の実行状況と、成果物を生成できなかった理由を簡潔に説明し、',
+      '再実行または設定確認が必要であることを案内してください。',
+      '不足している成果を推測で補完しないでください。',
+    ].filter(Boolean);
+    question = parts0.join('\n');
+  } else {
+    var parts = [
+      '【依頼内容（これが案件の核心）】', userMessage, '',
+      brainCtx ? '【Company Brain解析】' + brainCtx : '',
+      knCount > 0 ? '【参照Knowledge】' + knCount + '件' : '',
+      '',
+      '【AI社員の成果（これを統合して完成成果物を作ること）】',
+      repliesText, '',
+      reviewerText ? '【Reviewerの品質フィードバック】\n' + reviewerText : '',
+      strategyText ? '【Strategyの統合提言】\n' + strategyText : '',
+      statusSummaryText ? '【担当実行状況・成果物には含めない】\n' + statusSummaryText : '',
+      statusSummaryText ? '利用可能な完了成果だけを統合してください。未完了・失敗・スキップ情報は成果本文の材料として使用せず、最終回答の末尾で実行状況として簡潔に説明してください。存在しない成果を推測して補完しないでください。' : '',
+      '',
+      '上記AI社員の成果を統合し、「そのまま使える完成成果物」を指定フォーマットで出力してください。',
+      '要約・方針・提案は不要。完成した文章・コピー・構成をそのまま出力してください。',
+    ].filter(Boolean);
+    question = parts.join('\n');
+  }
 
   var text = '';
   var provider = 'openai';
