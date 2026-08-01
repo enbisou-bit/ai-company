@@ -13,7 +13,7 @@ Phase A本体（Decision084）に続き、**3工程を正式リリース**。①
 - **工程3（統合検証）**：正常系・一部成功・completed成果0件をlocalhost実DBで検証し、一部成功時の状態サマリーが独立セクション化されない問題・completed成果0件時のOutput Draft誤評価を発見。
 - **工程3-2（誤認防止修正）**：`buildOutputDraftFromLeaderFinal(finalText, opts)`に`opts.noCompletedResults`を追加（`integratedCount===0`で判定・返却形式は無変更）。Leader Finalプロンプトへ「完成成果物出力後、必ず末尾に独立見出し『## 担当実行状況』を追加」の指示を強化。再検証で正常系71点needs_work（従来どおり）・一部成功で独立見出し出力・completed成果0件でstatus:'error'/score:0/insufficientを実測確認。
 - **検証**：JavaScript構文OK・dev-check 200/200/200・git diff --check問題なし・Cross-case混入なし・新規`case_id=NULL`なし・二重保存なし・Console Error 0（全パターン）。error/skipped再現はlocalhost限定で`AGENT_WORKFLOW_CONFIG.enabled`を一時変更し検証直後に完全復元（永続コード差分なし）。
-- **Git・反映**：Code commit **5401b68**（`fix: scope auto task messages by case`）＋**6032893**（`feat: include task status in leader final`）＋**0d125e7**（`fix: prevent output misrepresentation on zero completed tasks`）・docs commit＝本更新・tag **v1.01-leader-integration-phase-a-complete**・main push・Render反映。**PC本番確認・iPhone実機確認 待ち**（ユーザー承認後）。次工程＝未定（Phase A-2〜A-4は設計のみ完了・実装未着手。またはmessages RLS対応・Task skipped同期ギャップ対応等の残課題）。
+- **Git・反映**：Code commit **5401b68**（`fix: scope auto task messages by case`）＋**6032893**（`feat: include task status in leader final`）＋**0d125e7**（`fix: prevent output misrepresentation on zero completed tasks`）・docs commit＝本更新・tag **v1.01-leader-integration-phase-a-complete**・main push・Render反映。**PC本番確認 完了**（ユーザー実施：ログイン/Auto Task/Leader Integration Layer/AI社員振り分け/Leader Final/Output Engine/Task同期/案件切替すべて正常・Cross-case混入なし・Console Error/Network異常なし。Task表示は全案件13件／案件内は該当案件のみの正常仕様を確認。iPhone実機確認は対象外）。**AI COMPANY Leader Integration Layer（Phase A）正式Complete**。次工程＝未定（Phase A-2〜A-4は設計のみ完了・実装未着手。またはmessages RLS対応・Task skipped同期ギャップ対応等の残課題）。
 
 ---
 
