@@ -6688,7 +6688,8 @@
     <!-- PhaseA-0: Task同期の最小診断（控えめ・build marker確認用・alert不使用） -->
     <div id="task-sync-diag" style="display:none;font-size:9px;line-height:1.3;color:var(--text-dim);opacity:0.7;margin-top:2px;white-space:pre-line;overflow:hidden;max-height:2.8em;word-break:break-all;max-width:100%;">A0 phase54-a0-20260715 · idle</div>
     <div id="task-filters">
-      <button class="task-filter-btn active" data-filter-type="status" data-filter-val="all" onclick="setFilter('status','all',this)">すべて</button>
+      <button class="task-filter-btn active" data-filter-type="status" data-filter-val="active" onclick="setFilter('status','active',this)">未完了</button>
+      <button class="task-filter-btn" data-filter-type="status" data-filter-val="all" onclick="setFilter('status','all',this)">すべて</button>
       <button class="task-filter-btn" data-filter-type="status" data-filter-val="todo" onclick="setFilter('status','todo',this)">未着手</button>
       <button class="task-filter-btn" data-filter-type="status" data-filter-val="doing" onclick="setFilter('status','doing',this)">進行中</button>
       <button class="task-filter-btn" data-filter-type="status" data-filter-val="done" onclick="setFilter('status','done',this)">完了</button>
@@ -7181,16 +7182,21 @@ async function syncTaskToServer(task) {
 }
 
 // タスクステータスをサーバーに反映（dbId がある場合のみ）
+// 前半工程 安全修正1: 呼び出し側が成功・失敗を判定できるよう boolean を返す（既存の fire-and-forget 呼び出し元は返り値無視のままで無変更動作）
 async function syncTaskStatusToServer(dbId, status) {
-  if (!dbId) return;
+  if (!dbId) return false;
   try {
-    await fetch(`/api/tasks/${dbId}`, {
+    const res = await fetch(`/api/tasks/${dbId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
+    if (!res || !res.ok) return false;
+    const data = await res.json().catch(function () { return null; });
+    return !!(data && data.ok);
   } catch (e) {
     console.warn('[DB sync] ステータス更新スキップ:', e.message);
+    return false;
   }
 }
 
@@ -8176,6 +8182,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
   chat.scrollTop = chat.scrollHeight;
 
   // 各担当の履歴にLeader指示を記録 + タスク作成（ユーザー原文は保存しない）
+  const _dispatchCreatedTaskIds = [];   // 安全修正2: 今回のdispatchで作成したTaskのローカルIDのみを記録（誤接続防止）
   assignedMembers.forEach(m => {
     const instruction = memberInstructions[m.id] || `【Leader依頼】${shortTitle}`;
     if (!chatHistory[m.id]) chatHistory[m.id] = [];
@@ -8187,8 +8194,10 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
       createdAt: dispatchTs, updatedAt: dispatchTs,
       sourceMessage: instruction, sourceType: 'leader_dispatch', caseId,
     });
+    _dispatchCreatedTaskIds.push(tasks[0].id);
     _persistNewTask(tasks[0]);   // Phase54-3a-fix: 作成直後にサーバー保存（成功時dbId付与・冪等）
   });
+  _dispatchTaskIdsByCard[cardId] = _dispatchCreatedTaskIds;   // 安全修正2: Auto Task開始時にこの集合だけを接続対象にする
   saveToStorage(); saveTasks(); updateTaskBadge();
 
   // 完了追跡（全員揃ったら統合意見生成）
@@ -9300,7 +9309,13 @@ function pushOutputDraftToServer(draft) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    }).catch(function () { /* 保存失敗でもUI/Workflowを止めない */ });
+    }).then(function (res) {
+      // 前半工程（安全修正）: 保存失敗を握り潰さずConsoleへ明示。UI/Workflow/保存順は変更しない（fire-and-forgetのまま）。
+      if (!res || !res.ok) { console.warn('[OutputDraft] 保存失敗（HTTP）:', draft.id, caseId, res && res.status); return; }
+      return res.json().then(function (data) {
+        if (!data || data.ok !== true) console.warn('[OutputDraft] 保存失敗（レスポンス）:', draft.id, caseId, data && data.error);
+      });
+    }).catch(function (e) { console.warn('[OutputDraft] 保存失敗（通信エラー）:', draft.id, caseId, e && e.message); });
   } catch (e) { /* 失敗握り潰し・既存UI維持 */ }
 }
 
@@ -11344,12 +11359,14 @@ const LIVE_TO_TASK_STATUS = {
 function atTaskProgressUpdate(workflowId, agentId, newStatus) {
   if (!workflowId) return;
   const AI_STATUSES = ['requested','working','consulting','reviewing','strategy','done','error'];
-  // done / error は上書きOK。それ以外は AI_STATUSES 内でのみ変化させる
+  // 追加静的確認（安全修正）: done は既に対象外だったが error が対象外になっていなかったため、
+  //   一度errorになったTaskが後続pollingで別statusへ上書きされ得た（サーバー同期追加後は影響がサーバーにも及ぶため修正）。
   const targets = tasks.filter(t =>
     t.workflowId === workflowId &&
     (agentId == null || t.memberId === agentId) &&
     t.status !== 'archived' &&
-    t.status !== 'done'
+    t.status !== 'done' &&
+    t.status !== 'error'
   );
   if (targets.length === 0) return;
   let changed = false;
@@ -11365,6 +11382,7 @@ function atTaskProgressUpdate(workflowId, agentId, newStatus) {
       message:   `→ ${sm.icon || ''} ${sm.label || newStatus}`,
       timestamp: t.updatedAt,
     });
+    _atSyncTaskStatusIfChanged(t, newStatus);   // 前半工程 修正3: 変化した場合のみサーバーへ同期
     changed = true;
   }
   if (changed) {
@@ -11373,6 +11391,149 @@ function atTaskProgressUpdate(workflowId, agentId, newStatus) {
     const panel = document.getElementById('task-panel');
     if (panel && panel.classList.contains('open')) renderTaskList();
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Auto Task・Task管理・Leader最終納品 統合接続（前半工程・追加のみ）
+// 目的: Leader Dispatch TaskとworkflowIdを対応付け、進行に応じてサーバーへstatus同期する。
+// 既存のTask二重生成防止・Cross-case境界・Decision053 rich status保護・PC/iPhone同期は変更しない。
+// ══════════════════════════════════════════════════════════════
+
+// 安全修正2: dispatchカードID → 今回作成したTaskのローカルID集合（handleLeaderDispatchで記録）
+let _dispatchTaskIdsByCard = {};
+// 安全修正2: workflowId → そのAuto Taskが対象とすべきTaskのローカルID集合（openAutoTaskPanelで記録）
+let _atDispatchTaskIdsByWorkflow = {};
+
+// 修正1・安全修正2: 今回のdispatchで作成したTask ID集合（taskIds）だけへworkflowIdを対応付ける。
+//   ID集合が無い/空の場合は一切接続しない＝過去の未完了Task（同一案件・同一担当）への誤接続を防止。
+//   caseId不一致・別Workflow接続済みのTaskにも触れない（Cross-case境界を維持）。
+function _atLinkDispatchTasksToWorkflow(caseId, workflowId, agentIds, taskIds) {
+  if (!workflowId || !caseId || !Array.isArray(agentIds) || agentIds.length === 0) return 0;
+  if (!Array.isArray(taskIds) || taskIds.length === 0) return 0;   // 対象ID集合が不明なら何もしない（安全側）
+  const agentSet = new Set(agentIds);
+  const idSet    = new Set(taskIds);
+  let linked = 0;
+  for (const t of tasks) {
+    if (!idSet.has(t.id)) continue;                          // 今回dispatchで作成したTaskのみ対象
+    if (t.sourceType !== 'leader_dispatch') continue;
+    if (t.caseId !== caseId) continue;
+    if (!t.memberId || !agentSet.has(t.memberId)) continue;
+    if (t.status === 'done' || t.status === 'archived') continue;
+    if (t.workflowId && t.workflowId !== workflowId) continue; // 別Workflow接続済みは触らない
+    t.workflowId = workflowId;
+    linked++;
+  }
+  if (linked > 0) saveTasks();
+  return linked;
+}
+
+// 修正2: クライアントの詳細status語彙 → サーバー正式値（pending/in_progress/done）への変換。
+//   error はDB Migration未実施のため in_progress を維持（ローカル表示のerrorは変更しない）。
+function _atServerTaskStatus(status) {
+  if (status === 'done' || status === 'completed') return 'done';
+  if (status === 'todo' || status === 'pending') return 'pending';
+  return 'in_progress';
+}
+
+// 補正（実DB検証前の再送保証）: 前回送信からの最小間隔・最大リトライ回数
+const AT_SYNC_RETRY_INTERVAL_MS = 5000;
+const AT_SYNC_MAX_RETRIES = 3;
+
+// 修正3・安全修正1・補正: Task状態が変化した時、または未確定のまま再チェックされた時に、変換後のstatusをサーバーへ同期する。
+//   同一statusでも呼び出し可能（_atRetryPendingTaskSyncsから毎pollingで呼ばれる）。実際に送るかどうかは以下で判定する。
+//   _syncingServerStatus（送信中）と _lastSyncedServerStatus（成功確定済み）を分離する。
+//   ・既に成功確定済みの値、または同一値へ送信中の場合は何もしない（多重送信防止）
+//   ・失敗時は _lastSyncedServerStatus を更新しない＝未確定のまま維持し、5秒間隔・最大3回まで自動再試行
+//   ・目標値（serverStatus）が変わった場合はリトライ回数をリセット。成功時もリセット
+//   ・最大回数に到達した場合は一度だけTask ID・caseId・workflowId・statusをConsole警告し、それ以上は送らない（無限PATCH防止）
+function _atSyncTaskStatusIfChanged(t, newLocalStatus) {
+  if (!t || !t.dbId) return;
+  const serverStatus = _atServerTaskStatus(newLocalStatus);
+  if (t._lastSyncedServerStatus === serverStatus) return;   // 既に反映成功済みの値は送らない
+  if (t._syncingServerStatus === serverStatus) return;      // 同一値への同時多重PATCHを防止
+
+  if (t._syncTargetStatus !== serverStatus) {
+    // 目標値が変わった＝新しいstatusへの同期を開始するのでリトライ状態をリセット
+    t._syncTargetStatus  = serverStatus;
+    t._syncRetryCount    = 0;
+    t._syncLastAttemptAt = 0;
+    t._syncGaveUp        = false;
+  }
+  const now = Date.now();
+  if (t._syncRetryCount > 0) {
+    if (t._syncGaveUp) return;   // 最大回数到達済み（既に警告済み・以降は送らない＝無限PATCH防止）
+    if (t._syncRetryCount >= AT_SYNC_MAX_RETRIES) {
+      t._syncGaveUp = true;
+      console.warn('[Task sync] status→server 最大再送回数に到達（手動確認が必要）', { taskId: t.id, dbId: t.dbId, caseId: t.caseId, workflowId: t.workflowId, serverStatus, attempts: t._syncRetryCount });
+      return;
+    }
+    if (now - (t._syncLastAttemptAt || 0) < AT_SYNC_RETRY_INTERVAL_MS) return;   // 前回送信から一定時間（5秒）未経過
+  }
+
+  t._syncingServerStatus = serverStatus;
+  t._syncRetryCount      = (t._syncRetryCount || 0) + 1;
+  t._syncLastAttemptAt   = now;
+  console.log('[Task sync] status→server 送信開始', { taskId: t.id, dbId: t.dbId, caseId: t.caseId, workflowId: t.workflowId, localStatus: newLocalStatus, serverStatus, attempt: t._syncRetryCount });
+  syncTaskStatusToServer(t.dbId, serverStatus).then(function (ok) {
+    if (ok) {
+      t._lastSyncedServerStatus = serverStatus;              // 成功時のみ反映済みキャッシュを更新
+      t._syncRetryCount = 0;                                  // 成功時はリトライ回数をリセット
+      t._syncGaveUp = false;
+      console.log('[Task sync] status→server 成功', { taskId: t.id, dbId: t.dbId, serverStatus, attempt: t._syncRetryCount });
+    } else {
+      console.warn('[Task sync] status→server 失敗（' + t._syncRetryCount + '/' + AT_SYNC_MAX_RETRIES + '回・次回pollingで再送可能）', { taskId: t.id, dbId: t.dbId, caseId: t.caseId, workflowId: t.workflowId, serverStatus });
+    }
+  }).finally(function () {
+    if (t._syncingServerStatus === serverStatus) t._syncingServerStatus = null;   // 送信中フラグ解除（成功・失敗とも）
+  });
+}
+
+// 補正（実DB検証前の再送保証）: statusが変化していなくても、サーバー未確定のTaskを毎pollingで再チェックする。
+//   実際に送るか・間隔・上限は _atSyncTaskStatusIfChanged 内のリトライ制御に委ねる（ここでは対象を広げるだけ）。
+//   done/error等の終端statusも対象に含める（終端到達直前のPATCH失敗を取りこぼさないため）。
+function _atRetryPendingTaskSyncs(workflowId) {
+  if (!workflowId) return;
+  for (const t of tasks) {
+    if (t.workflowId !== workflowId) continue;
+    if (!t.dbId) continue;
+    _atSyncTaskStatusIfChanged(t, t.status);
+  }
+}
+
+// 補正（Workflow完了後の最終同期保証）: workflowId → 最終同期タイマーID（setInterval戻り値）
+let _atFinalSyncTimers = {};
+
+// Workflow完了時（aiLiveApplyResults）はaiLivePollのポーリングが既に停止しているため、
+//   通常pollingとは独立したタイマーで、今回workflowId・開始時caseIdのTaskだけを対象に最終フォローする。
+//   ・5秒間隔（_atSyncTaskStatusIfChangedと同一のAT_SYNC_RETRY_INTERVAL_MSを流用）
+//   ・実際の再試行回数上限（最大3回）・成功時リセット・上限到達時のConsole警告は _atSyncTaskStatusIfChanged に一元化
+//   ・対象Taskが全て同期成功、または全て上限到達（_syncGaveUp）になったら自動でタイマーを解除する
+//   ・workflowId単位でタイマーIDを管理し、二重起動しない（既に稼働中なら何もしない）
+//   ・setIntervalの登録は同期的・即時に返るため、Leader Final表示やOutput Draft保存を待たせない
+//   ・in-memoryのみで完結（localStorage等へ保存しない）＝F5でタイマーは消えるが前提として扱わない
+function _atEnsureFinalTaskSync(caseId, workflowId) {
+  if (!workflowId) return;
+  if (_atFinalSyncTimers[workflowId]) return;   // 二重タイマー防止
+
+  function _pending() {
+    return tasks.filter(function (t) {
+      return t.workflowId === workflowId
+        && (caseId == null || t.caseId === caseId)   // 案件切替後も開始時caseIdで限定
+        && !!t.dbId
+        && !t._syncGaveUp
+        && t._lastSyncedServerStatus !== _atServerTaskStatus(t.status);
+    });
+  }
+
+  _atFinalSyncTimers[workflowId] = setInterval(function () {
+    const remaining = _pending();
+    if (remaining.length === 0) {
+      clearInterval(_atFinalSyncTimers[workflowId]);
+      delete _atFinalSyncTimers[workflowId];
+      return;
+    }
+    remaining.forEach(function (t) { _atSyncTaskStatusIfChanged(t, t.status); });
+  }, AT_SYNC_RETRY_INTERVAL_MS);
 }
 
 // 担当選択肢（セレクトボックス用）
@@ -11498,6 +11659,13 @@ function openAutoTaskPanel(prefillMessage = '', prefillAgents = [], btnEl = null
     _atCurrentWorkflowId = _atResumedWorkflowId;
   } else {
     _atCurrentWorkflowId = 'wf-' + Date.now();
+  }
+  // 安全修正2: dispatchカード（btnEl）から今回作成されたTask ID集合を引き継ぐ。
+  //   既にこのworkflowId向けに記録済みなら（再開等）上書きしない。btnElが無い/カードが見つからない場合は空のまま
+  //   （＝_atLinkDispatchTasksToWorkflowは何も接続しない＝過去Taskへの誤接続より安全側）。
+  if (!_atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId]) {
+    const _cardEl = btnEl ? btnEl.closest('.leader-dispatch-card') : null;
+    _atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId] = (_cardEl && _dispatchTaskIdsByCard[_cardEl.id]) || [];
   }
   // Leader最終提案エリアをリセット（前回の結果を消す）
   const finalArea = document.getElementById('at-leader-final');
@@ -11720,12 +11888,14 @@ async function aiLivePoll(workflowId) {
       const taskStatus11 = LIVE_TO_TASK_STATUS[liveKey];
       if (taskStatus11) atTaskProgressUpdate(workflowId, id, taskStatus11);
     }
+    // 補正（実DB検証前の再送保証）: status変化の有無に関わらず、サーバー未確定のTaskを毎pollingで再チェックする
+    _atRetryPendingTaskSyncs(workflowId);
     aiLiveRender();
   } catch (_) { /* ポーリング中のエラーは無視 */ }
 }
 
 // Auto Task 完了後に最終結果でステータスを一括更新する
-function aiLiveApplyResults(results) {
+function aiLiveApplyResults(results, caseId) {
   aiLiveStopPolling();
   for (const t of results) {
     const id      = t.agentId;
@@ -11739,6 +11909,17 @@ function aiLiveApplyResults(results) {
     const finalStatus = t.status === 'completed' ? 'done' : t.status === 'error' ? 'error' : null;
     if (finalStatus) atTaskProgressUpdate(_atCurrentWorkflowId, id, finalStatus);
   }
+  // 前半工程 修正4: Workflow完了後、今回workflowIdに接続されたTaskで未完了が残っていないか診断（Console出力のみ）
+  try {
+    const _atRemaining = tasks.filter(function (t) {
+      return t.workflowId === _atCurrentWorkflowId && t.status !== 'done' && t.status !== 'error' && t.status !== 'archived';
+    });
+    if (_atRemaining.length > 0) {
+      console.warn('[Task sync] Workflow完了後も未完了のTaskが残っています:', _atRemaining.map(function (t) { return { id: t.id, memberId: t.memberId, status: t.status }; }));
+    }
+  } catch (e) {}
+  // 補正（Workflow完了後の最終同期保証）: aiLivePollは既に停止済みのため、独立タイマーで未同期Taskを最終フォローする
+  try { _atEnsureFinalTaskSync(caseId, _atCurrentWorkflowId); } catch (e) {}
   aiLiveRender();
 
   // Phase9: 案件完了バナーを表示
@@ -12068,6 +12249,11 @@ async function atRunWorkflow() {
     });
   });
 
+  // 前半工程 修正1・5: 実行開始時点の案件を捕捉し、Task接続・チャットcaseId付与に一貫して使用する
+  //   （完了時点で別案件へ画面切替されていても、実行開始案件へ保存・表示されるようにする）
+  const _atRunCaseId = getCurrentApprovalCaseId() || null;
+  _atLinkDispatchTasksToWorkflow(_atRunCaseId, _atCurrentWorkflowId, tasks.map(t => t.agentId), _atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId]);
+
   // 実行開始時にフラグリセット（成否を atAutoStartWorkflow が参照する）
   _atLastRunSuccess = false;
 
@@ -12170,7 +12356,7 @@ async function atRunWorkflow() {
     const res  = await fetch('/api/auto-task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: (getCurrentApprovalCaseId() || null), knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext() }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）
+      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext() }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用
     });
     const data = await res.json();
 
@@ -12182,7 +12368,7 @@ async function atRunWorkflow() {
     // 完了した結果を描画（collaborators / taskHistory を含む）
     atRenderResults(data.results);
     // Phase8: 最終結果でライブ状況を更新してポーリング停止
-    aiLiveApplyResults(data.results);
+    aiLiveApplyResults(data.results, _atRunCaseId);   // 補正: 最終同期保証タイマーの案件限定に使用
     wlProgressStopPolling(); // Phase42修正: WLポーリング停止（APIが完了したため）
     // Phase38: Workflow Live Panel へ結果を反映（グローバル保存 → render）
     _wlLastResults  = Array.isArray(data.results)     ? data.results     : [];
@@ -12225,6 +12411,7 @@ async function atRunWorkflow() {
         fromAutoTask: true,
         isLeaderFinal: true,
         suggestions: [], // 修正⑥: Auto Taskでは4択不要
+        caseId: _atRunCaseId, // 前半工程 修正5: 実行開始案件へ表示されるようにcaseIdを付与
       });
       unreadCount['leader'] = (unreadCount['leader'] || 0) + 1;
       latestPreview['leader'] = data.leaderFinalResult.text.slice(0, 28) + '…';
@@ -12238,7 +12425,7 @@ async function atRunWorkflow() {
       atSetWorkflowStatus('✅ Leader最終成果物まで完了 — チャット返信済', 'done');
       _phase42Success = true;
       // Phase46-8: Output Draft + Compare Log を Path A でも記録する
-      try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text); } catch(_e) {}
+      try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text, { noCompletedResults: data.leaderFinalResult.integratedCount === 0 }); } catch(_e) {}
       // Phase A: Leader Integration（Path A）— Leader Final受領直後に1回だけ収集。既存表示・保存には無関係（追加のみ）。
       try { if (typeof _liCollectIntegration === 'function') _liCollectIntegration('pathA', userMessage); } catch (_liErr) { console.warn('[LeaderIntegration] pathA collect error:', _liErr.message); }
     }
@@ -12261,6 +12448,7 @@ async function atRunWorkflow() {
           content: t.result,
           timestamp: new Date().toISOString(),
           fromAutoTask: true,
+          caseId: _atRunCaseId, // 前半工程 修正5: 実行開始案件へ表示されるようにcaseIdを付与
         });
         // 未読バッジ（unread badge）更新
         unreadCount[t.agentId] = (unreadCount[t.agentId] || 0) + 1;
@@ -12578,6 +12766,7 @@ async function atTriggerLeaderFinal() {
         timestamp: new Date().toISOString(),
         fromAutoTask: true,
         workflowId: _atCurrentWorkflowId,
+        caseId: _liGuardCaseId, // 前半工程 修正5: 冒頭のCross-case Hotfixガードで確定済みの現在案件を使用
       });
       unreadCount['leader'] = (unreadCount['leader'] || 0) + 1;
       latestPreview['leader'] = data.reply.slice(0, 28) + '…';
@@ -12918,7 +13107,7 @@ function clearUnread(memberId) {
 // ── タスク管理 ──
 const TASK_KEY = 'ai-company-tasks-v1';
 let tasks = [];
-let taskFilters = { status: 'all', priority: 'all', member: 'all' };
+let taskFilters = { status: 'active', priority: 'all', member: 'all' };  // 前半工程 修正6: 既定は未完了中心（doneを除外）。「すべて」ボタンで従来どおり全件表示可能
 let _taskSelection = new Set(); // checkbox（チェックボックス）で選択中のタスクID
 let prefillTaskText = '';
 
@@ -21482,7 +21671,12 @@ function renderTaskList() {
       return t.status === 'archived';
     }
     if (t.status === 'archived') return false;
-    if (taskFilters.status !== 'all' && t.status !== taskFilters.status) return false;
+    // 前半工程 修正6: 「未完了」既定フィルタ（doneを除外）。既存「すべて」「完了」等の値・挙動は変更しない。
+    if (taskFilters.status === 'active') {
+      if (t.status === 'done') return false;
+    } else if (taskFilters.status !== 'all' && t.status !== taskFilters.status) {
+      return false;
+    }
     if (taskFilters.priority !== 'all' && t.priority !== taskFilters.priority) return false;
     if (taskFilters.member !== 'all' && t.memberId !== taskFilters.member) return false;
     return true;
@@ -26153,8 +26347,11 @@ function _getRoleReplyText(agentId) {
   return '';
 }
 
-function buildOutputDraftFromLeaderFinal(finalText) {
-  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0);
+function buildOutputDraftFromLeaderFinal(finalText, opts) {
+  // 工程3-2: completed成果0件（全担当error/skipped）で呼ばれた場合、完成成果物として誤認しない扱いにする。
+  //   呼び出し元が opts を渡さない既存経路（例: 手動Leader Final再生成）は従来どおり動作する（後方互換）。
+  var noCompletedResults = !!(opts && opts.noCompletedResults);
+  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0, 'noCompletedResults=', noCompletedResults);
   if (!_lastOutputDraft || !finalText) return { ok: false };
   var type   = _lastOutputDraft.type;
   var fields = _lastOutputDraft.fields;
@@ -26437,7 +26634,8 @@ function buildOutputDraftFromLeaderFinal(finalText) {
     }
   }
 
-  _lastOutputDraft.status    = OUTPUT_STATUS.READY;
+  // 工程3-2: completed成果0件の場合はREADY（納品準備OK）にしない。既存のOUTPUT_STATUS.ERRORを流用（新規enum追加なし）
+  _lastOutputDraft.status    = noCompletedResults ? OUTPUT_STATUS.ERROR : OUTPUT_STATUS.READY;
   _lastOutputDraft.builtAt   = new Date().toISOString();
   _lastOutputDraft.updatedAt = new Date().toISOString();
   _lastOutputDraft.quality       = evaluateOutputQuality(_lastOutputDraft);
@@ -26449,7 +26647,24 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   _lastOutputDraft = normalizeOutputDraft(_lastOutputDraft);
 
   // Phase48-3: 生成直後にOutput Package Qualityを評価し、改善ループ用に保持
-  try { _lastOutputDraft.packageQuality = evaluateOutputPackageCompleteness(_lastOutputDraft); } catch (_pqe) {}
+  // 工程3-2: completed成果0件の場合は機械的フィールドチェック（fieldsが埋まっているかのみを見る既存ロジック）を使わず、
+  //   明示的にinsufficient・0点として固定する（「良好」等の誤評価を防ぐ）
+  if (noCompletedResults) {
+    _lastOutputDraft.packageQuality = {
+      version: OUTPUT_PACKAGE_QUALITY_VERSION,
+      outputType: type,
+      category: null,
+      score: 0,
+      status: 'insufficient',
+      missingItems: [],
+      completedItems: [],
+      recommendations: ['正常完了した担当成果がないため、成果物として評価できません'],
+      nextActions: ['Auto Taskを再実行するか、担当設定・依頼内容を確認してください'],
+      noCompletedResults: true,
+    };
+  } else {
+    try { _lastOutputDraft.packageQuality = evaluateOutputPackageCompleteness(_lastOutputDraft); } catch (_pqe) {}
+  }
 
   // Phase46-4: Compare Logに記録
   recordKnowledgeCompareEntry(_lastOutputDraft);
@@ -26469,7 +26684,7 @@ function buildOutputDraftFromLeaderFinal(finalText) {
   // Phase54-2c: 完成Draftをサーバへ保存（fire-and-forget・非ブロック・保存のみ／復元はPhase54-2d）。失敗してもWorkflowを止めない。
   try { pushOutputDraftToServer(_lastOutputDraft); } catch(_ods) {}
 
-  return { ok: true, type: type, updatedFields: updatedFields, status: OUTPUT_STATUS.READY };
+  return { ok: true, type: type, updatedFields: updatedFields, status: _lastOutputDraft.status };
 }
 
 // ══════════════════════════════════════════════════
