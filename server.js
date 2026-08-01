@@ -861,7 +861,7 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
         channel: 'web',
       });
       if (autoTaskConvId) {
-        await saveMessage({ conversationId: autoTaskConvId, sender: 'user', content: userMessage });
+        await saveMessage({ conversationId: autoTaskConvId, sender: 'user', content: userMessage, caseId: caseId || null });
         for (const t of workflowTasks) {
           if (t.result && t.status === 'completed') {
             const agentProfile = LINE_AGENT_PROFILES[t.agentId];
@@ -870,6 +870,7 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
               conversationId: autoTaskConvId,
               sender: 'assistant',
               content: `【${agentName}】${t.result}`,
+              caseId: caseId || null,
             });
           }
         }
@@ -1164,8 +1165,8 @@ app.post('/api/consult', express.json(), async (req, res) => {
         channel: 'web',
       });
       if (convId) {
-        await saveMessage({ conversationId: convId, sender: 'user',      content: consultInstruction });
-        await saveMessage({ conversationId: convId, sender: 'assistant', content: replyText });
+        await saveMessage({ conversationId: convId, sender: 'user',      content: consultInstruction, caseId: caseId || null });
+        await saveMessage({ conversationId: convId, sender: 'assistant', content: replyText,           caseId: caseId || null });
       }
     } catch (dbErr) {
       console.warn('/api/consult Supabase保存エラー:', dbErr.message);
