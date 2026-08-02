@@ -8680,7 +8680,12 @@ const ED_REASON_NO_ARTIFACTS = 'no_completed_artifacts';
 
 let _executiveDecision = null; // Phase B-1: クライアント一時メモリのみ（F5で消失・永続化はPhase C-1以降）
 
-// Phase B-1: decisionStatus決定。第14条準拠でApprovedを自動既定値にしない（Reviewer評価だけでは昇格させない）。
+// Phase B-1補正: decisionStatus決定。第14条準拠でApprovedを自動既定値にしない（Reviewer評価だけでは昇格させない）。
+// 優先順位: completed成果0件は最優先でinsufficient（既存Decision085 noCompletedResults方針と同一の安全側判定を踏襲）。
+// 補正時の検証結果（重要）: _liDecideAdoptionCandidates()はcompleted成果に対して常に'hold'を返す仕様のため、
+//   completed.length>0の時点でdecisions配列に'hold'が最低1件含まれ、全件'reject'にはなり得ない。
+//   したがって現行ロジックでは「rejected」分岐は事実上到達しない（型・分岐は将来のConstitution Validator／
+//   明示的却下ロジックのために保持するが、今回は新しい自動却下ロジックを追加しない）。
 function _edDecideStatus(inbox) {
   var artifacts = (inbox && Array.isArray(inbox.artifacts)) ? inbox.artifacts : [];
   var completed = artifacts.filter(function(a) { return a && a.status === 'completed' && !a.isPostProcess; });
@@ -8691,6 +8696,7 @@ function _edDecideStatus(inbox) {
     return { status: 'rejected', reason: 'all_candidates_rejected' };
   }
   // 第1条・第14条: Reviewer評価・Confidence情報だけでは自動承認しない。既定はhold（安全側）。
+  // 'approved'は今回のCoreでは生成しない（正式Approved判定はConstitution Validator実装以降）。
   return { status: 'hold', reason: 'awaiting_user_decision' };
 }
 
@@ -8743,27 +8749,34 @@ function _edBuildStrategicAlternatives(inbox, decisionResult) {
   };
 }
 
-// Phase B-1: Executive Summary。内部保持のみ・画面表示はしない（Phase B-2で表示接続予定）。
+// Phase B-1補正: Executive Summary。内部保持のみ・画面表示はしない（Phase B-2で表示接続予定）。
+// 命名補正: 'adopted'（採用済みを連想させる語）を廃止し、正式承認(approvedArtifacts)と混同しない
+//   'candidateAgentIds'／'excludedAgentIds' へ変更（本関数の値自体はcompletedArtifacts/excludedArtifactsの
+//   agentId一覧であり、Approved Decision Packageの採否とは独立した参照専用サマリーである）。
 function _edBuildExecutiveSummary(inbox, decisionResult) {
   var artifacts = (inbox && Array.isArray(inbox.artifacts)) ? inbox.artifacts : [];
   var mainArtifacts = artifacts.filter(function(a) { return a && !a.isPostProcess; });
-  var adopted  = mainArtifacts.filter(function(a) { return a.status === 'completed'; }).map(function(a) { return a.agentId; });
-  var rejected = mainArtifacts.filter(function(a) { return a.status !== 'completed'; }).map(function(a) { return a.agentId; });
+  var candidateAgentIds = mainArtifacts.filter(function(a) { return a.status === 'completed'; }).map(function(a) { return a.agentId; });
+  var excludedAgentIds  = mainArtifacts.filter(function(a) { return a.status !== 'completed'; }).map(function(a) { return a.agentId; });
   var decisions = (inbox && Array.isArray(inbox.decisions)) ? inbox.decisions : [];
   var conflicts = (inbox && Array.isArray(inbox.conflicts)) ? inbox.conflicts : [];
 
   return {
     conclusion: decisionResult.reason || '',
-    adopted: adopted,
-    rejected: rejected,
+    candidateAgentIds: candidateAgentIds,
+    excludedAgentIds: excludedAgentIds,
     reasons: decisions.map(function(d) { return { agentId: d.agentId, decision: d.decision, reason: d.reason }; }),
     risks: conflicts.map(function(c) { return c.detail; }),
     nextSteps: [], // Phase B-1では自動生成しない（将来Phase B-2以降で検討）
   };
 }
 
-// Phase B-1: Approved Decision Package 雛形。Output Engineへはまだ渡さない（今回は生成・保持のみ）。
-function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary) {
+// Phase B-1補正: Approved Decision Package。第4条(Approved Decision Package原則)に基づき、
+//   decisionStatus==='approved' の場合だけ契約を生成する。Phase B-1では自動Approved判定を
+//   新設しないため、_edDecideStatus()が'approved'を返すことは現状なく、通常は常にnullを返す
+//   （安全側設計・Approved以外で空のPackageを作らない）。Output Engineへは今回も接続しない。
+function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary, approvedArtifacts) {
+  if (!decisionResult || decisionResult.status !== 'approved') return null;
   return {
     version: EXECUTIVE_DECISION_ENGINE_VERSION,
     caseId: inbox.caseId,
@@ -8772,8 +8785,7 @@ function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alte
     decisionId: 'ed-' + genId(),
     decisionStatus: decisionResult.status,
     executiveSummary: summary,
-    approvedArtifacts: [],   // Phase B-1: Output Engine未接続のため空固定（雛形のみ）
-    excludedArtifacts: [],   // Phase B-1: 同上
+    approvedArtifacts: approvedArtifacts || [], // 正式承認済みのみ（Approved以外はこの関数自体が呼ばれない）
     evidenceGate: null,      // 未実装（Phase B-4 Constitution Validator以降）
     qualityGate: null,       // 未実装
     completionGate: null,    // 未実装
@@ -8786,7 +8798,11 @@ function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alte
   };
 }
 
-// Phase B-1: 共通オーケストレーション。_liCollectIntegration() 確定直後に1回だけ呼ばれる。
+// Phase B-1補正: 共通オーケストレーション。_liCollectIntegration() 確定直後に1回だけ呼ばれる。
+// 補正2/3: candidateArtifacts（completed・未承認の判断候補）とapprovedArtifacts（decisionStatus==='approved'
+//   の場合のみ設定・現状は常に空配列）を分離し、正式承認済みと誤認されないようにする。
+// _executiveDecisionを現在判断の正本とし、approvedDecisionPackageはApproved時にのみ生成される派生契約とする
+//   （情報を二重の正本として持たない＝第9条 正本一意性）。
 function _edRunDecisionEngine(inbox) {
   if (!inbox || !inbox.caseId) { _executiveDecision = null; return null; }
 
@@ -8795,26 +8811,64 @@ function _edRunDecisionEngine(inbox) {
   var alternatives   = _edBuildStrategicAlternatives(inbox, decisionResult);
   var summary        = _edBuildExecutiveSummary(inbox, decisionResult);
 
-  var mainArtifacts = (inbox.artifacts || []).filter(function(a) { return a && !a.isPostProcess; });
-  var approvedArtifacts = mainArtifacts.filter(function(a) { return a.status === 'completed'; }).map(function(a) { return a.agentId; });
-  var excludedArtifacts = mainArtifacts.filter(function(a) { return a.status !== 'completed'; }).map(function(a) { return { agentId: a.agentId, status: a.status }; });
+  var mainArtifacts       = (inbox.artifacts || []).filter(function(a) { return a && !a.isPostProcess; });
+  var completedArtifacts  = mainArtifacts.filter(function(a) { return a.status === 'completed'; });
+  var nonCompletedArtifacts = mainArtifacts.filter(function(a) { return a.status !== 'completed'; });
+  var decisionsByAgent = {};
+  (inbox.decisions || []).forEach(function(d) { if (d && d.agentId) decisionsByAgent[d.agentId] = d; });
+
+  // candidateArtifacts: completed状態・Executive Decisionによる正式承認前の判断候補（Source Artifact参照を保持）
+  var candidateArtifacts = completedArtifacts.map(function(a) {
+    return {
+      agentId: a.agentId,
+      sourceTaskId: a.sourceTaskId || null,
+      timestamp: a.timestamp || '',
+      hasReviewerEvaluation: !!a.hasReviewerEvaluation,
+    };
+  });
+
+  // 第14条: decisionStatus==='approved'の場合のみapprovedArtifactsを設定する。現Coreでは自動approvedを
+  //   行わないため、isApprovedは実質常にfalse＝approvedArtifactsは常に空配列（意図した安全側の挙動）。
+  var isApproved = decisionResult.status === 'approved';
+  var approvedArtifacts = isApproved ? candidateArtifacts.slice() : [];
+
+  // excludedArtifacts: error/skipped等、採用対象外（completed以外）。判定済みのdecision/reasonがあれば付帯する。
+  var excludedArtifacts = nonCompletedArtifacts.map(function(a) {
+    var d = decisionsByAgent[a.agentId];
+    return {
+      agentId: a.agentId,
+      status: a.status,
+      decision: d ? d.decision : null,
+      reason: d ? d.reason : null,
+    };
+  });
+
+  var approvedDecisionPackage = _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary, approvedArtifacts);
 
   var decision = {
     version: EXECUTIVE_DECISION_ENGINE_VERSION,
     caseId: inbox.caseId,
     workflowId: inbox.workflowId,
     interactionId: inbox.interactionId,
-    decisionStatus: decisionResult.status,       // approved | rejected | hold | insufficient
+    pathSource: inbox.pathSource || null,
+    decisionStatus: decisionResult.status,       // approved(現状未使用) | rejected(現状未到達) | hold | insufficient
     decisionReason: decisionResult.reason,
     executiveSummary: summary,
     decisionConfidence: confidence,
     strategicAlternatives: alternatives,
-    approvedArtifacts: approvedArtifacts,
-    excludedArtifacts: excludedArtifacts,
+    candidateArtifacts: candidateArtifacts,   // 判断候補（completed・未承認）
+    approvedArtifacts: approvedArtifacts,     // 正式承認済みのみ（現状は常に空）
+    excludedArtifacts: excludedArtifacts,     // 採用対象外（error/skipped等）
     risks: summary.risks,
+    approvedDecisionPackage: approvedDecisionPackage, // Approved時のみ非null（現状は常にnull）
+    // 補正7: 現段階のEDEは成果物確定後の内部判断構造であり、Leader Final／Output Draft／Output Engineの
+    //   いずれも制御していないことを明示する非表示メタ情報（UI表示なし・デバッグ／将来接続確認用）。
+    executionMode: 'post_observation',
+    affectsLeaderFinal: false,
+    affectsOutputDraft: false,
+    affectsOutputEngine: false,
     createdAt: new Date().toISOString(),
   };
-  decision.approvedDecisionPackage = _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary);
 
   _executiveDecision = decision;
   return decision;
