@@ -5588,6 +5588,31 @@
     white-space: pre-wrap;
   }
 
+  /* ── Phase B-3: Executive Leader Report（Leaderチャット最上部・表示専用） ── */
+  .executive-leader-report {
+    margin: 10px 12px 16px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, rgba(255,209,60,0.06), rgba(0,212,255,0.05));
+    border: 1px solid rgba(255,209,60,0.25);
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #e0f0ff;
+  }
+  .elr-divider { color: rgba(255,209,60,0.35); font-size: 10px; letter-spacing: 1px; }
+  .elr-title { font-size: 13px; font-weight: bold; color: #ffd13c; margin: 2px 0; }
+  .elr-section-title { font-size: 11px; font-weight: bold; color: rgba(0,212,255,0.8); margin: 6px 0 4px; letter-spacing: 0.5px; }
+  .elr-field { margin: 4px 0; }
+  .elr-label { color: rgba(255,209,60,0.85); font-weight: bold; margin-right: 4px; }
+  .elr-summary-row { display: flex; gap: 8px; margin: 3px 0; font-size: 11.5px; }
+  .elr-summary-agent { color: rgba(0,212,255,0.85); font-weight: bold; min-width: 64px; flex-shrink: 0; }
+  .elr-summary-text { color: #cdd; }
+  .elr-detail { margin-top: 6px; font-size: 11.5px; }
+  .elr-detail summary { cursor: pointer; color: rgba(0,212,255,0.8); font-weight: bold; }
+  .elr-detail-row { margin: 6px 0; padding: 6px 8px; background: rgba(0,0,0,0.15); border-radius: 6px; }
+  .elr-detail-agent { color: rgba(0,212,255,0.85); font-weight: bold; margin-bottom: 2px; }
+  .elr-detail-text { color: #cdd; white-space: pre-wrap; }
+
   /* ── Leader指示ブロック（各担当画面） ── */
   .leader-instruction-block {
     display: flex;
@@ -8960,6 +8985,120 @@ function _edRunDecisionEngine(inbox) {
   return decision;
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase B-3: Executive Leader Report（Decision087→B-3・表示のみ・Output制御なし）
+// 目的: Executive Decision Engine（_executiveDecision）の判断結果を、Leaderチャット最上部へ
+//       「会社としての統合判断」として表示する。社員紹介の読み上げではない。
+// 非接触: Output Engine・Output Draft・chatHistory本体・既存Leader Final表示は無変更。
+//        reRenderChatArea() 冒頭で chat-area の先頭へ追加描画するのみ（追加のみ・既存ループは無変更）。
+// 第9条: _executiveDecisionを判断の正本とする。Leader Final本文は再解析しない
+//        （社員別3行要約・折りたたみ全文はLeader Inbox= _leaderIntegration.artifacts のrawTextを表示専用で
+//        参照する。これは判断そのものではなくSource Artifactの提示であり正本の二重化ではない）。
+// 第13条: decisionStatus / OUTPUT_STATUS / packageQuality.status は混同しない（本パネルはdecisionStatusのみ扱う）。
+// 第8条: _executiveDecision.caseIdが現在案件と一致しない場合は描画しない（Cross-case表示防止）。
+// ══════════════════════════════════════════════════════════════
+const ED_DECISION_STATUS_LABELS = {
+  approved:     'Approved（承認）',
+  rejected:     'Rejected（却下）',
+  hold:         'Hold（保留）',
+  insufficient: 'Insufficient（情報不足）',
+};
+const ED_REASON_LABELS = {
+  no_completed_artifacts:  '正常完了した担当成果がないため判定できません',
+  awaiting_user_decision:  'Reviewer評価・Confidence情報のみでは自動承認せず、ユーザー判断待ちです',
+  all_candidates_rejected: 'すべての候補が却下対象のため採用できません',
+};
+
+// 既知の理由コードのみラベル化する（未知値は推測せず原文をそのまま表示・存在しなければ「未判定」）
+function _edReasonLabel(reason) {
+  if (!reason) return '未判定';
+  return ED_REASON_LABELS[reason] || String(reason);
+}
+
+function _elrAgentLabel(agentId) {
+  var m = (typeof ALL_MEMBERS !== 'undefined' && ALL_MEMBERS[agentId]) || {};
+  return m.name || agentId;
+}
+
+// 社員別3行要約: 新規AI実行・独自採点は行わない。既存rawTextの機械的truncateのみ（要約生成ではなく抜粋表示）。
+function _elrExcerptArtifactText(rawText) {
+  var t = String(rawText || '').trim();
+  if (!t) return '（本文なし）';
+  var joined = t.split(/\r?\n/).filter(function(l) { return l.trim(); }).slice(0, 3).join(' / ');
+  return joined.length > 160 ? joined.slice(0, 160) + '…' : joined;
+}
+
+// Executive Leader Report本体HTML構築（表示専用・副作用なし・DOM操作なし）
+function _elrBuildReportHtml(decision, inbox) {
+  var esc = escapeHtml;
+  var summary  = decision.executiveSummary || {};
+  var confBase = (decision.decisionConfidence && decision.decisionConfidence.base) || null;
+  var reasons  = Array.isArray(summary.reasons) ? summary.reasons : [];
+  // 採用理由=reject以外（hold等）／却下理由=reject。第1条: Approved以外を採用済みと表現しない中立的な文言に留める。
+  var adoptReasons  = reasons.filter(function(r) { return r && r.decision !== 'reject'; });
+  var rejectReasons = reasons.filter(function(r) { return r && r.decision === 'reject'; });
+  var risks     = Array.isArray(summary.risks) ? summary.risks : [];
+  var nextSteps = Array.isArray(summary.nextSteps) ? summary.nextSteps : [];
+
+  var statusLabel = ED_DECISION_STATUS_LABELS[decision.decisionStatus] || (decision.decisionStatus ? esc(decision.decisionStatus) : '未判定');
+  var confLabel   = confBase ? (esc(confBase.confidenceLevel) + '（' + esc(String(confBase.confidenceScore)) + '点）') : '未生成';
+
+  var adoptText  = adoptReasons.length  ? adoptReasons.map(function(r)  { return '・' + esc(_elrAgentLabel(r.agentId)) + '：' + esc(r.reason || ''); }).join('<br>') : '未生成';
+  var rejectText = rejectReasons.length ? rejectReasons.map(function(r) { return '・' + esc(_elrAgentLabel(r.agentId)) + '：' + esc(r.reason || ''); }).join('<br>') : 'なし';
+  var riskText   = risks.length     ? risks.map(function(r) { return '・' + esc(String(r)); }).join('<br>')     : '未検出';
+  var nextText   = nextSteps.length ? nextSteps.map(function(s) { return '・' + esc(String(s)); }).join('<br>') : '未生成';
+
+  // Leader Summary（社員別3行要約）: candidateArtifactsのagentId順にLeader Inbox artifactsからrawTextを引く。
+  var candidateIds    = Array.isArray(decision.candidateArtifacts) ? decision.candidateArtifacts.map(function(c) { return c.agentId; }) : [];
+  var inboxArtifacts  = (inbox && Array.isArray(inbox.artifacts)) ? inbox.artifacts : [];
+  var summaryRowsHtml = candidateIds.map(function(agentId) {
+    var art = inboxArtifacts.find(function(a) { return a.agentId === agentId; });
+    var excerpt = art ? _elrExcerptArtifactText(art.rawText) : '（本文なし）';
+    return '<div class="elr-summary-row"><span class="elr-summary-agent">' + esc(_elrAgentLabel(agentId)) + '</span><span class="elr-summary-text">' + esc(excerpt) + '</span></div>';
+  }).join('');
+
+  // 折りたたみ（社員別本文全文）: 既存本文を削除せず非表示にするだけ。native <details>で追加AI・追加JS不要。
+  var detailRowsHtml = candidateIds.map(function(agentId) {
+    var art  = inboxArtifacts.find(function(a) { return a.agentId === agentId; });
+    var full = art ? art.rawText : '';
+    return '<div class="elr-detail-row"><div class="elr-detail-agent">' + esc(_elrAgentLabel(agentId)) + '</div><div class="elr-detail-text">' + esc(full) + '</div></div>';
+  }).join('');
+
+  return ''
+    + '<div class="executive-leader-report">'
+    +   '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>'
+    +   '<div class="elr-title">📊 Executive Leader Report</div>'
+    +   '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>'
+    +   '<div class="elr-section-title">Executive Summary</div>'
+    +   '<div class="elr-field"><span class="elr-label">■結論</span>' + esc(_edReasonLabel(summary.conclusion)) + '</div>'
+    +   '<div class="elr-field"><span class="elr-label">■Decision Status</span>' + statusLabel + '</div>'
+    +   '<div class="elr-field"><span class="elr-label">■Decision Confidence</span>' + confLabel + '</div>'
+    +   '<div class="elr-field"><span class="elr-label">■採用理由</span><br>' + adoptText + '</div>'
+    +   '<div class="elr-field"><span class="elr-label">■却下理由</span><br>' + rejectText + '</div>'
+    +   '<div class="elr-field"><span class="elr-label">■リスク</span><br>' + riskText + '</div>'
+    +   '<div class="elr-field"><span class="elr-label">■次工程</span><br>' + nextText + '</div>'
+    +   '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>'
+    +   (summaryRowsHtml ? ('<div class="elr-section-title">Leader Summary</div>' + summaryRowsHtml + '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>') : '')
+    +   (detailRowsHtml  ? ('<details class="elr-detail"><summary>▼社員分析を見る</summary>' + detailRowsHtml + '</details><div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>') : '')
+    + '</div>';
+}
+
+// Phase B-3: Leaderチャット最上部へExecutive Leader Reportを描画する（reRenderChatArea()から呼ばれる）。
+// 表示専用・副作用なし。caseId不一致・Decision不在時は何も描画しない（第8条・安全側）。
+// 例外は内部で隔離し、既存チャット描画（reRenderChatArea本体）を絶対に止めない。
+function _elrRenderIntoChatArea(chatEl) {
+  try {
+    if (!chatEl || typeof _executiveDecision === 'undefined' || !_executiveDecision) return;
+    var curCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+    if (!curCaseId || _executiveDecision.caseId !== curCaseId) return; // Cross-case表示防止
+    var inbox = (typeof _leaderIntegration !== 'undefined' && _leaderIntegration && _leaderIntegration.caseId === curCaseId) ? _leaderIntegration : null;
+    var html = _elrBuildReportHtml(_executiveDecision, inbox);
+    var wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    if (wrap.firstChild) chatEl.appendChild(wrap.firstChild);
+  } catch (_elrErr) { console.warn('[ExecutiveLeaderReport] render error:', _elrErr.message); }
+}
+
 // ── 対応括弧カウンタ（parseAIResponse と共有） ──
 function findJsonEnd(str, startIdx) {
   let depth = 0, inStr = false;
@@ -9849,6 +9988,8 @@ function reRenderChatArea(m) {
   chat.innerHTML = '';
   // Phase52-11.8d: 案件カード一覧ビュー
   if (memberCaseView[m.id] === '__caselist__') { renderCaseListScreen(m.id); return; }
+  // Phase B-3: Executive Leader Report（Leaderチャットのみ・表示専用・Output制御なし・追加のみ）
+  if (m.id === 'leader' && typeof _elrRenderIntoChatArea === 'function') { _elrRenderIntoChatArea(chat); }
   const filtered = getFilteredHistory(m.id);
   if (filtered.length === 0) {
     addBubble('ai', `${m.role}として対応します。ご相談をどうぞ。`, m, false);
