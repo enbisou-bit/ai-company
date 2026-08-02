@@ -8654,7 +8654,170 @@ function _liCollectIntegration(pathSource, requestText, extra) {
   inbox.decisions   = _liDecideAdoptionCandidates(inbox.artifacts);
 
   _leaderIntegration = inbox;
+
+  // Phase B-1: Executive Decision Engine Core を内部接続（Decision086）。
+  // 表示・保存・DB・API・Output Engineへの接続は今回対象外。失敗してもLeader Integration自体は止めない。
+  try { if (typeof _edRunDecisionEngine === 'function') _edRunDecisionEngine(inbox); } catch (_edErr) { console.warn('[ExecutiveDecisionEngine] core error:', _edErr.message); }
+
   return inbox;
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase B-1: Executive Decision Engine Core（Decision086正式採用・Executive Constitution v1.0.0準拠）
+// 目的: Leader Integration Layer（_leaderIntegration／Leader Inbox）を入力として、会社としての
+//       判断構造（decisionStatus／Decision Confidence／Strategic Alternatives／Executive Summary／
+//       Approved Decision Package雛形）を内部メモリへ生成する。今回はCore構造のみ。
+// 非接触: Leader Final生成（openaiClient.js runLeaderFinalResponse）・Output Draft確定
+//        （buildOutputDraftFromLeaderFinal）・Output Engine入力・表示（Executive Report UI）・
+//        Constitution Validator・Decision Ledger永続化・Executive Memory・Learning・Self Improvement
+//        はすべて対象外（後続Phase B-2〜B-4・C-1以降）。
+// 第9条(正本一意性): _executiveDecisionはクライアント一時メモリのみ（F5で消失）。
+//                    正式正本はDecision Ledger実装後（Phase C-1・executive_decisions）とする。
+// 第14条(安全側既定値): decisionStatusは自動でapprovedにしない（既定はhold／insufficient）。
+// ══════════════════════════════════════════════════════════════
+const EXECUTIVE_DECISION_ENGINE_VERSION = '1.0.0';
+const ED_REASON_NO_ARTIFACTS = 'no_completed_artifacts';
+
+let _executiveDecision = null; // Phase B-1: クライアント一時メモリのみ（F5で消失・永続化はPhase C-1以降）
+
+// Phase B-1: decisionStatus決定。第14条準拠でApprovedを自動既定値にしない（Reviewer評価だけでは昇格させない）。
+function _edDecideStatus(inbox) {
+  var artifacts = (inbox && Array.isArray(inbox.artifacts)) ? inbox.artifacts : [];
+  var completed = artifacts.filter(function(a) { return a && a.status === 'completed' && !a.isPostProcess; });
+  if (completed.length === 0) return { status: 'insufficient', reason: ED_REASON_NO_ARTIFACTS };
+
+  var decisions = (inbox && Array.isArray(inbox.decisions)) ? inbox.decisions : [];
+  if (decisions.length > 0 && decisions.every(function(d) { return d && d.decision === 'reject'; })) {
+    return { status: 'rejected', reason: 'all_candidates_rejected' };
+  }
+  // 第1条・第14条: Reviewer評価・Confidence情報だけでは自動承認しない。既定はhold（安全側）。
+  return { status: 'hold', reason: 'awaiting_user_decision' };
+}
+
+// Phase B-1: Decision Confidence。既存 _intelCalculateConfidence() を再利用し新しい加重式は作らない。
+// Hard Gateは「追加できる構造」のみ用意し、今回はGate判定を実行しない（空配列固定）。
+function _edCalculateDecisionConfidence(inbox) {
+  var artifacts = (inbox && Array.isArray(inbox.artifacts)) ? inbox.artifacts : [];
+  var mainArtifacts = artifacts.filter(function(a) { return a && !a.isPostProcess; });
+  var completed = mainArtifacts.filter(function(a) { return a.status === 'completed'; });
+
+  var evidenceList = completed.map(function(a) {
+    return {
+      evidenceType: 'ai_interpretation',
+      reliability: a.hasReviewerEvaluation ? 'medium' : 'unknown',
+      observedAt: a.timestamp || '',
+      sourceReference: a.agentId || '',
+    };
+  });
+
+  var base = null;
+  try {
+    if (typeof _intelCalculateConfidence === 'function') {
+      base = _intelCalculateConfidence({
+        knownFactors: completed.length,
+        totalFactors: mainArtifacts.length || 1,
+        evidenceList: evidenceList,
+      });
+    }
+  } catch (_confErr) { base = null; }
+
+  return {
+    version: EXECUTIVE_DECISION_ENGINE_VERSION,
+    confidenceOwner: 'decision',
+    base: base,           // 既存Confidence構造をそのまま保持（独自加重式を追加しない）
+    hardGates: [],        // Phase B-1: 構造のみ・Gate判定は未実装（空配列固定）
+    hardGatesApplied: false,
+  };
+}
+
+// Phase B-1: Strategic Alternatives。保持構造のみ（Primary/Secondary/Hold/Rejected）。
+// 実際の候補分類・自動切替はまだ実装しない（第5条: ユーザー承認・ユーザー操作を維持）。
+function _edBuildStrategicAlternatives(inbox, decisionResult) {
+  return {
+    version: EXECUTIVE_DECISION_ENGINE_VERSION,
+    primary: null,             // 将来: 最有力候補1件
+    secondary: [],             // 将来: 最大2件
+    hold: [],                  // 将来: 最大3件
+    rejected: [],              // 将来: 履歴保持（通常表示は要約）
+    autoSwitchEnabled: false,  // 第5条: 自動切替は行わない（既定false固定）
+  };
+}
+
+// Phase B-1: Executive Summary。内部保持のみ・画面表示はしない（Phase B-2で表示接続予定）。
+function _edBuildExecutiveSummary(inbox, decisionResult) {
+  var artifacts = (inbox && Array.isArray(inbox.artifacts)) ? inbox.artifacts : [];
+  var mainArtifacts = artifacts.filter(function(a) { return a && !a.isPostProcess; });
+  var adopted  = mainArtifacts.filter(function(a) { return a.status === 'completed'; }).map(function(a) { return a.agentId; });
+  var rejected = mainArtifacts.filter(function(a) { return a.status !== 'completed'; }).map(function(a) { return a.agentId; });
+  var decisions = (inbox && Array.isArray(inbox.decisions)) ? inbox.decisions : [];
+  var conflicts = (inbox && Array.isArray(inbox.conflicts)) ? inbox.conflicts : [];
+
+  return {
+    conclusion: decisionResult.reason || '',
+    adopted: adopted,
+    rejected: rejected,
+    reasons: decisions.map(function(d) { return { agentId: d.agentId, decision: d.decision, reason: d.reason }; }),
+    risks: conflicts.map(function(c) { return c.detail; }),
+    nextSteps: [], // Phase B-1では自動生成しない（将来Phase B-2以降で検討）
+  };
+}
+
+// Phase B-1: Approved Decision Package 雛形。Output Engineへはまだ渡さない（今回は生成・保持のみ）。
+function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary) {
+  return {
+    version: EXECUTIVE_DECISION_ENGINE_VERSION,
+    caseId: inbox.caseId,
+    workflowId: inbox.workflowId,
+    interactionId: inbox.interactionId,
+    decisionId: 'ed-' + genId(),
+    decisionStatus: decisionResult.status,
+    executiveSummary: summary,
+    approvedArtifacts: [],   // Phase B-1: Output Engine未接続のため空固定（雛形のみ）
+    excludedArtifacts: [],   // Phase B-1: 同上
+    evidenceGate: null,      // 未実装（Phase B-4 Constitution Validator以降）
+    qualityGate: null,       // 未実装
+    completionGate: null,    // 未実装
+    constitutionCheck: null, // 未実装
+    decisionConfidence: confidence,
+    strategicAlternatives: alternatives,
+    risks: summary.risks,
+    outputInstructions: null, // 未実装
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// Phase B-1: 共通オーケストレーション。_liCollectIntegration() 確定直後に1回だけ呼ばれる。
+function _edRunDecisionEngine(inbox) {
+  if (!inbox || !inbox.caseId) { _executiveDecision = null; return null; }
+
+  var decisionResult = _edDecideStatus(inbox);
+  var confidence     = _edCalculateDecisionConfidence(inbox);
+  var alternatives   = _edBuildStrategicAlternatives(inbox, decisionResult);
+  var summary        = _edBuildExecutiveSummary(inbox, decisionResult);
+
+  var mainArtifacts = (inbox.artifacts || []).filter(function(a) { return a && !a.isPostProcess; });
+  var approvedArtifacts = mainArtifacts.filter(function(a) { return a.status === 'completed'; }).map(function(a) { return a.agentId; });
+  var excludedArtifacts = mainArtifacts.filter(function(a) { return a.status !== 'completed'; }).map(function(a) { return { agentId: a.agentId, status: a.status }; });
+
+  var decision = {
+    version: EXECUTIVE_DECISION_ENGINE_VERSION,
+    caseId: inbox.caseId,
+    workflowId: inbox.workflowId,
+    interactionId: inbox.interactionId,
+    decisionStatus: decisionResult.status,       // approved | rejected | hold | insufficient
+    decisionReason: decisionResult.reason,
+    executiveSummary: summary,
+    decisionConfidence: confidence,
+    strategicAlternatives: alternatives,
+    approvedArtifacts: approvedArtifacts,
+    excludedArtifacts: excludedArtifacts,
+    risks: summary.risks,
+    createdAt: new Date().toISOString(),
+  };
+  decision.approvedDecisionPackage = _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary);
+
+  _executiveDecision = decision;
+  return decision;
 }
 
 // ── 対応括弧カウンタ（parseAIResponse と共有） ──
