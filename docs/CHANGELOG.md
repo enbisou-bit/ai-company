@@ -4,6 +4,23 @@
 
 ---
 
+## Phase B-2 Executive Decision Control **正式工程分割Complete**（Phase B-2A／B-2B・2026-08-02・docs正式化のみ・Code変更なし）
+
+**Executive Decision Engine Core（Phase B-1・正式Complete・維持）の次工程Executive Decision Controlについて因果接続方式を正式調査・設計し、docs採用した**（Decision087）。**本工程はコード実装ではなく、docs正式化のみである**。**docsのみ**（01PROJECT_STATUS.md／02PHASE_PROGRESS.md／04DECISIONS.md／04ROADMAP.md／06HANDOVER_NEXT_CHAT.md／CHANGELOG.md）・**index.html/openaiClient.js/server.js/lib/DB/schema.sql/API/UI 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 087）。
+
+- **構造的制約（実測）**：Path A（`atRunWorkflow()`）が呼ぶ`/api/auto-task`は、AI社員実行→Reviewer→Strategy統合→`runLeaderFinalResponse()`（完成成果物生成）までを単一の非同期関数・単一HTTPリクエスト/レスポンス往復の中で完結させる。クライアント側EDEはLeader Final生成前のデータへ介入できない。
+- **接続方式**：案D（段階導入）を正式採用。Leader Final候補生成後・Output Draft確定前にEDEを接続。追加AI実行なし。
+- **正式工程分割**：既存Phase B-2を**Phase B-2A（Executive Decision Control — Path A Causal Position・対象はatRunWorkflow()のみ・因果位置と入力契約の確立が目的）**と**Phase B-2B（Manual Leader Regeneration Alignment・対象はatTriggerLeaderFinal()）**へ分割。
+- **Path A手動再生成の実測発見**：`atTriggerLeaderFinal()`は完成成果物エンジン`runLeaderFinalResponse()`ではなく軽量な`leaderSummary()`を使用し、EDE入力（`_wlLastResults`）が前回Auto Task時点のスナップショットのまま今回生成結果と紐づいていない。この整合化をPhase B-2Bへ分離（Phase B-2A完了後に開始）。
+- **Path B通常チャット**：Output Draft生成が存在しないため制御対象外のまま維持（Leader Inbox生成・EDE実行自体は許可）。
+- **Leader Final Candidate**：`candidateArtifacts`とは別の内部契約として新設方針。`sourceEngine:'runLeaderFinalResponse'|'leaderSummary'`で完成成果物と軽量方針サマリーを区別。
+- **Approved暫定条件**：Quality Gate・Completion Gate未定義の間はdecisionStatusをapprovedへ到達させない（無条件通過でも無条件停止でもない第三の移行方式）。
+- **正式ロードマップ改訂**：Phase B-1（Complete維持）→**Phase B-2A→Phase B-2B**→Phase B-3（Executive Leader Report・旧B-2相当）→Phase B-4（Approved Decision Package・旧B-3相当）→Phase B-5（Constitution Validator・旧B-4相当）→Phase A-2〜A-4→Phase C-1〜C-3→Phase D-safety→Phase D→Phase E→Phase F-1〜F-2。
+- **検証**：既存コード（`atRunWorkflow()`／`server.js`の`/api/auto-task`／`runAutoTaskWorkflow()`／`runLeaderFinalResponse()`／`leaderSummary()`／`atTriggerLeaderFinal()`／`triggerStrategyConsolidate()`／`triggerLeaderSummary()`／`buildOutputDraftFromLeaderFinal()`の全呼び出し箇所）を読み取り専用で調査し、方針の実装可否・整合性を確認。**コード・DB・API・UIの変更は一切なし**。
+- **Git・反映**：docs commit（本更新）のみ・Tag作成なし・**push未実施**（ユーザー確認後に別途判断）。次工程＝未定（候補：Phase B-2A Executive Decision Control — Path A Causal Position。ユーザー承認なしに開始しない）。
+
+---
+
 ## Phase A-1g Executive Constitution v1.0.0 正式化 ／ Executive Decision Engine **正式設計・docs採用Complete**（2026-08-02・docs正式化のみ・Code変更なし）
 
 **Leader Integration Layer Phase A（正式Complete・維持）の次工程着手前に、AI COMPANY全体の上位アーキテクチャを正式設計・docs採用した**（Decision086）。**本工程はコード実装ではなく、docs正式化のみである**（「Executive Decision Engine実装Complete」ではない）。**docsのみ**（01PROJECT_STATUS.md／02PHASE_PROGRESS.md／04DECISIONS.md／04ROADMAP.md／06HANDOVER_NEXT_CHAT.md／CHANGELOG.md）・**index.html/openaiClient.js/server.js/lib/DB/schema.sql/API/UI 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 086）。

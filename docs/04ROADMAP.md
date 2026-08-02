@@ -8,6 +8,80 @@
 
 ---
 
+## Executive Decision Control 正式工程分割（Phase B-2A／B-2B・2026-08-02・Decision 087）
+
+> 追記日: 2026-08-02。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**docs正式化のみ・コード/DB/API変更なし**。
+
+Executive Decision Engine Core（Phase B-1・正式Complete・維持）の次工程Executive Decision Control（当初Phase B-2）について、因果接続方式を正式調査した結果、Path A通常フロー・Path A手動再生成・Path B通常チャットが構造的に異なることを実測確認し、単一工程での一括実装を避け正式に分割した（詳細はDecision087）。
+
+**構造的制約（実測）**：Path A（`atRunWorkflow()`）が呼ぶ`/api/auto-task`は、AI社員実行→Reviewer→Strategy統合→`runLeaderFinalResponse()`（完成成果物生成）までを単一の非同期関数（`runAutoTaskWorkflow()`）内・単一のHTTPリクエスト/レスポンス往復の中で完結させる。**クライアント側のExecutive Decision Engineは、Leader Final生成前のデータへ介入する経路を持たない**。この制約に基づき、Leader Final候補生成後・Output Draft確定前にEDEを接続する段階導入方式（案D）を正式採用した。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-1    Executive Decision Engine Core ──────── 正式Complete（維持・2026-08-02）
+  ↓
+Phase B-2A   Executive Decision Control ─────────── 未着手
+             Path A Causal Position
+             対象: atRunWorkflow()（Path A通常フローのみ）
+             Leader Final Candidate入力契約の確立（sourceEngine:'runLeaderFinalResponse'）
+             EDE実行位置をbuildOutputDraftFromLeaderFinal()より前へ移動
+             既存Output Draft挙動・POST回数（1回）は完全無変更
+             decisionStatusはまだOutput Draftへ保存しない
+  ↓
+Phase B-2B   Manual Leader Regeneration Alignment ── 未着手
+             対象: atTriggerLeaderFinal()
+             leaderSummary()とrunLeaderFinalResponse()の責務差の整合化
+             _wlLastResults陳腐化判定・data.replyとの対応付け
+             noCompletedResults判定欠落の対応
+             Phase B-2A完了後に開始（同時実装しない）
+  ↓
+Phase B-3    Executive Leader Report表示 ─────────── 未着手（旧Phase B-2相当）
+             Executive Summary／Leader Summary／社員分析折りたたみ
+             既存完成成果物（Leader Final・Output Engine）と併存
+  ↓
+Phase B-4    Approved Decision Package契約化 ───── 未着手（旧Phase B-3相当）
+             Output Engine接続・後方互換必須
+  ↓
+Phase B-5    Constitution Validator ───────────── 未着手（旧Phase B-4相当）
+             warning／block／critical・状態降格・安全停止
+             Quality Gate／Completion Gate強制
+  ↓
+Phase A-2    AI社員間再依頼（Employee Rework Request） ── 未着手
+  ↓
+Phase A-3    成果物受け渡し（Artifact Handoff） ──── 未着手
+  ↓
+Phase A-4    Quality Loop（品質ループ・上限付き） ── 未着手
+  ↓
+Phase C-1    Decision Ledger永続化（executive_decisions） ── 未着手
+  ↓
+Phase C-2    Output Engine Knowledge Base化 ────── 未着手
+  ↓
+Phase C-3    Learning Center／Outcome Record永続化 ── 未着手
+  ↓
+Phase D-safety  自律実行安全ゲート ──────────────── 未着手
+  ↓
+Phase D      自律Workflow ─────────────────────── 未着手
+  ↓
+Phase E      毎日自律実行 ──────────────────────── 未着手
+  ↓
+Phase F-1    Self Improvement Intelligence（Version2 Core⑦層と共通） ── 未着手
+  ↓
+Phase F-2    Executive Memory ──────────────────── 未着手
+```
+
+**Path B通常チャットの扱い**：`handleLeaderDispatch()`〜`triggerStrategyConsolidate()`〜`triggerLeaderSummary()`の経路にはOutput Draft生成が存在しないため（`buildOutputDraftFromLeaderFinal()`／`createOutputDraft()`の呼び出しなし・全文検索で確認済み）、**Phase B-2A／B-2BのOutput Draft制御対象には含めない**。Path Bでは引き続きLeader Inbox生成・Executive Decision Engine実行（`decisionStatus`／Decision Confidence／Strategic Alternatives／Executive Summary内部生成）を許可するが、Output Draft制御・Approved Decision Package接続は行わない。
+
+**Approved暫定条件（Gate未定義期間の第三の移行方式）**：completed成果なし→insufficient、completed成果あり→hold、**Quality Gate・Completion Gate未定義の間はdecisionStatusをapprovedへ到達させない**。Auto Task自体・既存Leader Final・既存Output Draftは従来どおり継続する。
+
+**旧ロードマップとの関係**：本セクション直下に残る「Executive Constitution ＆ Executive Decision Engine」セクション（Decision086）記載の旧ロードマップ（B-1→B-2→B-3→B-4）は**削除せず保持**する。本Decision087により、**旧B-2はB-2A（因果位置確立）とB-2B（手動再生成整合化）へ分割**、**旧B-3はB-3（Executive Leader Report・番号維持）**、**旧B-3後段の内容はB-4（Approved Decision Package）**、**旧B-4はB-5（Constitution Validator）**として再配置されたものが正式ロードマップとなる。
+
+**Executive Constitution正式条文・Decision Confidence方針・Strategic Alternatives方針・Approved Decision Package方針・Leader Final Candidate内部契約・sourceEngine分離の詳細は`docs/04DECISIONS.md` Decision087を参照**。
+
+**Phase B-2A以降は未着手**。着手前に必ずユーザー確認を取る（本Roadmapへの追記のみでは着手権限としない）。
+
+---
+
 ## Executive Constitution ＆ Executive Decision Engine — 正式設計・ロードマップ改訂（Phase A-1g・2026-08-02・Decision 086）
 
 > 追記日: 2026-08-02。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**docs正式化のみ・コード/DB/API変更なし**。
