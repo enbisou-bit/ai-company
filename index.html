@@ -8406,6 +8406,7 @@ function _liBlankInbox(caseId, pathSource) {
     finalSummary: null,
     leaderFinalCandidate: null,      // Phase B-2A: Leader Final候補（既定null・pathA通常フローのみ設定）
     executedBeforeOutputDraft: false, // Phase B-2A: EDE実行がOutput Draft確定前かどうかの実測メタ情報（既定false）
+    sourceMode: null,                // Phase B-2B: 'auto_task' | 'manual_regeneration'（pathA限定・既定null）
   };
 }
 
@@ -8555,6 +8556,58 @@ function _liAdaptPathB(session) {
   return inbox;
 }
 
+// Phase B-2B: 手動Leader再生成専用Adapter（読み取り専用）。
+// atTriggerLeaderFinal()が既に読んでいる .at-result-card DOM を正本として使う（_wlLastResultsは参照しない＝
+// 前回Auto Task時点のスナップショットを今回の事実として扱わない・第6条／第9条）。
+// _liAdaptPathA()は変更しない（Path A通常フロー無変更の原則）。
+function _liAdaptManualLeaderRegeneration(caseId, requestText) {
+  var inbox = _liBlankInbox(caseId, 'pathA');
+  inbox.workflowId = (typeof _atCurrentWorkflowId !== 'undefined' && _atCurrentWorkflowId) ? _atCurrentWorkflowId : null;
+  inbox.requestText = requestText || '';
+
+  var cards = (typeof document !== 'undefined') ? document.querySelectorAll('.at-result-card') : [];
+
+  // reviewerCompleted判定は_liAdaptPathA()と同一方針（今回のDOM上のReviewerカードで判定・推測しない）
+  var reviewerCompleted = false;
+  cards.forEach(function(card) {
+    if (!card.dataset || card.dataset.agentId !== 'reviewer') return;
+    var rBodyEl = card.querySelector('.at-result-body');
+    var rResult = rBodyEl ? rBodyEl.textContent.trim() : '';
+    if (rResult && rResult !== '（スキップ）' && !rResult.startsWith('エラー')) reviewerCompleted = true;
+  });
+
+  var artifacts = [];
+  cards.forEach(function(card) {
+    var agentId = card.dataset ? card.dataset.agentId : null;
+    if (!agentId) return;
+    var bodyEl = card.querySelector('.at-result-body');
+    var result = bodyEl ? bodyEl.textContent.trim() : '';
+    var isPostProcess = card.classList.contains('is-postprocess');
+    var isLeaderFinal = card.classList.contains('is-leader-final');
+    var status = 'completed';
+    if (!result || result === '（スキップ）') status = 'skipped';
+    else if (result.startsWith('エラー')) status = 'error';
+    var m = (typeof ALL_MEMBERS !== 'undefined' && ALL_MEMBERS[agentId]) || {};
+    // card.id は 'at-card-' + t.id 形式（atRenderResults()参照）。生成規則を変えず読み取るのみ。
+    var sourceTaskId = (card.id && card.id.indexOf('at-card-') === 0) ? card.id.slice('at-card-'.length) : null;
+    artifacts.push(_liBuildArtifact({
+      agentId: agentId,
+      agentName: m.name || agentId,
+      role: m.role || '',
+      rawText: result,
+      status: status,
+      timestamp: '', // DOMには整形済み時刻のみ存在し生ISOを取得できないため、推測せず安全側で空とする
+      sourceTaskId: sourceTaskId,
+      isPostProcess: isPostProcess,
+      isLeaderFinal: isLeaderFinal,
+      hasReviewerEvaluation: !isPostProcess && reviewerCompleted,
+    }));
+  });
+
+  inbox.artifacts = artifacts;
+  return inbox;
+}
+
 // A-1d: 比較（ルールベースのみ。AI追加実行なし・DOM変更なし・グローバル状態への直接書き込みなし）
 function _liCompareArtifacts(artifacts) {
   artifacts = artifacts || [];
@@ -8657,9 +8710,15 @@ function _liCollectIntegration(pathSource, requestText, extra) {
   if (pathSource === 'pathA') {
     // 陳腐化防止: _wlLastResults確定時点のcaseIdと現在caseIdが異なる場合は古い成果物とみなし生成しない
     // （atRunWorkflow自身の接続は同一同期継続内のため常に一致・atTriggerLeaderFinalの手動再生成でのみ発動し得る）
+    // Phase B-2B: このガードはauto_task／manual_regeneration双方に共通適用する（Decision084 Hotfixの既存ガードを流用・変更しない）。
     if (_liLastPathAResultsCaseId !== caseId) { _leaderIntegration = null; return null; }
-    inbox = _liAdaptPathA(caseId, requestText);
-    // Phase B-2A: Leader Final Candidateはpath A限定（extra省略時=atTriggerLeaderFinal等の既存呼び出しはnullのまま・無変更）
+    // Phase B-2B: sourceModeでAdapterを切替（既定は'auto_task'＝従来どおり_liAdaptPathA()。manual_regenerationのみ新Adapter）
+    var _liSourceMode = (extra.sourceMode === 'manual_regeneration') ? 'manual_regeneration' : 'auto_task';
+    inbox = (_liSourceMode === 'manual_regeneration')
+      ? _liAdaptManualLeaderRegeneration(caseId, requestText)
+      : _liAdaptPathA(caseId, requestText);
+    inbox.sourceMode = _liSourceMode;
+    // Phase B-2A/B-2B: Leader Final Candidateはpath A限定（extra省略時=既存呼び出しはnullのまま・無変更）
     inbox.leaderFinalCandidate = _liNormalizeLeaderFinalCandidate(extra.leaderFinalCandidate);
   } else if (pathSource === 'pathB') {
     if (!extra.session || extra.session.caseId !== caseId) { _leaderIntegration = null; return null; }
@@ -8875,6 +8934,7 @@ function _edRunDecisionEngine(inbox) {
     workflowId: inbox.workflowId,
     interactionId: inbox.interactionId,
     pathSource: inbox.pathSource || null,
+    sourceMode: inbox.sourceMode || null, // Phase B-2B: 'auto_task' | 'manual_regeneration'（pathB等は既定null）
     decisionStatus: decisionResult.status,       // approved(現状未使用) | rejected(現状未到達) | hold | insufficient
     decisionReason: decisionResult.reason,
     executiveSummary: summary,
@@ -13036,11 +13096,39 @@ async function atTriggerLeaderFinal() {
 
     btn.textContent = '✅ Leader最終提案 完了（再生成）';
 
-    // Phase44-4: Output Draft Builder — Leader Final結果をdraft.fieldsに格納
-    buildOutputDraftFromLeaderFinal(data.reply);
-    // Phase A: Leader Integration（Path A・手動Leader Final再生成経路）— 既存Path A Adapterを再利用。
+    // Phase B-2B: 手動再生成専用Leader Final Candidate。/api/leader-summaryはreplyのみ返却するため
+    // providerは存在しない値として推測補完せずnull固定とする（実コード確認済み）。
+    const _manualLeaderFinalCandidateInput = {
+      text: data.reply,
+      provider: null,
+      integratedCount: memberReplies.length,
+      sourceEngine: 'leaderSummary',
+      generatedAt: new Date().toISOString(),
+    };
+    // Phase B-2B: Leader Integration（Path A・手動Leader Final再生成経路）— Output Draft確定「前」へ移動。
+    // 今回DOM由来のmemberReplies（_liAdaptManualLeaderRegeneration内で.at-result-cardを再走査）を入力正本とし、
+    // 前回Auto Task時点の_wlLastResultsは参照しない（第6条・第9条）。
     // Leader Final/Output Draftの成功をLeader Integration失敗で損なわないよう独立try/catchで隔離。
-    try { if (typeof _liCollectIntegration === 'function') _liCollectIntegration('pathA', userMessage); } catch (_liErr) { console.warn('[LeaderIntegration] pathA(manual) collect error:', _liErr.message); }
+    let _manualInbox = null;
+    try {
+      if (typeof _liCollectIntegration === 'function') {
+        _manualInbox = _liCollectIntegration('pathA', userMessage, {
+          leaderFinalCandidate: _manualLeaderFinalCandidateInput,
+          executedBeforeOutputDraft: true,
+          sourceMode: 'manual_regeneration',
+        });
+      }
+    } catch (_liErr) { console.warn('[LeaderIntegration] pathA(manual) collect error:', _liErr.message); }
+
+    // Phase B-2B: noCompletedResultsを今回のInbox（DOM由来）から算出。取得不能時は安全側(true)とする（第14条）。
+    let _manualNoCompletedResults = true;
+    if (_manualInbox && Array.isArray(_manualInbox.artifacts)) {
+      const _manualCompletedMainCount = _manualInbox.artifacts.filter(function(a) { return a.status === 'completed' && !a.isPostProcess; }).length;
+      _manualNoCompletedResults = (_manualCompletedMainCount === 0);
+    }
+
+    // Phase44-4: Output Draft Builder — Leader Final結果をdraft.fieldsに格納（本体・引数契約は既存のまま・noCompletedResultsのみ付与）
+    buildOutputDraftFromLeaderFinal(data.reply, { noCompletedResults: _manualNoCompletedResults });
 
     // 次タスク自動作成（auto-create next tasks from leader proposal）
     await atAutoCreateNextTasks(data.reply);
