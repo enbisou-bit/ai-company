@@ -151,6 +151,19 @@ AI Gatewayは「最も低コストで最適な実行方法を自動選択する�
 
 ---
 
+## 【Executive Constitution】AI COMPANY最高位ルール（Phase A-1g・2026-08-02・Decision 086で正式採用）
+
+AI COMPANY全体の最高位ルールとして **Executive Constitution v1.0.0**（全14条）を正式採用した。既存Provider構成・絶対ルール・Workflow順序を含む本MASTERの各規定は、Executive Constitutionの範囲内で有効とする。
+
+- Executive Constitutionは、Executive Decision Engine・Leader・Leader Integration Layer・Output Engine・Instagram Workflow・Learning Center・Self Improvement・Executive Memory・各Intelligence・将来追加されるすべてのEngine/Workflowに適用される。
+- **変更統制**：Executive Constitutionの変更・追加・削除・緩和には、①ユーザーの明示的承認、②Version更新、③`docs/04DECISIONS.md`（暫定正本。将来はDecision Ledgerが正式正本）への記録、の3条件をすべて必須とする。Self Improvement・Executive Memory・Executive Decision Engineを含むいかなるEngineも、Constitutionを自ら変更・緩和してはならない（変更提案のみ可）。
+- **Executive Decision Engine**は、AI社員・各Intelligenceの成果物を統合し会社としての採否・優先順位・リスクを判断する上位層として正式採用する。既存Leader Integration Layer（Phase A・`_leaderIntegration`）を土台として拡張し、新たな重複Engineとしては実装しない。
+- **完成成果物と経営判断の併存**：既存Leader Final（Instagramスライド・Caption・CTA・ハッシュタグ・LP文章等の完成成果物）は今後も変更せず維持する。Executive Decision Engineが将来生成する経営判断サマリー（Executive Report）は、完成成果物を置き換えるものではなく、上位に併存する。
+
+条文全文・Executive Decision Engineの詳細責務・保存方式・ロードマップは `docs/04DECISIONS.md` Decision 086 および `docs/04ROADMAP.md` を参照。**本セクション追記時点でExecutive Constitution・Executive Decision Engineとも実装は未着手（docs正式化のみ）**。
+
+---
+
 ## 1. AI会社の最終目的（最重要）
 
 ENBISOU AI COMPANY は「AIチャット」ではない。

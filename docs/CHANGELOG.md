@@ -4,6 +4,22 @@
 
 ---
 
+## Phase A-1g Executive Constitution v1.0.0 正式化 ／ Executive Decision Engine **正式設計・docs採用Complete**（2026-08-02・docs正式化のみ・Code変更なし）
+
+**Leader Integration Layer Phase A（正式Complete・維持）の次工程着手前に、AI COMPANY全体の上位アーキテクチャを正式設計・docs採用した**（Decision086）。**本工程はコード実装ではなく、docs正式化のみである**（「Executive Decision Engine実装Complete」ではない）。**docsのみ**（01PROJECT_STATUS.md／02PHASE_PROGRESS.md／04DECISIONS.md／04ROADMAP.md／06HANDOVER_NEXT_CHAT.md／CHANGELOG.md）・**index.html/openaiClient.js/server.js/lib/DB/schema.sql/API/UI 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 086）。
+
+- **Executive Constitution v1.0.0**：AI COMPANY全体の最高位ルールとして全14条を正式採用。変更統制（ユーザー承認・Version更新・`04DECISIONS.md`〔暫定正本〕またはDecision Ledger〔正式正本〕への記録の3条件必須）も正式採用。
+- **Executive Decision Engine**：新規独立Engineではなく、既存Leader Integration Layer Phase Aの`_leaderIntegration`／Leader Inboxを因果連鎖内へ昇格させる会社判断層として正式採用。`_leaderIntegration`は現時点では成果物確定後の事後観測層であり、Leader Final生成・Output Draft確定・Output Engine入力にはまだ接続されていない（Phase Aの未完成ではない）。
+- **Executive Report併存**：既存`LEADER_FINAL_PROMPT`（完成成果物生成）は無変更。Executive Summaryを上位判断層として将来追加し、完成成果物を置き換えない方針。
+- **状態3軸分離**：`decisionStatus`（新設候補）／`outputStatus`（既存`OUTPUT_STATUS`）／`qualityStatus`（既存`packageQuality.status`）。既存2軸は無変更。
+- **Decision Confidence方針**：既存`_intelCalculateConfidence()`再利用＋Hard Gate上乗せ。新加重式は発明しない。
+- **保存方式**：段階導入案D（Phase Bメモリのみ→Phase C-1で専用`executive_decisions`永続化）。`output_drafts`はupsert上書き方式のためDecision Ledger正本として使用しない。
+- **正式ロードマップ改訂**：Phase A-1g→**Phase B-1〜B-4**（Executive Decision Engine Core／Executive Leader Report表示／Approved Decision Package契約化／Constitution Validator）→Phase A-2〜A-4（内容無変更・順序後退）→**Phase C-1〜C-3**→D-safety→D→E→**Phase F-1〜F-2**（Executive Memoryは最後段）。
+- **検証**：既存コード（Leader Integration Layer・`runLeaderFinalResponse()`・Output Engine状態定義・Evidence/Confidence共通基盤・`isAIGatewayExecutionAllowed()`）およびDB定義（`output_drafts`のPRIMARY KEY・upsert方式）を読み取り専用で調査し、方針の実装可否・整合性を確認。**コード・DB・API・UIの変更は一切なし**。
+- **Git・反映**：docs commit（本更新）のみ・Tag作成なし・**push未実施**（ユーザー確認後に別途判断）。次工程＝未定（候補：Phase B-1 Executive Decision Engine Core。ユーザー承認なしに開始しない）。
+
+---
+
 ## AI COMPANY Leader Integration Layer（Phase A）後半 **正式リリースComplete**（2026-08-01・Code commit 5401b68/6032893/0d125e7・main push・Render反映）
 
 Phase A本体（Decision084）に続き、**3工程を正式リリース**。①**messages案件別正本化**：`server.js`の`/api/auto-task`・`/api/consult`の`saveMessage()`計4箇所へ既存受領済みの`caseId`を追加（`caseId: caseId || null`・既存`/api/messages`と同一形式・API/DB無変更）。②**Leader Final状態サマリー分離**：`runLeaderFinalResponse()`で`completed`成果は既存どおり統合しつつ、`error`/`skipped`を状態サマリーとして分離しLeaderへ渡す（全員成功時は既存プロンプトと完全一致・error理由は1行80文字以内に安全短文化）。③**Output Draft誤認防止**：`buildOutputDraftFromLeaderFinal()`へ`noCompletedResults`判定を追加し、completed成果0件時はOutput Draftを`status:'error'`・Package Qualityを`score:0・insufficient`へ固定（従来は`status:'ready'`・機械評価で「良好87点」と誤表示されうる問題を工程3統合検証で発見し解消）。**`index.html`＋`openaiClient.js`のみ**・**server.js（messages案件別正本化を除き）・DB・schema.sql・API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 085）。

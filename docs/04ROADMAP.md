@@ -8,6 +8,69 @@
 
 ---
 
+## Executive Constitution ＆ Executive Decision Engine — 正式設計・ロードマップ改訂（Phase A-1g・2026-08-02・Decision 086）
+
+> 追記日: 2026-08-02。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**docs正式化のみ・コード/DB/API変更なし**。
+
+Leader Integration Layer Phase A（Decision084・085・正式Complete維持）の次工程着手前に、AI COMPANY全体の上位アーキテクチャを正式設計した（詳細はDecision086）。**Executive Constitution v1.0.0**（全14条・AI COMPANY全体の最高位ルール）と、**Executive Decision Engine**（Leader Integration Layerの`_leaderIntegration`を因果連鎖内へ昇格させる会社判断層）を正式採用。今回は設計・docs正式化のみで実装は未着手。
+
+**重要な現在地**：`_leaderIntegration`は現時点では成果物確定「後」に情報を収集する観測・構造化層であり、Leader Final生成・Output Draft確定・Output Engine入力の判断にはまだ接続されていない。これはPhase Aの未完成を意味しない。Phase Aは回収・構造化・候補判定までを責務として正式Completeしている。判断結果を因果連鎖へ接続する責務はPhase B-1（Executive Decision Engine Core）とする。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase A      Leader Integration Layer ──────────── 正式Complete（2026-08-01・維持）
+  ↓
+Phase A-1g   Executive Constitution v1.0.0正式化 ── docsのみ（2026-08-02・Decision086・本更新）
+  ↓
+Phase B-1    Executive Decision Engine Core ────── 未着手
+             Leader Integration Layerを因果連鎖内へ昇格
+             decisionStatus／Decision Confidence／Strategic Alternatives
+             保存はメモリのみ・表示なし
+  ↓
+Phase B-2    Executive Leader Report表示 ───────── 未着手
+             Executive Summary／Leader Summary／社員分析折りたたみ
+             既存完成成果物（Leader Final・Output Engine）と併存
+  ↓
+Phase B-3    Approved Decision Package契約化 ───── 未着手
+             Output Engine接続・後方互換必須
+  ↓
+Phase B-4    Constitution Validator ───────────── 未着手
+             warning／block／critical・状態降格・安全停止
+  ↓
+Phase A-2    AI社員間再依頼（Employee Rework Request） ── 未着手（EDEのconflict/holdを起点に順序変更）
+  ↓
+Phase A-3    成果物受け渡し（Artifact Handoff） ──── 未着手
+  ↓
+Phase A-4    Quality Loop（品質ループ・上限付き） ── 未着手
+  ↓
+Phase C-1    Decision Ledger永続化（executive_decisions） ── 未着手
+  ↓
+Phase C-2    Output Engine Knowledge Base化 ────── 未着手
+  ↓
+Phase C-3    Learning Center／Outcome Record永続化 ── 未着手
+  ↓
+Phase D-safety  自律実行安全ゲート ──────────────── 未着手
+  ↓
+Phase D      自律Workflow ─────────────────────── 未着手
+  ↓
+Phase E      毎日自律実行 ──────────────────────── 未着手
+  ↓
+Phase F-1    Self Improvement Intelligence（Version2 Core⑦層と共通） ── 未着手
+  ↓
+Phase F-2    Executive Memory ──────────────────── 未着手
+             （着手条件：Decision Ledger永続化済み・Learning Center永続化済み・
+              Outcome Record存在・Instagram実運用データ存在・Self Improvement利用可能）
+```
+
+**旧ロードマップとの関係**：本セクション直下に残る「AI COMPANY Leader Experience — Leader Integration Layer（Phase A完了・2026-07-31・Decision 084）」記載の旧ロードマップ（Phase A→A-2→A-3→A-4→B→C→D-safety→D→E→F）は**削除せず保持**する。本Decision086により、**Phase A-2〜A-4はPhase B-1〜B-4完了後へ順序変更**（内容・責務は無変更）、**Phase BはB-1〜B-4へ4分割**、**Phase CはC-1〜C-3へ分割**、**Phase FはF-1〜F-2へ分割**したものが正式ロードマップとなる。
+
+**Executive Constitution正式条文（全14条）・Executive Decision Engine正式責務／非責務・Decision Confidence方針・Strategic Alternatives方針・Approved Decision Package方針・保存方式（段階導入案D）の詳細は`docs/04DECISIONS.md` Decision086を参照**。
+
+**Phase A-2以降・Phase B-1以降は未着手**。着手前に必ずユーザー確認を取る（本Roadmapへの追記のみでは着手権限としない）。
+
+---
+
 ## AI COMPANY Leader Experience — Leader Integration Layer（Phase A完了・2026-07-31・Decision 084）
 
 > 追記日: 2026-07-31。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。
