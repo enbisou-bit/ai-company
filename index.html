@@ -8404,6 +8404,23 @@ function _liBlankInbox(caseId, pathSource) {
     conflicts: [],
     decisions: [],
     finalSummary: null,
+    leaderFinalCandidate: null,      // Phase B-2A: Leader Final候補（既定null・pathA通常フローのみ設定）
+    executedBeforeOutputDraft: false, // Phase B-2A: EDE実行がOutput Draft確定前かどうかの実測メタ情報（既定false）
+  };
+}
+
+// Phase B-2A: Leader Final Candidateの正規化（既存rawText切り詰め方式を再利用・生本文の意味変更なし）。
+// 存在しないフィールドを推測補完しない（textが無ければnullを返す＝安全側）。
+function _liNormalizeLeaderFinalCandidate(raw) {
+  if (!raw || typeof raw.text !== 'string' || !raw.text) return null;
+  var rt = _liSafeRawText(raw.text);
+  return {
+    text: rt.rawText,
+    textTruncated: rt.rawTextTruncated,
+    provider: raw.provider || null,
+    integratedCount: (typeof raw.integratedCount === 'number' && isFinite(raw.integratedCount)) ? raw.integratedCount : null,
+    sourceEngine: raw.sourceEngine || null,   // 'runLeaderFinalResponse' | 'leaderSummary'（Phase B-2Aでは前者のみ使用）
+    generatedAt: raw.generatedAt || new Date().toISOString(),
   };
 }
 
@@ -8642,12 +8659,19 @@ function _liCollectIntegration(pathSource, requestText, extra) {
     // （atRunWorkflow自身の接続は同一同期継続内のため常に一致・atTriggerLeaderFinalの手動再生成でのみ発動し得る）
     if (_liLastPathAResultsCaseId !== caseId) { _leaderIntegration = null; return null; }
     inbox = _liAdaptPathA(caseId, requestText);
+    // Phase B-2A: Leader Final Candidateはpath A限定（extra省略時=atTriggerLeaderFinal等の既存呼び出しはnullのまま・無変更）
+    inbox.leaderFinalCandidate = _liNormalizeLeaderFinalCandidate(extra.leaderFinalCandidate);
   } else if (pathSource === 'pathB') {
     if (!extra.session || extra.session.caseId !== caseId) { _leaderIntegration = null; return null; }
     inbox = _liAdaptPathB(extra.session);
+    // Path B: Output Draft概念自体が存在しないためLeader Final Candidateは対象外（常にnull固定）
+    inbox.leaderFinalCandidate = null;
   } else {
     return null;
   }
+
+  // Phase B-2A: 呼び出し元が明示した場合のみtrue（atRunWorkflow通常フローのみ・他の既存呼び出しは既定falseのまま無変更）
+  inbox.executedBeforeOutputDraft = !!extra.executedBeforeOutputDraft;
 
   inbox.comparisons = _liCompareArtifacts(inbox.artifacts);
   inbox.conflicts   = _liDetectConflictCandidates(inbox.artifacts, inbox.comparisons);
@@ -8859,11 +8883,13 @@ function _edRunDecisionEngine(inbox) {
     candidateArtifacts: candidateArtifacts,   // 判断候補（completed・未承認）
     approvedArtifacts: approvedArtifacts,     // 正式承認済みのみ（現状は常に空）
     excludedArtifacts: excludedArtifacts,     // 採用対象外（error/skipped等）
+    leaderFinalCandidate: inbox.leaderFinalCandidate || null, // Phase B-2A: 判断入力として引き継ぐのみ（AI再評価・独自採点はしない）
     risks: summary.risks,
     approvedDecisionPackage: approvedDecisionPackage, // Approved時のみ非null（現状は常にnull）
-    // 補正7: 現段階のEDEは成果物確定後の内部判断構造であり、Leader Final／Output Draft／Output Engineの
-    //   いずれも制御していないことを明示する非表示メタ情報（UI表示なし・デバッグ／将来接続確認用）。
-    executionMode: 'post_observation',
+    // Phase B-2A: 実行位置の実態を正確に反映する（呼び出し元＝atRunWorkflow通常フローのみtrueを渡す。
+    //   atTriggerLeaderFinal・Path Bは無変更のためinbox.executedBeforeOutputDraftは既定false=post_observationのまま）。
+    // affectsOutputDraft等は実行位置に関わらずfalseで維持する（EDEの判断結果はOutput Draftの内容を一切変更しないため）。
+    executionMode: inbox.executedBeforeOutputDraft ? 'pre_output_observation' : 'post_observation',
     affectsLeaderFinal: false,
     affectsOutputDraft: false,
     affectsOutputEngine: false,
@@ -12641,10 +12667,27 @@ async function atRunWorkflow() {
       }
       atSetWorkflowStatus('✅ Leader最終成果物まで完了 — チャット返信済', 'done');
       _phase42Success = true;
-      // Phase46-8: Output Draft + Compare Log を Path A でも記録する
+      // Phase B-2A: Leader Final Candidate（既存返却フィールドのみ使用・存在しない値は推測補完しない）
+      var _edLeaderFinalCandidateInput = {
+        text: data.leaderFinalResult.text,
+        provider: (typeof data.leaderFinalResult.provider !== 'undefined') ? data.leaderFinalResult.provider : null,
+        integratedCount: data.leaderFinalResult.integratedCount,
+        sourceEngine: 'runLeaderFinalResponse',
+        generatedAt: new Date().toISOString(),
+      };
+      // Phase A/B-2A: Leader Integration（Path A）— Leader Final受領直後に1回だけ収集。
+      // Phase B-2A: Output Draft確定「前」へ実行位置を移動し、Leader Final Candidateを正式入力へ追加する
+      //   （既存表示・保存には無関係・追加のみ。EDE判断結果はOutput Draftの内容を変更しない）。
+      try {
+        if (typeof _liCollectIntegration === 'function') {
+          _liCollectIntegration('pathA', userMessage, {
+            leaderFinalCandidate: _edLeaderFinalCandidateInput,
+            executedBeforeOutputDraft: true,
+          });
+        }
+      } catch (_liErr) { console.warn('[LeaderIntegration] pathA collect error:', _liErr.message); }
+      // Phase46-8: Output Draft + Compare Log を Path A でも記録する（既存内容・引数・POST回数は無変更）
       try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text, { noCompletedResults: data.leaderFinalResult.integratedCount === 0 }); } catch(_e) {}
-      // Phase A: Leader Integration（Path A）— Leader Final受領直後に1回だけ収集。既存表示・保存には無関係（追加のみ）。
-      try { if (typeof _liCollectIntegration === 'function') _liCollectIntegration('pathA', userMessage); } catch (_liErr) { console.warn('[LeaderIntegration] pathA collect error:', _liErr.message); }
     }
 
     _atMarkComplete(); // ✅ 自動タスク完了 — ボタン状態を更新
