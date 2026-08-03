@@ -8879,22 +8879,26 @@ function _edBuildExecutiveSummary(inbox, decisionResult) {
   };
 }
 
-// Phase B-1補正: Approved Decision Package。第4条(Approved Decision Package原則)に基づき、
-//   decisionStatus==='approved' の場合だけ契約を生成する。Phase B-1では自動Approved判定を
-//   新設しないため、_edDecideStatus()が'approved'を返すことは現状なく、通常は常にnullを返す
-//   （安全側設計・Approved以外で空のPackageを作らない）。Output Engineへは今回も接続しない。
-function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary, approvedArtifacts) {
+// Phase B-4A: Approved Decision Package。第4条(Approved Decision Package原則)に基づき、
+//   decisionStatus==='approved' の場合だけ契約を生成する。現Coreは自動Approved判定を持たないため、
+//   _edDecideStatus()が'approved'を返すことは現状なく、通常は常にnullを返す
+//   （安全側設計・Approved以外で空のPackageを作らない）。Output Engineへはまだ接続しない。
+// 所有構造（Phase B-4調査で確定）: 正本はExecutive Decision Engine側。本Packageは、Approvedとなった
+//   特定のExecutive Decision（decisionId）を後続工程へ渡すための派生契約であり、独自IDは発行しない
+//   （sourceDecisionIdで元Decisionを参照する＝第9条 正本一意性）。
+// EDE-issued approved contract; downstream consumers must not mutate.
+function _edBuildApprovedDecisionPackage(decisionId, inbox, decisionResult, confidence, alternatives, summary, approvedArtifacts) {
   if (!decisionResult || decisionResult.status !== 'approved') return null;
   return {
     version: EXECUTIVE_DECISION_ENGINE_VERSION,
+    sourceDecisionId: decisionId, // Phase B-4A: Package独自IDではなく、元Executive DecisionのdecisionIdを参照
     caseId: inbox.caseId,
     workflowId: inbox.workflowId,
     interactionId: inbox.interactionId,
-    decisionId: 'ed-' + genId(),
     decisionStatus: decisionResult.status,
     executiveSummary: summary,
     approvedArtifacts: approvedArtifacts || [], // 正式承認済みのみ（Approved以外はこの関数自体が呼ばれない）
-    evidenceGate: null,      // 未実装（Phase B-4 Constitution Validator以降）
+    evidenceGate: null,      // 未実装（Phase B-5 Constitution Validator以降）
     qualityGate: null,       // 未実装
     completionGate: null,    // 未実装
     constitutionCheck: null, // 未実装
@@ -8913,6 +8917,10 @@ function _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alte
 //   （情報を二重の正本として持たない＝第9条 正本一意性）。
 function _edRunDecisionEngine(inbox) {
   if (!inbox || !inbox.caseId) { _executiveDecision = null; return null; }
+
+  // Phase B-4A: Executive Decision識別子。状態(approved/rejected/hold/insufficient)に関わらず必ず1回だけ発行する
+  // （第10条 監査可能性）。Approved Decision Package専用IDではなく、判断イベント自体の識別子。
+  var decisionId = 'ed-' + genId();
 
   var decisionResult = _edDecideStatus(inbox);
   var confidence     = _edCalculateDecisionConfidence(inbox);
@@ -8951,10 +8959,11 @@ function _edRunDecisionEngine(inbox) {
     };
   });
 
-  var approvedDecisionPackage = _edBuildApprovedDecisionPackage(inbox, decisionResult, confidence, alternatives, summary, approvedArtifacts);
+  var approvedDecisionPackage = _edBuildApprovedDecisionPackage(decisionId, inbox, decisionResult, confidence, alternatives, summary, approvedArtifacts);
 
   var decision = {
     version: EXECUTIVE_DECISION_ENGINE_VERSION,
+    decisionId: decisionId, // Phase B-4A: 判断イベント自体の識別子（状態に関わらず常に発行）
     caseId: inbox.caseId,
     workflowId: inbox.workflowId,
     interactionId: inbox.interactionId,
