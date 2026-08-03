@@ -12896,8 +12896,20 @@ async function atRunWorkflow() {
           });
         }
       } catch (_liErr) { console.warn('[LeaderIntegration] pathA collect error:', _liErr.message); }
+      // Phase B-4B: Approved Decision Packageの安全な取得（_liCollectIntegration()は_executiveDecisionを
+      //   同期的に確定済みのため戻り値を受け取る必要はない・正式取得元は_executiveDecision.approvedDecisionPackageのみ）。
+      //   生成・変更は一切行わない（参照するのみ）。caseId不一致・sourceDecisionId不一致時はPackageを使わずnullへ落とす
+      //   （既存Cross-caseガードを置き換えるものではなく、Package受け渡し単体の安全側フォールバック）。
+      var _edApprovedPackageForOutput = null;
+      if (_executiveDecision && _executiveDecision.caseId === _atRunCaseId && _executiveDecision.approvedDecisionPackage) {
+        var _edPkgCandidate = _executiveDecision.approvedDecisionPackage;
+        if (_edPkgCandidate.sourceDecisionId === _executiveDecision.decisionId && _edPkgCandidate.caseId === _atRunCaseId) {
+          _edApprovedPackageForOutput = _edPkgCandidate;
+        }
+      }
       // Phase46-8: Output Draft + Compare Log を Path A でも記録する（既存内容・引数・POST回数は無変更）
-      try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text, { noCompletedResults: data.leaderFinalResult.integratedCount === 0 }); } catch(_e) {}
+      // Phase B-4B: opts.approvedDecisionPackageは受け渡し契約の追加のみ（本文・status・packageQualityへは未接続）。
+      try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text, { noCompletedResults: data.leaderFinalResult.integratedCount === 0, approvedDecisionPackage: _edApprovedPackageForOutput }); } catch(_e) {}
     }
 
     _atMarkComplete(); // ✅ 自動タスク完了 — ボタン状態を更新
@@ -26849,7 +26861,10 @@ function buildOutputDraftFromLeaderFinal(finalText, opts) {
   // 工程3-2: completed成果0件（全担当error/skipped）で呼ばれた場合、完成成果物として誤認しない扱いにする。
   //   呼び出し元が opts を渡さない既存経路（例: 手動Leader Final再生成）は従来どおり動作する（後方互換）。
   var noCompletedResults = !!(opts && opts.noCompletedResults);
-  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0, 'noCompletedResults=', noCompletedResults);
+  // Phase B-4B: Approved Decision Packageを安全に受領するのみ（契約経路の確立まで）。
+  //   今回はfields保存・本文/status/packageQuality変更のいずれにも使用しない。生成・変更は一切行わない（参照のみ）。
+  var approvedDecisionPackage = (opts && opts.approvedDecisionPackage) ? opts.approvedDecisionPackage : null;
+  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0, 'noCompletedResults=', noCompletedResults, 'approvedDecisionPackage=', approvedDecisionPackage ? 'present' : 'null');
   if (!_lastOutputDraft || !finalText) return { ok: false };
   var type   = _lastOutputDraft.type;
   var fields = _lastOutputDraft.fields;
