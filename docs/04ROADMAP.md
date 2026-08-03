@@ -8,6 +8,40 @@
 
 ---
 
+## Constitution Gate 正式Complete（Phase B-6A〜B-6D統合・2026-08-03・Decision 091）
+
+> 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit 9436fec）のみ・server.js/lib/DB/schema.sql/API無変更**。
+
+Constitution Structure Check正式採用（Phase B-5C・正式Complete・維持）で表示のみだったConstitution Validator Coreの検証結果を、Approved Decision Packageの複製可否判定（Path A／手動Leader再生成それぞれの`fields.approvedDecisionPackage`受け渡し条件）へ「狭域Constitution Gate」として接続した（詳細はDecision091）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-5C   Constitution Structure Check ─────── 正式Complete（2026-08-03・Decision090・維持）
+  ↓
+Phase B-6    Constitution Gate ─────────────────── 正式Complete（2026-08-03・Decision091）
+             B-6A: 調査・設計（広域Gate案・狭域Gate案を比較検討し狭域Gate案を正式採用）
+             B-6B: 実装（Path A／手動Leader再生成のfields.approvedDecisionPackage受け渡し条件へ
+                    _constitutionValidation存在／decisionId一致／caseId一致／result.passed===true
+                    の4条件をAND追加・不成立時はfail-closed・Code commit 9436fec）
+             B-6C: 実APIテスト・回帰確認（Auto Task／手動Leader再生成／Path B dispatch成立時の
+                    3経路で正常動作・Constitution Structure Check Passed12/12・Console Error 0を確認）
+             B-6D: 正式リリース（docs更新・commit・tag v1.01-executive-constitution-gate・push・Render反映）
+  ↓
+（次工程候補・優先順位未確定・特定の1つを自動確定しない・着手はユーザー承認後）
+             候補A：Validator違反時の制御設計
+             候補B：Quality Gate調査・設計
+             候補C：Completion Gate調査・設計
+             候補D：Decision Ledger
+             候補E：AI社員カード期限表示廃止・状態表示化（pending/in_progress/completed/error/skipped）
+```
+
+**次工程候補**：上記5候補を比較対象として並列に記録する。ユーザー承認後に正式な次工程を決定する。
+
+**Constitution Gateの4条件詳細・却下案（広域Gate案）・実APIテスト詳細は`docs/04DECISIONS.md` Decision091を参照**。
+
+---
+
 ## Constitution Structure Check 正式Complete（Phase B-5C-1〜B-5C-3統合・2026-08-03・Decision 090）
 
 > 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit a2834d3／9e6d094／58315ee）のみ・server.js/lib/DB/schema.sql/API無変更**。

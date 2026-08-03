@@ -4,6 +4,20 @@
 
 ---
 
+## Phase B-6 Constitution Gate **正式Complete**（Phase B-6A〜B-6D統合・2026-08-03・Code commit 9436fec）
+
+**Constitution Structure Check正式採用（Phase B-5C・正式Complete・維持）で表示のみだったConstitution Validator Coreの検証結果を、Approved Decision Packageの複製可否判定（Path A／手動Leader再生成それぞれの`fields.approvedDecisionPackage`受け渡し条件）へ「狭域Constitution Gate」として接続した**（Decision091）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision091）。
+
+- **Phase B-6A（調査・設計）**：Constitution Gateの接続方式として「広域Gate」（Executive Decision Engine本体・Package生成ロジックへの組み込み）と「狭域Gate」（Package複製可否のみへの限定接続）を比較検討し、既存Workflow保護原則（第14条・安全側既定値）の観点から狭域Gate案を正式採用。
+- **Phase B-6B（実装）**：Path A（`atRunWorkflow()`）・手動Leader再生成（`atTriggerLeaderFinal()`）双方の`fields.approvedDecisionPackage`受け渡し条件へ、既存の`sourceDecisionId`一致・`caseId`一致に加え、`_constitutionValidation`存在／decisionId一致／caseId一致／`result.passed===true`の4条件をANDで追加。いずれか不成立時は既存どおりfail-closed（nullのまま・例外なし）。Validator本体・Executive Decision Engine本体・Package生成ロジック・Output Draft本文は無変更。Code commit **9436fec**（`index.htmlのみ+20/-2`・Path A/手動Leader再生成の2箇所に限定）。
+- **Phase B-6C（実APIテスト・回帰確認）**：既存テスト案件を再利用し、低コストプロンプトでAuto Task1回・手動Leader再生成1回・Path B dispatch1回を実施。3経路とも正常完了・Executive Leader Report生成・**Constitution Structure Check：Passed（12/12）**を確認。3経路とも`decisionStatus`は`hold`のため`approvedDecisionPackage`は常に`null`であり、Gate追加が既存正常系動作へ副作用を与えないことを実測確認。Console Error 0・Network全リクエスト200 OK。
+- **Phase B-6D（正式リリース）**：docs更新・commit・tag・push・Render反映。
+- **未実装（区別して記録）**：Executive Constitution全14条の完全な意味論的検証・Evidence内容の十分性判定・成果物品質/完成度の実質評価・Validator違反によるOutput停止・Quality Gate・Completion Gate・Decision Ledger・Executive Memory。AI社員カードの「期限」表示は本工程でも変更していない。
+- **検証**：JavaScript構文OK・`npm run dev-check` 200/200/200・`git diff --check`問題なし。
+- **Git・反映**：Code commit **9436fec**（`feat: gate approved package by constitution`）＋docs commit（本更新）・Annotated Tag **v1.01-executive-constitution-gate**・main push・Render反映。次工程候補＝Validator違反時の制御設計／Quality Gate調査・設計／Completion Gate調査・設計／Decision Ledger／AI社員カード期限表示廃止（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-5C Constitution Structure Check **正式Complete**（Phase B-5C-1〜B-5C-3統合・2026-08-03・Code commit a2834d3/9e6d094/58315ee）
 
 **Constitution Validator Core（Phase B-5・正式Complete・維持）の検証結果を、Executive Leader Report内の独立セクション「Constitution Structure Check」として表示し、Auto Task・手動Leader再生成・Path B（dispatch成立時）の完了直後に即時反映される状態まで完成した**（Decision090）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision090）。
