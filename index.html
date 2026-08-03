@@ -27119,17 +27119,24 @@ function _getRoleReplyText(agentId) {
   return '';
 }
 
-function buildOutputDraftFromLeaderFinal(finalText, opts) {
+function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
   // 工程3-2: completed成果0件（全担当error/skipped）で呼ばれた場合、完成成果物として誤認しない扱いにする。
   //   呼び出し元が opts を渡さない既存経路（例: 手動Leader Final再生成）は従来どおり動作する（後方互換）。
   var noCompletedResults = !!(opts && opts.noCompletedResults);
   // Phase B-4B/D: Approved Decision Packageを安全に受領する（Phase B-4Dでfields.approvedDecisionPackageへ
   //   複製保存する。本文/status/packageQuality変更には使用しない）。生成・変更は一切行わない（参照のみ）。
   var approvedDecisionPackage = (opts && opts.approvedDecisionPackage) ? opts.approvedDecisionPackage : null;
-  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', _lastOutputDraft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0, 'noCompletedResults=', noCompletedResults, 'approvedDecisionPackage=', approvedDecisionPackage ? 'present' : 'null');
-  if (!_lastOutputDraft || !finalText) return { ok: false };
-  var type   = _lastOutputDraft.type;
-  var fields = _lastOutputDraft.fields;
+  // Phase B-7D: fields構築対象を引数化する（純粋な安全リファクタ・挙動不変）。targetDraft省略時は従来どおり
+  //   _lastOutputDraftを対象とする（draft === _lastOutputDraft となり、以降のfields構築・fields.approvedDecisionPackage
+  //   複製/削除・status確定・packageQuality算出・POSTはすべて従来と完全に同一）。本Phaseではfields構築の対象を
+  //   明示的に渡せる契約のみを追加し、実際の本番フローでは引き続き既定値(_lastOutputDraft)を使用する（別Draトは渡さない）。
+  //   Quality Gate判定・Executive Decision前への因果接続・status/packageQualityの対象引数化はPhase B-7E以降で行う
+  //   （本Phaseでは下記のstatus/quality/normalize/POSTは従来どおり_lastOutputDraftを対象とする＝正本性維持）。
+  var draft = targetDraft || _lastOutputDraft;
+  console.log('[CL①] buildOutputDraftFromLeaderFinal called. _lastOutputDraft=', draft ? 'OK' : 'NULL', 'finalText.length=', finalText ? finalText.length : 0, 'noCompletedResults=', noCompletedResults, 'approvedDecisionPackage=', approvedDecisionPackage ? 'present' : 'null');
+  if (!draft || !finalText) return { ok: false };
+  var type   = draft.type;
+  var fields = draft.fields;
   var updatedFields = [];
 
   function extractSlides(text) {
