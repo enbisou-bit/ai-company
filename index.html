@@ -27160,6 +27160,18 @@ function buildOutputDraftFromLeaderFinal(finalText, opts) {
     }
   }
 
+  // Phase B-4D: Approved Decision Packageをfieldsへ複製保存する（本文抽出ロジックとは独立した工程）。
+  // Materialized copy of the EDE-issued approved contract; not the canonical ledger record.
+  // 参照をそのまま格納する（案A）。理由: Packageは生成後どこからも変更されない設計（Phase B-4A〜C）であり、
+  // 既存のPOST(JSON.stringify)→DB(JSONB)→GET(JSON parse)という永続化往復自体が復元時に独立コピーを生む
+  // ため、新規deepClone等の共通基盤は追加しない。fieldsは同一オブジェクトが手動再生成等で再利用され得るため、
+  // Packageなし時は前回分の残留を防ぐため明示的にキーを削除する（削除は既存キー有無に関わらず安全）。
+  if (approvedDecisionPackage) {
+    fields.approvedDecisionPackage = approvedDecisionPackage;
+  } else {
+    delete fields.approvedDecisionPackage;
+  }
+
   // 工程3-2: completed成果0件の場合はREADY（納品準備OK）にしない。既存のOUTPUT_STATUS.ERRORを流用（新規enum追加なし）
   _lastOutputDraft.status    = noCompletedResults ? OUTPUT_STATUS.ERROR : OUTPUT_STATUS.READY;
   _lastOutputDraft.builtAt   = new Date().toISOString();
