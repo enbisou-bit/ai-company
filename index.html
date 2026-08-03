@@ -13127,7 +13127,16 @@ async function atRunWorkflow() {
       var _edApprovedPackageForOutput = null;
       if (_executiveDecision && _executiveDecision.caseId === _atRunCaseId && _executiveDecision.approvedDecisionPackage) {
         var _edPkgCandidate = _executiveDecision.approvedDecisionPackage;
-        if (_edPkgCandidate.sourceDecisionId === _executiveDecision.decisionId && _edPkgCandidate.caseId === _atRunCaseId) {
+        // Phase B-6B: 狭域Constitution Gate。Package本体・Decision・Validatorは一切書き換えず、
+        //   fields.approvedDecisionPackageへの複製可否だけをConstitution Validation結果で追加ガードする。
+        //   _constitutionValidation不在・decisionId/caseId不一致・result不在・passedが真でない場合は
+        //   すべてfail-closed（既存どおり_edApprovedPackageForOutputはnullのまま・例外を投げない）。
+        if (_edPkgCandidate.sourceDecisionId === _executiveDecision.decisionId && _edPkgCandidate.caseId === _atRunCaseId
+            && _constitutionValidation
+            && _constitutionValidation.decisionId === _executiveDecision.decisionId
+            && _constitutionValidation.caseId === _executiveDecision.caseId
+            && _constitutionValidation.result
+            && _constitutionValidation.result.passed === true) {
           _edApprovedPackageForOutput = _edPkgCandidate;
         }
       }
@@ -13527,7 +13536,16 @@ async function atTriggerLeaderFinal() {
     let _manualApprovedPackageForOutput = null;
     if (_executiveDecision && _executiveDecision.caseId === _liGuardCaseId && _executiveDecision.approvedDecisionPackage) {
       const _manualPkgCandidate = _executiveDecision.approvedDecisionPackage;
-      if (_manualPkgCandidate.sourceDecisionId === _executiveDecision.decisionId && _manualPkgCandidate.caseId === _liGuardCaseId) {
+      // Phase B-6B: 狭域Constitution Gate（Path Aと同一論理・専用一時変数のみ分離）。Package本体・Decision・
+      //   Validatorは一切書き換えず、fields.approvedDecisionPackageへの複製可否だけを追加ガードする。
+      //   _constitutionValidation不在・decisionId/caseId不一致・result不在・passedが真でない場合は
+      //   すべてfail-closed（既存どおり_manualApprovedPackageForOutputはnullのまま・例外を投げない）。
+      if (_manualPkgCandidate.sourceDecisionId === _executiveDecision.decisionId && _manualPkgCandidate.caseId === _liGuardCaseId
+          && _constitutionValidation
+          && _constitutionValidation.decisionId === _executiveDecision.decisionId
+          && _constitutionValidation.caseId === _executiveDecision.caseId
+          && _constitutionValidation.result
+          && _constitutionValidation.result.passed === true) {
         _manualApprovedPackageForOutput = _manualPkgCandidate;
       }
     }
