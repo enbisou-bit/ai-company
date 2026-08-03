@@ -8365,7 +8365,16 @@ async function triggerLeaderSummary(userText, memberReplies, strategyReply, inte
     try {
       if (interactionId && typeof _liCollectIntegration === 'function') {
         var _liSession = (_liPathBSessions || []).find(function(s) { return s.interactionId === interactionId; });
-        if (_liSession) _liCollectIntegration('pathB', userText, { session: _liSession });
+        if (_liSession) {
+          _liCollectIntegration('pathB', userText, { session: _liSession });
+          // Phase B-5C-3: dispatch成立（_liSession確定）時のみ、_executiveDecision／_constitutionValidation確定後に
+          //   Executive Leader Report（Constitution Structure Check含む）を限定更新する。dispatchなし（この
+          //   if文自体に到達しない場合）は従来どおり何も更新しない。チャット全体は再構築しないため、直前に
+          //   appendした.leader-summary-blockの表示スタイルには一切影響を与えない。
+          if (currentMember && currentMember.id === 'leader' && typeof _elrRefreshInChatArea === 'function') {
+            _elrRefreshInChatArea();
+          }
+        }
       }
     } catch (_liErr) { console.warn('[LeaderIntegration] pathB collect error:', _liErr.message); }
   } catch (e) {
@@ -9294,8 +9303,26 @@ function _elrRenderIntoChatArea(chatEl) {
     var html = _elrBuildReportHtml(_executiveDecision, inbox, validationForDisplay);
     var wrap = document.createElement('div');
     wrap.innerHTML = html;
-    if (wrap.firstChild) chatEl.appendChild(wrap.firstChild);
+    // Phase B-5C-3: appendChild→insertBefore(先頭)へ変更。reRenderChatArea()からの既存呼び出しはchatEl.innerHTML=''
+    // 直後（chatEl.firstChild===null）のため挙動は従来と完全に同一。_elrRefreshInChatArea()からの新規呼び出しでは
+    // 既存メッセージDOMの前へ挿入することで「チャット最上部」表示を維持する（第8条・チャット全体は再構築しない）。
+    if (wrap.firstChild) chatEl.insertBefore(wrap.firstChild, chatEl.firstChild);
   } catch (_elrErr) { console.warn('[ExecutiveLeaderReport] render error:', _elrErr.message); }
+}
+
+// Phase B-5C-3: 既存のExecutive Leader Report（Constitution Structure Check含む）をチャット最上部で
+//   置き換える限定更新。チャット全体（chatEl.innerHTML=''からの再構築）は行わないため、Path Bの
+//   .leader-summary-block等、既存メッセージのDOM・表示スタイルには一切影響を与えない。
+// 表示ロジック・Cross-case判定・decisionId/caseId対応確認は_elrRenderIntoChatArea()をそのまま再利用し、
+//   本関数では複製しない（Executive Decision Engine・Validator・Approved Package・Output Draft等には非接触）。
+function _elrRefreshInChatArea() {
+  try {
+    var chat = document.getElementById('chat-area');
+    if (!chat) return;
+    var old = chat.querySelector('.executive-leader-report');
+    if (old) old.remove();
+    if (typeof _elrRenderIntoChatArea === 'function') _elrRenderIntoChatArea(chat);
+  } catch (_elrRefreshErr) { console.warn('[ExecutiveLeaderReport] refresh error:', _elrRefreshErr.message); }
 }
 
 // ── 対応括弧カウンタ（parseAIResponse と共有） ──
@@ -13086,6 +13113,13 @@ async function atRunWorkflow() {
           });
         }
       } catch (_liErr) { console.warn('[LeaderIntegration] pathA collect error:', _liErr.message); }
+      // Phase B-5C-3: _liCollectIntegration()完了直後（_executiveDecision／_constitutionValidation確定後）に
+      //   Leaderチャット表示中であればExecutive Leader Report（Constitution Structure Check含む）のみを
+      //   限定更新し、今回のDecisionへ即時反映する。チャット全体は再構築しない（表示内容・Cross-case判定・
+      //   対応確認ロジックは無変更・呼び出しタイミングの追加のみ）。
+      if (currentMember && currentMember.id === 'leader' && typeof _elrRefreshInChatArea === 'function') {
+        _elrRefreshInChatArea();
+      }
       // Phase B-4B: Approved Decision Packageの安全な取得（_liCollectIntegration()は_executiveDecisionを
       //   同期的に確定済みのため戻り値を受け取る必要はない・正式取得元は_executiveDecision.approvedDecisionPackageのみ）。
       //   生成・変更は一切行わない（参照するのみ）。caseId不一致・sourceDecisionId不一致時はPackageを使わずnullへ落とす
@@ -13471,6 +13505,13 @@ async function atTriggerLeaderFinal() {
         });
       }
     } catch (_liErr) { console.warn('[LeaderIntegration] pathA(manual) collect error:', _liErr.message); }
+    // Phase B-5C-3: _liCollectIntegration()完了直後（_executiveDecision／_constitutionValidation確定後）に
+    //   Leaderチャット表示中であればExecutive Leader Report（Constitution Structure Check含む）のみを
+    //   限定更新し、今回の再生成Decisionへ即時反映する。チャット全体は再構築しない（表示内容・Cross-case判定・
+    //   対応確認ロジックは無変更・呼び出しタイミングの追加のみ）。
+    if (currentMember && currentMember.id === 'leader' && typeof _elrRefreshInChatArea === 'function') {
+      _elrRefreshInChatArea();
+    }
 
     // Phase B-2B: noCompletedResultsを今回のInbox（DOM由来）から算出。取得不能時は安全側(true)とする（第14条）。
     let _manualNoCompletedResults = true;
