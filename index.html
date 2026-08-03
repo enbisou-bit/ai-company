@@ -5612,6 +5612,9 @@
   .elr-detail-row { margin: 6px 0; padding: 6px 8px; background: rgba(0,0,0,0.15); border-radius: 6px; }
   .elr-detail-agent { color: rgba(0,212,255,0.85); font-weight: bold; margin-bottom: 2px; }
   .elr-detail-text { color: #cdd; white-space: pre-wrap; }
+  .elr-cv-passed { color: rgba(46,204,113,0.9); font-size: 11.5px; margin: 4px 0; }
+  .elr-cv-warning { color: rgba(255,159,67,0.95); font-weight: bold; font-size: 11.5px; margin: 4px 0; }
+  .elr-cv-note { color: rgba(255,255,255,0.4); font-size: 10px; margin: 2px 0 4px; }
 
   /* ── Leader指示ブロック（各担当画面） ── */
   .leader-instruction-block {
@@ -9163,8 +9166,56 @@ function _elrExcerptArtifactText(rawText) {
   return joined.length > 160 ? joined.slice(0, 160) + '…' : joined;
 }
 
+// Phase B-5C-2: Constitution Structure Check セクションHTML構築（表示専用・副作用なし）。
+// validationはPhase B-5C-1のラッパー { decisionId, caseId, result }。呼び出し元(_elrRenderIntoChatArea)が
+// decisionId/caseId対応確認済みのものだけを渡す前提だが、本関数自体も形式不正な値で例外を出さない設計とする。
+// 「Constitution Structure Check」は12項目の構造整合性検証結果に過ぎず、Executive Constitution全14条の
+// 完全な意味論的検証・Evidence十分性判定・Quality Gate/Completion Gateの代替ではない（固定注記で明示）。
+// passed:trueをApproved/完成/品質合格の意味で表示しない（第13条・状態軸分離）。
+function _elrBuildConstitutionCheckHtml(validation) {
+  try {
+    var esc = escapeHtml;
+    if (!validation || typeof validation !== 'object') return '';
+    var result = validation.result;
+    if (!result || typeof result !== 'object') return '';
+    var passed = (typeof result.passed === 'boolean') ? result.passed : null;
+    if (passed === null) return ''; // 判定不能時は「Passed」等を推測表示しない（安全側）
+
+    var title  = '<div class="elr-section-title">Constitution Structure Check</div>';
+    var note   = '<div class="elr-cv-note">現在は構造整合性チェックです。Evidence十分性・Quality Gate・Completion Gateとは別軸です。</div>';
+    var divider = '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>';
+
+    if (passed) {
+      var checkedRules = Array.isArray(result.checkedRules) ? result.checkedRules : [];
+      if (checkedRules.length === 0) return ''; // 件数が確認できない場合はPassed表示を避ける
+      var totalCount = checkedRules.length;
+      return title
+        + '<div class="elr-cv-passed">🛡 Constitution Structure Check：Passed（' + totalCount + '/' + totalCount + '）</div>'
+        + note + divider;
+    }
+
+    var violations = Array.isArray(result.violations) ? result.violations : [];
+    var safeViolations = violations.filter(function(v) { return v && typeof v === 'object' && typeof v.message === 'string'; });
+    if (safeViolations.length === 0) return ''; // violationsが不正・空の場合は「0件」等の誤表示を避け非表示にする
+    var messageRows = safeViolations.map(function(v) { return '・' + esc(v.message); }).join('<br>');
+    var ruleRows = safeViolations.filter(function(v) { return typeof v.rule === 'string'; })
+      .map(function(v) { return esc(v.rule); }).join('<br>');
+
+    return title
+      + '<div class="elr-cv-warning">⚠ Constitution Structure Check：' + safeViolations.length + '件の構造不整合</div>'
+      + '<div class="elr-field">' + messageRows + '</div>'
+      + (ruleRows ? ('<details class="elr-detail"><summary>技術詳細</summary><div class="elr-detail-text">' + ruleRows + '</div></details>') : '')
+      + note + divider;
+  } catch (_cvHtmlErr) {
+    console.warn('[ConstitutionStructureCheck] display error:', _cvHtmlErr.message);
+    return '';
+  }
+}
+
 // Executive Leader Report本体HTML構築（表示専用・副作用なし・DOM操作なし）
-function _elrBuildReportHtml(decision, inbox) {
+// Phase B-5C-2: 第3引数validationはPhase B-5C-1のラッパー { decisionId, caseId, result }（省略時null可）。
+// _constitutionValidationグローバルを本関数内で直接参照しない（純粋関数性を維持・呼び出し元が対応確認済みの値のみ渡す）。
+function _elrBuildReportHtml(decision, inbox, validation) {
   var esc = escapeHtml;
   var summary  = decision.executiveSummary || {};
   var confBase = (decision.decisionConfidence && decision.decisionConfidence.base) || null;
@@ -9199,6 +9250,9 @@ function _elrBuildReportHtml(decision, inbox) {
     return '<div class="elr-detail-row"><div class="elr-detail-agent">' + esc(_elrAgentLabel(agentId)) + '</div><div class="elr-detail-text">' + esc(full) + '</div></div>';
   }).join('');
 
+  // Phase B-5C-2: Constitution Structure Check（Executive Summaryの直後・Leader Summaryの直前に独立表示）
+  var constitutionCheckHtml = _elrBuildConstitutionCheckHtml(validation);
+
   return ''
     + '<div class="executive-leader-report">'
     +   '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>'
@@ -9213,6 +9267,7 @@ function _elrBuildReportHtml(decision, inbox) {
     +   '<div class="elr-field"><span class="elr-label">■リスク</span><br>' + riskText + '</div>'
     +   '<div class="elr-field"><span class="elr-label">■次工程</span><br>' + nextText + '</div>'
     +   '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>'
+    +   constitutionCheckHtml
     +   (summaryRowsHtml ? ('<div class="elr-section-title">Leader Summary</div>' + summaryRowsHtml + '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>') : '')
     +   (detailRowsHtml  ? ('<details class="elr-detail"><summary>▼社員分析を見る</summary>' + detailRowsHtml + '</details><div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>') : '')
     + '</div>';
@@ -9227,7 +9282,16 @@ function _elrRenderIntoChatArea(chatEl) {
     var curCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
     if (!curCaseId || _executiveDecision.caseId !== curCaseId) return; // Cross-case表示防止
     var inbox = (typeof _leaderIntegration !== 'undefined' && _leaderIntegration && _leaderIntegration.caseId === curCaseId) ? _leaderIntegration : null;
-    var html = _elrBuildReportHtml(_executiveDecision, inbox);
+    // Phase B-5C-2: Validationは対応するDecision・現在案件と一致する場合のみ渡す。不一致・不在時は
+    //   Validationセクションのみ非表示とし、Report本体（Executive Summary等）は従来どおり表示を継続する（第8条・第14条）。
+    var validationForDisplay = null;
+    if (typeof _constitutionValidation !== 'undefined' && _constitutionValidation && _constitutionValidation.result
+        && _constitutionValidation.decisionId === _executiveDecision.decisionId
+        && _constitutionValidation.caseId === _executiveDecision.caseId
+        && _executiveDecision.caseId === curCaseId) {
+      validationForDisplay = _constitutionValidation;
+    }
+    var html = _elrBuildReportHtml(_executiveDecision, inbox, validationForDisplay);
     var wrap = document.createElement('div');
     wrap.innerHTML = html;
     if (wrap.firstChild) chatEl.appendChild(wrap.firstChild);
