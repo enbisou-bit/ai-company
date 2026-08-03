@@ -8787,7 +8787,7 @@ const EXECUTIVE_DECISION_ENGINE_VERSION = '1.0.0';
 const ED_REASON_NO_ARTIFACTS = 'no_completed_artifacts';
 
 let _executiveDecision = null; // Phase B-1: クライアント一時メモリのみ（F5で消失・永続化はPhase C-1以降）
-let _constitutionValidation = null; // Phase B-5: Constitution Validatorの最新判定結果（読み取り専用・F5で消失・Decision/Packageとは独立）
+let _constitutionValidation = null; // Phase B-5C-1: { decisionId, caseId, result }（読み取り専用・F5で消失・Decision/Packageとは独立・resultがvalidateExecutiveDecision()の戻り値そのもの）
 
 // Phase B-1補正: decisionStatus決定。第14条準拠でApprovedを自動既定値にしない（Reviewer評価だけでは昇格させない）。
 // 優先順位: completed成果0件は最優先でinsufficient（既存Decision085 noCompletedResults方針と同一の安全側判定を踏襲）。
@@ -9105,8 +9105,13 @@ function _edRunDecisionEngine(inbox) {
 
   // Phase B-5: Executive Constitution Validatorを判断確定直後に実行する（判定のみ・Decision/Packageは一切書き換えない）。
   // 失敗してもExecutive Decision Engine本体・後続のLeader Final・Output Draft・Output Engineは絶対に止めない。
+  // Phase B-5C-1: Validator戻り値そのものではなく、対象decisionId/caseIdと対にしたセッション内ラッパーとして保持する
+  //   （_constitutionValidationはExecutive Decisionの正本でもValidator結果の永続正本でもなく、将来の表示層が
+  //   対象Decisionとの対応を安全に確認するためのセッション内契約。新規ID生成は行わず既存Decisionの値のみ参照する）。
+  // Keep validation assignment inside EDE so decision/result remain paired.
   try {
-    _constitutionValidation = (typeof validateExecutiveDecision === 'function') ? validateExecutiveDecision(decision) : null;
+    var _cvResult = (typeof validateExecutiveDecision === 'function') ? validateExecutiveDecision(decision) : null;
+    _constitutionValidation = _cvResult ? { decisionId: decision.decisionId || null, caseId: decision.caseId || null, result: _cvResult } : null;
   } catch (_cvRunErr) {
     console.warn('[ConstitutionValidator] validation error:', _cvRunErr.message);
     _constitutionValidation = null;
