@@ -27038,16 +27038,24 @@ function evaluateOutputPackageCompleteness(draft) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Phase B-7E: Quality Gate 評価位置（接続のみ・実判定ロジックは未実装＝Phase B-7F以降）
-// 目的: Quality Gateの正式な評価位置（packageQuality算出後・Executive Decision実行前）を確立する。
-//   正本入力はevaluateOutputPackageCompleteness()が返すpackageQualityのみ（Phase B-7A〜B-7C正式採用）。
-// 非接触: score/status判定・threshold比較・Publishing Ready制御・Approved Decision Package・
+// Phase B-7E/B-7F: Quality Gate 評価位置・初期判定ロジック（Phase B-7A〜B-7C正式採用の設計に基づく）
+// 目的: Quality Gateの正式な評価位置（packageQuality算出後・Executive Decision実行前）を確立し、
+//   packageQuality.statusのみを正本入力とする初期通過基準（complete／almost_ready）を実装する。
+// 非接触: scoreは判定に使用しない・threshold比較なし・Publishing Ready制御・Approved Decision Package・
 //   Executive Decisionのstatus・Completion Gate・Decision Ledger・UI表示・DB保存はすべて対象外。
-// 第14条(安全側既定値): 想定外の入力（null/不正値）でも例外を投げず、判定結果と誤認されない
-//   暫定値のみを返す（approved/rejected/passed/failed/complete/almost_ready等は返さない）。
+// 状態軸分離（第13条）: 本関数の戻り値（passed／status:'passed'|'failed'）はpackageQuality.status
+//   （complete/almost_ready/needs_work/insufficient）そのものではなく独立した判定結果。sourceStatusへ
+//   判定根拠として原値のみ保持する（混同防止・上書きしない）。
+// 第14条(安全側既定値): 想定外の入力（null/undefined/非オブジェクト/status欠落/非文字列/未知の値/
+//   大文字小文字差異/空文字）でも例外を投げず、安全側（passed:false）へ倒す。未知のstatusは自動通過させない。
 // ══════════════════════════════════════════════════════════════
+var QUALITY_GATE_PASSING_STATUSES = ['complete', 'almost_ready'];
+
 function evaluateQualityGate(packageQuality) {
-  return { executed: true, status: 'not_implemented' };
+  var sourceStatus = (packageQuality && typeof packageQuality === 'object' && typeof packageQuality.status === 'string')
+    ? packageQuality.status : null;
+  var passed = sourceStatus !== null && QUALITY_GATE_PASSING_STATUSES.indexOf(sourceStatus) !== -1;
+  return { executed: true, passed: passed, status: passed ? 'passed' : 'failed', sourceStatus: sourceStatus };
 }
 
 function createOutputDraft(type, sourceText) {
