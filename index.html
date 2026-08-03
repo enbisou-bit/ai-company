@@ -13289,8 +13289,21 @@ async function atTriggerLeaderFinal() {
       _manualNoCompletedResults = (_manualCompletedMainCount === 0);
     }
 
-    // Phase44-4: Output Draft Builder — Leader Final結果をdraft.fieldsに格納（本体・引数契約は既存のまま・noCompletedResultsのみ付与）
-    buildOutputDraftFromLeaderFinal(data.reply, { noCompletedResults: _manualNoCompletedResults });
+    // Phase B-4C: Approved Decision Packageの安全な取得（手動再生成専用ローカル変数・Path Aの変数とは共有しない）。
+    //   正式取得元は_executiveDecision.approvedDecisionPackageのみ（_manualInboxはLeader InboxでありPackageではない・
+    //   Packageをここで新規生成・変更しない）。caseId・sourceDecisionIdが一致しない場合は、古い別Decision／別案件の
+    //   Packageを誤って流用しないよう、Packageのみ破棄してnullとする（既存Leader Final経路は継続する）。
+    let _manualApprovedPackageForOutput = null;
+    if (_executiveDecision && _executiveDecision.caseId === _liGuardCaseId && _executiveDecision.approvedDecisionPackage) {
+      const _manualPkgCandidate = _executiveDecision.approvedDecisionPackage;
+      if (_manualPkgCandidate.sourceDecisionId === _executiveDecision.decisionId && _manualPkgCandidate.caseId === _liGuardCaseId) {
+        _manualApprovedPackageForOutput = _manualPkgCandidate;
+      }
+    }
+
+    // Phase44-4: Output Draft Builder — Leader Final結果をdraft.fieldsに格納（本体・引数契約は既存のまま）
+    // Phase B-4C: opts.approvedDecisionPackageは受け渡し契約の追加のみ（本文・status・packageQualityへは未接続）。
+    buildOutputDraftFromLeaderFinal(data.reply, { noCompletedResults: _manualNoCompletedResults, approvedDecisionPackage: _manualApprovedPackageForOutput });
 
     // 次タスク自動作成（auto-create next tasks from leader proposal）
     await atAutoCreateNextTasks(data.reply);
