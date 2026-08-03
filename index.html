@@ -8775,6 +8775,25 @@ function _liCollectIntegration(pathSource, requestText, extra) {
 
   _leaderIntegration = inbox;
 
+  // Phase B-7E: Quality Gate評価位置（packageQuality算出後・Executive Decision実行前）。
+  //   candidate Draft（_lastOutputDraftとは独立した新規オブジェクト）へfields構築（既存ロジック再利用・
+  //   二重化なし）とpackageQuality算出を行い、Quality Gate評価位置へpackageQualityのみを渡す。
+  //   pathAのみ対象（Path BはOutput Draft概念自体が存在しないため対象外・inbox.leaderFinalCandidateが
+  //   常にnullのため下記条件で自然にスキップされる）。_lastOutputDraft／Approved Decision Package／
+  //   Executive Decisionのいずれも変更しない。実判定ロジックは未実装（Phase B-7F以降）。失敗してもLeader
+  //   Integration・Executive Decision Engineは止めない。
+  inbox.qualityGate = null;
+  if (pathSource === 'pathA' && inbox.leaderFinalCandidate && inbox.leaderFinalCandidate.text) {
+    try {
+      var _qgCandidateDraft = { type: (_lastOutputDraft && _lastOutputDraft.type) || null, fields: {} };
+      var _qgBuildResult = (typeof buildOutputDraftFromLeaderFinal === 'function')
+        ? buildOutputDraftFromLeaderFinal(inbox.leaderFinalCandidate.text, { candidateOnly: true }, _qgCandidateDraft)
+        : null;
+      var _qgPackageQuality = (_qgBuildResult && _qgBuildResult.ok) ? _qgBuildResult.packageQuality : null;
+      inbox.qualityGate = (typeof evaluateQualityGate === 'function') ? evaluateQualityGate(_qgPackageQuality) : null;
+    } catch (_qgErr) { console.warn('[QualityGate] evaluation error:', _qgErr.message); inbox.qualityGate = null; }
+  }
+
   // Phase B-1: Executive Decision Engine Core を内部接続（Decision086）。
   // 表示・保存・DB・API・Output Engineへの接続は今回対象外。失敗してもLeader Integration自体は止めない。
   try { if (typeof _edRunDecisionEngine === 'function') _edRunDecisionEngine(inbox); } catch (_edErr) { console.warn('[ExecutiveDecisionEngine] core error:', _edErr.message); }
@@ -27018,6 +27037,19 @@ function evaluateOutputPackageCompleteness(draft) {
   };
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase B-7E: Quality Gate 評価位置（接続のみ・実判定ロジックは未実装＝Phase B-7F以降）
+// 目的: Quality Gateの正式な評価位置（packageQuality算出後・Executive Decision実行前）を確立する。
+//   正本入力はevaluateOutputPackageCompleteness()が返すpackageQualityのみ（Phase B-7A〜B-7C正式採用）。
+// 非接触: score/status判定・threshold比較・Publishing Ready制御・Approved Decision Package・
+//   Executive Decisionのstatus・Completion Gate・Decision Ledger・UI表示・DB保存はすべて対象外。
+// 第14条(安全側既定値): 想定外の入力（null/不正値）でも例外を投げず、判定結果と誤認されない
+//   暫定値のみを返す（approved/rejected/passed/failed/complete/almost_ready等は返さない）。
+// ══════════════════════════════════════════════════════════════
+function evaluateQualityGate(packageQuality) {
+  return { executed: true, status: 'not_implemented' };
+}
+
 function createOutputDraft(type, sourceText) {
   resetApprovalStatesToDefault();   // Phase54-1e: 新成果物生成境界。前成果物の承認状態を必ずリセット（未承認から開始）
   // 社員向上B B-1: 別経路から呼ばれても列挙外値が draft.type へ入らないよう入口で正規化（冪等）
@@ -27414,6 +27446,17 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
       fields.title = finalText.split('\n')[0].slice(0, 60);
       updatedFields.push('title');
     }
+  }
+
+  // Phase B-7E: candidate Draft評価モード。fields構築（上記・既存ロジック完全再利用・二重化なし）と
+  //   packageQuality算出のみを行い、ここで処理を打ち切る。opts.candidateOnly===true の場合のみ到達する
+  //   （既存2呼び出し箇所13145/13555はcandidateOnlyを渡さないため無変更・従来どおり下方のstatus確定/
+  //   normalize/POST/render処理まで進む）。_lastOutputDraftのstatus確定・POST・renderは一切行わない
+  //   （draftはtargetDraft経由の独立したcandidate Draftであり、_lastOutputDraftではない）。
+  if (opts && opts.candidateOnly === true) {
+    var _cqCandidatePackageQuality = null;
+    try { _cqCandidatePackageQuality = evaluateOutputPackageCompleteness(draft); } catch (_cqErr) { _cqCandidatePackageQuality = null; }
+    return { ok: true, type: type, updatedFields: updatedFields, candidateOnly: true, packageQuality: _cqCandidatePackageQuality };
   }
 
   // Phase B-4D: Approved Decision Packageをfieldsへ複製保存する（本文抽出ロジックとは独立した工程）。
