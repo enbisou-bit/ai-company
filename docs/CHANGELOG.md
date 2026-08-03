@@ -4,6 +4,20 @@
 
 ---
 
+## Phase B-5C Constitution Structure Check **正式Complete**（Phase B-5C-1〜B-5C-3統合・2026-08-03・Code commit a2834d3/9e6d094/58315ee）
+
+**Constitution Validator Core（Phase B-5・正式Complete・維持）の検証結果を、Executive Leader Report内の独立セクション「Constitution Structure Check」として表示し、Auto Task・手動Leader再生成・Path B（dispatch成立時）の完了直後に即時反映される状態まで完成した**（Decision090）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision090）。
+
+- **Phase B-5C-1（Decision対応契約）**：`_constitutionValidation`を`{decisionId, caseId, result}`のセッション内ラッパーへ変更。Validator関数自体・戻り値構造（`{version, passed, violations, checkedRules}`）・12検証項目は無変更。新規ID生成なし・Validator実行1回のまま。代入は`_edRunDecisionEngine()`内2箇所（ラッパー設定／早期return時null）に限定。Node合成テスト22アサーション全PASS。
+- **Phase B-5C-2（Executive Leader Report表示）**：`_elrBuildReportHtml(decision, inbox, validation)`へ第3引数追加（グローバル直接参照なし・純粋関数性維持）。Executive Summary直後・Leader Summary直前へ独立セクション表示。Passed時は`checkedRules.length`から動的算出した「Passed（N/N）」1行のみ、Violations時は`message`常時表示・`rule`は技術詳細折りたたみ内のみ。「現在は構造整合性チェックです。Evidence十分性・Quality Gate・Completion Gateとは別軸です」の固定注記を常設し全14条完全検証との誤認を防止。`decisionStatus`／`constitutionValidation.passed`／`OUTPUT_STATUS`／`packageQuality.status`の4軸を混同しない設計。不正データ（resultなし／非配列／非boolean等）でも例外を出さず安全に非表示化。既存`escapeHtml`を再利用しmessage/ruleをエスケープ。CSS新規追加は3行のみ。Node合成テスト29アサーション全PASS。
+- **Phase B-5C-3（即時再描画接続）**：`_elrRenderIntoChatArea()`の挿入を`appendChild`から`insertBefore(先頭)`へ変更（既存呼び出しへの影響なし）。新設`_elrRefreshInChatArea()`（既存`.executive-leader-report`を除去し再描画するだけの限定更新・チャット全体は再構築しない）をPath A・手動Leader再生成・Path B（dispatch成立時のみ）の`_liCollectIntegration()`完了直後へ接続。**設計上の発見**：Path Bは`.leader-summary-block`という専用DOM直接追記スタイルを使用しており、既存`reRenderChatArea()`（チャット全体再構築）をそのまま使うとこのスタイルが失われることが判明したため、限定更新方式を新設して採用。
+- **実APIテスト**：既存テスト案件を再利用し、Auto Task1回・手動Leader再生成1回・Path B dispatch1回（`handleLeaderDispatch()`で明示的に発生）を実施。3経路とも追加のページ操作なしで即時反映を実測（Path A/手動再生成/Path Bでそれぞれ異なる`decisionId`・正しい`sourceMode`/`pathSource`を確認）。`.executive-leader-report`重複なし・`.leader-summary-block`表示スタイル無変更・dispatchなし時の無反応（コード構造上100%スキップ）・Cross-case（案件切替で他案件非表示）・F5後`_executiveDecision`/`_constitutionValidation`ともnullリセット・Output Draft/Output Engine無変更を確認。Console Error 0・Network 200のみ。実API概算¥12。
+- **未実装（区別して記録）**：Executive Constitution全14条の完全な意味論的検証・Evidence内容の十分性判定・成果物品質/完成度の実質評価・Constitution違反によるOutput停止・Quality Gate・Completion Gate・Decision Ledger・Executive Memory。AI社員カードの「期限」表示は本工程でも変更していない。
+- **検証**：JavaScript構文OK（インラインJS抽出・`node --check`）・`npm run dev-check` 200/200/200（各工程で実施）・`git diff --check`問題なし。
+- **Git・反映**：Code commit **a2834d3**（B-5C-1）＋**9e6d094**（B-5C-2）＋**58315ee**（B-5C-3）＋docs commit（本更新）。次工程候補＝Validator違反時の制御設計／Quality Gate調査・設計／Completion Gate調査・設計／Decision Ledger／AI社員カード期限表示廃止（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-5 Constitution Validator Core **正式Complete**（2026-08-03・Code commit ea1ae68）
 
 **Approved Decision Package契約構造正式実装（Phase B-4・正式Complete・維持）の次工程Constitution Validatorについて、`validateExecutiveDecision(decision)`をExecutive Decision Engine Core内へ正式実装した**（Decision089）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API/UI（Executive Leader Report・AI社員カード期限表示含む）無変更**。**Phase54 Complete維持・Phase55未着手**（Decision089）。**今回正式Completeとする範囲は「Constitution Validator Core」（12項目の構造整合性検証・読み取り専用）のみであり、Executive Constitution全14条の完全な意味論的検証ではない**。

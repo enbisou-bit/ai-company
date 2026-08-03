@@ -8,6 +8,39 @@
 
 ---
 
+## Constitution Structure Check 正式Complete（Phase B-5C-1〜B-5C-3統合・2026-08-03・Decision 090）
+
+> 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit a2834d3／9e6d094／58315ee）のみ・server.js/lib/DB/schema.sql/API無変更**。
+
+Constitution Validator Core（Phase B-5・正式Complete・維持）の検証結果を、Executive Leader Report内の独立セクション「Constitution Structure Check」として表示し、Auto Task・手動Leader再生成・Path B（dispatch成立時）の完了直後に即時反映される状態まで完成した（詳細はDecision090）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-5    Constitution Validator Core ──────── 正式Complete（2026-08-03・Decision089・維持）
+  ↓
+Phase B-5C   Constitution Structure Check ─────── 正式Complete（2026-08-03・Decision090）
+             B-5C-1: Decision対応契約（{decisionId, caseId, result}ラッパー・Code commit a2834d3）
+             B-5C-2: Executive Leader Report表示（Passed/Violations・rule技術詳細折りたたみ・
+                      安全側正規化・状態4軸分離・Code commit 9e6d094）
+             B-5C-3: 即時再描画接続（insertBefore化・_elrRefreshInChatArea()限定更新を
+                      Path A／手動再生成／Path B dispatch成立時へ接続・Code commit 58315ee）
+             実APIテスト：Auto Task1回・手動再生成1回・Path B dispatch1回で即時反映を実測確認
+  ↓
+（次工程候補・優先順位未確定・特定の1つを自動確定しない・着手はユーザー承認後）
+             候補A：Validator違反時の制御設計
+             候補B：Quality Gate調査・設計
+             候補C：Completion Gate調査・設計
+             候補D：Decision Ledger
+             候補E：AI社員カード期限表示廃止・状態表示化（pending/in_progress/completed/error/skipped）
+```
+
+**次工程候補**：上記5候補を比較対象として並列に記録する。ユーザー承認後に正式な次工程を決定する。
+
+**Constitution Structure Checkの表示仕様詳細・設計判断（チャット全体再構築を採用しなかった理由等）・却下案は`docs/04DECISIONS.md` Decision090を参照**。
+
+---
+
 ## Constitution Validator Core 正式Complete（Phase B-5・2026-08-03・Decision 089）
 
 > 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit ea1ae68）のみ・server.js/lib/DB/schema.sql/API/UI 無変更**。
