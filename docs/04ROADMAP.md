@@ -8,6 +8,44 @@
 
 ---
 
+## Constitution Validator Core 正式Complete（Phase B-5・2026-08-03・Decision 089）
+
+> 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit ea1ae68）のみ・server.js/lib/DB/schema.sql/API/UI 無変更**。
+
+Approved Decision Package契約構造正式実装（Phase B-4・正式Complete・維持）の次工程Constitution Validatorについて、`validateExecutiveDecision(decision)`をExecutive Decision Engine Core内へ正式実装した（詳細はDecision089）。**今回正式Completeとする範囲は「Constitution Validator Core」（12項目の構造整合性検証・読み取り専用）のみであり、Executive Constitution全14条の完全な意味論的検証ではない**。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-4    Approved Decision Package契約化 ───── 正式Complete（2026-08-03・Decision088・維持）
+  ↓
+Phase B-5    Constitution Validator Core ──────── 正式Complete（2026-08-03・Decision089）
+             validateExecutiveDecision(decision)：12項目の構造整合性検証（読み取り専用・判定のみ）
+             検証対象：decisionId／decisionStatus／Executive Summary／Decision Confidence／
+                      Approved Package生成条件／sourceDecisionId整合／Cross-case整合／単一判断主体
+             呼び出し位置：_edRunDecisionEngine()内_executiveDecision確定直後
+             Decision／Package／Output Draft無変更・_constitutionValidationへセッション内保持のみ（F5で消失）
+             Path A（atRunWorkflow）・手動再生成（atTriggerLeaderFinal）で実APIテスト済み
+             Path Bはdispatch発生時のみ同一経路を通る（既存仕様・無変更）
+             【未実装・区別して記録】全14条の完全な意味論的検証／Evidence内容の十分性判定／
+             成果物品質・完成度の実質評価／Constitution違反によるOutput停止／
+             Validator結果のUI表示／Quality Gate／Completion Gate／Decision Ledger／Executive Memory
+  ↓
+（次工程候補・優先順位未確定・特定の1つを自動確定しない・着手はユーザー承認後）
+             候補A：Validator結果のExecutive Leader Report表示
+             候補B：Validator違反時の制御設計
+             候補C：Quality Gate調査・設計
+             候補D：Completion Gate調査・設計
+             候補E：Decision Ledger
+             候補F：AI社員カード期限表示廃止・状態表示化（pending/in_progress/completed/error/skipped）
+```
+
+**次工程候補**：上記6候補を比較対象として並列に記録する。ユーザー承認後に正式な次工程を決定する。
+
+**Constitution Validator Coreの正式条文適用範囲・検証項目詳細・却下案・Path別接続確認の詳細は`docs/04DECISIONS.md` Decision089を参照**。
+
+---
+
 ## Approved Decision Package 契約構造正式実装・統合検証正式Complete（Phase B-4A〜B-4E・2026-08-03・Decision 088）
 
 > 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit 718f200／67ab6cb／95beda3／65fe551／b423acd）のみ・server.js/lib/DB/schema.sql/API/UI 無変更**。

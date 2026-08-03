@@ -4,6 +4,21 @@
 
 ---
 
+## Phase B-5 Constitution Validator Core **正式Complete**（2026-08-03・Code commit ea1ae68）
+
+**Approved Decision Package契約構造正式実装（Phase B-4・正式Complete・維持）の次工程Constitution Validatorについて、`validateExecutiveDecision(decision)`をExecutive Decision Engine Core内へ正式実装した**（Decision089）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API/UI（Executive Leader Report・AI社員カード期限表示含む）無変更**。**Phase54 Complete維持・Phase55未着手**（Decision089）。**今回正式Completeとする範囲は「Constitution Validator Core」（12項目の構造整合性検証・読み取り専用）のみであり、Executive Constitution全14条の完全な意味論的検証ではない**。
+
+- **Validator本体**：`validateExecutiveDecision(decision)`を独立関数として新設。引数`decision`は読み取り専用。新しいDecisionを生成せず、Decision・Approved Decision Package・Output Draftのいずれも変更しない。戻り値は`{version, passed, violations, checkedRules}`のみ。
+- **呼び出し位置**：`_edRunDecisionEngine()`内`_executiveDecision`確定直後にのみ実行し、結果を新設のセッション内変数`_constitutionValidation`へ保持（F5で消失・永続化なし）。因果順序（Decision生成→確定→Validator実行→保持→既存後続処理）を維持し、判断確定前に実行される経路はない。
+- **検証項目（12項目）**：`executive_decision_exists`／`decision_id_present`／`decision_status_present`／`executive_summary_present`／`decision_confidence_present`／`source_decision_id_consistency`／`package_only_when_approved`／`package_null_when_not_approved`／`output_draft_did_not_generate_package`（既存`affectsOutputDraft===false`参照）／`package_holds_source_decision_id`／`cross_case_consistency`／`single_decision_authority`。
+- **Path別接続確認**：Node合成テスト13シナリオ26アサーション全PASS。実APIテスト（Auto Task1回＋手動Leader再生成1回・低コストプロンプト・既存テスト案件再利用）でPath A（`decisionId: ed-mscq548ee05g`・`sourceMode:'auto_task'`）・手動再生成（`decisionId: ed-mscq6pcrymzi`・`sourceMode:'manual_regeneration'`）とも`passed:true・violations:[]・checkedRules12件`を実測。Path B直接チャットはdispatch非発生のため`_liCollectIntegration()`非起動（既存仕様どおり）。コード確認でdispatch発生時は同一Validator経路を通ることを確認。
+- **非破壊性**：`git show --stat ea1ae68`で変更範囲がExecutive Decision Engine Coreセクション内3箇所（`_constitutionValidation`宣言・Validator関数本体・`_edRunDecisionEngine()`内の呼び出し）に限定されることを確認。Executive Leader Report・Output Draft生成・F5復元・Approved判定ロジックは無変更。
+- **未実装（区別して記録）**：Executive Constitution全14条の完全な意味論的検証・Evidence内容の十分性判定・成果物品質/完成度の実質評価・Constitution違反によるOutput停止・Validator結果のUI表示・Quality Gate・Completion Gate・Decision Ledger・Executive Memory。AI社員カードの「期限」表示は本工程でも変更していない。
+- **検証**：JavaScript構文OK（インラインJS抽出・`node --check`）・`npm run dev-check` 200/200/200・`git diff --check`問題なし・Console Error 0・Network異常なし（すべて200 OK）・実API概算¥13。
+- **Git・反映**：Code commit **ea1ae68**（`feat: add executive constitution validator`）＋docs commit（本更新）。Tag作成なし・**push未実施**（ユーザー確認後に別途判断）。次工程候補＝Validator結果のExecutive Leader Report表示／Validator違反時の制御設計／Quality Gate調査・設計／Completion Gate調査・設計／Decision Ledger／AI社員カード期限表示廃止（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-4 Approved Decision Package **契約構造正式実装・統合検証正式Complete**（Phase B-4A〜B-4E・2026-08-03・Code commit 718f200/67ab6cb/95beda3/65fe551/b423acd）
 
 **Executive Leader Report表示（Phase B-3・正式Complete）の次工程Approved Decision Packageを段階実装し、統合検証で正式完了と判定した**（Decision088）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API/UI（AI社員カード期限表示含む）無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 088）。
