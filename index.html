@@ -8787,6 +8787,7 @@ const EXECUTIVE_DECISION_ENGINE_VERSION = '1.0.0';
 const ED_REASON_NO_ARTIFACTS = 'no_completed_artifacts';
 
 let _executiveDecision = null; // Phase B-1: クライアント一時メモリのみ（F5で消失・永続化はPhase C-1以降）
+let _constitutionValidation = null; // Phase B-5: Constitution Validatorの最新判定結果（読み取り専用・F5で消失・Decision/Packageとは独立）
 
 // Phase B-1補正: decisionStatus決定。第14条準拠でApprovedを自動既定値にしない（Reviewer評価だけでは昇格させない）。
 // 優先順位: completed成果0件は最優先でinsufficient（既存Decision085 noCompletedResults方針と同一の安全側判定を踏襲）。
@@ -8910,13 +8911,123 @@ function _edBuildApprovedDecisionPackage(decisionId, inbox, decisionResult, conf
   };
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase B-5: Executive Constitution Validator（Decision086 Executive Constitution v1.0.0準拠）
+// 目的: Executive Decision Engineが確定させたDecision（Approved Decision Package embedded）を、
+//       Executive Constitutionに照らして検証する。新しいDecisionを生成しない・Decision／Package／
+//       Output Draftのいずれも書き換えない・判定結果（passed／violations／checkedRules）を返すのみ。
+// 非接触: Quality Gate・Completion Gate・Decision Ledger・Executive Memory・Self Improvementは対象外
+//        （いずれも未実装のまま・今回追加しない）。既存Approved判定ロジック（_edDecideStatus）は無変更。
+// 第9条(正本一意性)・第10条(監査可能性)・第14条(安全側既定値)に基づく読み取り専用の検証層。
+// ══════════════════════════════════════════════════════════════
+const CONSTITUTION_VALIDATOR_VERSION = '1.0.0';
+const CV_VALID_DECISION_STATUSES = ['approved', 'rejected', 'hold', 'insufficient'];
+
+function _cvCapitalize(s) {
+  var t = String(s || '');
+  return t ? (t.charAt(0).toUpperCase() + t.slice(1)) : t;
+}
+
+// Phase B-5: Executive Decision（approvedDecisionPackageを内包）をExecutive Constitutionに照らして検証する。
+// 引数decisionは読み取り専用（一切変更しない）。新しいDecision／Packageは生成しない。
+// 戻り値: { version, passed, violations, checkedRules }
+//   violations: [{ rule, message }]（Constitution違反時も本関数はDecision/Package/Output Draftを修正しない＝判定のみ）
+function validateExecutiveDecision(decision) {
+  var checkedRules = [];
+  var violations = [];
+
+  function check(ruleId, message, fn) {
+    checkedRules.push(ruleId);
+    var ok;
+    try { ok = !!fn(); } catch (_cvErr) { ok = false; message = message + '（error: ' + _cvErr.message + '）'; }
+    if (!ok) violations.push({ rule: ruleId, message: message });
+    return ok;
+  }
+
+  // 1. Executive Decision存在確認（存在しない場合、以降のフィールド依存チェックは意味を持たないためここで打ち切る）
+  var exists = check('executive_decision_exists', 'Missing Executive Decision', function() {
+    return !!(decision && typeof decision === 'object');
+  });
+  if (!exists) {
+    return { version: CONSTITUTION_VALIDATOR_VERSION, passed: false, violations: violations, checkedRules: checkedRules };
+  }
+
+  var pkg = decision.approvedDecisionPackage || null;
+
+  // 2. decisionId存在
+  check('decision_id_present', 'Missing decisionId', function() {
+    return typeof decision.decisionId === 'string' && decision.decisionId.length > 0;
+  });
+
+  // 3. decisionStatus存在
+  check('decision_status_present', 'Missing or invalid decisionStatus', function() {
+    return CV_VALID_DECISION_STATUSES.indexOf(decision.decisionStatus) !== -1;
+  });
+
+  // 4. Executive Summary存在
+  check('executive_summary_present', 'Missing Executive Summary', function() {
+    return !!(decision.executiveSummary && typeof decision.executiveSummary === 'object');
+  });
+
+  // 5. Decision Confidence存在
+  check('decision_confidence_present', 'Missing Decision Confidence', function() {
+    return !!(decision.decisionConfidence && typeof decision.decisionConfidence === 'object');
+  });
+
+  // 6. sourceDecisionId整合（Packageが存在する場合のみ判定対象。第9条: PackageはdecisionIdを介してのみDecisionを参照する）
+  check('source_decision_id_consistency', 'sourceDecisionId mismatch', function() {
+    return !pkg || pkg.sourceDecisionId === decision.decisionId;
+  });
+
+  // 7. Approved時のみPackage生成
+  check('package_only_when_approved', 'Package missing while Approved', function() {
+    return decision.decisionStatus !== 'approved' || !!pkg;
+  });
+
+  // 8. 非Approved時Package=null
+  check('package_null_when_not_approved', 'Package generated while ' + _cvCapitalize(decision.decisionStatus), function() {
+    return decision.decisionStatus === 'approved' || !pkg;
+  });
+
+  // 9. Output DraftがPackage生成していないこと（EDEの判断はOutput Draftの内容を一切変更しない設計であることの確認。
+  //    affectsOutputDraftはDecision086／Phase B-2Aで導入済みの既存フィールドをそのまま参照する＝新規状態を作らない）
+  check('output_draft_did_not_generate_package', 'affectsOutputDraft is not false', function() {
+    return decision.affectsOutputDraft === false;
+  });
+
+  // 10. PackageがsourceDecisionIdを保持していること
+  check('package_holds_source_decision_id', 'Package missing sourceDecisionId', function() {
+    return !pkg || (typeof pkg.sourceDecisionId === 'string' && pkg.sourceDecisionId.length > 0);
+  });
+
+  // 11. Cross-case整合（第8条・案件分離原則）
+  check('cross_case_consistency', 'caseId missing or Package caseId mismatch', function() {
+    var caseOk = typeof decision.caseId === 'string' && decision.caseId.length > 0;
+    var pkgCaseOk = !pkg || pkg.caseId === decision.caseId;
+    return caseOk && pkgCaseOk;
+  });
+
+  // 12. Executive Decisionが唯一の判断主体であること（Packageが独自のdecisionId／packageIdを持たない＝
+  //     sourceDecisionIdを介してのみDecisionを参照する第9条・単一正本原則の直接的な検証）
+  check('single_decision_authority', 'Package holds independent decisionId/packageId', function() {
+    return !pkg || (!('decisionId' in pkg) && !('packageId' in pkg));
+  });
+
+  return {
+    version: CONSTITUTION_VALIDATOR_VERSION,
+    passed: violations.length === 0,
+    violations: violations,
+    checkedRules: checkedRules,
+  };
+}
+
 // Phase B-1補正: 共通オーケストレーション。_liCollectIntegration() 確定直後に1回だけ呼ばれる。
 // 補正2/3: candidateArtifacts（completed・未承認の判断候補）とapprovedArtifacts（decisionStatus==='approved'
 //   の場合のみ設定・現状は常に空配列）を分離し、正式承認済みと誤認されないようにする。
 // _executiveDecisionを現在判断の正本とし、approvedDecisionPackageはApproved時にのみ生成される派生契約とする
 //   （情報を二重の正本として持たない＝第9条 正本一意性）。
 function _edRunDecisionEngine(inbox) {
-  if (!inbox || !inbox.caseId) { _executiveDecision = null; return null; }
+  if (!inbox || !inbox.caseId) { _executiveDecision = null; _constitutionValidation = null; return null; }
 
   // Phase B-4A: Executive Decision識別子。状態(approved/rejected/hold/insufficient)に関わらず必ず1回だけ発行する
   // （第10条 監査可能性）。Approved Decision Package専用IDではなく、判断イベント自体の識別子。
@@ -8991,6 +9102,16 @@ function _edRunDecisionEngine(inbox) {
   };
 
   _executiveDecision = decision;
+
+  // Phase B-5: Executive Constitution Validatorを判断確定直後に実行する（判定のみ・Decision/Packageは一切書き換えない）。
+  // 失敗してもExecutive Decision Engine本体・後続のLeader Final・Output Draft・Output Engineは絶対に止めない。
+  try {
+    _constitutionValidation = (typeof validateExecutiveDecision === 'function') ? validateExecutiveDecision(decision) : null;
+  } catch (_cvRunErr) {
+    console.warn('[ConstitutionValidator] validation error:', _cvRunErr.message);
+    _constitutionValidation = null;
+  }
+
   return decision;
 }
 
