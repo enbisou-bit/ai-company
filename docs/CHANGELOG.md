@@ -4,6 +4,21 @@
 
 ---
 
+## Phase B-4 Approved Decision Package **契約構造正式実装・統合検証正式Complete**（Phase B-4A〜B-4E・2026-08-03・Code commit 718f200/67ab6cb/95beda3/65fe551/b423acd）
+
+**Executive Leader Report表示（Phase B-3・正式Complete）の次工程Approved Decision Packageを段階実装し、統合検証で正式完了と判定した**（Decision088）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API/UI（AI社員カード期限表示含む）無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 088）。
+
+- **Decision ID常時発行（Phase B-4A）**：`_edRunDecisionEngine()`冒頭で`decisionId`をdecisionStatus（approved/rejected/hold/insufficient）に関わらず必ず1回発行。
+- **Approved Decision Package契約構造（Phase B-4A）**：Approved時のみ生成・独自ID発行を廃し`sourceDecisionId`のみで元Decisionを参照する派生契約として確定。
+- **Path A接続（Phase B-4B）**：`atRunWorkflow()`がcaseId／sourceDecisionId三重一致確認のうえPackageを取得し`buildOutputDraftFromLeaderFinal()`へ渡す。既存Output Draft挙動・POST回数（1回）は完全無変更。
+- **手動Leader再生成接続（Phase B-4C）**：`atTriggerLeaderFinal()`に独立変数命名で同型ロジックを実装。旧Package誤適用防止4ケース（caseId不一致／sourceDecisionId不一致／今回非Approved／Decision不在）を確認。
+- **fields保存・F5復元・後方互換（Phase B-4D）**：`fields.approvedDecisionPackage`へ参照をそのまま格納・Packageなし時は明示的にキー削除し残留防止。旧形式Draftでも例外なく動作。新規deepClone等の共通基盤は追加なし。
+- **統合検証・正式完了判定（Phase B-4E）**：Node合成テスト13項目全PASS。実APIテスト（Auto Task1回＋手動再生成1回）でdecisionId相違・fields保存・F5復元・Cross-case・Console Error0・Network200のみを実測。`buildOutputDraftFromLeaderFinal()`冒頭の古いコメント不整合のみを発見・コメントのみ修正（commit **b423acd**・ロジック変更なし・機能commit群とは別コミット）。
+- **所有関係**：Executive Decision Engine＝正本。`fields.approvedDecisionPackage`＝Output Draft側の複製（将来Decision Ledgerが永続正本）。
+- **Git・反映**：Code commit 718f200／67ab6cb／95beda3／65fe551／b423acd＋docs commit（本更新）・Tag作成なし・**push未実施**（ユーザー確認後に別途判断）。次工程＝Phase B-5 Constitution Validator（未着手・ユーザー承認なしに開始しない）。
+
+---
+
 ## Phase B-2 Executive Decision Control **正式工程分割Complete**（Phase B-2A／B-2B・2026-08-02・docs正式化のみ・Code変更なし）
 
 **Executive Decision Engine Core（Phase B-1・正式Complete・維持）の次工程Executive Decision Controlについて因果接続方式を正式調査・設計し、docs採用した**（Decision087）。**本工程はコード実装ではなく、docs正式化のみである**。**docsのみ**（01PROJECT_STATUS.md／02PHASE_PROGRESS.md／04DECISIONS.md／04ROADMAP.md／06HANDOVER_NEXT_CHAT.md／CHANGELOG.md）・**index.html/openaiClient.js/server.js/lib/DB/schema.sql/API/UI 無変更**。**Phase54 Complete維持・Phase55未着手**（Decision 087）。

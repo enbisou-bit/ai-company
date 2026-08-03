@@ -8,6 +8,33 @@
 
 ---
 
+## Approved Decision Package 契約構造正式実装・統合検証正式Complete（Phase B-4A〜B-4E・2026-08-03・Decision 088）
+
+> 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit 718f200／67ab6cb／95beda3／65fe551／b423acd）のみ・server.js/lib/DB/schema.sql/API/UI 無変更**。
+
+Executive Leader Report表示（Phase B-3・正式Complete・維持）の次工程Approved Decision Packageについて、契約構造（decisionId常時発行・sourceDecisionId参照・独自ID廃止）をPhase B-4A、Path A接続をPhase B-4B、手動Leader再生成接続をPhase B-4C、`fields.approvedDecisionPackage`複製保存・F5復元・後方互換をPhase B-4Dとして段階実装し、Phase B-4Eで統合検証・正式完了判定を行った（詳細はDecision088）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-3    Executive Leader Report表示 ─────────── 正式Complete（維持）
+  ↓
+Phase B-4    Approved Decision Package契約化 ───── 正式Complete（2026-08-03・Decision088）
+             decisionId常時発行（_edRunDecisionEngine()冒頭）
+             Package契約: sourceDecisionIdのみで元Decisionを参照・独自ID廃止
+             Path A（atRunWorkflow）／手動再生成（atTriggerLeaderFinal）双方から取得・三重一致確認
+             fields.approvedDecisionPackage複製保存・F5復元・旧Draft後方互換
+             正本＝Executive Decision Engine／Output Draft側は複製（利用者）
+  ↓
+Phase B-5    Constitution Validator ───────────── 未着手
+             warning／block／critical・状態降格・安全停止
+             Quality Gate／Completion Gate強制
+```
+
+**次工程候補**：Phase B-5 Constitution Validator（未着手・ユーザー承認なしに開始しない）。
+
+---
+
 ## Executive Decision Control 正式工程分割（Phase B-2A／B-2B・2026-08-02・Decision 087）
 
 > 追記日: 2026-08-02。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**docs正式化のみ・コード/DB/API変更なし**。
@@ -40,8 +67,9 @@ Phase B-3    Executive Leader Report表示 ─────────── 未
              Executive Summary／Leader Summary／社員分析折りたたみ
              既存完成成果物（Leader Final・Output Engine）と併存
   ↓
-Phase B-4    Approved Decision Package契約化 ───── 未着手（旧Phase B-3相当）
-             Output Engine接続・後方互換必須
+Phase B-4    Approved Decision Package契約化 ───── 正式Complete（2026-08-03・Decision088）
+             decisionId常時発行・Package契約(sourceDecisionId)確定
+             Path A／手動再生成接続・fields複製保存・F5復元・後方互換
   ↓
 Phase B-5    Constitution Validator ───────────── 未着手（旧Phase B-4相当）
              warning／block／critical・状態降格・安全停止

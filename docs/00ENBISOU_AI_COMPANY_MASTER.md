@@ -160,7 +160,7 @@ AI COMPANY全体の最高位ルールとして **Executive Constitution v1.0.0**
 - **Executive Decision Engine**は、AI社員・各Intelligenceの成果物を統合し会社としての採否・優先順位・リスクを判断する上位層として正式採用する。既存Leader Integration Layer（Phase A・`_leaderIntegration`）を土台として拡張し、新たな重複Engineとしては実装しない。
 - **完成成果物と経営判断の併存**：既存Leader Final（Instagramスライド・Caption・CTA・ハッシュタグ・LP文章等の完成成果物）は今後も変更せず維持する。Executive Decision Engineが将来生成する経営判断サマリー（Executive Report）は、完成成果物を置き換えるものではなく、上位に併存する。
 
-条文全文・Executive Decision Engineの詳細責務・保存方式・ロードマップは `docs/04DECISIONS.md` Decision 086 および `docs/04ROADMAP.md` を参照。**本セクション追記時点でExecutive Constitution・Executive Decision Engineとも実装は未着手（docs正式化のみ）**。
+条文全文・Executive Decision Engineの詳細責務・保存方式・ロードマップは `docs/04DECISIONS.md` Decision 086 および `docs/04ROADMAP.md` を参照。**2026-08-03時点でExecutive Decision Engine Core（Phase B-1）・Path A/手動再生成因果接続（Phase B-2A／B-2B）・Executive Leader Report表示（Phase B-3）・Approved Decision Package契約化（Phase B-4）が正式Complete（Decision088）。ただし通常運用ではdecisionStatusがapprovedへ到達しないためApproved Decision Packageは常にnullが正常状態であり、Executive Decision EngineがOutputを既に制御しているものではない（`affectsLeaderFinal`／`affectsOutputDraft`／`affectsOutputEngine`はいずれも常にfalse）。次工程はPhase B-5 Constitution Validator（未着手）**。
 
 ---
 
