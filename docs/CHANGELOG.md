@@ -4,6 +4,23 @@
 
 ---
 
+## Phase B-7 Quality Gate **正式Complete**（Phase B-7D〜B-7H統合・2026-08-04・Code commit f866d4d/0f104d3/1a92884）
+
+**Output Package Quality（`packageQuality`）を正本入力・単軸とするQuality Gateを正式採用した**（Decision092）。`packageQuality.status`が`complete`または`almost_ready`の場合のみ通過し、`score`・数値thresholdは判定に使用しない。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision092）。
+
+- **Phase B-7A〜B-7C（調査・設計・責務再定義・閾値実データ調査）**：Quality Gateの正本入力を`packageQuality`単軸とし、Constitution Gate（判断プロセスの構造整合性）と責務分離。実データ調査で通過基準を`complete`／`almost_ready`（status方式）と確定。
+- **Phase B-7D（安全リファクタ）**：`buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft)`へ第3引数`targetDraft`を追加し、fields構築対象のみを引数化（省略時は`_lastOutputDraft`使用・既存呼び出し2箇所は完全後方互換）。Code commit **f866d4d**（`index.htmlのみ+12/-5`）。
+- **Phase B-7E（評価位置接続）**：`_lastOutputDraft`とは独立したcandidate Draft`{type, fields:{}}`を`_liCollectIntegration()`内`_edRunDecisionEngine()`直前で生成。`opts.candidateOnly===true`早期returnによりfields構築とpackageQuality算出のみを行い、status確定・POSTには到達しない（candidate Draftは保存されない）。評価結果を`inbox.qualityGate`へ格納。Code commit **0f104d3**（`index.htmlのみ+43/-0`）。
+- **Phase B-7F（実判定実装）**：`evaluateQualityGate(packageQuality)`へ実判定ロジックを実装。戻り値`{executed:true, passed, status:'passed'|'failed', sourceStatus}`。`sourceStatus`によりpackageQuality.status自体とQuality Gate結果を分離。Code commit **1a92884**（`index.htmlのみ+15/-7`）。
+- **Phase B-7G（統合検証）**：index.htmlから実装コードを直接抽出した合成テスト14/14 PASS。Path A・手動Leader再生成・Path B 3経路の実APIテストで因果順序（candidate Draft→fields構築→packageQuality算出→Quality Gate評価→Executive Decision→正式Output Draft確定→Output Draft保存）を実測確認。Path Bは`inbox.qualityGate===null`・candidate Draft生成なし・Output Draft新規生成なしを確認（コード変更なし）。
+- **Phase B-7H（正式リリース）**：docs更新・commit・Annotated Tag **v1.01-executive-quality-gate**・main push・Render反映・PC/iPhone本番確認。
+- **対象経路**：Path A（Auto Task）・手動Leader再生成。**Path Bは正式に対象外**（`detectOutputType()`／`createOutputDraft()`／`buildOutputDraftFromLeaderFinal()`いずれも呼び出されずcandidate Draft生成契約が存在しないため。Decision087の「Path B＝Output Draft制御対象外」を継承）。
+- **未実装（区別して記録）**：数値score閾値・threshold・`qualityGateVersion`等の監査Version保存・Quality Gate結果のDB保存/Decision Ledger保存・F5復元・UI表示・Executive Leader Reportへの表示・Output停止・Output Draft保存拒否・Executive Decision/Approved Decision Package生成条件への統合・Completion Gate・Publishing Ready判定。
+- **検証**：JavaScript構文OK・`npm run dev-check` 200/200/200・`git diff --check`問題なし・Console Error 0・Network全200 OK。
+- **Git・反映**：Code commit **f866d4d**＋**0f104d3**＋**1a92884**＋docs commit（本更新）・Annotated Tag **v1.01-executive-quality-gate**・main push・Render反映。次工程候補＝Completion Gate調査・設計／Publishing Readyとの接続設計／Quality Gate結果のExecutive Decision接続検討／Quality Gate監査Version保存／Decision Ledger／Quality Gate UI・Executive Leader Report表示／AI社員カード期限表示廃止（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-6 Constitution Gate **正式Complete**（Phase B-6A〜B-6D統合・2026-08-03・Code commit 9436fec）
 
 **Constitution Structure Check正式採用（Phase B-5C・正式Complete・維持）で表示のみだったConstitution Validator Coreの検証結果を、Approved Decision Packageの複製可否判定（Path A／手動Leader再生成それぞれの`fields.approvedDecisionPackage`受け渡し条件）へ「狭域Constitution Gate」として接続した**（Decision091）。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision091）。

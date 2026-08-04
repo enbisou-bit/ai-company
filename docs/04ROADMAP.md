@@ -8,6 +8,48 @@
 
 ---
 
+## Quality Gate 正式Complete（Phase B-7A〜B-7H統合・2026-08-04・Decision 092）
+
+> 追記日: 2026-08-04。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit f866d4d／0f104d3／1a92884）のみ・server.js/lib/DB/schema.sql/API無変更**。
+
+Output Package Quality（`packageQuality`）を正本入力・単軸とするQuality Gateを正式採用した（詳細はDecision092）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-6    Constitution Gate ──────────────── 正式Complete（2026-08-03・Decision091・維持）
+  ↓
+Phase B-7    Quality Gate ─────────────────────── 正式Complete（2026-08-04・Decision092）
+             B-7A〜B-7C: 調査・設計・責務再定義・閾値実データ調査
+                          （packageQuality単軸・complete/almost_ready通過基準を正式確定）
+             B-7D: 安全リファクタ（buildOutputDraftFromLeaderFinal()へtargetDraft引数追加・
+                    Code commit f866d4d）
+             B-7E: 評価位置接続（candidate Draft生成→fields構築→packageQuality算出→
+                    Quality Gate評価をExecutive Decision実行前へ接続・Code commit 0f104d3）
+             B-7F: 実判定実装（evaluateQualityGate(packageQuality)へcomplete/almost_ready
+                    通過ロジックを実装・score/threshold未使用・Code commit 1a92884）
+             B-7G: 統合検証（合成テスト14/14 PASS・Path A/手動再生成/Path B 3経路実測確認）
+             B-7H: 正式リリース（docs・commit・tag v1.01-executive-quality-gate・push・
+                    Render・PC/iPhone確認）
+  ↓
+（次工程候補・優先順位未確定・特定の1つを自動確定しない・着手はユーザー承認後）
+             候補A：Completion Gate調査・設計
+             候補B：Publishing Readyとの接続設計
+             候補C：Quality Gate結果のExecutive Decision接続検討
+             候補D：Quality Gate監査Version保存（qualityGateVersion等）
+             候補E：Decision Ledger
+             候補F：Quality Gate UI／Executive Leader Report表示
+             候補G：AI社員カード期限表示廃止・状態表示化（pending/in_progress/completed/error/skipped）
+```
+
+**対象経路**：Path A（Auto Task）・手動Leader再生成。**Path Bは正式に対象外**（Output Draft候補生成契約が存在しないため`inbox.qualityGate===null`が正常仕様・Decision087の「Path B＝Output Draft制御対象外」を継承）。
+
+**次工程候補**：上記7候補を比較対象として並列に記録する。ユーザー承認後に正式な次工程を決定する。
+
+**Quality Gateの入力契約詳細・却下案（案A＝観測のみ）・実データ調査結果・実APIテスト詳細は`docs/04DECISIONS.md` Decision092を参照**。
+
+---
+
 ## Constitution Gate 正式Complete（Phase B-6A〜B-6D統合・2026-08-03・Decision 091）
 
 > 追記日: 2026-08-03。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit 9436fec）のみ・server.js/lib/DB/schema.sql/API無変更**。
