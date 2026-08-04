@@ -8,6 +8,44 @@
 
 ---
 
+## Quality Gate Executive Leader Report表示 正式Complete（Phase B-8A〜B-8D統合・2026-08-04・Decision 093）
+
+> 追記日: 2026-08-04。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit 04bf9c1）のみ・server.js/lib/DB/schema.sql/API無変更**。
+
+Phase B-7で正式採用したQuality Gate結果（`inbox.qualityGate`）を、Executive Leader Report内へ表示専用のセクションとして追加した（詳細はDecision093）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-7    Quality Gate ─────────────────────── 正式Complete（2026-08-04・Decision092・維持）
+  ↓
+Phase B-8    Quality Gate Executive Leader Report表示 ─ 正式Complete（2026-08-04・Decision093）
+             B-8A: 調査・設計（ELR生成構造・Constitution Structure Check表示パターン調査・
+                    inbox.qualityGateを既存inbox引数から利用する設計を確定・コード変更なし）
+             B-8B: 表示実装（_elrBuildQualityGateHtml(qualityGate)新設・
+                    _elrBuildReportHtml()へ統合・Quality Gate専用CSS追加・Code commit 04bf9c1）
+             B-8C: 3経路実API統合検証（Path A/手動Leader再生成/Path Bの実測確認・
+                    Cross-case・F5後消失・ELR重複なし・.leader-summary-block非破壊を実証）
+             B-8D: 正式リリース（docs・commit・tag v1.01-quality-gate-report-display・push・
+                    Render・PC/iPhone確認）
+  ↓
+（次工程候補・優先順位未確定・特定の1つを自動確定しない・着手はユーザー承認後）
+             候補A：Completion Gate調査・設計
+             候補B：Publishing Readyとの接続設計
+             候補C：Quality Gate結果のExecutive Decision接続検討
+             候補D：Quality Gate監査Version保存（qualityGateVersion等）
+             候補E：Decision Ledger
+             候補F：AI社員カード期限表示廃止・状態表示化（pending/in_progress/completed/error/skipped）
+```
+
+**表示位置**：Executive Summary→Constitution Structure Check→Quality Gate→Leader Summaryの順。**表示対象**：Path A（Auto Task）・手動Leader再生成。**Path Bは完全非表示**（`inbox.qualityGate===null`が正常仕様・Decision092・Decision087を継承）。
+
+**次工程候補**：上記6候補を比較対象として並列に記録する。ユーザー承認後に正式な次工程を決定する。
+
+**Quality Gate表示の入力契約・表示内容・検証詳細は`docs/04DECISIONS.md` Decision093を参照**。
+
+---
+
 ## Quality Gate 正式Complete（Phase B-7A〜B-7H統合・2026-08-04・Decision 092）
 
 > 追記日: 2026-08-04。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit f866d4d／0f104d3／1a92884）のみ・server.js/lib/DB/schema.sql/API無変更**。

@@ -4,6 +4,22 @@
 
 ---
 
+## Phase B-8 Quality Gate Executive Leader Report表示 **正式Complete**（Phase B-8A〜B-8D統合・2026-08-04・Code commit 04bf9c1）
+
+**Phase B-7で正式採用したQuality Gate結果（`inbox.qualityGate`）を、Executive Leader Report内へ表示専用のセクションとして追加した**（Decision093）。既存の`inbox.qualityGate`構造をそのまま入力とし、新規decisionId／caseId／Version等のデータ契約は追加していない。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision093）。
+
+- **Phase B-8A（調査・設計）**：Executive Leader Report生成構造（`_elrBuildReportHtml`／`_elrRenderIntoChatArea`／`_elrRefreshInChatArea`）とConstitution Structure Check表示パターン（`_elrBuildConstitutionCheckHtml`）を実コード調査。`inbox.qualityGate`は既存の第2引数`inbox`から利用可能であり新規引数追加は不要と判断。表示位置・表示内容・固定注記・データ契約（既存構造をそのまま使用）を設計。コード変更なし。
+- **Phase B-8B（表示実装）**：`_elrBuildQualityGateHtml(qualityGate)`を新設（`_elrBuildConstitutionCheckHtml`と同型の防御的実装・純粋関数・グローバル変数非参照・不正データ時は空文字列・入力オブジェクト非破壊・`escapeHtml`使用）。`QUALITY_GATE_SOURCE_STATUS_LABELS`（`complete`＝完成／`almost_ready`＝ほぼ完成／`needs_work`＝要改善／`insufficient`＝情報不足の4値のみ許容）を追加。`_elrBuildReportHtml()`内で`_elrBuildQualityGateHtml(inbox && inbox.qualityGate)`を呼び出し、`constitutionCheckHtml`と`summaryRowsHtml`（Leader Summary）の間へ挿入。表示位置はExecutive Summary→Constitution Structure Check→Quality Gate→Leader Summaryの順。通過時「🟢 Passed（complete＝完成／almost_ready＝ほぼ完成）」・非通過時「🟡 Not Passed（needs_work＝要改善／insufficient＝情報不足）」を表示し`score`は非表示。固定注記「現在のQuality Gateは成果物品質の初期判定（表示のみ）です。Executive Decision・Output Draft保存は制御しません。」を常設。CSS新規クラス`.elr-qg-passed`／`.elr-qg-warning`／`.elr-qg-note`を追加（Constitution専用`.elr-cv-*`とは分離）。合成テスト21アサーション全PASS（Passed/Not Passed表示・日本語補助・score非表示・固定注記・不正入力12種で空文字列・入力非破壊）。Code commit **04bf9c1**（`index.htmlのみ+52/-0`）。
+- **Phase B-8C（Path A／手動Leader再生成／Path B 3経路実API統合検証）**：既存テスト案件（`case-mschx3ex4z3c`）で実施。課金ロック（billingLock）がON状態では`atAutoStartWorkflow()`が自動起動をスキップするため、ユーザー承認のもと一時解除して検証後に復元。**Path A**：`sourceMode:'auto_task'`・Quality Gate=Not Passed（`sourceStatus:'needs_work'`）・`decisionStatus:'hold'`・Constitution Validator`passed:true`（12/12）・Output Draft`status:'ready'`（`quality.status:'good'`・candidate Draftの`needs_work`とは独立して確定＝状態軸分離を実測）・`.executive-leader-report`1件・`.elr-qg-warning`1件・`/api/output-drafts` POST1回・表示順を`.elr-section-title`のDOM順で実測確認・Console Error 0・Network全200。**手動Leader再生成**：新規decisionId発行・`sourceMode:'manual_regeneration'`・Quality Gate再評価正常・`.at-leader-final-card`1件維持・ELR重複なし・Output Draft POST1回。**Path B**：`handleLeaderDispatch()`成立時でも`inbox.qualityGate===null`・Quality Gateセクション完全非表示（`.elr-qg-*`0件）・`.leader-summary-block`1件・Output Draft生成なし・`_lastOutputDraft`不変。**Cross-case**：案件切替で誤表示なし・案件へ戻すと正しく復元。**F5**：リロード後`_leaderIntegration`／`_executiveDecision`／`_constitutionValidation`ともnull・`.executive-leader-report`0件。**モバイル幅**：375px幅で横スクロールなし。コード変更なし・追加commitなし。
+- **Phase B-8D（正式リリース）**：docs更新・commit・Annotated Tag **v1.01-quality-gate-report-display**・main push・Render反映・PC/iPhone本番確認。
+- **対象経路**：Path A（Auto Task）・手動Leader再生成。**Path Bは`inbox.qualityGate===null`により完全非表示**（Decision092・Decision087を継承）。
+- **未実装（区別して記録）**：Quality Gate結果のDB保存／Output Draft保存／Decision Ledger保存／decisionId・caseId付きラッパー／`qualityGateVersion`／`qualityGateThresholdVersion`／F5復元／Executive Decisionへの制御接続／Approved Decision Package生成条件への接続／Output停止／Output Draft保存拒否／Completion Gate／Publishing Ready／AI社員カード期限表示廃止。
+- **検証**：JavaScript構文OK・`npm run dev-check` 200/200/200・`git diff --check`問題なし・Console Error 0・Network全200 OK。
+- **Git・反映**：Code commit **04bf9c1**＋docs commit（本更新）・Annotated Tag **v1.01-quality-gate-report-display**・main push・Render反映。次工程候補＝Completion Gate調査・設計／Publishing Readyとの接続設計／Quality Gate結果のExecutive Decision接続検討／Quality Gate監査Version保存／Decision Ledger／AI社員カード期限表示廃止（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+- **補足**：Phase B-8C検証中、UI探索の誤操作により`applyLeaderTemplate('sns_flow')`からテンプレートタスク9件が生成された（AI API呼び出しなし・追加コストなし・Quality Gate表示への影響なし・Phase B-8の不具合ではない）。削除は本工程の対象外・ユーザー側で後日手動削除可能。
+
+---
+
 ## Phase B-7 Quality Gate **正式Complete**（Phase B-7D〜B-7H統合・2026-08-04・Code commit f866d4d/0f104d3/1a92884）
 
 **Output Package Quality（`packageQuality`）を正本入力・単軸とするQuality Gateを正式採用した**（Decision092）。`packageQuality.status`が`complete`または`almost_ready`の場合のみ通過し、`score`・数値thresholdは判定に使用しない。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision092）。

@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.3）
-> 更新日: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
+> 更新日: 2026-08-04（Phase B-8 Quality Gate Executive Leader Report表示 正式Complete・Decision 093）。以前: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
 
 ---
 
@@ -160,7 +160,7 @@ AI COMPANY全体の最高位ルールとして **Executive Constitution v1.0.0**
 - **Executive Decision Engine**は、AI社員・各Intelligenceの成果物を統合し会社としての採否・優先順位・リスクを判断する上位層として正式採用する。既存Leader Integration Layer（Phase A・`_leaderIntegration`）を土台として拡張し、新たな重複Engineとしては実装しない。
 - **完成成果物と経営判断の併存**：既存Leader Final（Instagramスライド・Caption・CTA・ハッシュタグ・LP文章等の完成成果物）は今後も変更せず維持する。Executive Decision Engineが将来生成する経営判断サマリー（Executive Report）は、完成成果物を置き換えるものではなく、上位に併存する。
 
-条文全文・Executive Decision Engineの詳細責務・保存方式・ロードマップは `docs/04DECISIONS.md` Decision 086 および `docs/04ROADMAP.md` を参照。**2026-08-03時点でExecutive Decision Engine Core（Phase B-1）・Path A/手動再生成因果接続（Phase B-2A／B-2B）・Executive Leader Report表示（Phase B-3）・Approved Decision Package契約化（Phase B-4）・Constitution Validator Core（Phase B-5・Decision089）・Constitution Structure Check表示（Phase B-5C・Decision090）が正式Complete。ただし通常運用ではdecisionStatusがapprovedへ到達しないためApproved Decision Packageは常にnullが正常状態であり、Executive Decision EngineがOutputを既に制御しているものではない（`affectsLeaderFinal`／`affectsOutputDraft`／`affectsOutputEngine`はいずれも常にfalse）。**Constitution Validator Coreは`validateExecutiveDecision(decision)`によるdecisionId／decisionStatus／Executive Summary／Decision Confidence／Approved Package生成条件／sourceDecisionId／Cross-case／単一判断主体等12項目の構造整合性検証（読み取り専用・判定のみ）であり、Executive Constitution全14条の完全な意味論的検証・Evidence内容の十分性判定・成果物品質/完成度の実質評価・Constitution違反によるOutput停止ではない**。検証結果は「Constitution Structure Check」としてExecutive Leader Report内の独立セクションに表示され、Auto Task・手動Leader再生成・Path B（dispatch成立時）の完了直後に即時反映される（表示のみ・Decision/Package/Output Draftへの書き込み・Output制御は一切行わない）。次工程はQuality Gate／Completion Gate等の調査・設計を含む複数候補があり、いずれも未着手（着手はユーザー承認後）。
+条文全文・Executive Decision Engineの詳細責務・保存方式・ロードマップは `docs/04DECISIONS.md` Decision 086 および `docs/04ROADMAP.md` を参照。**2026-08-03時点でExecutive Decision Engine Core（Phase B-1）・Path A/手動再生成因果接続（Phase B-2A／B-2B）・Executive Leader Report表示（Phase B-3）・Approved Decision Package契約化（Phase B-4）・Constitution Validator Core（Phase B-5・Decision089）・Constitution Structure Check表示（Phase B-5C・Decision090）が正式Complete。ただし通常運用ではdecisionStatusがapprovedへ到達しないためApproved Decision Packageは常にnullが正常状態であり、Executive Decision EngineがOutputを既に制御しているものではない（`affectsLeaderFinal`／`affectsOutputDraft`／`affectsOutputEngine`はいずれも常にfalse）。**Constitution Validator Coreは`validateExecutiveDecision(decision)`によるdecisionId／decisionStatus／Executive Summary／Decision Confidence／Approved Package生成条件／sourceDecisionId／Cross-case／単一判断主体等12項目の構造整合性検証（読み取り専用・判定のみ）であり、Executive Constitution全14条の完全な意味論的検証・Evidence内容の十分性判定・成果物品質/完成度の実質評価・Constitution違反によるOutput停止ではない**。検証結果は「Constitution Structure Check」としてExecutive Leader Report内の独立セクションに表示され、Auto Task・手動Leader再生成・Path B（dispatch成立時）の完了直後に即時反映される（表示のみ・Decision/Package/Output Draftへの書き込み・Output制御は一切行わない）。2026-08-04時点でConstitution Gate（Phase B-6・Decision091）・Quality Gate（Phase B-7・Decision092）・Quality Gate Executive Leader Report表示（Phase B-8・Decision093）も正式Complete。Quality Gate表示は`inbox.qualityGate`（`packageQuality`から`complete`／`almost_ready`のみ通過とする判定結果）をExecutive Leader Report内へ表示するのみで、Executive Decision・Output Draft保存・Constitution Gateのいずれも制御しない。次工程はCompletion Gate調査・設計等の複数候補があり、いずれも未着手（着手はユーザー承認後）。
 
 ---
 
