@@ -5615,6 +5615,9 @@
   .elr-cv-passed { color: rgba(46,204,113,0.9); font-size: 11.5px; margin: 4px 0; }
   .elr-cv-warning { color: rgba(255,159,67,0.95); font-weight: bold; font-size: 11.5px; margin: 4px 0; }
   .elr-cv-note { color: rgba(255,255,255,0.4); font-size: 10px; margin: 2px 0 4px; }
+  .elr-qg-passed { color: rgba(46,204,113,0.9); font-size: 11.5px; margin: 4px 0; }
+  .elr-qg-warning { color: rgba(255,159,67,0.95); font-size: 11.5px; margin: 4px 0; }
+  .elr-qg-note { color: rgba(255,255,255,0.4); font-size: 10px; margin: 2px 0 4px; }
 
   /* ── Leader指示ブロック（各担当画面） ── */
   .leader-instruction-block {
@@ -9240,6 +9243,51 @@ function _elrBuildConstitutionCheckHtml(validation) {
   }
 }
 
+// Phase B-8B: Quality Gate結果の日本語補助ラベル（許容4値のみ・それ以外はHTML非表示の判定に使う）
+var QUALITY_GATE_SOURCE_STATUS_LABELS = {
+  complete: '完成',
+  almost_ready: 'ほぼ完成',
+  needs_work: '要改善',
+  insufficient: '情報不足',
+};
+
+// Phase B-8B: Quality Gateセクション HTML構築（表示専用・副作用なし）。
+// qualityGateはinbox.qualityGateそのもの（Phase B-7E確定値・構造は変更しない）。呼び出し元
+// (_elrBuildReportHtml)から渡された引数のみを参照し、グローバル変数（_leaderIntegration等）を直接参照しない。
+// 「Quality Gate Passed」はExecutive Decision Approved／Approved Decision Package生成済み／
+// Output Draft保存許可／Publishing Ready／Completion Gate通過／正式完成のいずれも意味しない（固定注記で明示）。
+// score（packageQuality.score）は判定未使用のため表示しない。
+function _elrBuildQualityGateHtml(qualityGate) {
+  try {
+    var esc = escapeHtml;
+    if (!qualityGate || typeof qualityGate !== 'object') return '';
+    if (qualityGate.executed !== true) return '';
+    if (typeof qualityGate.passed !== 'boolean') return '';
+    if (qualityGate.status !== 'passed' && qualityGate.status !== 'failed') return '';
+
+    var srcStatus = qualityGate.sourceStatus;
+    var hasLabel = (typeof srcStatus === 'string') && Object.prototype.hasOwnProperty.call(QUALITY_GATE_SOURCE_STATUS_LABELS, srcStatus);
+    if (!hasLabel) return ''; // 許容4値以外（null・unknown等）は安全側で非表示
+    var srcLabel = QUALITY_GATE_SOURCE_STATUS_LABELS[srcStatus];
+
+    var title  = '<div class="elr-section-title">Quality Gate</div>';
+    var note   = '<div class="elr-qg-note">現在のQuality Gateは成果物品質の初期判定（表示のみ）です。Executive Decision・Output Draft保存は制御しません。</div>';
+    var divider = '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>';
+
+    var statusText = qualityGate.passed
+      ? ('🟢 Passed（' + esc(srcStatus) + '＝' + esc(srcLabel) + '）')
+      : ('🟡 Not Passed（' + esc(srcStatus) + '＝' + esc(srcLabel) + '）');
+    var statusClass = qualityGate.passed ? 'elr-qg-passed' : 'elr-qg-warning';
+
+    return title
+      + '<div class="' + statusClass + '">' + statusText + '</div>'
+      + note + divider;
+  } catch (_qgHtmlErr) {
+    console.warn('[QualityGate] display error:', _qgHtmlErr.message);
+    return '';
+  }
+}
+
 // Executive Leader Report本体HTML構築（表示専用・副作用なし・DOM操作なし）
 // Phase B-5C-2: 第3引数validationはPhase B-5C-1のラッパー { decisionId, caseId, result }（省略時null可）。
 // _constitutionValidationグローバルを本関数内で直接参照しない（純粋関数性を維持・呼び出し元が対応確認済みの値のみ渡す）。
@@ -9280,6 +9328,9 @@ function _elrBuildReportHtml(decision, inbox, validation) {
 
   // Phase B-5C-2: Constitution Structure Check（Executive Summaryの直後・Leader Summaryの直前に独立表示）
   var constitutionCheckHtml = _elrBuildConstitutionCheckHtml(validation);
+  // Phase B-8B: Quality Gate（Constitution Structure Check直後・Leader Summary直前に独立表示）。
+  // inboxは既存の第2引数のみを参照する（新規グローバル参照・新規引数追加なし）。
+  var qualityGateHtml = _elrBuildQualityGateHtml(inbox && inbox.qualityGate);
 
   return ''
     + '<div class="executive-leader-report">'
@@ -9296,6 +9347,7 @@ function _elrBuildReportHtml(decision, inbox, validation) {
     +   '<div class="elr-field"><span class="elr-label">■次工程</span><br>' + nextText + '</div>'
     +   '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>'
     +   constitutionCheckHtml
+    +   qualityGateHtml
     +   (summaryRowsHtml ? ('<div class="elr-section-title">Leader Summary</div>' + summaryRowsHtml + '<div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>') : '')
     +   (detailRowsHtml  ? ('<details class="elr-detail"><summary>▼社員分析を見る</summary>' + detailRowsHtml + '</details><div class="elr-divider">━━━━━━━━━━━━━━━━━━</div>') : '')
     + '</div>';
