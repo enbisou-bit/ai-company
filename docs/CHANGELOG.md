@@ -4,6 +4,25 @@
 
 ---
 
+## Phase B-9B Leader統合回答・会社正式回答責務 **正式採用**（2026-08-05・docs正式化のみ）
+
+**Phase B-9Aの調査結果をもとに、Leader統合回答（Path Aの`LEADER_FINAL_PROMPT`／Path Bの`leaderSummary()`が生成しLeaderチャットへ表示する最終回答テキスト）の責務を正式化した**（Decision094）。**docsのみ**。**index.html/openaiClient.js/server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision094）。
+
+- **用語分離**：「Leader Summary（ELR表示）」＝Executive Leader Report内でcandidateArtifacts等を3行抜粋・折りたたみ表示する事後表示セクション（`_elrBuildReportHtml()`・Phase B-8までに完成済み）と、「Leader統合回答」＝Path A/BがLeaderチャットへ表示する最終回答テキスト（今回の対象）を区別。今後docsでは後者を「Leader統合回答」と表記する。
+- **会社の唯一の正式回答**：Leader統合回答はAI社員個々の回答の連結ではなく「ENBISOU AI COMPANYとしてユーザーへ提示する唯一の正式回答」と定義。
+- **AI社員回答＝社内検討資料**：Writer/Researcher/Reviewer/Designer/Strategy等の個別回答は正式回答ではない。責務フロー＝`社内検討→Leader統合（重複除去・矛盾解消・採用・保留・却下）→会社回答`。既存のAI社員タブ・dispatchカード・Workflow Live等の表示機能は削除しない（今回UI変更なし）。
+- **LeaderはCEO相当の最終統合責任者**：意見収集・重複除去・矛盾解消・Evidence比較・採用/保留/却下判断・情報充足の最終判断・最終成果物生成・表現統一を担う。
+- **要約ではなく統合**：目的は文章短縮ではなく、重複除去・矛盾解消・Evidence比較・採用/保留/却下判断・品質統一・依頼範囲への絞り込み。
+- **成果物ファースト**：出力順序＝「完成成果物→必要な場合のみ補足→必要な場合のみ採用理由→必要な場合のみ社内判断の概要」。狭い依頼では不要なブランチを自動追加しない構造を目指す。
+- **情報不足の最終判断はLeaderに帰属**：各担当は安全側で情報不足と判断してよいが、追加質問か完成品生成かの最終判断権限はLeaderが持つ。
+- **Gate系との責務分離**：Leader統合回答＝生成前〜生成中の判断／Quality Gate＝生成済み候補の`packageQuality.status`評価のみ／Completion Gate（未実装）＝将来の事後判定／Executive Decision＝生成後の事後判断／Constitution Validator＝構造整合性検証のみ。
+- **既存Leader Integration Layerとの関係**：`_liCompareArtifacts()`等は現在Leader統合回答生成「後」の事後観測層。将来品質改善へ利用する場合はLeader Final生成「前」へ構造化JSON要約として接続する方針。
+- **Path A／Path Bの構造差**：Path Aはサーバー側単一リクエスト内完結のため介入不可（Decision087の制約を継承）、Path Bはクライアント側制御のため接続しやすい。二段階AI生成は第一候補にしない。
+- **未実装（区別して記録）**：LEADER_FINAL_PROMPT／leaderSummary()／strategyConsolidate()のプロンプト文言変更・Leader統合ロジック変更・Rule Engine比較結果のLeader Final生成前接続・UI上での「社内検討」明示・Completion Gate。
+- **Git・反映**：docs commit（本更新）のみ。Tag作成なし・push未実施。次工程候補＝Phase B-9C Leader統合回答プロンプト改善（未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-8 Quality Gate Executive Leader Report表示 **正式Complete**（Phase B-8A〜B-8D統合・2026-08-04・Code commit 04bf9c1）
 
 **Phase B-7で正式採用したQuality Gate結果（`inbox.qualityGate`）を、Executive Leader Report内へ表示専用のセクションとして追加した**（Decision093）。既存の`inbox.qualityGate`構造をそのまま入力とし、新規decisionId／caseId／Version等のデータ契約は追加していない。**index.htmlのみ**。**server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision093）。

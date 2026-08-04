@@ -8,6 +8,52 @@
 
 ---
 
+## Leader統合回答・会社正式回答責務 正式採用（Phase B-9B・2026-08-05・Decision 094・docs正式化のみ）
+
+> 追記日: 2026-08-05。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**docsのみ・index.html/openaiClient.js/server.js/lib/DB/schema.sql/API無変更**。
+
+Phase B-9Aの調査結果をもとに、Leader統合回答（Path A `LEADER_FINAL_PROMPT`／Path B `leaderSummary()`が生成する最終回答テキスト）の責務を正式化した（詳細はDecision094）。
+
+**用語分離**：「Leader Summary（ELR表示）」＝Phase B-8までに完成済みの事後表示セクション（`_elrBuildReportHtml()`）と、「Leader統合回答」＝Path A/BがLeaderチャットへ表示する最終回答テキスト（今回の対象）を区別。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-8    Quality Gate Executive Leader Report表示 ─ 正式Complete（2026-08-04・Decision093・維持）
+  ↓
+Phase B-9A   Leader統合回答 現状調査・設計 ──────────── 完了（2026-08-04）
+  ↓
+Phase B-9B   Leader統合回答・会社正式回答責務 正式採用 ─ 正式Complete（2026-08-05・Decision094）
+             ・用語分離（Leader Summary(ELR表示) と Leader統合回答）
+             ・Leader統合回答＝会社として唯一の正式回答
+             ・AI社員回答＝社内検討資料（既存表示機能は削除しない）
+             ・Leader＝CEO相当の最終統合責任者
+             ・要約ではなく統合（重複除去・矛盾解消・Evidence比較・採用/保留/却下判断）
+             ・成果物ファースト
+             ・情報不足の最終判断はLeaderに帰属
+             ・Quality Gate/Completion Gate/Executive Decision/Constitution Validatorとの責務分離
+             ・既存Leader Integration Layerを将来Leader Final生成前へ構造化JSONで接続する方針
+             ・Path A（サーバー側単一リクエスト完結・介入不可）／Path B（クライアント側制御）の構造差
+  ↓
+（次工程・実装候補・優先順位確定済み・着手はユーザー承認後）
+             Phase B-9C：Leader統合回答プロンプト改善
+                          （LEADER_FINAL_PROMPT／leaderSummary()／必要に応じてstrategyConsolidate()）
+             Phase B-9D：Rule Engine比較結果のLeader Final生成前接続
+                          （重複除去/矛盾検出/Evidence比較/採用/保留/却下候補・Path B先行・Path Aはサーバー側共通ロジック化を再調査）
+             Phase B-9E：統合検証
+                          （狭い/複合成果物依頼・情報充足/不足依頼・AI社員間一致/矛盾・Reviewer不採用・
+                           Path A/B・既存13出力タイプ回帰・API費用・重複除去・不要ブランチ抑制）
+             Phase B-9F：正式リリース（docs・commit・Tag・push・Render・PC/iPhone確認）
+```
+
+**対象**：Path A（`LEADER_FINAL_PROMPT`）・Path B（`leaderSummary()`）双方のLeader統合回答生成。
+
+**次工程**：Phase B-9C〜B-9Fを実装候補として並列に記録する。**ユーザー承認後に着手する**。
+
+**Leader統合回答の正式責務・用語分離・Gate系との責務分離の詳細は`docs/04DECISIONS.md` Decision094を参照**。
+
+---
+
 ## Quality Gate Executive Leader Report表示 正式Complete（Phase B-8A〜B-8D統合・2026-08-04・Decision 093）
 
 > 追記日: 2026-08-04。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html（Code commit 04bf9c1）のみ・server.js/lib/DB/schema.sql/API無変更**。
