@@ -6135,6 +6135,136 @@
     #mobile-quickbar #status-dot { display: none; }
     #mobile-quickbar .tq-sep { display: none; }
   }
+
+  /* ══════════════════════════════════════════════════════════════
+     Phase IG-2C: IADP Card — Leader画面内表示（読み取り専用・追加のみ）
+     ══════════════════════════════════════════════════════════════ */
+  .iadp-card {
+    background: linear-gradient(135deg, rgba(16,24,48,0.96), rgba(24,36,64,0.94));
+    border: 1px solid rgba(0,212,255,0.25);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 10px 0 14px;
+    font-size: 13px;
+    color: #d0d8e8;
+    overflow-x: hidden;
+    word-break: break-word;
+  }
+  .iadp-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #00d4ff;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .iadp-section {
+    margin: 10px 0 0;
+    padding: 10px;
+    background: rgba(0,0,0,0.18);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .iadp-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(0,212,255,0.8);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .iadp-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    font-size: 12px;
+  }
+  .iadp-row-label { color: rgba(255,255,255,0.5); flex-shrink: 0; margin-right: 8px; }
+  .iadp-row-val   { color: #e0e8f0; text-align: right; word-break: break-all; }
+  .iadp-status-complete     { color: #4cff8e; font-weight: 600; }
+  .iadp-status-almost_ready { color: #ffe04c; font-weight: 600; }
+  .iadp-status-needs_work   { color: #ff9e4c; font-weight: 600; }
+  .iadp-status-insufficient { color: #ff5c5c; font-weight: 600; }
+  .iadp-cand-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .iadp-cand-tbl th {
+    text-align: left;
+    padding: 4px 6px;
+    color: rgba(0,212,255,0.7);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .iadp-cand-tbl td {
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: top;
+  }
+  .iadp-cand-adopt  { color: #4cff8e; }
+  .iadp-cand-hold   { color: #ffe04c; }
+  .iadp-cand-reject { color: #ff5c5c; }
+  .iadp-profile-field {
+    padding: 2px 0;
+    font-size: 12px;
+  }
+  .iadp-profile-key {
+    color: rgba(255,255,255,0.45);
+    font-size: 11px;
+  }
+  .iadp-profile-val {
+    color: #d8e0f0;
+    margin-left: 4px;
+  }
+  .iadp-evidence-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .iadp-evidence-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .iadp-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .iadp-copy-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    border: 1px solid rgba(0,212,255,0.4);
+    border-radius: 8px;
+    background: rgba(0,212,255,0.08);
+    color: #00d4ff;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .iadp-copy-btn:hover { background: rgba(0,212,255,0.18); }
+  .iadp-copy-msg {
+    font-size: 11px;
+    color: #4cff8e;
+    opacity: 0;
+    transition: opacity 0.3s;
+    align-self: center;
+  }
+  @media (max-width: 768px) {
+    .iadp-card { padding: 12px 10px; margin: 8px 0 10px; font-size: 12px; }
+    .iadp-section { padding: 8px; }
+    .iadp-cand-tbl { font-size: 10px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .iadp-cand-tbl th, .iadp-cand-tbl td { padding: 3px 4px; }
+    .iadp-btn-row { gap: 6px; }
+    .iadp-copy-btn { padding: 5px 10px; font-size: 11px; }
+  }
 </style>
 </head>
 <body>
@@ -7186,6 +7316,8 @@
 
 <!-- Phase IG-2A: Instagram Account Design Package Core（読み込みのみ・まだどこからも呼び出さない） -->
 <script src="shared/instagramAccountDesign.js"></script>
+<!-- Phase IG-2C: Instagram Account Design Package 専用品質評価 Core（構造Validatorとは別レイヤー） -->
+<script src="shared/instagramAccountDesignQuality.js"></script>
 <script>
 // ── Supabase DB同期ヘルパー ────────────────────────────
 // タスクをサーバー（Supabase経由）に保存。失敗してもlocalStorage側は継続
@@ -9456,7 +9588,14 @@ function safeJsonReply(replyText) {
   return replyText;
 }
 // 後方互換
-function safeLeaderReply(memberId, replyText) { return safeJsonReply(replyText); }
+function safeLeaderReply(memberId, replyText) {
+  var cleaned = safeJsonReply(replyText);
+  return _iadpStripJsonBlock(cleaned);
+}
+function _iadpStripJsonBlock(text) {
+  if (typeof text !== 'string') return text;
+  return text.replace(/<IADP_JSON>[\s\S]*?<\/IADP_JSON>/g, '').replace(/```json\s*<IADP_JSON>[\s\S]*?<\/IADP_JSON>\s*```/g, '').trim();
+}
 
 // ── AI返答のJSONパース（失敗時はプレーンテキスト） ──
 function parseAIResponse(text) {
@@ -10311,6 +10450,7 @@ function reRenderChatArea(m) {
   if (memberCaseView[m.id] === '__caselist__') { renderCaseListScreen(m.id); return; }
   // Phase B-3: Executive Leader Report（Leaderチャットのみ・表示専用・Output制御なし・追加のみ）
   if (m.id === 'leader' && typeof _elrRenderIntoChatArea === 'function') { _elrRenderIntoChatArea(chat); }
+  if (m.id === 'leader' && typeof _iadpRenderIntoChatArea === 'function') { _iadpRenderIntoChatArea(chat); }
   const filtered = getFilteredHistory(m.id);
   if (filtered.length === 0) {
     addBubble('ai', `${m.role}として対応します。ご相談をどうぞ。`, m, false);
@@ -12475,10 +12615,244 @@ function closeAutoTaskPanel() {
 //   誤判定時は何もせず既存Auto Task Workflowへそのままフォールバックする（Fail-open）。
 // ══════════════════════════════════════════════════════════════
 
-// Phase IG-2B: セッション内のみで保持するIADPセッション状態（DB保存なし・F5復元対象外・_lastOutputDraftとは分離）
+// Phase IG-2B/IG-2C: セッション内のみで保持するIADPセッション状態（DB保存なし・F5復元対象外・_lastOutputDraftとは分離）
 let _lastInstagramAccountDesignPackage    = null;
 let _lastInstagramAccountDesignValidation = null;
 let _lastInstagramAccountDesignCaseId     = null;
+let _lastInstagramAccountDesignQuality    = null; // Phase IG-2C: IADP専用品質評価（Quality Gateとは別軸）
+
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2C: IADP成果物カード表示・コピー機能
+//   Leader画面内に読み取り専用のIADPカードを1件だけ表示する。
+//   Cross-case保護・重複防止・Fail-open。保存/編集/承認ボタンなし。
+// ══════════════════════════════════════════════════════════════
+
+function _iadpBuildCardHtml(pkg, quality) {
+  var esc = escapeHtml;
+  var q = quality || {};
+  var cs = q.categoryScores || {};
+  var statusClass = 'iadp-status-' + (q.status || 'insufficient');
+
+  var readyLabel = q.readyForAccountCreation ? '✅ Ready' : '⛔ Not Ready';
+  var statusLabel = { complete: '✅ Complete', almost_ready: '🟡 Almost Ready', needs_work: '🟠 Needs Work', insufficient: '🔴 Insufficient' }[q.status] || q.status || '—';
+
+  var adoptedName = '—';
+  var cc = (pkg.intelligence && pkg.intelligence.candidateComparison) || {};
+  var ad = (pkg.intelligence && pkg.intelligence.adoptionDecision) || {};
+  var candidates = Array.isArray(cc.candidates) ? cc.candidates : [];
+  for (var ci = 0; ci < candidates.length; ci++) {
+    if (candidates[ci] && candidates[ci].candidateId === ad.adoptedCandidateId) {
+      adoptedName = candidates[ci].genreName || candidates[ci].candidateId || '—';
+      break;
+    }
+  }
+
+  var html = '<div class="iadp-card" id="iadp-card-display">';
+  html += '<div class="iadp-card-title">📋 Instagram Account Design Package</div>';
+
+  // Summary
+  html += '<div class="iadp-section"><div class="iadp-section-title">Summary</div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">Package ID</span><span class="iadp-row-val">' + esc(pkg.packageId || '—') + '</span></div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">Case ID</span><span class="iadp-row-val">' + esc(pkg.caseId || '—') + '</span></div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">Status</span><span class="iadp-row-val ' + statusClass + '">' + statusLabel + '</span></div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">品質スコア</span><span class="iadp-row-val">' + (typeof q.score === 'number' ? q.score : '—') + ' / 100</span></div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">アカウント作成準備</span><span class="iadp-row-val">' + readyLabel + '</span></div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">採用候補</span><span class="iadp-row-val">' + esc(adoptedName) + '</span></div>';
+
+  // 100%完成候補判定
+  var validation = _lastInstagramAccountDesignValidation;
+  var structValid = validation && validation.valid;
+  var designReady = q.readyForAccountCreation;
+  html += '<div style="margin-top:8px;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,0.15);font-size:11px;">';
+  html += '<div>' + (structValid ? '✅' : '⛔') + ' 設計生成：' + (structValid ? '完了' : '未完了') + '</div>';
+  html += '<div>' + (structValid ? '✅' : '⛔') + ' 構造検証：' + (structValid ? 'Passed' : 'Failed') + '</div>';
+  html += '<div>' + (designReady ? '✅' : '⛔') + ' アカウント作成準備：' + (designReady ? 'Ready' : 'Not Ready') + '</div>';
+  html += '<div>⏳ ユーザー承認：未実施</div>';
+  if (structValid && designReady) {
+    html += '<div style="margin-top:4px;color:#4cff8e;font-weight:600;">🎯 Instagramアカウント設計：100%完成候補</div>';
+  }
+  html += '</div>';
+  html += '</div>';
+
+  // 3案比較
+  if (candidates.length > 0) {
+    html += '<div class="iadp-section"><div class="iadp-section-title">3案比較</div>';
+    html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
+    html += '<table class="iadp-cand-tbl"><thead><tr><th>候補名</th><th>総合点</th><th>判定</th><th>理由</th><th>リスク</th></tr></thead><tbody>';
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (!c) continue;
+      var dec = c.decision || '—';
+      var decClass = dec === 'adopt' ? 'iadp-cand-adopt' : (dec === 'hold' ? 'iadp-cand-hold' : 'iadp-cand-reject');
+      var decLabel = { adopt: '採用', hold: '保留', reject: '却下' }[dec] || dec;
+      var reason = c.decisionRationale || (ad.adoptedCandidateId === c.candidateId ? (ad.decisionRationale || '—') : '—');
+      var risks = Array.isArray(c.mainRisks) ? c.mainRisks.join(', ') : '—';
+      html += '<tr>';
+      html += '<td>' + esc(c.genreName || c.candidateId || '—') + '</td>';
+      html += '<td>' + (typeof c.totalScore === 'number' ? c.totalScore : '—') + '</td>';
+      html += '<td class="' + decClass + '">' + decLabel + '</td>';
+      html += '<td>' + esc(typeof reason === 'string' ? reason.slice(0, 60) : '—') + '</td>';
+      html += '<td>' + esc(typeof risks === 'string' ? risks.slice(0, 60) : '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table></div></div>';
+  }
+
+  // Final Account Profile
+  var fp = pkg.finalProfile || {};
+  var profileSections = [
+    { key: 'brand', label: 'Brand', fields: ['brandName','brandConcept','worldview','differentiation','brandTone','colorPolicy'] },
+    { key: 'target', label: 'Target', fields: ['persona','ageRange'], arrayFields: ['mainPainPoints','desires','purchaseMotivations','trustBarriers'] },
+    { key: 'account', label: 'Account', fields: ['accountName','bio','iconPolicy','iconPrompt','profileLinkPolicy'], arrayFields: ['usernameCandidates','highlightPolicy'] },
+    { key: 'contentStrategy', label: 'Content Strategy', fields: ['mainGenre','postFrequency','postTimePolicy','carouselPolicy','reelPolicy','storyPolicy'], arrayFields: ['contentPillars','postCategories'] },
+    { key: 'monetization', label: 'Monetization', fields: ['productSelectionPolicy','ctaPolicy','funnelPolicy','salesBalancePolicy'], arrayFields: ['aspCandidates','productGenres','prohibitedSalesApproach'] },
+    { key: 'kpi', label: 'KPI', fields: ['reviewCycle'], arrayFields: ['initialKpis','improvementConditions'] },
+    { key: 'risk', label: 'Risk', fields: ['competitionRisk','regulationRisk','credibilityRisk','continuityRisk','monetizationRisk'], arrayFields: ['avoidanceActions'] },
+    { key: 'execution', label: 'Execution', fields: ['first30DaysOperatingPolicy'], arrayFields: ['accountCreationChecklist','aspRegistrationChecklist','requiredExternalChecks'] },
+  ];
+  html += '<div class="iadp-section"><div class="iadp-section-title">Final Account Profile</div>';
+  for (var si = 0; si < profileSections.length; si++) {
+    var sec = profileSections[si];
+    var secData = fp[sec.key] || {};
+    html += '<div style="margin:6px 0 2px;color:rgba(0,212,255,0.65);font-size:11px;font-weight:600;">' + sec.label + '</div>';
+    if (sec.fields) {
+      for (var fi = 0; fi < sec.fields.length; fi++) {
+        var fk = sec.fields[fi];
+        var fv = secData[fk];
+        if (typeof fv === 'string' && fv) {
+          html += '<div class="iadp-profile-field"><span class="iadp-profile-key">' + esc(fk) + ':</span><span class="iadp-profile-val">' + esc(fv.length > 120 ? fv.slice(0, 120) + '…' : fv) + '</span></div>';
+        }
+      }
+    }
+    if (sec.arrayFields) {
+      for (var ai = 0; ai < sec.arrayFields.length; ai++) {
+        var ak = sec.arrayFields[ai];
+        var av = secData[ak];
+        if (Array.isArray(av) && av.length > 0) {
+          var joined = av.map(function(item) { return typeof item === 'string' ? item : (item && item.name ? item.name : JSON.stringify(item)); }).join(', ');
+          html += '<div class="iadp-profile-field"><span class="iadp-profile-key">' + esc(ak) + ':</span><span class="iadp-profile-val">' + esc(joined.length > 120 ? joined.slice(0, 120) + '…' : joined) + '</span></div>';
+        }
+      }
+    }
+  }
+  html += '</div>';
+
+  // Evidence Status
+  var ec = q.evidenceCounts || {};
+  html += '<div class="iadp-section"><div class="iadp-section-title">Evidence Status</div>';
+  html += '<div class="iadp-evidence-bar">';
+  html += '<span class="iadp-evidence-chip">✅ Evidence: ' + (ec.evidence_supported || 0) + '件</span>';
+  html += '<span class="iadp-evidence-chip">💡 AI仮説: ' + (ec.generated_hypothesis || 0) + '件</span>';
+  html += '<span class="iadp-evidence-chip">⏳ 外部確認待ち: ' + (ec.external_confirmation_required || 0) + '件</span>';
+  html += '<span class="iadp-evidence-chip">👤 ユーザー確認済み: ' + (ec.user_confirmed || 0) + '件</span>';
+  html += '</div>';
+  var missing = q.missingRequiredFields || [];
+  if (missing.length > 0) {
+    html += '<div style="margin-top:6px;font-size:11px;color:#ff9e4c;">欠損必須項目: ' + missing.length + '件';
+    html += '<div style="color:rgba(255,255,255,0.4);margin-top:2px;">' + esc(missing.slice(0, 5).join(', ')) + (missing.length > 5 ? ' …他' + (missing.length - 5) + '件' : '') + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Category Scores
+  html += '<div class="iadp-section"><div class="iadp-section-title">Category Scores</div>';
+  var catLabels = { marketResearch:'市場調査', competitorResearch:'競合調査', candidateComparison:'3案比較', adoptionDecision:'採用判定', brand:'ブランド', target:'ターゲット', account:'アカウント', monetizationAndExecution:'収益・実行' };
+  var catIds = ['marketResearch','competitorResearch','candidateComparison','adoptionDecision','brand','target','account','monetizationAndExecution'];
+  for (var ki = 0; ki < catIds.length; ki++) {
+    var ck = catIds[ki];
+    var sv = typeof cs[ck] === 'number' ? cs[ck] : 0;
+    var barColor = sv >= 95 ? '#4cff8e' : (sv >= 90 ? '#ffe04c' : (sv >= 60 ? '#ff9e4c' : '#ff5c5c'));
+    html += '<div class="iadp-row"><span class="iadp-row-label">' + (catLabels[ck] || ck) + '</span>';
+    html += '<span class="iadp-row-val" style="display:flex;align-items:center;gap:6px;">';
+    html += '<span style="width:60px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;display:inline-block;overflow:hidden;"><span style="display:block;height:100%;width:' + sv + '%;background:' + barColor + ';border-radius:3px;"></span></span>';
+    html += sv + '</span></div>';
+  }
+  html += '</div>';
+
+  // Copy buttons
+  html += '<div class="iadp-btn-row">';
+  html += '<button class="iadp-copy-btn" onclick="_iadpCopyJson()">📋 JSONをコピー</button>';
+  html += '<button class="iadp-copy-btn" onclick="_iadpCopyAccountProfile()">📄 アカウント設計をコピー</button>';
+  html += '<span class="iadp-copy-msg" id="iadp-copy-msg"></span>';
+  html += '</div>';
+
+  html += '</div>';
+  return html;
+}
+
+function _iadpCopyJson() {
+  try {
+    if (!_lastInstagramAccountDesignPackage) return;
+    var json = JSON.stringify(_lastInstagramAccountDesignPackage, null, 2);
+    var msgEl = document.getElementById('iadp-copy-msg');
+    var showMsg = function() { if (msgEl) { msgEl.textContent = 'コピーしました'; msgEl.style.opacity = '1'; setTimeout(function() { msgEl.style.opacity = '0'; }, 2000); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(showMsg).catch(function() {});
+    }
+  } catch (e) { console.warn('[IADP] copy json error:', e.message); }
+}
+
+function _iadpCopyAccountProfile() {
+  try {
+    if (!_lastInstagramAccountDesignPackage) return;
+    var pkg = _lastInstagramAccountDesignPackage;
+    var fp = pkg.finalProfile || {};
+    var lines = ['=== Instagram Account Design ===', ''];
+    var sections = [
+      { key: 'brand', label: 'Brand', fields: ['brandName','brandConcept','worldview','differentiation','brandTone','colorPolicy'] },
+      { key: 'target', label: 'Target', fields: ['persona','ageRange'], arrayFields: ['mainPainPoints','desires','purchaseMotivations','trustBarriers'] },
+      { key: 'account', label: 'Account', fields: ['accountName','bio','iconPolicy','iconPrompt','profileLinkPolicy'], arrayFields: ['usernameCandidates','highlightPolicy'] },
+      { key: 'contentStrategy', label: 'Content Strategy', fields: ['mainGenre','postFrequency','postTimePolicy','carouselPolicy','reelPolicy','storyPolicy'], arrayFields: ['contentPillars','postCategories'] },
+      { key: 'monetization', label: 'Monetization', fields: ['productSelectionPolicy','ctaPolicy','funnelPolicy','salesBalancePolicy'], arrayFields: ['aspCandidates','productGenres','prohibitedSalesApproach'] },
+      { key: 'kpi', label: 'KPI', fields: ['reviewCycle'], arrayFields: ['initialKpis','improvementConditions'] },
+      { key: 'risk', label: 'Risk', fields: ['competitionRisk','regulationRisk','credibilityRisk','continuityRisk','monetizationRisk'], arrayFields: ['avoidanceActions'] },
+      { key: 'execution', label: 'Execution', fields: ['first30DaysOperatingPolicy'], arrayFields: ['accountCreationChecklist','aspRegistrationChecklist','requiredExternalChecks'] },
+    ];
+    for (var i = 0; i < sections.length; i++) {
+      var sec = sections[i];
+      var d = fp[sec.key] || {};
+      lines.push('【' + sec.label + '】');
+      if (sec.fields) {
+        for (var j = 0; j < sec.fields.length; j++) {
+          var v = d[sec.fields[j]];
+          if (typeof v === 'string' && v) lines.push(sec.fields[j] + ': ' + v);
+        }
+      }
+      if (sec.arrayFields) {
+        for (var k = 0; k < sec.arrayFields.length; k++) {
+          var av = d[sec.arrayFields[k]];
+          if (Array.isArray(av) && av.length > 0) {
+            var joined = av.map(function(item) { return typeof item === 'string' ? item : (item && item.name ? item.name : JSON.stringify(item)); }).join(', ');
+            lines.push(sec.arrayFields[k] + ': ' + joined);
+          }
+        }
+      }
+      lines.push('');
+    }
+    var text = lines.join('\n');
+    var msgEl = document.getElementById('iadp-copy-msg');
+    var showMsg = function() { if (msgEl) { msgEl.textContent = 'コピーしました'; msgEl.style.opacity = '1'; setTimeout(function() { msgEl.style.opacity = '0'; }, 2000); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
+    }
+  } catch (e) { console.warn('[IADP] copy account profile error:', e.message); }
+}
+
+function _iadpRenderIntoChatArea(chatEl) {
+  try {
+    if (!chatEl || !_lastInstagramAccountDesignPackage || !_lastInstagramAccountDesignCaseId) return;
+    var curCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+    if (!curCaseId || _lastInstagramAccountDesignCaseId !== curCaseId) return;
+    if (chatEl.querySelector('#iadp-card-display')) return;
+    var q = _lastInstagramAccountDesignQuality || {};
+    var cardHtml = _iadpBuildCardHtml(_lastInstagramAccountDesignPackage, q);
+    var wrap = document.createElement('div');
+    wrap.innerHTML = cardHtml;
+    if (wrap.firstChild) chatEl.insertBefore(wrap.firstChild, chatEl.firstChild);
+  } catch (_iadpRenderErr) {
+    console.warn('[IADP] card render error (fail-open):', _iadpRenderErr.message);
+  }
+}
 
 const ACCOUNT_INTELLIGENCE_POSITIVE_PATTERNS = [
   /アフィリエイト[\s\S]{0,20}始めたい/, /始めたい[\s\S]{0,20}アフィリエイト/,
@@ -13291,6 +13665,16 @@ async function atRunWorkflow() {
             _lastInstagramAccountDesignPackage    = _iadpNormalized;
             _lastInstagramAccountDesignValidation = _iadpValidation;
             _lastInstagramAccountDesignCaseId     = _atRunCaseId;
+            // Phase IG-2C: IADP専用品質評価（構造Validatorとは別レイヤー）。
+            //   Package自体が構造invalidだった場合はこのブロックへ到達しないため評価しない
+            //   （invalid Packageでは品質評価を正式更新しない、を自然に満たす）。
+            try {
+              if (typeof InstagramAccountDesignQuality !== 'undefined') {
+                _lastInstagramAccountDesignQuality = InstagramAccountDesignQuality.evaluateInstagramAccountDesignQuality(_iadpNormalized);
+              }
+            } catch (_iadpQualityErr) {
+              console.warn('[IADP] quality evaluation error (fail-open, existing state unaffected):', _iadpQualityErr.message);
+            }
           } else {
             // invalid時は既存正本候補を上書きしない。検証結果のみ開発用状態として記録する
             _lastInstagramAccountDesignValidation = _iadpValidation;
