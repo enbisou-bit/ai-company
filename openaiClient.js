@@ -1871,6 +1871,42 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     : '';
   var knCount = (knowledgeResult && knowledgeResult.totalCount) ? knowledgeResult.totalCount : 0;
 
+  // Phase B-9D-4: 共通Leader Rule Engineによる事実整理（Path A接続）。
+  //   Path A専用Adapter（_lfAdaptTaskToRuleArtifact）はmemberId/status/result/isPostProcessの
+  //   形式変換のみを行う薄い変換層であり、採否・重複・矛盾・Evidence判定は一切行わない
+  //   （それらはRule Engine本体にも実装されていない・v1は事実整理のみ）。
+  //   1回の関数呼び出しにつき本ブロックは1回だけ評価され、questionへ最大1回だけ挿入する
+  //   （下のparts配列は1回だけ構築される・Prompt Block追加後の文字列をこの評価へ再入力しない）。
+  //   失敗してもLeader Final生成は止めない（fail-open・Prompt Blockなしで従来どおり継続）。
+  function _lfAdaptTaskToRuleArtifact(t, forcePostProcess) {
+    var profile = t && LINE_AGENT_PROFILES[t.agentId];
+    return {
+      memberId: t ? t.agentId : null,
+      role: profile ? profile.name : null,
+      status: t ? t.status : null,
+      result: t ? t.result : null, // 生値のまま渡す。JSONフェンス除去・reply抽出はRule Engine側で一元的に行う（Adapterで重複実装しない）
+      isPostProcess: forcePostProcess ? true : !!(t && t.isPostProcess),
+    };
+  }
+  var leaderRuleBlock = '';
+  try {
+    var LeaderRuleEngine = require('./shared/leaderRuleEngine');
+    var _lfMainForRule = (workflowTasks || []).filter(function(t) { return t && t.agentId && !t.isPostProcess; });
+    var _lfRuleArtifacts = _lfMainForRule.map(function(t) { return _lfAdaptTaskToRuleArtifact(t, false); });
+    if (reviewerTask) _lfRuleArtifacts.push(_lfAdaptTaskToRuleArtifact(reviewerTask, true));
+    if (strategyTask) _lfRuleArtifacts.push(_lfAdaptTaskToRuleArtifact(strategyTask, true));
+    var _lfNormalized = LeaderRuleEngine.normalizeLeaderRuleInput({
+      requestText: userMessage,
+      caseId: null, // runLeaderFinalResponse()はcaseIdを受け取らない。Coreは案件一致判定をしないためnullで安全。
+      sourcePath: 'pathA',
+      artifacts: _lfRuleArtifacts,
+    });
+    var _lfFacts = LeaderRuleEngine.evaluateLeaderRuleFacts(_lfNormalized);
+    leaderRuleBlock = LeaderRuleEngine.buildLeaderRulePromptBlock(_lfFacts);
+  } catch (_lfRuleErr) {
+    leaderRuleBlock = ''; // fail-open（Rule Engine失敗はLeader Final生成を止めない・ユーザーへエラー表示しない）
+  }
+
   // 統合プロンプト
   var repliesText = memberReplies.map(function(r) { return '【' + r.name + '】\n' + r.reply; }).join('\n\n');
   var question;
@@ -1893,6 +1929,7 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '【依頼内容（これが案件の核心）】', userMessage, '',
       brainCtx ? '【Company Brain解析】' + brainCtx : '',
       knCount > 0 ? '【参照Knowledge】' + knCount + '件' : '',
+      leaderRuleBlock, // 空文字列時はfilter(Boolean)で除外＝区切りも追加しない（単一挿入・二重挿入なし）
       '',
       '【AI社員の社内検討内容（正式回答ではない。重複除去・矛盾解消・採否判断を行ったうえであなたの判断で統合すること）】',
       repliesText, '',
