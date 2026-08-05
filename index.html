@@ -8648,6 +8648,28 @@ function _liAdaptManualLeaderRegeneration(caseId, requestText) {
   return inbox;
 }
 
+// Phase B-9D-5A: 手動Leader再生成専用の薄いマッピング（Rule Engine入力専用・DOM再走査なし）。
+//   既存 _liAdaptManualLeaderRegeneration() の結果（is-postprocess判別済み・status導出済み・
+//   Cross-case保護は呼び出し元のcaseIdガードに依拠）を、共通Leader Rule Engineの入力契約形状
+//   （memberId/role/status/text/isPostProcess）へ変換するのみ。DOM走査・重複判定・矛盾判定・
+//   採否判断・Prompt文章生成は行わない（すべて既存Adapter・共通Coreの責務のまま）。元データ非破壊。
+function _atBuildRuleArtifactsForManualRegen(caseId, requestText) {
+  try {
+    if (typeof _liAdaptManualLeaderRegeneration !== 'function') return null;
+    var inbox = _liAdaptManualLeaderRegeneration(caseId, requestText);
+    if (!inbox || !Array.isArray(inbox.artifacts)) return null;
+    return inbox.artifacts.map(function(a) {
+      return {
+        memberId: a.agentId,
+        role: a.agentName || null,
+        status: a.status,
+        text: a.rawText,
+        isPostProcess: !!a.isPostProcess,
+      };
+    });
+  } catch (e) { return null; } // fail-open: 失敗時はruleArtifacts省略＝leaderSummary()が従来のmemberReplies経路を使う
+}
+
 // A-1d: 比較（ルールベースのみ。AI追加実行なし・DOM変更なし・グローバル状態への直接書き込みなし）
 function _liCompareArtifacts(artifacts) {
   artifacts = artifacts || [];
@@ -13524,10 +13546,18 @@ async function atTriggerLeaderFinal() {
   if (deHtml) resultEl.innerHTML = deHtml;
 
   try {
+    // Phase B-9D-5A: 共通Leader Rule Engine用の分離入力（任意項目）。既存memberRepliesは変更しない。
+    //   is-postprocess判別済みの正確なデータを既存Adapter経由で構築し、Reviewer/Strategyの
+    //   main担当への混入・error/skippedの不可視化（既存memberReplies経路の既知の制約）を回避する。
+    //   生成失敗時はnull＝ruleArtifacts省略（fail-open・leaderSummary()は従来のmemberReplies経路を使用）。
+    const _ruleArtifacts = _atBuildRuleArtifactsForManualRegen(_liGuardCaseId, userMessage);
     const res  = await fetch('/api/leader-summary', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, memberReplies, strategyReply }),
+      body: JSON.stringify({
+        userMessage, memberReplies, strategyReply,
+        ruleArtifacts: (_ruleArtifacts && _ruleArtifacts.length > 0) ? _ruleArtifacts : undefined,
+      }),
     });
     const data = await res.json();
 

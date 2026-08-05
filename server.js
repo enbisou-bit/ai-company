@@ -742,12 +742,14 @@ app.post('/api/strategy-consolidate', express.json(), async (req, res) => {
 // ── Leader 推奨方針サマリー API ───────────────────
 // POST /api/leader-summary { userMessage, memberReplies, strategyReply }
 app.post('/api/leader-summary', express.json(), async (req, res) => {
-  const { userMessage, memberReplies, strategyReply } = req.body || {};
+  // Phase B-9D-5A: ruleArtifactsは任意項目。手動Leader再生成のみ送信し、Path B等の既存呼び出しは
+  //   従来どおり省略する（未指定でも動作は完全に既存どおり・request/response契約の破壊的変更なし）。
+  const { userMessage, memberReplies, strategyReply, ruleArtifacts } = req.body || {};
   if (!userMessage || !memberReplies) {
     return res.json({ ok: false, error: 'missing params' });
   }
   try {
-    const reply = await leaderSummary(userMessage, memberReplies, strategyReply || '');
+    const reply = await leaderSummary(userMessage, memberReplies, strategyReply || '', ruleArtifacts);
     if (!reply) return res.json({ ok: false, error: 'no reply' });
     return res.json({ ok: true, reply });
   } catch (e) {

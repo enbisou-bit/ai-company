@@ -1027,7 +1027,7 @@ function buildStrategyConsolidatePrompt() {
 // ══════════════════════════════════════════════════════════════
 // Leader 推奨方針サマリー（全担当返答完了後）
 // ══════════════════════════════════════════════════════════════
-async function leaderSummary(userMessage, memberReplies, strategyReply) {
+async function leaderSummary(userMessage, memberReplies, strategyReply, ruleArtifacts) {
   if (!OPENAI_API_KEY || !costTracker.canProcess()) return null;
   const systemPrompt = [
     'あなたは縁美創AI COMPANYのLeaderです。',
@@ -1052,33 +1052,44 @@ async function leaderSummary(userMessage, memberReplies, strategyReply) {
     '{"reply":"🎯 今回の推奨方針\\n\\n① ...\\n② ...\\n③ ...\\n\\n期待効果：...\\n実行順序：..."}',
     'JSON以外は一切出力しないこと。',
   ].join('\n');
-  // Phase B-9D-3: 共通Leader Rule Engineによる事実整理（Path B接続）。
-  //   memberReplies / strategyReply の既存入力のみから構造化サマリーを生成し、Leaderの判断材料として
-  //   context へ独立データブロックで1回だけ追加する。Rule Engineは採否・完成可否・質問要否を決定しない
-  //   （最終判断はLeader）。失敗してもleaderSummary本体は止めない（fail-open・Prompt Blockなしで継続）。
-  //   原文・requestText・role自由文はPrompt Blockへ含めない（Core側で列挙値・数値のみへ正規化済み）。
+  // Phase B-9D-3/B-9D-5A: 共通Leader Rule Engineによる事実整理（Path B・手動Leader再生成接続）。
+  //   呼び出し元が ruleArtifacts（{memberId,role,status,text/reply/result,isPostProcess}[]）を渡した場合は
+  //   それを正本として使用する（手動Leader再生成・_liAdaptManualLeaderRegeneration()由来・is-postprocessを
+  //   正しく判別済み）。渡されない場合（Path B等の既存呼び出し）は従来どおりmemberReplies/strategyReplyから
+  //   構築する（Path Bの挙動・Response契約は完全不変）。ruleArtifactsも含め全入力はCore側の
+  //   normalizeLeaderRuleInput()でmemberId許可値判定・JSONフェンス除去・1200文字制限等の正規化を経るため、
+  //   クライアント由来データを無条件に信頼しない（注入耐性は維持）。
+  //   Rule Engineは採否・完成可否・質問要否を決定しない（最終判断はLeader）。失敗してもleaderSummary本体は
+  //   止めない（fail-open・Prompt Blockなしで継続）。原文・requestText・role自由文はPrompt Blockへ含めない。
   let leaderRuleBlock = '';
   try {
     const LeaderRuleEngine = require('./shared/leaderRuleEngine');
-    const _lrArtifacts = (Array.isArray(memberReplies) ? memberReplies : []).map(function (r) {
-      return {
-        memberId: r && r.id,
-        role: (r && r.name) || null,
-        // 自由文キーワード判定へ広げない。既存Path Bのエラー表現（'（エラー）'）のみをerror扱いとする。
-        status: (r && r.reply === '（エラー）') ? 'error' : 'completed',
-        reply: r ? r.reply : '',
-        isPostProcess: false,
-      };
-    });
-    // Strategyは後処理（isPostProcess:true）。Core側でmain件数から除外されるため、空時は追加しない
-    //   （skipped登録と結果は同一・二重登録なし）。Leader自身の回答はartifactへ含めない。
-    if (strategyReply) {
-      _lrArtifacts.push({ memberId: 'strategy', role: 'Strategy', status: 'completed', reply: strategyReply, isPostProcess: true });
+    const _lrHasRuleArtifacts = Array.isArray(ruleArtifacts) && ruleArtifacts.length > 0;
+    let _lrArtifacts;
+    if (_lrHasRuleArtifacts) {
+      _lrArtifacts = ruleArtifacts; // 呼び出し元形式のまま渡す。フィールド正規化・信頼境界はCore側で一元処理する。
+    } else {
+      _lrArtifacts = (Array.isArray(memberReplies) ? memberReplies : []).map(function (r) {
+        return {
+          memberId: r && r.id,
+          role: (r && r.name) || null,
+          // 自由文キーワード判定へ広げない。既存Path Bのエラー表現（'（エラー）'）のみをerror扱いとする。
+          status: (r && r.reply === '（エラー）') ? 'error' : 'completed',
+          reply: r ? r.reply : '',
+          isPostProcess: false,
+        };
+      });
+      // Strategyは後処理（isPostProcess:true）。Core側でmain件数から除外されるため、空時は追加しない
+      //   （skipped登録と結果は同一・二重登録なし）。Leader自身の回答はartifactへ含めない。
+      if (strategyReply) {
+        _lrArtifacts.push({ memberId: 'strategy', role: 'Strategy', status: 'completed', reply: strategyReply, isPostProcess: true });
+      }
     }
     const _lrNormalized = LeaderRuleEngine.normalizeLeaderRuleInput({
       requestText: userMessage,
-      caseId: null, // Path Bのleader-summaryはcaseIdを受け取らない。Coreは案件一致判定をしないためnullで安全。
-      sourcePath: 'pathB',
+      caseId: null, // leader-summaryはcaseIdを受け取らない。Coreは案件一致判定をしないためnullで安全
+      //   （呼び出し元側のCross-case保護＝手動再生成の既存caseIdガードで既に担保済み）。
+      sourcePath: _lrHasRuleArtifacts ? 'pathA' : 'pathB',
       artifacts: _lrArtifacts,
     });
     const _lrFacts = LeaderRuleEngine.evaluateLeaderRuleFacts(_lrNormalized);
