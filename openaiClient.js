@@ -1052,8 +1052,48 @@ async function leaderSummary(userMessage, memberReplies, strategyReply) {
     '{"reply":"🎯 今回の推奨方針\\n\\n① ...\\n② ...\\n③ ...\\n\\n期待効果：...\\n実行順序：..."}',
     'JSON以外は一切出力しないこと。',
   ].join('\n');
+  // Phase B-9D-3: 共通Leader Rule Engineによる事実整理（Path B接続）。
+  //   memberReplies / strategyReply の既存入力のみから構造化サマリーを生成し、Leaderの判断材料として
+  //   context へ独立データブロックで1回だけ追加する。Rule Engineは採否・完成可否・質問要否を決定しない
+  //   （最終判断はLeader）。失敗してもleaderSummary本体は止めない（fail-open・Prompt Blockなしで継続）。
+  //   原文・requestText・role自由文はPrompt Blockへ含めない（Core側で列挙値・数値のみへ正規化済み）。
+  let leaderRuleBlock = '';
+  try {
+    const LeaderRuleEngine = require('./shared/leaderRuleEngine');
+    const _lrArtifacts = (Array.isArray(memberReplies) ? memberReplies : []).map(function (r) {
+      return {
+        memberId: r && r.id,
+        role: (r && r.name) || null,
+        // 自由文キーワード判定へ広げない。既存Path Bのエラー表現（'（エラー）'）のみをerror扱いとする。
+        status: (r && r.reply === '（エラー）') ? 'error' : 'completed',
+        reply: r ? r.reply : '',
+        isPostProcess: false,
+      };
+    });
+    // Strategyは後処理（isPostProcess:true）。Core側でmain件数から除外されるため、空時は追加しない
+    //   （skipped登録と結果は同一・二重登録なし）。Leader自身の回答はartifactへ含めない。
+    if (strategyReply) {
+      _lrArtifacts.push({ memberId: 'strategy', role: 'Strategy', status: 'completed', reply: strategyReply, isPostProcess: true });
+    }
+    const _lrNormalized = LeaderRuleEngine.normalizeLeaderRuleInput({
+      requestText: userMessage,
+      caseId: null, // Path Bのleader-summaryはcaseIdを受け取らない。Coreは案件一致判定をしないためnullで安全。
+      sourcePath: 'pathB',
+      artifacts: _lrArtifacts,
+    });
+    const _lrFacts = LeaderRuleEngine.evaluateLeaderRuleFacts(_lrNormalized);
+    leaderRuleBlock = LeaderRuleEngine.buildLeaderRulePromptBlock(_lrFacts);
+  } catch (_lrErr) {
+    leaderRuleBlock = ''; // fail-open（Rule Engine失敗はLeader回答を止めない・ユーザーへエラー表示しない）
+  }
+
   const repliesText = memberReplies.map(r => `【${r.name}】${r.reply.slice(0, 150)}`).join('\n');
-  const context = `【依頼】${userMessage}\n【各担当提案】\n${repliesText}\n【戦略顧問判断】${(strategyReply || '').slice(0, 300)}`;
+  const context = [
+    `【依頼】${userMessage}`,
+    leaderRuleBlock, // 空文字列時は下のfilter(Boolean)で除外＝区切りも追加しない（二重挿入なし）
+    `【各担当提案】\n${repliesText}`,
+    `【戦略顧問判断】${(strategyReply || '').slice(0, 300)}`,
+  ].filter(Boolean).join('\n');
   const text = await callOpenAI(systemPrompt, context);
   if (!text) return null;
   try {
