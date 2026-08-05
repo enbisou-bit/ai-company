@@ -8,6 +8,58 @@
 
 ---
 
+## 共通Leader Rule Engine 正式リリース（Phase B-9C〜B-9F統合・2026-08-06・Decision 095）
+
+> 追記日: 2026-08-06。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html／openaiClient.js／server.js／shared/leaderRuleEngine.js（新規）**。**DB/schema.sql/API契約は既存互換**。
+
+Decision094の責務正式化に基づき、Leader統合回答プロンプト改善（Phase B-9C）と、事実整理専用の共通Leader Rule Engine新規実装・Path A/Path B/手動Leader再生成3経路接続（Phase B-9D-1〜B-9D-5A）・統合検証（Phase B-9E）を正式リリースした（詳細はDecision095）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase B-9A   Leader統合回答 現状調査・設計 ──────────── 完了（2026-08-04）
+  ↓
+Phase B-9B   Leader統合回答・会社正式回答責務 正式採用 ─ 正式Complete（2026-08-05・Decision094）
+  ↓
+Phase B-9C   Leader統合回答プロンプト改善 ──────────── 正式Complete（Code commit 92cc49a）
+             LEADER_FINAL_PROMPT／leaderSummary()へDecision094の6原則を反映
+  ↓
+Phase B-9D-1 Rule Engine接続 調査・正式設計 ─────────── 完了（コード変更なし）
+             既存3関数（_liCompareArtifacts等）は温存・新規Core別系統を設計
+  ↓
+Phase B-9D-2 共通Leader Rule Engine Core実装 ────────── 正式Complete（Code commit d194ba1）
+             shared/leaderRuleEngine.js新規（UMD・Node/ブラウザ両対応・合成テスト90 PASS）
+  ↓
+Phase B-9D-3 Path B接続 ─────────────────────────────── 正式Complete（Code commit 0bd3a88）
+  ↓
+Phase B-9D-4 Path A接続 ─────────────────────────────── 正式Complete（Code commit 756d867）
+  ↓
+Phase B-9D-5 手動Leader再生成 接続調査 ──────────────── 完了（実装保留・データ品質ギャップを特定）
+  ↓
+Phase B-9D-5A 手動Leader再生成 ruleArtifacts分離接続 ── 正式Complete（Code commit 22ca87c）
+  ↓
+Phase B-9E   統合検証（前半：静的53アサーション全PASS／後半：実API3経路検証）── 正式Complete
+  ↓
+Phase B-9F   正式リリース ───────────────────────────── 正式Complete（本docs・tag・push・Render）
+  ↓
+（次工程候補・優先順位未確定・特定の1つを自動確定しない・着手はユーザー承認後）
+             候補A：意味的重複/矛盾検出の実装検討
+             候補B：Evidence比較の実装検討
+             候補C：Completion Gate調査・設計
+             候補D：Publishing Readyとの接続設計
+             候補E：Quality Gate結果のExecutive Decision接続検討
+             候補F：Decision Ledger
+             候補G：AI社員カード期限表示廃止
+```
+
+**対象**：Path A（Auto Task）・Path B（dispatch）・手動Leader再生成のすべてが共通Leader Rule Engineへ正式接続。Rule Engineは事実整理専用でありLeader Final生成前の参考情報作成のみを担当し、Quality Gate/Executive Decision/Constitution Validator/Output Draft/Completion Gate/Publishing Readyのいずれにも直接介入しない。
+
+**次工程**：上記7候補を実装候補として並列に記録する。**ユーザー承認後に着手する**。
+
+**共通Leader Rule Engineの入力契約・出力契約・3経路接続詳細・実API検証結果は`docs/04DECISIONS.md` Decision095を参照**。
+
+---
+
 ## Leader統合回答・会社正式回答責務 正式採用（Phase B-9B・2026-08-05・Decision 094・docs正式化のみ）
 
 > 追記日: 2026-08-05。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**docsのみ・index.html/openaiClient.js/server.js/lib/DB/schema.sql/API無変更**。

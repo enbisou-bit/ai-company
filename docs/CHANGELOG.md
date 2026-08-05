@@ -4,6 +4,26 @@
 
 ---
 
+## Phase B-9F 共通Leader Rule Engine **正式リリース**（Phase B-9C〜B-9F統合・2026-08-06）
+
+**Decision094の責務正式化に基づき、Leader統合回答プロンプト改善（Phase B-9C）と、事実整理専用の共通Leader Rule Engine（`shared/leaderRuleEngine.js`）の新規実装・Path A/Path B/手動Leader再生成3経路接続（Phase B-9D-1〜B-9D-5A）・統合検証（Phase B-9E）を正式リリースした**（Decision095）。**index.html／openaiClient.js／server.js／shared/leaderRuleEngine.js（新規）**。**DB/schema.sql/API契約は既存互換**。**Phase54 Complete維持・Phase55未着手**（Decision095）。
+
+- **Phase B-9C（Leader統合回答プロンプト改善）**：`LEADER_FINAL_PROMPT`（Path A）・`leaderSummary()`（Path B）へ「会社の唯一の正式回答」「AI社員回答は社内検討資料」「CEO相当の最終統合責任者」「要約ではなく統合」「成果物ファースト」「情報不足の最終判断はLeader」を明文化。案件種別見出しへ「依頼された場合のみ出力」を付記。Code commit **92cc49a**。
+- **Phase B-9D-1（Rule Engine接続 調査・正式設計）**：既存`_liCompareArtifacts()`／`_liDetectConflictCandidates()`／`_liDecideAdoptionCandidates()`は件数比較・単純キーワード検出に留まり`adopt`を返す経路がないことを確認。既存NGキーワード判定の偽陽性（BRANDING/MARKETING等の誤検出）も発見。これら3関数は温存し新規Core別系統を設計。コード変更なし。
+- **Phase B-9D-2（共通Leader Rule Engine Core実装）**：`shared/leaderRuleEngine.js`新規（UMD・Node/ブラウザ両対応・外部依存/DOM依存/Network呼び出しなし）。公開API＝`normalizeLeaderRuleInput()`／`evaluateLeaderRuleFacts()`／`buildLeaderRulePromptBlock()`。v1結果契約に`duplicateTopics`/`conflicts`/`recommendedAdoptions`等は含めない（信頼できる検出能力がないため）。合成テスト90アサーション全PASS。Code commit **d194ba1**。
+- **Phase B-9D-3（Path B接続）**：`leaderSummary()`内でCoreを呼び出し`memberReplies`/`strategyReply`から構造化サマリーを生成し`context`へ1回だけ挿入。合成テスト29アサーション全PASS。Code commit **0bd3a88**。
+- **Phase B-9D-4（Path A接続）**：`runLeaderFinalResponse()`へ薄いAdapter`_lfAdaptTaskToRuleArtifact()`を追加。`mainTasks.length>0`分岐のみへ接続・`completedCount===0`分岐は無変更。合成テスト29アサーション全PASS。Code commit **756d867**。
+- **Phase B-9D-5（手動Leader再生成 接続調査）**：`atTriggerLeaderFinal()`が独自のLeader Final生成を持たずPath Bと同一の`leaderSummary()`へ委譲している構造を発見。既存`memberReplies`がReviewer/Strategyをmain扱いのまま送信しerror/skippedを不可視化するデータ品質ギャップを特定。`leaderSummary()`変更が当時禁止のため実装せず報告のみ。
+- **Phase B-9D-5A（手動Leader再生成 ruleArtifacts分離接続）**：既存`memberReplies`は無変更のまま、`_atBuildRuleArtifactsForManualRegen()`（新設・薄いマッピングのみ）が既存`_liAdaptManualLeaderRegeneration()`を再利用し`ruleArtifacts`を`/api/leader-summary`へ**任意項目**として追加。`leaderSummary()`は`ruleArtifacts`有無で入力元を分岐（未指定時はPath Bと完全同一ロジック）。Response契約`{ok,reply}`は無変更。合成テスト26アサーション全PASS。Code commit **22ca87c**。
+- **Phase B-9E前半（静的統合検証）**：3経路の因果順・共通入力契約（`{memberId,role,status,text/reply/result,isPostProcess}`）・Reviewer/Strategy扱い・Cross-case保護・Prompt Injection耐性・Gate系非干渉（`evaluateQualityGate()`等がRule Engine出力を一切参照しないことをgrepで確認）を統合合成テスト53アサーションで実測（全PASS）。
+- **Phase B-9E後半（実API統合検証）**：同一テスト案件「PhaseB4B検証用テスト案件」を再利用し、Path A Auto Task・手動Leader再生成・Path B dispatch（1回失敗→Rule Engineと無関係な既存の非決定性のため1回再送信→成功）を実施。Path A/手動再生成でQuality Gate=Not Passed（`sourceStatus:'insufficient'`）・Path Bで`qualityGate:null`（完全非表示）を実測。`decisionStatus`は一貫して`hold`・Constitution Validatorは一貫して`passed:true`・Output DraftはPath A/手動再生成で保存・Path Bで非生成を確認。Console Error 0。実費用約¥32.38（承認上限¥100以内）。
+- **対象経路**：Path A（Auto Task）・Path B（dispatch）・手動Leader再生成のすべてが共通Leader Rule Engineへ正式接続。
+- **未実装（区別して記録）**：意味的重複/矛盾検出・Evidence比較・`recommendedAdoptions`等の採否候補生成・`reviewerSignal`実質化・既存NGキーワードバグ修正・Claude応答JSON汚染の根本修正・UI上の「社内検討」明示・Completion Gate・Publishing Ready・Decision Ledger。
+- **検証**：JavaScript構文OK・`npm run dev-check` 200/200/200・`git diff --check`問題なし・Console Error 0（全工程）。
+- **Git・反映**：Code commit **92cc49a**＋**d194ba1**＋**0bd3a88**＋**756d867**＋**22ca87c**＋docs commit（本更新）。Annotated Tag。main push・Render反映。次工程候補＝意味的重複/矛盾検出の実装検討／Evidence比較の実装検討／Completion Gate調査・設計／Publishing Readyとの接続設計／Quality Gate結果のExecutive Decision接続検討／Decision Ledger／AI社員カード期限表示廃止（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-9B Leader統合回答・会社正式回答責務 **正式採用**（2026-08-05・docs正式化のみ）
 
 **Phase B-9Aの調査結果をもとに、Leader統合回答（Path Aの`LEADER_FINAL_PROMPT`／Path Bの`leaderSummary()`が生成しLeaderチャットへ表示する最終回答テキスト）の責務を正式化した**（Decision094）。**docsのみ**。**index.html/openaiClient.js/server.js/lib/DB/schema.sql/API無変更**。**Phase54 Complete維持・Phase55未着手**（Decision094）。
