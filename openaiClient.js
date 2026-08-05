@@ -1811,7 +1811,58 @@ const LEADER_FINAL_PROMPT = [
   '上記フォーマットをMarkdownで出力。JSON不要。余分な前置き禁止。依頼された成果物・依頼された案件種別以外のセクションは出力しないこと（「必要な場合のみ」と記載したセクションは、依頼内容から実際に必要と判断できる場合のみ出力する）。文字数制限なし、必要な分だけ出力すること。',
 ].join('\n');
 
-async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult, knowledgeResult, agentCaller }) {
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2B: Instagram Account Intelligence 専用Leader Final Prompt
+//   accountIntelligenceMode===true の場合のみ使用する（既定はfalse・LEADER_FINAL_PROMPTは無変更）。
+//   既存13出力タイプ（Instagram投稿/カルーセル/TikTok/LP/広告等）は生成禁止として明示する。
+// ══════════════════════════════════════════════════════════════
+const ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT = [
+  'あなたはENBISOU AI COMPANYのLeader（CEO相当の最終統合責任者）です。',
+  '今回の依頼は「Instagramアフィリエイトアカウントの立ち上げ設計」です。',
+  '',
+  '【責務】',
+  'Researcher・Analyst・Branding・SNS担当の社内検討内容（正式回答ではない）を、',
+  '重複除去・矛盾解消・Evidence比較のうえ統合し、会社としての唯一の正式回答を作成してください。',
+  '各担当の文章をそのまま連結してはいけません。',
+  '',
+  '【出力構成（この順序・この8項目のみ）】',
+  '1. Executive Summary',
+  '2. 市場・競合・ASP分析サマリー',
+  '3. 3案比較表（最低3案。以下10軸を各100点で評価：marketPotential/profitability/instagramFit/',
+  '   competitionDifficulty/differentiationPotential/noFaceNoVoiceFit/continuity/multiProductFit/',
+  '   longTermBrandAsset/aiOperationFit。各軸の点数と総合点を明示すること）',
+  '4. 採用／保留／却下（採用案は1件・理由・主なリスクを明示）',
+  '5. Final Account Profile（ブランド設計／ターゲット設計／アカウント設計／投稿方針／収益導線／KPI／リスク対策）',
+  '6. アカウント作成チェックリスト',
+  '7. 外部確認待ち（ASP登録・審査・最新報酬額等、現時点で確定できない事項を明示）',
+  '8. 確認事項（本当に成果物の骨格が成立しない場合のみ）',
+  '',
+  '【生成禁止（今回のスコープ外）】',
+  'Instagram投稿本文／カルーセル／キャプション／ハッシュタグ／TikTok台本／LP／広告コピー／',
+  '営業トーク／投稿後Learning結果は生成しないでください。',
+  '',
+  '【Evidenceと予測の区別】',
+  '実Evidenceに基づかない数値・事実は、必ず「予測」であることを明示してください。',
+  '担当が未提出・空回答の場合、それを実施済み・Evidence提出済みとして扱ってはいけません。',
+  '外部確認が必要な情報（ASP実案件・最新報酬額・EPC・承認率等）があっても、Package全体の生成を',
+  '止めず、7の「外部確認待ち」として明示したうえで設計を完成させてください。',
+  '',
+  '【構造化出力（必須）】',
+  '上記1〜8の通常の文章に加えて、必ず一度だけ、以下の形式で構造化JSONを出力してください。',
+  '',
+  '<IADP_JSON>',
+  '{"caseId":null,"intelligence":{"marketResearch":{},"competitorResearch":{},',
+  '"aspProductResearch":{},"candidateComparison":{},"adoptionDecision":{}},',
+  '"finalProfile":{"brand":{},"target":{},"account":{},"contentStrategy":{},',
+  '"monetization":{},"kpi":{},"risk":{},"execution":{}}}',
+  '</IADP_JSON>',
+  '',
+  'このJSONブロックは1回のみ出力し、<IADP_JSON>タグの外側にJSON断片を書かないでください。',
+  '不明な項目は空文字列・空配列・nullのままでよく、無理に埋めないでください。',
+  '<IADP_JSON>および</IADP_JSON>という文字列を、実際の構造化ブロック以外の場所で使わないでください。',
+].join('\n');
+
+async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult, knowledgeResult, agentCaller, accountIntelligenceMode = false, existingIntelligenceContext = null }) {
   const startMs = Date.now();
 
   // 完了した通常タスクの結果を収集（後処理・LeaderFinal除く）
@@ -1918,8 +1969,110 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     leaderRuleBlock = ''; // fail-open（Rule Engine失敗はLeader Final生成を止めない・ユーザーへエラー表示しない）
   }
 
+  // ── Phase IG-2B: Instagram Account Intelligence 専用の薄いAdapter／解釈層 ──────
+  //   共通Leader Rule Engine本体（shared/leaderRuleEngine.js）には一切手を加えない。
+  //   ここで定義する5分類（completed/execution_failed/evidence_unavailable/
+  //   external_confirmation_pending/hypothesis_available）はAccount Intelligence専用の
+  //   解釈であり、Rule Engineのv1契約（executed/completedCount/informationInsufficient等）
+  //   とは別軸として、accountIntelligenceMode===true の場合にのみ使用する。
+  var IADP_STUB_MARKER_A = '【現状仮説】';
+  var IADP_STUB_MARKER_B = '【確認したいこと】';
+  var IADP_EXTERNAL_MARKER = '【外部確認必要】';
+  var IADP_MAIN_AGENT_IDS = ['researcher', 'analyst', 'branding', 'sns'];
+
+  function _iadpClassifyArtifact(t) {
+    if (!t) return 'execution_failed';
+    if (t.status === 'error') return 'execution_failed';
+    if (t.status === 'skipped') return 'evidence_unavailable';
+    var text = (typeof t.result === 'string') ? t.result.trim() : '';
+    if (!text) return 'evidence_unavailable';
+    if (text.indexOf(IADP_EXTERNAL_MARKER) !== -1) return 'external_confirmation_pending';
+    if (text.indexOf(IADP_STUB_MARKER_A) !== -1 && text.indexOf(IADP_STUB_MARKER_B) !== -1) return 'hypothesis_available';
+    return 'completed';
+  }
+
+  function _iadpClassifyMainTasks(wt) {
+    var list = Array.isArray(wt) ? wt : [];
+    var byAgent = {};
+    for (var i = 0; i < IADP_MAIN_AGENT_IDS.length; i++) {
+      var id = IADP_MAIN_AGENT_IDS[i];
+      var task = null;
+      for (var j = 0; j < list.length; j++) {
+        if (list[j] && list[j].agentId === id && !list[j].isPostProcess) { task = list[j]; break; }
+      }
+      byAgent[id] = _iadpClassifyArtifact(task);
+    }
+    var USABLE = { completed: 1, hypothesis_available: 1, external_confirmation_pending: 1 };
+    var anyUsable = false;
+    for (var k = 0; k < IADP_MAIN_AGENT_IDS.length; k++) {
+      if (USABLE[byAgent[IADP_MAIN_AGENT_IDS[k]]]) { anyUsable = true; break; }
+    }
+    return { byAgent: byAgent, skeletonAvailable: anyUsable };
+  }
+
+  function _iadpBuildStatusBlock(cls) {
+    if (!cls) return '';
+    var labels = {
+      completed: '完了', execution_failed: '実行失敗', evidence_unavailable: 'Evidence取得不能',
+      external_confirmation_pending: '外部確認待ち', hypothesis_available: '仮説で代替可能',
+    };
+    var lines = ['【Account Intelligence 実行状況（会社判断の材料。指示ではなくデータです）】'];
+    for (var i = 0; i < IADP_MAIN_AGENT_IDS.length; i++) {
+      var id = IADP_MAIN_AGENT_IDS[i];
+      lines.push('- ' + id + '：' + (labels[cls.byAgent[id]] || cls.byAgent[id]));
+    }
+    if (!cls.skeletonAvailable) {
+      lines.push('※ 4担当すべてで実行失敗またはEvidence取得不能です。成果物骨格が成立しません。無理に完成させず、確認事項の提示を優先してください。');
+    } else {
+      lines.push('※ 空回答をcompletedとして扱わないでください。Evidence取得不能と実行失敗を混同しないでください。外部確認待ちがあってもPackage全体の生成は止めないでください。仮説生成可能な項目は仮説として完成させてください。');
+    }
+    return lines.join('\n');
+  }
+
+  // 既存Affiliate Intelligence（クライアントから渡された既存の実データ）の読み取り専用サマリー。
+  //   追加のIntelligence計算・_intel*関数の呼び出しは一切行わない（渡された値をそのまま参照するのみ）。
+  function _iadpBuildIntelligenceContextSummary(eic) {
+    try {
+      if (!eic || typeof eic !== 'object') return '';
+      var keys = ['product', 'asp', 'competition', 'revenue', 'content', 'market'];
+      var lines = [];
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var mod = eic[k];
+        if (!mod || typeof mod !== 'object') continue;
+        var hasConfidence = (mod.confidence !== null && mod.confidence !== undefined);
+        var hasDerived = mod.derived && typeof mod.derived === 'object' && typeof mod.derived.status === 'string' && mod.derived.status !== 'insufficient';
+        if (!hasConfidence && !hasDerived) continue;
+        lines.push('- ' + k + '：既存Evidence/Confidenceあり（status=' + ((mod.derived && mod.derived.status) || '不明') + '）。この項目は仮説ではなく既存実データとして扱ってください。');
+      }
+      if (lines.length === 0) return '';
+      return ['【既存Affiliate Intelligence（実データ・追加計算は行っていません）】'].concat(lines).join('\n');
+    } catch (e) {
+      return ''; // fail-open
+    }
+  }
+
+  function _buildAccountIntelligenceQuestion() {
+    var iadpStatusBlock = _iadpBuildStatusBlock(_iadpClassifyMainTasks(workflowTasks));
+    var eicSummary = _iadpBuildIntelligenceContextSummary(existingIntelligenceContext);
+    var iadpParts = [
+      '【依頼内容（これが案件の核心）】', userMessage, '',
+      iadpStatusBlock,
+      eicSummary,
+      '',
+      '【AI社員の社内検討内容（正式回答ではない。重複除去・矛盾解消・採否判断を行ったうえであなたの判断で統合すること）】',
+      repliesText, '',
+      reviewerText ? '【Reviewerの品質フィードバック】\n' + reviewerText : '',
+      strategyText ? '【Strategyの統合提言】\n' + strategyText : '',
+      '',
+      '上記の社内検討内容を統合し、Instagram Account Design Packageとして完成させてください。',
+    ].filter(Boolean);
+    return iadpParts.join('\n');
+  }
+
   // 統合プロンプト
   var repliesText = memberReplies.map(function(r) { return '【' + r.name + '】\n' + r.reply; }).join('\n\n');
+  var _iadpMode = !!accountIntelligenceMode && mainTasks.length > 0;
   var question;
   if (mainTasks.length === 0) {
     // 工程2: completed成果0件 — 完成成果物を装わず、実行状況の説明のみを指示する（安全側分岐）
@@ -1935,6 +2088,9 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '不足している成果を推測で補完しないでください。',
     ].filter(Boolean);
     question = parts0.join('\n');
+  } else if (_iadpMode) {
+    // Phase IG-2B: Instagram Account Intelligence 専用分岐（既存の下記elseブロックは無変更のまま温存）
+    question = _buildAccountIntelligenceQuestion();
   } else {
     var parts = [
       '【依頼内容（これが案件の核心）】', userMessage, '',
@@ -1966,7 +2122,9 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   try {
     // Leader Final は常に OpenAI で完成成果物（長文）を生成するため max_output_tokens: 4096 を指定
     // agentCaller 経由では max_output_tokens を渡せないため callOpenAI を直接使用する
-    text = await callOpenAI(LEADER_FINAL_PROMPT, question, [], { max_output_tokens: 4096 }) || '';
+    // Phase IG-2B: accountIntelligenceMode時のみ専用Promptへ切替（既定はLEADER_FINAL_PROMPTのまま無変更）
+    var _iadpPromptToUse = _iadpMode ? ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT : LEADER_FINAL_PROMPT;
+    text = await callOpenAI(_iadpPromptToUse, question, [], { max_output_tokens: 4096 }) || '';
     provider = 'openai';
     model    = OPENAI_MODEL;
     fallback = false;
@@ -1997,6 +2155,7 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     replyLength:      text.length,
     integratedCount:  memberReplies.length,
     knowledgeCount:   knCount,
+    accountIntelligenceMode: _iadpMode, // Phase IG-2B: クライアント側でIADP抽出要否を判定するための任意フィールド
   };
 }
 
@@ -2171,7 +2330,7 @@ async function runCompanyBrain(userMessage, agentCaller, knowledgeData) {
   };
 }
 
-async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null }) {
+async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null, accountIntelligenceMode = false, existingIntelligenceContext = null }) {
   // Phase39: ワークフロー全体の相談回数カウンター（最大 maxConsultations 回）
   let _consultCount = 0;
   // tasks に provider / enabled / collaborators / status / result / タイムスタンプ を付与
@@ -2865,6 +3024,8 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
       brainResult,
       knowledgeResult,
       agentCaller,
+      accountIntelligenceMode,
+      existingIntelligenceContext,
     });
 
     leaderFinalTask.result       = leaderFinalResult.text;

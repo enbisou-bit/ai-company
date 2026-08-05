@@ -12469,6 +12469,125 @@ function closeAutoTaskPanel() {
   document.getElementById('auto-task-panel').classList.remove('open');
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2B: Instagram Account Intelligence 専用依頼判定・実行構成・JSON抽出
+//   既存detectOutputType()・既存13 Output Type判定へは一切混ぜない（完全に独立した専用関数）。
+//   誤判定時は何もせず既存Auto Task Workflowへそのままフォールバックする（Fail-open）。
+// ══════════════════════════════════════════════════════════════
+
+// Phase IG-2B: セッション内のみで保持するIADPセッション状態（DB保存なし・F5復元対象外・_lastOutputDraftとは分離）
+let _lastInstagramAccountDesignPackage    = null;
+let _lastInstagramAccountDesignValidation = null;
+let _lastInstagramAccountDesignCaseId     = null;
+
+const ACCOUNT_INTELLIGENCE_POSITIVE_PATTERNS = [
+  /アフィリエイト[\s\S]{0,20}始めたい/, /始めたい[\s\S]{0,20}アフィリエイト/,
+  /収益化[\s\S]{0,10}アカウント/, /アカウント[\s\S]{0,10}収益化/,
+  /アカウント[\s\S]{0,10}設計/, /設計[\s\S]{0,10}アカウント/,
+  /アカウント[\s\S]{0,10}(作りたい|立ち上げ|始めたい)/,
+];
+const ACCOUNT_INTELLIGENCE_EXCLUDE_PATTERNS = [
+  /投稿(本文|文)?を?作/, /キャプション/, /カルーセル/, /ハッシュタグ/,
+  /リール台本/, /台本/, /TikTok/i,
+];
+// Instagramアカウント立ち上げ・設計依頼だけを対象とする（投稿・キャプション・カルーセル等の
+// 通常コンテンツ依頼は対象外）。曖昧な依頼は false を返し、既存Workflowへそのまま委ねる。
+function detectAccountIntelligenceRequest(text) {
+  var t = String(text || '');
+  if (!t) return false;
+  for (var i = 0; i < ACCOUNT_INTELLIGENCE_EXCLUDE_PATTERNS.length; i++) {
+    if (ACCOUNT_INTELLIGENCE_EXCLUDE_PATTERNS[i].test(t)) return false;
+  }
+  for (var j = 0; j < ACCOUNT_INTELLIGENCE_POSITIVE_PATTERNS.length; j++) {
+    if (ACCOUNT_INTELLIGENCE_POSITIVE_PATTERNS[j].test(t)) return true;
+  }
+  return false;
+}
+
+// Account Intelligence専用の固定4担当（Main）タスクを構築する。
+// Reviewer/StrategyはrunAutoTaskWorkflow()が既存仕様どおり自動追加するため、ここには含めない
+// （completedMainTasks.length>0で自動的にisPostProcess:trueとして追加される・新しいAI社員は追加しない）。
+function buildAccountIntelligenceTasks(userMessage) {
+  var msg = String(userMessage || '');
+  var researcherInstruction = [
+    '【Instagram Account Intelligence — Researcher専用調査】',
+    '依頼：' + msg,
+    '以下を調査してください（Instagram市場調査）：',
+    '・複数の参入ジャンル候補（固定リストに縛られず、依頼内容から妥当な候補を挙げてください）',
+    '・各ジャンルのInstagram競合アカウント傾向（競合量／強い競合の特徴／投稿形式／訴求パターン）',
+    '・差別化余地',
+    '・顔出し・音声なしとの相性',
+    '・再現可能な成功要因',
+    '・外部確認が必要な事項がある場合は、該当箇所に【外部確認必要】と明記してください',
+    '公開情報にもとづく調査結果と、公開情報がない場合の予測を明確に区別してください。',
+    '質問だけで処理を止めず、情報が不足していても安全側の仮説を含めた調査成果物を返してください。',
+  ].join('\n');
+  var analystInstruction = [
+    '【Instagram Account Intelligence — Analyst専用評価】',
+    '依頼：' + msg,
+    'Researcherの調査結果をもとに、最低3つのジャンル・アカウント案について、以下の10軸を各100点満点で評価してください：',
+    '市場性(marketPotential)／収益性(profitability)／Instagram適性(instagramFit)／競合難易度(competitionDifficulty)／',
+    '差別化可能性(differentiationPotential)／顔出し音声なし適性(noFaceNoVoiceFit)／継続性(continuity)／',
+    '複数商品対応力(multiProductFit)／長期ブランド資産性(longTermBrandAsset)／AI運営適性(aiOperationFit)',
+    '実Evidenceに基づかない数値は、必ず予測値であることを明示してください。',
+    '外部確認が必要な事項がある場合は、該当箇所に【外部確認必要】と明記してください。',
+  ].join('\n');
+  var brandingInstruction = [
+    '【Instagram Account Intelligence — Branding専用設計】',
+    '依頼：' + msg,
+    'Analystが評価した最低3案について、それぞれ以下を作成してください：',
+    'ブランド名／ブランドコンセプト／世界観／差別化／ターゲット／アカウント名候補／ユーザー名候補／bio／アイコン方針',
+    '追加質問だけで処理を止めないでください。情報が不足する場合は安全側の仮説を明示して作成してください。',
+  ].join('\n');
+  var snsInstruction = [
+    '【Instagram Account Intelligence — SNS専用方針】',
+    '依頼：' + msg,
+    '以下の運用方針を作成してください（投稿本文・カルーセル・キャプション自体は今回生成しないでください）：',
+    '投稿ジャンル／投稿カテゴリ／投稿比率／投稿頻度／投稿時間方針／信頼構築方針／',
+    '顔出し・音声なし運用方針／CTA方針／収益導線方針',
+  ].join('\n');
+  return [
+    { id: 'iadp-task-1', agentId: 'researcher', instruction: researcherInstruction, dependsOn: [] },
+    { id: 'iadp-task-2', agentId: 'analyst',    instruction: analystInstruction,    dependsOn: ['iadp-task-1'] },
+    { id: 'iadp-task-3', agentId: 'branding',   instruction: brandingInstruction,   dependsOn: ['iadp-task-2'] },
+    { id: 'iadp-task-4', agentId: 'sns',        instruction: snsInstruction,        dependsOn: ['iadp-task-3'] },
+  ];
+}
+
+// LeaderのFinal Textから <IADP_JSON>...</IADP_JSON> ブロックを抽出する。
+//   ・最初の完全なペアのみを対象とする（二重出力防止・indexOfは常に最初の出現を返す）
+//   ・前後に説明文があっても抽出可能（マーカー間のみを切り出す）
+//   ・コードフェンス（```json ... ```）の有無どちらにも対応
+//   ・JSONが壊れていても例外を投げない（found:trueでjson:nullを返す＝Leader自由文章は失われない）
+//   ・Leader自身の最終出力のみを対象とし、AI社員の生テキストは対象にしない（Prompt Injection耐性。
+//     eval等は使用せずJSON.parseのみで構造化するため、抽出結果はIADP Coreの正規化・検証を必ず経由する）
+function extractIadpJsonFromLeaderText(text) {
+  var OPEN = '<IADP_JSON>';
+  var CLOSE = '</IADP_JSON>';
+  try {
+    var t = String(text || '');
+    var openIdx = t.indexOf(OPEN);
+    if (openIdx === -1) return { found: false, json: null, raw: null };
+    var closeIdx = t.indexOf(CLOSE, openIdx + OPEN.length);
+    if (closeIdx === -1) return { found: false, json: null, raw: null };
+    var inner = t.slice(openIdx + OPEN.length, closeIdx).trim();
+    var fenceMatch = inner.match(/^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```$/i);
+    if (fenceMatch) inner = fenceMatch[1];
+    var parsed = null;
+    try {
+      parsed = JSON.parse(inner);
+    } catch (e1) {
+      try {
+        var ps = inner.indexOf('{'); var pe = inner.lastIndexOf('}');
+        if (ps !== -1 && pe > ps) parsed = JSON.parse(inner.slice(ps, pe + 1));
+      } catch (e2) { parsed = null; }
+    }
+    return { found: true, json: parsed, raw: inner };
+  } catch (e) {
+    return { found: false, json: null, raw: null }; // fail-open
+  }
+}
+
 // ── Phase8: AI社員ライブ状況（Live Status） ──────────────────
 
 const LIVE_AGENT_META = {
@@ -13019,6 +13138,26 @@ async function atRunWorkflow() {
   const _atRunCaseId = getCurrentApprovalCaseId() || null;
   _atLinkDispatchTasksToWorkflow(_atRunCaseId, _atCurrentWorkflowId, tasks.map(t => t.agentId), _atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId]);
 
+  // Phase IG-2B: Instagram Account Intelligence 専用判定・専用実行構成。
+  //   既存タスク構成（DOM由来）を上書きするのは判定が一致した場合のみ。
+  //   一致しない場合はtasksをそのまま使用し、既存Auto Task Workflowへ完全にFail-openする。
+  var _iadpRequested = false;
+  var _iadpExistingIntelligenceContext = null;
+  try {
+    if (detectAccountIntelligenceRequest(userMessage)) {
+      _iadpRequested = true;
+      var _iadpTasks = buildAccountIntelligenceTasks(userMessage);
+      tasks.splice.apply(tasks, [0, tasks.length].concat(_iadpTasks));
+      if (_lastOutputDraft && _lastOutputDraft.caseId === _atRunCaseId
+          && _lastOutputDraft.fields && _lastOutputDraft.fields.intelligenceContext) {
+        _iadpExistingIntelligenceContext = _lastOutputDraft.fields.intelligenceContext;
+      }
+    }
+  } catch (_iadpDetectErr) {
+    _iadpRequested = false; // fail-open: 判定失敗時は既存Workflowへ
+    _iadpExistingIntelligenceContext = null;
+  }
+
   // 実行開始時にフラグリセット（成否を atAutoStartWorkflow が参照する）
   _atLastRunSuccess = false;
 
@@ -13121,13 +13260,48 @@ async function atRunWorkflow() {
     const res  = await fetch('/api/auto-task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext() }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用
+      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext(), accountIntelligenceMode: _iadpRequested, existingIntelligenceContext: _iadpExistingIntelligenceContext }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用。Phase IG-2B: 任意項目2つを追加送信（既定はfalse/null=既存動作と同一）
     });
     const data = await res.json();
 
     if (!data.ok) {
       alert('エラー: ' + (data.error || '不明なエラー'));
       return;
+    }
+
+    // Phase IG-2B: Instagram Account Intelligence — IADP JSON抽出・Core接続・セッション内保持。
+    //   accountIntelligenceMode時のみ動作。失敗しても既存Workflow・既存Output Draft・
+    //   既存Leaderチャット表示のいずれも止めない（fail-open）。invalid時は既存正本候補を上書きしない。
+    if (_iadpRequested && typeof InstagramAccountDesign !== 'undefined') {
+      try {
+        var _iadpExtract = extractIadpJsonFromLeaderText(data.leaderFinalResult && data.leaderFinalResult.text);
+        if (_iadpExtract.found && _iadpExtract.json && typeof _iadpExtract.json === 'object') {
+          var _iadpExistingForCase = (_lastInstagramAccountDesignPackage && _lastInstagramAccountDesignCaseId === _atRunCaseId)
+            ? _lastInstagramAccountDesignPackage : null;
+          var _iadpNormalized = InstagramAccountDesign.normalizeAccountDesignPackage(_iadpExtract.json, {
+            caseId: _atRunCaseId,
+            existingIntelligenceContext: _iadpExistingIntelligenceContext,
+          });
+          if (_iadpExistingForCase) {
+            _iadpNormalized = InstagramAccountDesign.protectUserConfirmedFields(_iadpExistingForCase, _iadpNormalized);
+          }
+          var _iadpValidation = InstagramAccountDesign.validateAccountDesignPackage(_iadpNormalized);
+          if (_iadpValidation.valid) {
+            // セッション内正本候補として保持（DB保存・F5復元は今回対象外）
+            _lastInstagramAccountDesignPackage    = _iadpNormalized;
+            _lastInstagramAccountDesignValidation = _iadpValidation;
+            _lastInstagramAccountDesignCaseId     = _atRunCaseId;
+          } else {
+            // invalid時は既存正本候補を上書きしない。検証結果のみ開発用状態として記録する
+            _lastInstagramAccountDesignValidation = _iadpValidation;
+            console.warn('[IADP] validation failed, keeping existing canonical package if any:', _iadpValidation.errors);
+          }
+        } else {
+          console.warn('[IADP] no <IADP_JSON> block found or unparseable; Leader free-text response is preserved as-is.');
+        }
+      } catch (_iadpConnectErr) {
+        console.warn('[IADP] core connection error (fail-open, existing Workflow unaffected):', _iadpConnectErr.message);
+      }
     }
 
     // 完了した結果を描画（collaborators / taskHistory を含む）
