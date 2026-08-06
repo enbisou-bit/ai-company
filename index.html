@@ -6147,8 +6147,14 @@
     margin: 10px 0 14px;
     font-size: 13px;
     color: #d0d8e8;
-    overflow-x: hidden;
+    /* Phase IG-2F: chat-area は flex column のため既定の flex-shrink:1 だとカードがタイトル高(約26px)まで
+       潰れ、さらに overflow-x:hidden が overflow-y を auto へ強制昇格させて内部スクロール化していた
+       （＝Summaryが極端に小さく表示される原因）。flex-shrink:0 で潰れを防ぎ、overflow を visible にして
+       内部スクロールを解消する（横はみ出しは内側の table ラッパー overflow-x:auto と word-break で担保）。 */
+    flex-shrink: 0;
+    overflow: visible;
     word-break: break-word;
+    max-width: 100%;
   }
   .iadp-card-title {
     font-size: 15px;
@@ -6257,11 +6263,67 @@
     transition: opacity 0.3s;
     align-self: center;
   }
+  /* Phase IG-2F: Summary（重要判定を初期表示・読みやすい大きさ）＋ 詳細折りたたみ */
+  .iadp-summary {
+    margin: 10px 0 0;
+    padding: 14px;
+    background: rgba(0,0,0,0.22);
+    border: 1px solid rgba(0,212,255,0.22);
+    border-radius: 10px;
+  }
+  .iadp-summary-headline {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap;
+    padding-bottom: 8px; margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .iadp-summary-headline-label { font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: 0.04em; }
+  .iadp-summary-headline-val { font-size: 17px; font-weight: 700; }
+  .iadp-summary-note { font-size: 11px; color: #ffcf6a; margin-bottom: 8px; line-height: 1.5; }
+  .iadp-summary-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px;
+  }
+  .iadp-sg-item { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12.5px; }
+  .iadp-sg-k { color: rgba(255,255,255,0.55); flex-shrink: 0; }
+  .iadp-sg-v { color: #e6edf6; text-align: right; font-weight: 600; word-break: break-word; }
+  .iadp-summary-metrics {
+    display: flex; flex-wrap: wrap; gap: 6px 8px;
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .iadp-metric {
+    font-size: 11.5px; color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; padding: 2px 9px;
+  }
+  .iadp-metric b { color: #e6edf6; }
+  .iadp-summary-block { margin-top: 10px; }
+  .iadp-summary-block-title { font-size: 11.5px; font-weight: 600; color: rgba(0,212,255,0.75); margin-bottom: 3px; }
+  .iadp-summary-list { margin: 0; padding-left: 18px; }
+  .iadp-summary-list li { font-size: 12px; line-height: 1.55; color: #d6deea; margin: 1px 0; }
+  .iadp-summary-ids { margin-top: 10px; font-size: 10.5px; color: rgba(255,255,255,0.35); word-break: break-all; }
+  .iadp-details { margin: 10px 0 0; }
+  .iadp-details-summary {
+    cursor: pointer; font-size: 12px; font-weight: 600; color: rgba(0,212,255,0.85);
+    padding: 8px 10px; background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px; list-style: none; user-select: none;
+  }
+  .iadp-details-summary::-webkit-details-marker { display: none; }
+  .iadp-details-summary::before { content: '▸ '; }
+  .iadp-details[open] .iadp-details-summary::before { content: '▾ '; }
+  .iadp-details[open] .iadp-details-summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .iadp-cat-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; flex-wrap: wrap; }
+  .iadp-cat-name { font-size: 12px; color: rgba(255,255,255,0.62); width: 70px; flex-shrink: 0; }
+  .iadp-cat-bar { width: 54px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+  .iadp-cat-meta { font-size: 11px; color: #cbd5e5; }
   @media (max-width: 768px) {
     .iadp-card { padding: 12px 10px; margin: 8px 0 10px; font-size: 12px; }
     .iadp-section { padding: 8px; }
+    .iadp-summary { padding: 11px; }
+    .iadp-summary-grid { grid-template-columns: 1fr; gap: 2px; }
+    .iadp-summary-headline-val { font-size: 16px; }
     .iadp-cand-tbl { font-size: 10px; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .iadp-cand-tbl th, .iadp-cand-tbl td { padding: 3px 4px; }
+    .iadp-cat-name { width: auto; }
     .iadp-btn-row { gap: 6px; }
     .iadp-copy-btn { padding: 5px 10px; font-size: 11px; }
   }
@@ -12633,6 +12695,69 @@ let _lastInstagramAccountDesignPackage    = null;
 let _lastInstagramAccountDesignValidation = null;
 let _lastInstagramAccountDesignCaseId     = null;
 let _lastInstagramAccountDesignQuality    = null; // Phase IG-2C: IADP専用品質評価（Quality Gateとは別軸）
+// Phase IG-2F: 生成時コンテキスト（担当実行状況・Leader統合回答本文の有無）。階層分離アセスメントの入力。
+//   生成時にdata.results / data.leaderFinalResultから捕捉し、fields.iadp.generationContextへ保存してF5復元する。
+//   旧保存IADP（このキーが無い）はnull＝legacy扱い（内容品質を自動Completeにしない・安全側）。
+let _lastInstagramAccountDesignGenContext = null;
+
+// Phase IG-2F: IADP対象担当（buildAccountIntelligenceTasksと一致）。担当実行状況の集計に使用（表示専用）。
+var IADP_REQUIRED_MEMBERS = [
+  { agentId: 'researcher', label: 'Researcher' },
+  { agentId: 'analyst',    label: 'Analyst' },
+  { agentId: 'branding',   label: 'Branding' },
+  { agentId: 'sns',        label: 'SNS' },
+];
+
+// Phase IG-2F: data.results（担当実行状況）＋ data.leaderFinalResult から生成時コンテキストを構築する。
+//   純粋関数・非破壊。担当成果物が error/skipped/空/情報不足スタブ（逆質問で停止）の場合は「不足」として数える。
+function _iadpBuildGenerationContext(results, leaderFinalResult) {
+  try {
+    var arr = Array.isArray(results) ? results : [];
+    var byId = {};
+    for (var i = 0; i < arr.length; i++) { if (arr[i] && arr[i].agentId) byId[arr[i].agentId] = arr[i]; }
+    var members = [];
+    var weakMembers = [];
+    var completed = 0, weak = 0;
+    for (var m = 0; m < IADP_REQUIRED_MEMBERS.length; m++) {
+      var def = IADP_REQUIRED_MEMBERS[m];
+      var r = byId[def.agentId];
+      var status = r && r.status ? r.status : 'missing';
+      var resultText = r && typeof r.result === 'string' ? r.result : (r && r.result ? String(r.result) : '');
+      var trimmed = resultText.trim();
+      // 情報不足スタブ（逆質問で停止）: Leader Rule Engineと同じ判定（両マーカー一致）
+      var isInsufficientStub = trimmed.indexOf('【現状仮説】') !== -1 && trimmed.indexOf('【確認したいこと】') !== -1;
+      var isWeak = (status !== 'completed') || trimmed.length === 0 || isInsufficientStub;
+      if (isWeak) { weak++; weakMembers.push(def.label); } else { completed++; }
+      members.push({ agentId: def.agentId, label: def.label, status: status, hasResult: trimmed.length > 0, insufficientStub: isInsufficientStub });
+    }
+    var lfText = (leaderFinalResult && typeof leaderFinalResult.text === 'string') ? leaderFinalResult.text : '';
+    var lfIntegrated = (leaderFinalResult && typeof leaderFinalResult.integratedCount === 'number') ? leaderFinalResult.integratedCount : null;
+    return {
+      version: 1,
+      capturedAt: new Date().toISOString(),
+      leaderFinal: { present: lfText.trim().length > 0, integratedCount: lfIntegrated },
+      members: members,
+      memberSummary: {
+        requiredTotal: IADP_REQUIRED_MEMBERS.length,
+        requiredCompleted: completed,
+        requiredWeak: weak,
+        weakMembers: weakMembers,
+      },
+    };
+  } catch (e) {
+    return null; // fail-open（コンテキスト構築失敗時はlegacy扱い）
+  }
+}
+
+// Phase IG-2F: 生成時コンテキストからassess()用のcontextを組み立てる（純粋・非破壊・欠損に安全）。
+function _iadpBuildAssessmentContext(validation, genContext) {
+  return {
+    structureValid: !!(validation && validation.valid),
+    leaderFinal: (genContext && genContext.leaderFinal) ? genContext.leaderFinal : null,
+    memberSummary: (genContext && genContext.memberSummary) ? genContext.memberSummary : null,
+    userApproval: 'pending', // IADP承認機構は未実装＝常にpending（承認前に採用済みと表示しない）
+  };
+}
 
 // Phase IG-2E: Output Draft復元（起動時／案件切替時）に合わせてIADPセッションキャッシュを同期する。
 //   fields.iadp が無ければ確実にクリアする（cross-case漏れ防止・1 case 1 正本）。
@@ -12646,11 +12771,14 @@ function _iadpApplyRestoredFields(fields, fallbackCaseId) {
       _lastInstagramAccountDesignValidation = iadp.validation || null;
       _lastInstagramAccountDesignCaseId     = iadp.caseId || fallbackCaseId || null;
       _lastInstagramAccountDesignQuality    = iadp.quality || null;
+      // Phase IG-2F: 生成時コンテキストを復元（旧保存IADPには存在しない＝null＝legacy扱い・安全側）
+      _lastInstagramAccountDesignGenContext = iadp.generationContext || null;
     } else {
       _lastInstagramAccountDesignPackage    = null;
       _lastInstagramAccountDesignValidation = null;
       _lastInstagramAccountDesignCaseId     = null;
       _lastInstagramAccountDesignQuality    = null;
+      _lastInstagramAccountDesignGenContext = null;
     }
     if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
   } catch (_iadpApplyErr) {
@@ -12699,32 +12827,80 @@ function _iadpBuildCardHtml(pkg, quality) {
     }
   }
 
+  // Phase IG-2F: 階層分離アセスメント（構造/内容/Evidence/Readiness/Approval を別軸で判定）。
+  //   validation・generationContextはセッショングローバルから取得（旧保存IADPはgenContext=null＝legacy）。
+  var validation = _lastInstagramAccountDesignValidation;
+  var structValid = !!(validation && validation.valid);
+  var assessment = null;
+  try {
+    if (typeof InstagramAccountDesignQuality !== 'undefined' && typeof InstagramAccountDesignQuality.assessInstagramAccountDesignPackage === 'function') {
+      var _asCtx = _iadpBuildAssessmentContext(validation, _lastInstagramAccountDesignGenContext);
+      assessment = InstagramAccountDesignQuality.assessInstagramAccountDesignPackage(pkg, _asCtx);
+    }
+  } catch (_asErr) { assessment = null; }
+  var A = assessment || {};
+
+  var overallMap    = { complete: '✅ Complete', needs_work: '🟠 Needs Work', insufficient: '🔴 Insufficient' };
+  var overallLabel  = overallMap[A.overall] || '—';
+  var overallClass  = 'iadp-status-' + (A.overall === 'complete' ? 'complete' : (A.overall === 'insufficient' ? 'insufficient' : 'needs_work'));
+  var cqMap   = { complete: 'Complete', needs_work: 'Needs Work', insufficient: 'Insufficient', failed: 'Failed', not_evaluated: '未評価 (legacy)' };
+  var cqLabel = cqMap[A.contentQuality] || '—';
+  var cqClass = 'iadp-status-' + (A.contentQuality === 'complete' ? 'complete' : ((A.contentQuality === 'insufficient' || A.contentQuality === 'failed') ? 'insufficient' : 'needs_work'));
+  var evMap   = { sufficient: 'Sufficient', partial: 'Partial', insufficient: 'Insufficient', not_required: '不要' };
+  var evLabel = evMap[A.evidenceStatus] || '—';
+  var evClass = 'iadp-status-' + (A.evidenceStatus === 'sufficient' ? 'complete' : (A.evidenceStatus === 'partial' ? 'needs_work' : 'insufficient'));
+  var rdMap   = { ready: '✅ Ready', conditional: '🟡 Conditional（承認待ち）', not_ready: '⛔ Not Ready' };
+  var rdLabel = rdMap[A.accountCreationReadiness] || '⛔ Not Ready';
+  var rdClass = 'iadp-status-' + (A.accountCreationReadiness === 'ready' ? 'complete' : (A.accountCreationReadiness === 'conditional' ? 'needs_work' : 'insufficient'));
+  var apMap   = { approved: '承認済み', pending: '未実施', rejected: '却下', not_evaluated: '未評価' };
+  var apLabel = apMap[A.userApproval] || '未実施';
+  var structLabel = structValid ? '✅ Passed' : '⛔ Failed';
+  var structClass = 'iadp-status-' + (structValid ? 'complete' : 'insufficient');
+  var ec2 = A.evidenceCounts || (q.evidenceCounts) || {};
+  var scoreVal = (typeof A.score === 'number') ? A.score : (typeof q.score === 'number' ? q.score : 0);
+
   var html = '<div class="iadp-card" id="iadp-card-display">';
   html += '<div class="iadp-card-title">📋 Instagram Account Design Package</div>';
 
-  // Summary
-  html += '<div class="iadp-section"><div class="iadp-section-title">Summary</div>';
-  html += '<div class="iadp-row"><span class="iadp-row-label">Package ID</span><span class="iadp-row-val">' + esc(pkg.packageId || '—') + '</span></div>';
-  html += '<div class="iadp-row"><span class="iadp-row-label">Case ID</span><span class="iadp-row-val">' + esc(pkg.caseId || '—') + '</span></div>';
-  html += '<div class="iadp-row"><span class="iadp-row-label">Status</span><span class="iadp-row-val ' + statusClass + '">' + statusLabel + '</span></div>';
-  html += '<div class="iadp-row"><span class="iadp-row-label">品質スコア</span><span class="iadp-row-val">' + (typeof q.score === 'number' ? q.score : '—') + ' / 100</span></div>';
-  html += '<div class="iadp-row"><span class="iadp-row-label">アカウント作成準備</span><span class="iadp-row-val">' + readyLabel + '</span></div>';
-  html += '<div class="iadp-row"><span class="iadp-row-label">採用候補</span><span class="iadp-row-val">' + esc(adoptedName) + '</span></div>';
-
-  // 100%完成候補判定
-  var validation = _lastInstagramAccountDesignValidation;
-  var structValid = validation && validation.valid;
-  var designReady = q.readyForAccountCreation;
-  html += '<div style="margin-top:8px;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,0.15);font-size:11px;">';
-  html += '<div>' + (structValid ? '✅' : '⛔') + ' 設計生成：' + (structValid ? '完了' : '未完了') + '</div>';
-  html += '<div>' + (structValid ? '✅' : '⛔') + ' 構造検証：' + (structValid ? 'Passed' : 'Failed') + '</div>';
-  html += '<div>' + (designReady ? '✅' : '⛔') + ' アカウント作成準備：' + (designReady ? 'Ready' : 'Not Ready') + '</div>';
-  html += '<div>⏳ ユーザー承認：未実施</div>';
-  if (structValid && designReady) {
-    html += '<div style="margin-top:4px;color:#4cff8e;font-weight:600;">🎯 Instagramアカウント設計：100%完成候補</div>';
+  // ── Summary（重要判定を初期表示・文字でも状態を明示・色だけに依存しない） ──
+  html += '<div class="iadp-summary">';
+  html += '<div class="iadp-summary-headline"><span class="iadp-summary-headline-label">総合判定</span>';
+  html += '<span class="iadp-summary-headline-val ' + overallClass + '">' + overallLabel + '</span></div>';
+  if (A.legacy) {
+    html += '<div class="iadp-summary-note">⚠ 生成時の担当実行状況が保存されていない旧データです（内容品質は再評価不可・legacy）。</div>';
   }
+  html += '<div class="iadp-summary-grid">';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">構造検証</span><span class="iadp-sg-v ' + structClass + '">' + structLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">内容品質</span><span class="iadp-sg-v ' + cqClass + '">' + cqLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">Evidence</span><span class="iadp-sg-v ' + evClass + '">' + evLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">アカウント作成</span><span class="iadp-sg-v ' + rdClass + '">' + rdLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">ユーザー承認</span><span class="iadp-sg-v">' + apLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">採用候補</span><span class="iadp-sg-v">' + esc(adoptedName) + '</span></div>';
   html += '</div>';
+  html += '<div class="iadp-summary-metrics">';
+  html += '<span class="iadp-metric">構造充足スコア <b>' + scoreVal + '</b>/100</span>';
+  html += '<span class="iadp-metric">Evidence <b>' + (ec2.evidence_supported || 0) + '</b>件</span>';
+  html += '<span class="iadp-metric">AI仮説 <b>' + (ec2.generated_hypothesis || 0) + '</b>件</span>';
+  html += '<span class="iadp-metric">確認済 <b>' + (ec2.user_confirmed || 0) + '</b>件</span>';
+  html += '<span class="iadp-metric">重大不足 <b>' + (typeof A.criticalGapCount === 'number' ? A.criticalGapCount : '—') + '</b>件</span>';
   html += '</div>';
+  var _asMissing = Array.isArray(A.missing) ? A.missing : [];
+  if (_asMissing.length > 0) {
+    html += '<div class="iadp-summary-block"><div class="iadp-summary-block-title">主な不足</div><ul class="iadp-summary-list">';
+    for (var _mi = 0; _mi < Math.min(_asMissing.length, 6); _mi++) html += '<li>' + esc(_asMissing[_mi]) + '</li>';
+    html += '</ul></div>';
+  }
+  var _asNext = Array.isArray(A.nextActions) ? A.nextActions : [];
+  if (_asNext.length > 0) {
+    html += '<div class="iadp-summary-block"><div class="iadp-summary-block-title">次に必要な対応</div><ul class="iadp-summary-list">';
+    for (var _ni = 0; _ni < Math.min(_asNext.length, 4); _ni++) html += '<li>' + esc(_asNext[_ni]) + '</li>';
+    html += '</ul></div>';
+  }
+  html += '<div class="iadp-summary-ids">Package ID: ' + esc(pkg.packageId || '—') + ' ／ Case ID: ' + esc(pkg.caseId || '—') + '</div>';
+  html += '</div>';
+
+  // ── 詳細（折りたたみ・初期は閉じてSummaryを読みやすくする） ──
+  html += '<details class="iadp-details"><summary class="iadp-details-summary">詳細を表示（3案比較・Final Profile・Category Scores）</summary>';
 
   // 3案比較
   if (candidates.length > 0) {
@@ -12789,15 +12965,19 @@ function _iadpBuildCardHtml(pkg, quality) {
   }
   html += '</div>';
 
-  // Evidence Status
-  var ec = q.evidenceCounts || {};
+  // Evidence Status（検証済み／仮説／外部確認待ち を分離。0件を「調査済み」と誤表示しない）
+  var ec = (A && A.evidenceCounts) ? A.evidenceCounts : (q.evidenceCounts || {});
   html += '<div class="iadp-section"><div class="iadp-section-title">Evidence Status</div>';
+  html += '<div class="iadp-row"><span class="iadp-row-label">Evidence判定</span><span class="iadp-row-val ' + evClass + '">' + evLabel + '</span></div>';
   html += '<div class="iadp-evidence-bar">';
-  html += '<span class="iadp-evidence-chip">✅ Evidence: ' + (ec.evidence_supported || 0) + '件</span>';
+  html += '<span class="iadp-evidence-chip">✅ 検証済Evidence: ' + (ec.evidence_supported || 0) + '件</span>';
   html += '<span class="iadp-evidence-chip">💡 AI仮説: ' + (ec.generated_hypothesis || 0) + '件</span>';
   html += '<span class="iadp-evidence-chip">⏳ 外部確認待ち: ' + (ec.external_confirmation_required || 0) + '件</span>';
   html += '<span class="iadp-evidence-chip">👤 ユーザー確認済み: ' + (ec.user_confirmed || 0) + '件</span>';
   html += '</div>';
+  if ((ec.evidence_supported || 0) === 0 && (ec.user_confirmed || 0) === 0) {
+    html += '<div style="margin-top:6px;font-size:11px;color:#ff9e4c;">※ 検証済みEvidenceが0件のため、市場調査・競合調査は「実データ検証済み」ではありません（AI仮説段階）。</div>';
+  }
   var missing = q.missingRequiredFields || [];
   if (missing.length > 0) {
     html += '<div style="margin-top:6px;font-size:11px;color:#ff9e4c;">欠損必須項目: ' + missing.length + '件';
@@ -12806,20 +12986,31 @@ function _iadpBuildCardHtml(pkg, quality) {
   }
   html += '</div>';
 
-  // Category Scores
-  html += '<div class="iadp-section"><div class="iadp-section-title">Category Scores</div>';
-  var catLabels = { marketResearch:'市場調査', competitorResearch:'競合調査', candidateComparison:'3案比較', adoptionDecision:'採用判定', brand:'ブランド', target:'ターゲット', account:'アカウント', monetizationAndExecution:'収益・実行' };
-  var catIds = ['marketResearch','competitorResearch','candidateComparison','adoptionDecision','brand','target','account','monetizationAndExecution'];
-  for (var ki = 0; ki < catIds.length; ki++) {
-    var ck = catIds[ki];
-    var sv = typeof cs[ck] === 'number' ? cs[ck] : 0;
+  // Category Scores（構造充足／Evidence信頼度／内容品質 を分離。単一の100点でまとめない）
+  var _catBreak = (A && Array.isArray(A.categoryBreakdown) && A.categoryBreakdown.length > 0)
+    ? A.categoryBreakdown
+    : (function () {
+        // assessment未取得時のフォールバック（構造充足のみ・従来categoryScores）
+        var catLabelsFb = { marketResearch:'市場調査', competitorResearch:'競合調査', candidateComparison:'3案比較', adoptionDecision:'採用判定', brand:'ブランド', target:'ターゲット', account:'アカウント', monetizationAndExecution:'収益・実行' };
+        var idsFb = ['marketResearch','competitorResearch','candidateComparison','adoptionDecision','brand','target','account','monetizationAndExecution'];
+        return idsFb.map(function (id) { return { id: id, label: catLabelsFb[id] || id, fieldCompleteness: (typeof cs[id] === 'number' ? cs[id] : 0), evidenceConfidence: '—', contentQuality: '—' }; });
+      })();
+  var _cqShort = { complete: '✅Complete', needs_work: '🟠NeedsWork', insufficient: '🔴Insufficient', '—': '—' };
+  var _evShort = { sufficient: 'Sufficient', partial: 'Partial', insufficient: 'Insufficient', not_required: '不要', '—': '—' };
+  html += '<div class="iadp-section"><div class="iadp-section-title">Category Scores（構造充足 / Evidence / 内容品質）</div>';
+  for (var ki = 0; ki < _catBreak.length; ki++) {
+    var cb = _catBreak[ki];
+    var sv = typeof cb.fieldCompleteness === 'number' ? cb.fieldCompleteness : 0;
     var barColor = sv >= 95 ? '#4cff8e' : (sv >= 90 ? '#ffe04c' : (sv >= 60 ? '#ff9e4c' : '#ff5c5c'));
-    html += '<div class="iadp-row"><span class="iadp-row-label">' + (catLabels[ck] || ck) + '</span>';
-    html += '<span class="iadp-row-val" style="display:flex;align-items:center;gap:6px;">';
-    html += '<span style="width:60px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;display:inline-block;overflow:hidden;"><span style="display:block;height:100%;width:' + sv + '%;background:' + barColor + ';border-radius:3px;"></span></span>';
-    html += sv + '</span></div>';
+    html += '<div class="iadp-cat-row">';
+    html += '<span class="iadp-cat-name">' + esc(cb.label || cb.id) + '</span>';
+    html += '<span class="iadp-cat-bar"><span style="display:block;height:100%;width:' + sv + '%;background:' + barColor + ';border-radius:3px;"></span></span>';
+    html += '<span class="iadp-cat-meta">構造 ' + sv + ' ／ Evidence ' + esc(_evShort[cb.evidenceConfidence] || String(cb.evidenceConfidence)) + ' ／ 品質 ' + esc(_cqShort[cb.contentQuality] || String(cb.contentQuality)) + '</span>';
+    html += '</div>';
   }
   html += '</div>';
+
+  html += '</details>';
 
   // Copy buttons
   html += '<div class="iadp-btn-row">';
@@ -13749,8 +13940,17 @@ async function atRunWorkflow() {
             } catch (_iadpQualityErr) {
               console.warn('[IADP] quality evaluation error (fail-open, existing state unaffected):', _iadpQualityErr.message);
             }
+            // Phase IG-2F: 生成時コンテキスト（担当実行状況・Leader統合回答本文の有無）を捕捉。
+            //   階層分離アセスメント（内容品質・Readiness）の入力。data.results / data.leaderFinalResult は
+            //   この時点で手元にあるがF5では失われるため、fields.iadp.generationContextへ保存して復元可能にする。
+            try {
+              _lastInstagramAccountDesignGenContext = _iadpBuildGenerationContext(data.results, data.leaderFinalResult);
+            } catch (_iadpGenErr) {
+              _lastInstagramAccountDesignGenContext = null; // fail-open（legacy扱い）
+            }
             // Phase IG-2E: Output Draft caseへ正式保存（1 case 1 正本・既存/api/output-drafts保存経路を流用）。
             //   完了時点で案件が切り替わっていた場合は保存しない（誤った案件への書き込み防止・既存stale判定と同方針）。
+            //   Phase IG-2F: generationContext を任意サブキーとして追加保存（既存構造は破壊しない）。
             try {
               if (_lastOutputDraft && getCurrentApprovalCaseId() === _atRunCaseId) {
                 if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
@@ -13758,6 +13958,7 @@ async function atRunWorkflow() {
                   package:    _iadpNormalized,
                   validation: _iadpValidation,
                   quality:    _lastInstagramAccountDesignQuality,
+                  generationContext: _lastInstagramAccountDesignGenContext,
                   caseId:     _atRunCaseId,
                   savedAt:    new Date().toISOString(),
                 };

@@ -39,6 +39,7 @@
   'use strict';
 
   var QUALITY_VERSION = '1.0.0';
+  var ASSESSMENT_VERSION = '2.0.0'; // Phase IG-2F: 階層分離アセスメント（構造/内容/Evidence/Readiness/Approval）
   var REQUIRED_SCORE = 90;
   var QUALITY_STATUS_VALUES = ['complete', 'almost_ready', 'needs_work', 'insufficient'];
   var CATEGORY_IDS = [
@@ -304,12 +305,177 @@
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Phase IG-2F: 階層分離アセスメント（既存 evaluateInstagramAccountDesignQuality は無変更・後方互換）
+  //
+  //   目的: 「JSONのフィールドが埋まっている（構造充足）」ことと、「依頼を満たす実質的な
+  //   成果物として完成している（内容品質）」「根拠が揃っている（Evidence）」「実際にアカウント
+  //   作成へ進める（Readiness）」「ユーザーが承認した（Approval）」を、それぞれ別軸として分離判定する。
+  //
+  //   既存 evaluateInstagramAccountDesignQuality() を内部で再利用（フィールド充足度・Evidence件数）し、
+  //   そこへ生成時コンテキスト（担当実行状況・Leader統合回答本文の有無）を「あれば」加味する。
+  //   コンテキストが無い（旧保存IADPのF5復元など）場合は not_evaluated として安全側に扱い、
+  //   自動的にComplete/Readyへ補正しない。純粋関数・非破壊・例外を投げない（fail-open）。
+  //
+  //   context（すべて任意・欠けていても安全に動作）:
+  //     { structureValid: bool,                       // validateAccountDesignPackage().valid
+  //       leaderFinal: { present: bool, integratedCount: number|null } | null,
+  //       memberSummary: { requiredTotal, requiredCompleted, requiredWeak, weakMembers:[label] } | null,
+  //       userApproval: 'approved'|'pending'|'rejected'|'not_evaluated' }
+  // ══════════════════════════════════════════════════════════════
+  var RESEARCH_CATEGORY_IDS = ['marketResearch', 'competitorResearch', 'candidateComparison', 'adoptionDecision'];
+  var CATEGORY_LABELS_JA = {
+    marketResearch: '市場調査', competitorResearch: '競合調査', candidateComparison: '3案比較',
+    adoptionDecision: '採用判定', brand: 'ブランド', target: 'ターゲット', account: 'アカウント',
+    monetizationAndExecution: '収益・実行',
+  };
+
+  function assessInstagramAccountDesignPackage(iadp, context) {
+    var base = evaluateInstagramAccountDesignQuality(iadp);   // 既存Core再利用（fail-open済み）
+    try {
+      var ctx = isPlainObject(context) ? context : {};
+      var ec = base.evidenceCounts || {};
+      var sup = ec.evidence_supported || 0;
+      var usr = ec.user_confirmed || 0;
+      var hyp = ec.generated_hypothesis || 0;
+      var ext = ec.external_confirmation_required || 0;
+
+      // ── Structure Validation ──
+      var structureValid = ctx.structureValid === true;
+      var structureValidation = structureValid ? 'passed' : 'failed';
+
+      // ── Evidence Status（検証済み＝evidence_supported＋user_confirmed。仮説のみ／0件はinsufficient） ──
+      var verified = sup + usr;
+      var evidenceStatus;
+      if (verified === 0) evidenceStatus = 'insufficient';
+      else if (verified >= 3) evidenceStatus = 'sufficient';   // 既存Confidence設計の「独立3件」に整合
+      else evidenceStatus = 'partial';
+
+      // ── 生成時コンテキスト（担当実行状況・Leader統合回答）──
+      var ms = isPlainObject(ctx.memberSummary) ? ctx.memberSummary : null;
+      var lf = isPlainObject(ctx.leaderFinal) ? ctx.leaderFinal : null;
+      var genAvailable = !!(ms || lf);
+      var membersWeak = ms ? (ms.requiredWeak || 0) : 0;
+      var weakMembers = (ms && Array.isArray(ms.weakMembers)) ? ms.weakMembers.slice() : [];
+      // leaderOk: true=本文あり且つ統合件数>0 / false=空 or 統合0 / null=不明（旧データ）
+      var leaderOk = lf ? (lf.present === true && (lf.integratedCount == null || lf.integratedCount > 0)) : null;
+      var leaderBad = (lf && leaderOk === false);
+      var membersBad = (ms && membersWeak > 0);
+
+      // ── Content Quality（構造充足だけではCompleteにしない） ──
+      var contentQuality;
+      if (!structureValid) {
+        contentQuality = 'failed';
+      } else if (!genAvailable) {
+        contentQuality = (base.status === 'insufficient') ? 'insufficient' : 'not_evaluated'; // 旧データは安全側
+      } else {
+        var cq = (base.status === 'complete') ? 'complete'
+               : (base.status === 'almost_ready') ? 'needs_work'
+               : base.status; // needs_work / insufficient
+        if (evidenceStatus === 'insufficient' && (leaderBad || membersBad)) cq = 'insufficient';
+        else if (cq === 'complete' && (evidenceStatus === 'insufficient' || leaderBad || membersBad)) cq = 'needs_work';
+        contentQuality = cq;
+      }
+
+      // ── User Approval（承認機構は未実装＝既定pending。承認前に採用済みと表示しない） ──
+      var userApproval = (typeof ctx.userApproval === 'string' && ctx.userApproval) ? ctx.userApproval : 'pending';
+
+      // ── Account Creation Readiness（内容Complete＋構造Passed＋Evidence非insufficientでも承認前はconditional） ──
+      var accountCreationReadiness;
+      if (contentQuality === 'complete' && structureValid && evidenceStatus !== 'insufficient') {
+        accountCreationReadiness = (userApproval === 'approved') ? 'ready' : 'conditional';
+      } else {
+        accountCreationReadiness = 'not_ready';
+      }
+
+      // ── Overall（総合判定） ──
+      var overall;
+      if (!structureValid) overall = 'insufficient';
+      else if (contentQuality === 'complete' && evidenceStatus === 'sufficient') overall = 'complete';
+      else if (contentQuality === 'insufficient' || contentQuality === 'failed') overall = 'insufficient';
+      else overall = 'needs_work'; // not_evaluated（旧データ）も安全側でneeds_work＝自動Completeにしない
+
+      // ── Category Breakdown（構造充足 / Evidence信頼度 / 内容品質を分離） ──
+      var cs = base.categoryScores || {};
+      var categoryBreakdown = CATEGORY_IDS.map(function (cid) {
+        var fc = typeof cs[cid] === 'number' ? cs[cid] : 0;
+        var isResearch = RESEARCH_CATEGORY_IDS.indexOf(cid) !== -1;
+        var evidenceConfidence = isResearch ? evidenceStatus : 'not_required';
+        var catContent;
+        if (fc < 60) catContent = 'insufficient';
+        else if (isResearch && evidenceStatus === 'insufficient') catContent = 'insufficient';
+        else if (fc >= 95) catContent = 'complete';
+        else catContent = 'needs_work';
+        return {
+          id: cid, label: CATEGORY_LABELS_JA[cid] || cid,
+          fieldCompleteness: fc, evidenceConfidence: evidenceConfidence, contentQuality: catContent,
+        };
+      });
+
+      // ── 主な不足・次に必要な対応（日本語・文字で状態を伝える） ──
+      var missing = [];
+      if (!structureValid) missing.push('構造検証に失敗（必須キー・型の欠損）');
+      if (leaderBad) missing.push('Leader統合回答本文が空（担当成果の統合なし）');
+      if (membersBad) missing.push('担当成果物が不足' + (weakMembers.length ? '（' + weakMembers.join('・') + '）' : ''));
+      if (evidenceStatus === 'insufficient') missing.push('市場・競合Evidenceなし（全' + hyp + '項目がAI仮説）');
+      else if (evidenceStatus === 'partial') missing.push('Evidence不足（検証済み' + verified + '件のみ）');
+      if (!genAvailable) missing.push('生成時の担当実行状況が保存されていないため内容品質は再評価不可（legacy）');
+      var baseMissing = Array.isArray(base.missingRequiredFields) ? base.missingRequiredFields : [];
+      if (baseMissing.length > 0) missing.push('必須項目欠損 ' + baseMissing.length + '件');
+      if (ext > 0) missing.push('外部確認待ち ' + ext + '件（ASP登録・審査等）');
+
+      var nextActions = [];
+      if (membersBad || leaderBad) nextActions.push('不足している担当分析（' + (weakMembers.length ? weakMembers.join('・') : '担当') + '）を再実行してください');
+      if (evidenceStatus === 'insufficient') nextActions.push('実データ・一次情報でEvidenceを補強してください');
+      else if (evidenceStatus === 'partial') nextActions.push('残りの根拠を追加し検証済みEvidenceを増やしてください');
+      if (contentQuality === 'complete' && evidenceStatus !== 'insufficient' && userApproval === 'pending') {
+        nextActions.push('内容を確認のうえユーザー承認へ進んでください');
+      }
+      if (nextActions.length === 0) nextActions.push('不足項目を補完後、再評価してください');
+
+      return {
+        version: ASSESSMENT_VERSION, executed: true, legacy: !genAvailable,
+        overall: overall,
+        structureValidation: structureValidation,
+        contentQuality: contentQuality,
+        evidenceStatus: evidenceStatus,
+        accountCreationReadiness: accountCreationReadiness,
+        userApproval: userApproval,
+        score: base.score, requiredScore: REQUIRED_SCORE,
+        evidenceCounts: base.evidenceCounts,
+        verifiedEvidenceCount: verified,
+        hypothesisCount: hyp,
+        externalConfirmationCount: ext,
+        criticalGapCount: (leaderBad ? 1 : 0) + (membersBad ? membersWeak : 0) + (evidenceStatus === 'insufficient' ? 1 : 0) + (structureValid ? 0 : 1),
+        categoryBreakdown: categoryBreakdown,
+        missing: missing,
+        nextActions: nextActions,
+        leaderFinalEvaluated: !!lf, memberExecutionEvaluated: !!ms,
+        adoptedNote: null,
+      };
+    } catch (e) {
+      return {
+        version: ASSESSMENT_VERSION, executed: false, legacy: true,
+        overall: 'insufficient', structureValidation: (context && context.structureValid) ? 'passed' : 'failed',
+        contentQuality: 'not_evaluated', evidenceStatus: 'insufficient',
+        accountCreationReadiness: 'not_ready', userApproval: 'pending',
+        score: base.score || 0, requiredScore: REQUIRED_SCORE,
+        evidenceCounts: base.evidenceCounts || {}, verifiedEvidenceCount: 0, hypothesisCount: 0, externalConfirmationCount: 0,
+        criticalGapCount: 0, categoryBreakdown: [], missing: ['評価中に例外が発生しました'], nextActions: ['再評価してください'],
+        leaderFinalEvaluated: false, memberExecutionEvaluated: false, adoptedNote: null,
+      };
+    }
+  }
+
   return {
     version: QUALITY_VERSION,
+    assessmentVersion: ASSESSMENT_VERSION,
     QUALITY_STATUS_VALUES: QUALITY_STATUS_VALUES.slice(),
     CATEGORY_IDS: CATEGORY_IDS.slice(),
+    RESEARCH_CATEGORY_IDS: RESEARCH_CATEGORY_IDS.slice(),
     FIELD_STATUS_VALUES: FIELD_STATUS_VALUES.slice(),
     REQUIRED_SCORE: REQUIRED_SCORE,
     evaluateInstagramAccountDesignQuality: evaluateInstagramAccountDesignQuality,
+    assessInstagramAccountDesignPackage: assessInstagramAccountDesignPackage,
   };
 });
