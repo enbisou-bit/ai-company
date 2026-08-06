@@ -8,6 +8,38 @@
 
 ---
 
+## Instagram Account Design Package Output Draft Integration 正式採用（Phase IG-2D〜IG-2E統合・2026-08-06・Decision 096）
+
+> 追記日: 2026-08-06。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.htmlのみ**。**server.js／shared/instagramAccountDesign.js／shared/leaderRuleEngine.js／supabase/schema.sql 無変更・新規API/新規DBカラムなし**。
+
+Instagram Account Design Package（IADP）の実AI検証・品質調整（IG-2D）に続き、IADPを既存Output Draft永続化へ正式接続（IG-2E）した（詳細はDecision096）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase IG-2D   IADP構造化JSON品質調整 ────────────────── 正式Complete（Code commit ecfed0c）
+              openaiClient.jsの実例JSON・厳守事項追加／max_output_tokens 8192化／
+              末尾カンマ耐性parse／genreId→genreName逆引き表示
+  ↓
+Phase IG-2E-1 Output Draft保存 ───────────────────────── 正式Complete（Code commit 0fb943e）
+              IADP検証成功時にfields.iadpへ格納・既存pushOutputDraftToServer()を利用
+  ↓
+Phase IG-2E-2 F5復元・案件切替復元 ───────────────────── 正式Complete（Code commit 0fb943e）
+              新設_iadpApplyRestoredFields()がrestoreOutputDraftFromServer()の
+              復元結果からIADPカードを自動再表示
+  ↓
+Phase IG-2E-3 1 Case 1 正本・Cross-case漏れ防止 ──────── 正式Complete（Code commit 0fb943e）
+              createOutputDraft()前後でfields.iadpを退避・引き継ぎ
+```
+
+**対象**：`_lastOutputDraft.fields.iadp`（新規サブキー・既存`fields`JSONBへ相乗り）／`_iadpApplyRestoredFields()`（新設）／`restoreOutputDraftFromServer()`（呼び出し追加のみ）／`atRunWorkflow()`（carry-forward追加のみ）。既存の読み取り専用IADPカード表示・コピー機能は無変更。
+
+**検証**：既存案件を利用し実AI追加実行なしでブラウザJS経由のダミーIADP注入により保存・F5復元・案件切替・cross-case guard・後方互換をすべて実測確認（Console Error 0）。詳細はDecision096参照。
+
+**次工程**：Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認、IADP実AI生成からの自動保存End-to-End確認を次工程候補として並列に記録する。正式な次工程はユーザー承認後に決定する。共通Leader Rule Engineの入力契約に変更はない（本Phaseとは独立系統）。詳細はdocs/04DECISIONS.md Decision096を参照。
+
+---
+
 ## 共通Leader Rule Engine 正式リリース（Phase B-9C〜B-9F統合・2026-08-06・Decision 095）
 
 > 追記日: 2026-08-06。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html／openaiClient.js／server.js／shared/leaderRuleEngine.js（新規）**。**DB/schema.sql/API契約は既存互換**。

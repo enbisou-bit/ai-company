@@ -4,6 +4,20 @@
 
 ---
 
+## Phase IG-2D〜IG-2E Instagram Account Design Package Output Draft Integration **正式採用**（2026-08-06）
+
+**IADP（Instagram Account Design Package）の実AI検証・品質調整（IG-2D）に続き、IADPを既存Output Draft永続化へ正式接続した（IG-2E）**（Decision096）。**index.htmlのみ**（IG-2D・IG-2Eとも）。**server.js／shared/instagramAccountDesign.js／shared/leaderRuleEngine.js／supabase/schema.sql 無変更**。**新規API・新規DBカラムなし**。**Phase54 Complete維持・Phase55未着手**（Decision096）。
+
+- **IG-2D（IADP構造化JSON品質調整）**：`openaiClient.js`のIADP専用プロンプトへ実例JSON・厳守事項（10軸スコアの意味ある差・decision/adoptedCandidateId整合・括弧の対応関係）を追加し空値/プレースホルダー残留を抑制。`accountIntelligenceMode`時のみ`max_output_tokens`を4096→8192（通常Leader Finalは無変更）。`extractIadpJsonFromLeaderText()`へ末尾カンマ耐性parseを追加。`_iadpStripJsonBlock()`が構造化ブロックのみで自由文が空の場合に案内文を表示。`_iadpBuildCardHtml()`でgenreId→genreName逆引き表示・adoptionReason優先表示。Code commit **ecfed0c**。
+- **IG-2E-1（Output Draft保存）**：IADP検証成功時（`validateAccountDesignPackage().valid===true`）に`_lastOutputDraft.fields.iadp`へ`{package,validation,quality,caseId,savedAt}`を格納し、既存`pushOutputDraftToServer()`（＝既存`POST /api/output-drafts`）でそのまま送信。affiliateContext／intelligenceContextと同じ「`fields`配下への相乗り保存」パターンを踏襲。
+- **IG-2E-2（F5復元・案件切替復元）**：新設`_iadpApplyRestoredFields(fields, caseId)`が既存`restoreOutputDraftFromServer()`（起動時／案件切替時）の復元結果からIADPセッションキャッシュ（`_lastInstagramAccountDesignPackage`等4変数）を同期し`reRenderChatArea()`でIADPカードを自動再表示。案件に保存Draftが無ければキャッシュを確実にクリアしCross-case漏れを防止。
+- **IG-2E-3（1 Case 1 正本）**：`createOutputDraft()`が`fields`を毎回初期化する既存仕様に対し、実行直前に既存`fields.iadp`を退避し新Draftへ引き継ぐことで、同一案件内でIADP以外のAuto Taskを実行しても消えないようにした。
+- **未実装（区別して記録）**：IADP実AI生成からの自動保存End-to-End確認（今回はダミーパッケージによる保存/復元/切替機構の検証のみ）、Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認（コード変更箇所との非重複はdiffで確認済みだが実動作は未検証）。
+- **検証**：既存案件を利用し実AIを追加実行せずブラウザJS経由でダミーIADP（`normalizeAccountDesignPackage`／`validateAccountDesignPackage`／`evaluateInstagramAccountDesignQuality`を実際に通した`valid:true`パッケージ）を注入して実測。保存＝`POST /api/output-drafts`200 OK、F5復元＝同一`output_id`のままIADPカード再表示、案件切替＝他案件へ切替でカード消滅・グローバルclear・元案件へ戻すと再表示、1 case 1 正本＝案件間混在なし、後方互換＝IADP未使用の旧Draft（type: document等）はエラーなく従来どおり復元、Console Error 0を確認。検証後は注入したダミーIADPを削除し実案件を原状復帰。`node --check` OK・`git diff --check`問題なし・`npm run dev-check` 200/200/200。
+- **Git・反映**：Code commit **ecfed0c**（IG-2D）＋**0fb943e**（IG-2E）＋docs commit（本更新）。Annotated Tag **v1.01-instagram-account-design-output-draft**。main push・Render反映。次工程候補＝Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認／IADP実AI生成からの自動保存End-to-End確認（いずれも未着手・正式な次工程はユーザー承認後に決定）。
+
+---
+
 ## Phase B-9F 共通Leader Rule Engine **正式リリース**（Phase B-9C〜B-9F統合・2026-08-06）
 
 **Decision094の責務正式化に基づき、Leader統合回答プロンプト改善（Phase B-9C）と、事実整理専用の共通Leader Rule Engine（`shared/leaderRuleEngine.js`）の新規実装・Path A/Path B/手動Leader再生成3経路接続（Phase B-9D-1〜B-9D-5A）・統合検証（Phase B-9E）を正式リリースした**（Decision095）。**index.html／openaiClient.js／server.js／shared/leaderRuleEngine.js（新規）**。**DB/schema.sql/API契約は既存互換**。**Phase54 Complete維持・Phase55未着手**（Decision095）。

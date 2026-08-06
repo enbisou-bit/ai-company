@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.3）
-> 更新日: 2026-08-06（Phase B-9F 共通Leader Rule Engine 正式リリース・Decision 095）。以前: 2026-08-05（Phase B-9B Leader統合回答・会社正式回答責務 正式採用・Decision 094）。以前: 2026-08-04（Phase B-8 Quality Gate Executive Leader Report表示 正式Complete・Decision 093）。以前: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
+> 更新日: 2026-08-06（Phase IG-2E Instagram Account Design Package Output Draft Integration 正式採用・Decision 096）。以前: 2026-08-06（Phase B-9F 共通Leader Rule Engine 正式リリース・Decision 095）。以前: 2026-08-05（Phase B-9B Leader統合回答・会社正式回答責務 正式採用・Decision 094）。以前: 2026-08-04（Phase B-8 Quality Gate Executive Leader Report表示 正式Complete・Decision 093）。以前: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
 
 ---
 
