@@ -10407,6 +10407,7 @@ async function restoreOutputDraftFromServer(reqCaseId, reason) {
       if (reason === 'caseSwitch' && _lastOutputDraft && _lastOutputDraft._restoredFromServer === true) {
         _lastOutputDraft = null;                            // 安全に空へ戻す
         try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }  // 未生成(空)状態へ再描画
+        try { _iadpApplyRestoredFields(null, reqCaseId); } catch (e) { /* 失敗握り潰し */ }  // Phase IG-2E: 前案件のIADPカードを残さない
       }
       return;                                               // 該当Draットなし（POSTなし）
     }
@@ -10415,6 +10416,7 @@ async function restoreOutputDraftFromServer(reqCaseId, reason) {
     if (!restored) return;
     _lastOutputDraft = restored;                            // 保存済 output_id のまま復元（新規採番しない）
     _applyReviewStateFromServerRow(row);                    // Phase54-2f: 同 output_id の Mobile Review状態を復元（NULLなら既定維持）
+    try { _iadpApplyRestoredFields(restored.fields, reqCaseId); } catch (e) { /* 失敗握り潰し */ }  // Phase IG-2E: F5復元・案件切替時にIADPカードを同期
     try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }
     scheduleApprovalSync('outputDraftRestore');             // 復元後、既存Approval Syncが同 output_id で承認復元（Draft APIから承認は復元しない）
   } catch (e) { /* 失敗握り潰し・UIを止めない */ } finally {
@@ -12622,11 +12624,39 @@ function closeAutoTaskPanel() {
 //   誤判定時は何もせず既存Auto Task Workflowへそのままフォールバックする（Fail-open）。
 // ══════════════════════════════════════════════════════════════
 
-// Phase IG-2B/IG-2C: セッション内のみで保持するIADPセッション状態（DB保存なし・F5復元対象外・_lastOutputDraftとは分離）
+// Phase IG-2B/IG-2C: セッション内で保持するIADPセッション状態。
+// Phase IG-2E: 正本は _lastOutputDraft.fields.iadp としてOutput Draft経由でDB保存・F5復元・案件切替復元される
+//   ようになった（既存の保存/復元APIをそのまま流用・新規API追加なし）。この4変数は表示用の
+//   「現在案件のセッションキャッシュ」であり、起動時・案件切替時は _iadpApplyRestoredFields() が
+//   Output Draft復元結果に合わせて同期する（フィールド構造・型はIG-2B/IG-2Cから無変更）。
 let _lastInstagramAccountDesignPackage    = null;
 let _lastInstagramAccountDesignValidation = null;
 let _lastInstagramAccountDesignCaseId     = null;
 let _lastInstagramAccountDesignQuality    = null; // Phase IG-2C: IADP専用品質評価（Quality Gateとは別軸）
+
+// Phase IG-2E: Output Draft復元（起動時／案件切替時）に合わせてIADPセッションキャッシュを同期する。
+//   fields.iadp が無ければ確実にクリアする（cross-case漏れ防止・1 case 1 正本）。
+//   保存/復元の仕組み自体はOutput Draft既存API（/api/output-drafts）を流用するのみで、
+//   新規API・新規DBカラムは追加しない。UIは _iadpRenderIntoChatArea 経由の既存カード描画のまま。
+function _iadpApplyRestoredFields(fields, fallbackCaseId) {
+  try {
+    var iadp = fields && fields.iadp;
+    if (iadp && iadp.package) {
+      _lastInstagramAccountDesignPackage    = iadp.package;
+      _lastInstagramAccountDesignValidation = iadp.validation || null;
+      _lastInstagramAccountDesignCaseId     = iadp.caseId || fallbackCaseId || null;
+      _lastInstagramAccountDesignQuality    = iadp.quality || null;
+    } else {
+      _lastInstagramAccountDesignPackage    = null;
+      _lastInstagramAccountDesignValidation = null;
+      _lastInstagramAccountDesignCaseId     = null;
+      _lastInstagramAccountDesignQuality    = null;
+    }
+    if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
+  } catch (_iadpApplyErr) {
+    console.warn('[IADP] restore apply error (fail-open):', _iadpApplyErr.message);
+  }
+}
 
 // ══════════════════════════════════════════════════════════════
 // Phase IG-2C: IADP成果物カード表示・コピー機能
@@ -13544,6 +13574,13 @@ async function atRunWorkflow() {
   const _atRunCaseId = getCurrentApprovalCaseId() || null;
   _atLinkDispatchTasksToWorkflow(_atRunCaseId, _atCurrentWorkflowId, tasks.map(t => t.agentId), _atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId]);
 
+  // Phase IG-2E: 1 case 1 正本 — createOutputDraft()がfields:{}へ初期化する前に、現在案件へ
+  //   保存済みの承認済みIADPを退避する。今回の実行がIADP依頼か否かに関わらず退避しておくことで、
+  //   同一案件内で別種のAuto Taskを実行しても既存の正本IADPが消えないようにする（追加のみ）。
+  var _iadpFieldsCarryForward = (_lastOutputDraft && _lastOutputDraft.caseId === _atRunCaseId
+      && _lastOutputDraft.fields && _lastOutputDraft.fields.iadp)
+    ? _lastOutputDraft.fields.iadp : null;
+
   // Phase IG-2B: Instagram Account Intelligence 専用判定・専用実行構成。
   //   既存タスク構成（DOM由来）を上書きするのは判定が一致した場合のみ。
   //   一致しない場合はtasksをそのまま使用し、既存Auto Task Workflowへ完全にFail-openする。
@@ -13632,6 +13669,11 @@ async function atRunWorkflow() {
   _lastOutputDetection = detectOutputType(userMessage);
   // 社員向上B B-1: 検出値を正式値へ正規化してからDraft生成（二重判定はしない・冪等）
   _lastOutputDraft     = createOutputDraft(normalizeOutputType(_lastOutputDetection.type), userMessage);
+  // Phase IG-2E: 退避しておいた承認済みIADPを新Draftへ引き継ぐ（このAuto Task実行がIADPでなくても消えないようにする）
+  if (_iadpFieldsCarryForward && _lastOutputDraft) {
+    if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
+    _lastOutputDraft.fields.iadp = _iadpFieldsCarryForward;
+  }
   // Phase45-7: Knowledge取得・選定（失敗してもWorkflowを止めない）
   // Phase46-1: fetch状態・件数を追跡
   _lastInjectedKnowledge = [];
@@ -13706,6 +13748,23 @@ async function atRunWorkflow() {
               }
             } catch (_iadpQualityErr) {
               console.warn('[IADP] quality evaluation error (fail-open, existing state unaffected):', _iadpQualityErr.message);
+            }
+            // Phase IG-2E: Output Draft caseへ正式保存（1 case 1 正本・既存/api/output-drafts保存経路を流用）。
+            //   完了時点で案件が切り替わっていた場合は保存しない（誤った案件への書き込み防止・既存stale判定と同方針）。
+            try {
+              if (_lastOutputDraft && getCurrentApprovalCaseId() === _atRunCaseId) {
+                if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
+                _lastOutputDraft.fields.iadp = {
+                  package:    _iadpNormalized,
+                  validation: _iadpValidation,
+                  quality:    _lastInstagramAccountDesignQuality,
+                  caseId:     _atRunCaseId,
+                  savedAt:    new Date().toISOString(),
+                };
+                pushOutputDraftToServer(_lastOutputDraft);
+              }
+            } catch (_iadpSaveErr) {
+              console.warn('[IADP] Output Draft save error (fail-open, session state unaffected):', _iadpSaveErr.message);
             }
           } else {
             // invalid時は既存正本候補を上書きしない。検証結果のみ開発用状態として記録する
