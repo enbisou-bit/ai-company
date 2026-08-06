@@ -9594,7 +9594,14 @@ function safeLeaderReply(memberId, replyText) {
 }
 function _iadpStripJsonBlock(text) {
   if (typeof text !== 'string') return text;
-  return text.replace(/<IADP_JSON>[\s\S]*?<\/IADP_JSON>/g, '').replace(/```json\s*<IADP_JSON>[\s\S]*?<\/IADP_JSON>\s*```/g, '').trim();
+  var hadIadpBlock = text.indexOf('<IADP_JSON>') !== -1;
+  var stripped = text.replace(/<IADP_JSON>[\s\S]*?<\/IADP_JSON>/g, '').replace(/```json\s*<IADP_JSON>[\s\S]*?<\/IADP_JSON>\s*```/g, '').trim();
+  // Leaderが構造化ブロックのみを出力し自由文章を省略した場合、チャット吹き出しが空になるのを防ぐ
+  // （IADPカード側に全内容が表示されるため、Fail-open的な短い案内文のみを表示する・追加のみ）
+  if (!stripped && hadIadpBlock) {
+    return 'Instagramアカウント設計の詳細は、下記のIADPカードをご確認ください。';
+  }
+  return stripped;
 }
 
 // ── AI返答のJSONパース（失敗時はプレーンテキスト） ──
@@ -12640,9 +12647,24 @@ function _iadpBuildCardHtml(pkg, quality) {
   var cc = (pkg.intelligence && pkg.intelligence.candidateComparison) || {};
   var ad = (pkg.intelligence && pkg.intelligence.adoptionDecision) || {};
   var candidates = Array.isArray(cc.candidates) ? cc.candidates : [];
+  // Core正規化後のcandidateComparison.candidatesはgenreId（genreNameは保持されない）のみを持つため、
+  // marketResearch.candidatesのgenreId→genreNameで人間可読名を引く（表示専用・Core非変更）
+  var _iadpGenreNameById = {};
+  var _mrCandidates = (pkg.intelligence && pkg.intelligence.marketResearch && Array.isArray(pkg.intelligence.marketResearch.candidates))
+    ? pkg.intelligence.marketResearch.candidates : [];
+  for (var mi = 0; mi < _mrCandidates.length; mi++) {
+    var _mrc = _mrCandidates[mi];
+    if (_mrc && _mrc.genreId) _iadpGenreNameById[_mrc.genreId] = _mrc.genreName || '';
+  }
+  function _iadpCandidateLabel(c) {
+    if (!c) return '—';
+    if (c.genreName) return c.genreName;
+    if (c.genreId && _iadpGenreNameById[c.genreId]) return _iadpGenreNameById[c.genreId];
+    return c.candidateId || '—';
+  }
   for (var ci = 0; ci < candidates.length; ci++) {
     if (candidates[ci] && candidates[ci].candidateId === ad.adoptedCandidateId) {
-      adoptedName = candidates[ci].genreName || candidates[ci].candidateId || '—';
+      adoptedName = _iadpCandidateLabel(candidates[ci]);
       break;
     }
   }
@@ -12685,10 +12707,10 @@ function _iadpBuildCardHtml(pkg, quality) {
       var dec = c.decision || '—';
       var decClass = dec === 'adopt' ? 'iadp-cand-adopt' : (dec === 'hold' ? 'iadp-cand-hold' : 'iadp-cand-reject');
       var decLabel = { adopt: '採用', hold: '保留', reject: '却下' }[dec] || dec;
-      var reason = c.decisionRationale || (ad.adoptedCandidateId === c.candidateId ? (ad.decisionRationale || '—') : '—');
+      var reason = c.adoptionReason || (ad.adoptedCandidateId === c.candidateId ? (ad.decisionRationale || '—') : '—');
       var risks = Array.isArray(c.mainRisks) ? c.mainRisks.join(', ') : '—';
       html += '<tr>';
-      html += '<td>' + esc(c.genreName || c.candidateId || '—') + '</td>';
+      html += '<td>' + esc(_iadpCandidateLabel(c)) + '</td>';
       html += '<td>' + (typeof c.totalScore === 'number' ? c.totalScore : '—') + '</td>';
       html += '<td class="' + decClass + '">' + decLabel + '</td>';
       html += '<td>' + esc(typeof reason === 'string' ? reason.slice(0, 60) : '—') + '</td>';
@@ -12947,14 +12969,24 @@ function extractIadpJsonFromLeaderText(text) {
     var inner = t.slice(openIdx + OPEN.length, closeIdx).trim();
     var fenceMatch = inner.match(/^```(?:json)?\s*\r?\n?([\s\S]*?)\r?\n?```$/i);
     if (fenceMatch) inner = fenceMatch[1];
+    // LLMがJSON末尾カンマ（trailing comma。標準JSONでは不正）を出力することがあるため、
+    // 厳格parseに失敗した場合のみ末尾カンマ除去を試す（薄いAdapter・IADP Core本体は無変更）
+    function _iadpStripTrailingCommas(s) { return s.replace(/,(\s*[\]}])/g, '$1'); }
     var parsed = null;
     try {
       parsed = JSON.parse(inner);
     } catch (e1) {
       try {
-        var ps = inner.indexOf('{'); var pe = inner.lastIndexOf('}');
-        if (ps !== -1 && pe > ps) parsed = JSON.parse(inner.slice(ps, pe + 1));
-      } catch (e2) { parsed = null; }
+        parsed = JSON.parse(_iadpStripTrailingCommas(inner));
+      } catch (e1b) {
+        try {
+          var ps = inner.indexOf('{'); var pe = inner.lastIndexOf('}');
+          if (ps !== -1 && pe > ps) {
+            var candidate = inner.slice(ps, pe + 1);
+            try { parsed = JSON.parse(candidate); } catch (e2) { parsed = JSON.parse(_iadpStripTrailingCommas(candidate)); }
+          }
+        } catch (e2b) { parsed = null; }
+      }
     }
     return { found: true, json: parsed, raw: inner };
   } catch (e) {
