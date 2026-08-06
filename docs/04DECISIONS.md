@@ -18,11 +18,21 @@
 3. **1 Case 1 正本・Cross-case漏れ防止**：`createOutputDraft()`はAuto Task実行のたびに`fields`を空へ再初期化する既存仕様のため、実行直前に現在案件の既存`fields.iadp`を退避し、新Draft生成直後に引き継ぐ処理を追加した。これにより、同一案件内でIADP以外のAuto Taskを実行しても、直前まで採用されていたIADPが消えない。表示側は既存の`caseId`一致ガード（`_lastInstagramAccountDesignCaseId !== curCaseId`）をそのまま利用し、他案件のIADPが混入表示されないことを維持する。
 4. **UI・保護範囲は無変更**：既存の読み取り専用IADPカード（コピー機能のみ）の表示仕様は変更しない。`server.js`／`shared/instagramAccountDesign.js`／`shared/leaderRuleEngine.js`／`supabase/schema.sql`はいずれも変更しない。新規DB Migration・新規APIは追加しない。
 
-**検証**：既存案件（「Instagramアカウト設計」）を利用し、実AIを追加実行せずブラウザJS経由でダミーIADP（`normalizeAccountDesignPackage`／`validateAccountDesignPackage`／`evaluateInstagramAccountDesignQuality`を実際に通した`valid:true`パッケージ）を注入して実測した。結果：①保存＝`POST /api/output-drafts`200 OK・`fields.iadp`書き込み確認、②F5復元＝リロード後に同一`output_id`のままIADPカード再表示、③案件切替＝他案件へ切替でカード消滅・グローバルclear、元案件へ戻すと再表示、④1 case 1 正本＝案件間の混在なし、⑤後方互換＝IADP未使用の旧Draft（type: document等）はエラーなく従来どおり復元、⑥Console Error 0（全操作を通じて）。検証後、注入したダミーIADPは`fields.iadp`を削除して再度`pushOutputDraftToServer()`し、実案件を元の状態（`instagram_carousel`の8フィールドのみ）へ復帰させた。Path B／Content Planning／Carousel Builder／Publishing Readyはコード変更箇所と非重複であることをdiffで確認したが、各機能の実動作回帰確認は今回未実施。
+**検証（localhost）**：既存案件（「Instagramアカウト設計」）を利用し、実AIを追加実行せずブラウザJS経由でダミーIADP（`normalizeAccountDesignPackage`／`validateAccountDesignPackage`／`evaluateInstagramAccountDesignQuality`を実際に通した`valid:true`パッケージ）を注入して実測した。結果：①保存＝`POST /api/output-drafts`200 OK・`fields.iadp`書き込み確認、②F5復元＝リロード後に同一`output_id`のままIADPカード再表示、③案件切替＝他案件へ切替でカード消滅・グローバルclear、元案件へ戻すと再表示、④1 case 1 正本＝案件間の混在なし、⑤後方互換＝IADP未使用の旧Draft（type: document等）はエラーなく従来どおり復元、⑥Console Error 0（全操作を通じて）。検証後、注入したダミーIADPは`fields.iadp`を削除して再度`pushOutputDraftToServer()`し、実案件を元の状態（`instagram_carousel`の8フィールドのみ）へ復帰させた。
 
-**Git・反映**：Code commit **ecfed0c**（IG-2D・IADP構造化JSON品質調整・openaiClient.js＋index.html）＋**0fb943e**（IG-2E・Output Draft Integration・index.htmlのみ）。**server.js/DB/schema.sql/API契約は既存互換**（新規API・新規DBカラムなし）。tag未作成・push未実施・本docs commitも今回未実施（ユーザー承認後）。**Phase54 Complete維持・Phase55未着手**。
+**検証（Render本番・PC）**：本番URL（`https://ai-company-l45x.onrender.com`）200 OK・配信物にIG-2E新規コード（`_iadpApplyRestoredFields`等）が反映されていることを確認。既存案件「Instagramアカウント設計」（`case-ms7lamica57l`）を用いてlocalhostと同一手順（ダミーIADP注入・保存・F5復元・案件切替・Cross-case確認）を実施し、保存＝`POST /api/output-drafts`200 OK、F5復元＝同一`output_id`のままカード再表示、案件切替＝カード消滅・グローバルclear・元案件復帰で再表示、Console Error 0を実測。検証後、本番データも`fields.iadp`削除・再保存で原状復帰（サーバー側GETで`hasIadp:false`・元8フィールドのみを確認）。
 
-**次工程**：Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認、IADP実AI生成からの自動保存End-to-End確認、同一案件でIADP以外のAuto Taskを挟んでもIADPが残るかの追加確認を次工程候補として並列に記録する。**特定の1つを自動的に次工程として確定しない**。正式な次工程はユーザー承認後に決定する。
+**検証（iPhone実機・ユーザー実施）**：Render本番表示・ログイン・Leader画面・案件切替・Auto Task・Output Engineいずれも正常、白画面/無限ロードなし、Console上で問題となる挙動なし、IG-2D／IG-2Eの追加による既存機能破壊なしを確認。
+
+Path B／Content Planning／Carousel Builder／Publishing Readyはコード変更箇所と非重複であることをdiffで確認したが、各機能の実動作回帰確認は今回未実施。
+
+**Known Issue（今回の実装とは独立・後続工程で対応）**：
+- **Known Issue ①（iPhone・チャット履歴の瞬間消失）**：iPhoneで案件を開いた直後、一瞬チャット履歴が表示された後に消え、Auto Taskボタン押下で正常に再表示される。保存データ・復元処理自体は正常に動作しており、描画タイミング（再描画競合）の問題と推定。IG-2D／IG-2Eの保存・復元機能自体の不具合ではない。
+- **Known Issue ②（iPhone Landscapeレイアウト崩れ）**：iPhone横画面（Landscape）でレイアウトが崩れ、チャット領域が極端に狭くなり実用性が低い。サイドバー制御を含むLandscape Responsive対応が必要。IG-2D／IG-2Eとは無関係の既存UI課題。
+
+**Git・反映**：Code commit **ecfed0c**（IG-2D・IADP構造化JSON品質調整・openaiClient.js＋index.html）＋**0fb943e**（IG-2E・Output Draft Integration・index.htmlのみ）＋**d36de10**（docs commit・Decision096含む7ファイル）。**server.js/DB/schema.sql/API契約は既存互換**（新規API・新規DBカラムなし）。Annotated Tag **v1.01-instagram-account-design-output-draft**・main push・Render反映・**PC本番確認・iPhone実機確認 完了（2026-08-06・ユーザー実施）**。**Phase54 Complete維持・Phase55未着手**。**IG-2D／IG-2E 正式リリースComplete**。
+
+**次工程**：Known Issue①（iPhoneチャット履歴瞬間消失・再描画競合調査）、Known Issue②（iPhone Landscapeレイアウト崩れ・Responsive対応）、Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認、IADP実AI生成からの自動保存End-to-End確認、同一案件でIADP以外のAuto Taskを挟んでもIADPが残るかの追加確認を次工程候補として並列に記録する。**特定の1つを自動的に次工程として確定しない**。正式な次工程はユーザー承認後に決定する。
 
 ---
 

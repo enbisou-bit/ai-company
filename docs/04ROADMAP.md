@@ -34,9 +34,9 @@ Phase IG-2E-3 1 Case 1 正本・Cross-case漏れ防止 ──────── 
 
 **対象**：`_lastOutputDraft.fields.iadp`（新規サブキー・既存`fields`JSONBへ相乗り）／`_iadpApplyRestoredFields()`（新設）／`restoreOutputDraftFromServer()`（呼び出し追加のみ）／`atRunWorkflow()`（carry-forward追加のみ）。既存の読み取り専用IADPカード表示・コピー機能は無変更。
 
-**検証**：既存案件を利用し実AI追加実行なしでブラウザJS経由のダミーIADP注入により保存・F5復元・案件切替・cross-case guard・後方互換をすべて実測確認（Console Error 0）。詳細はDecision096参照。
+**検証**：既存案件を利用し実AI追加実行なしでブラウザJS経由のダミーIADP注入により保存・F5復元・案件切替・cross-case guard・後方互換をlocalhost・Render本番PCの両方で実測確認（Console Error 0・検証後は原状復帰）。**PC本番確認・iPhone実機確認 完了（ユーザー実施）**。iPhone確認で今回の実装とは独立のKnown Issue 2件（①チャット履歴瞬間消失＝再描画競合の疑い、②iPhone Landscapeレイアウト崩れ＝Responsive対応要）を発見・後続工程へ記録。詳細はDecision096参照。
 
-**次工程**：Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認、IADP実AI生成からの自動保存End-to-End確認を次工程候補として並列に記録する。正式な次工程はユーザー承認後に決定する。共通Leader Rule Engineの入力契約に変更はない（本Phaseとは独立系統）。詳細はdocs/04DECISIONS.md Decision096を参照。
+**次工程**：Known Issue①②の対応、Path B／Content Planning／Carousel Builder／Publishing Readyの実動作回帰確認、IADP実AI生成からの自動保存End-to-End確認を次工程候補として並列に記録する。正式な次工程はユーザー承認後に決定する。共通Leader Rule Engineの入力契約に変更はない（本Phaseとは独立系統）。詳細はdocs/04DECISIONS.md Decision096を参照。
 
 ---
 
