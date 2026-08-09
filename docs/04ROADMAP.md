@@ -31,10 +31,14 @@ Phase IG-2H   Reviewer／Strategy／Quality Gate 接続 ─── 正式Complete
               既存正本の再利用のみ・Quality Gate再実行なし・多シグナル導出
   ↓
 Phase IG-2I   docs正式化・Tag・Push・Render・本番確認 ─ 正式Complete（2026-08-09・Decision097）
+              PC本番確認 完了／iPhone実機確認 完了（縦画面Complete・横画面はKnown Issue継続）
   ↓
 【次工程】     Instagram実運用 ─────────────────────── 未着手（ユーザー承認後）
               アカウント作成 → プロフィール設定 → ASP登録 → 商品調査
               → 投稿企画 → 初回投稿 → KPI取得 → Learning実測
+  ↓
+【独立工程】   iPhone Landscape Responsive対応 ─────── 未着手（Known Issue・実運用と並行可）
+              サイドバー制御・レイアウト占有率最適化
   ↓
 【後半工程】   Background Execution ────────────────── 未着手（実運用・Learning実測後）
 ```
@@ -45,9 +49,11 @@ Phase IG-2I   docs正式化・Tag・Push・Render・本番確認 ─ 正式Compl
 
 **Background Execution（Version1.1後半の大型工程・今回未実装）**：目的＝ユーザーがPC／iPhone／ブラウザを開き続けなくてもAI会社がサーバー側で処理を継続できる状態。将来対象＝Job Queue／Background Processing／queued・running・completed・failed・cancelled・retrying／Progress保存／Resume／Retry／Cancel／Multiple Jobs／完了通知／Cross-case guard／二重実行防止／古い結果による上書き防止／コスト制御。基本方針＝既存のIntelligence・Evidence・Leader Rule Engine・Reviewer・Strategy・Quality Gate・Executive Decision・Output Draftを可能な限り維持し、実行基盤を段階的にサーバー側へ移行する。**品質判断が安定する前にBackground化しない**（実運用・Learning実測後に着手）。
 
-**Known Issue**：Reviewer NG keyword partial-match issue（既存`LI_REVIEWER_REJECTION_KEYWORDS`の`NG`部分一致でBRANDING/MARKETINGを誤検出し得る。IADP側は回避済み・本体修正は後続候補）／iPhoneチャット履歴の瞬間消失／iPhone Landscapeレイアウト崩れ。
+**Known Issue**：Reviewer NG keyword partial-match issue（既存`LI_REVIEWER_REJECTION_KEYWORDS`の`NG`部分一致でBRANDING/MARKETINGを誤検出し得る。IADP側は回避済み・本体修正は後続候補）／iPhoneチャット履歴の瞬間消失／**iPhone Landscapeレイアウト崩れ（2026-08-09実機確認で継続を再確認・左サイドバーとメイン領域の占有が大きく実用上ほぼ使用不可・Responsive未対応が原因でIG-2F〜IG-2I実装による新規不具合ではない）**。
 
-**次工程**：Instagram実運用を最優先とし、実AI IADP End-to-End確認はAPI費用のユーザー承認後に実施する。Background Executionは実運用・Learning実測後。Completion Gate設計・NG keyword本体修正・iPhone Known Issue対応を後続候補として並列に記録する。正式な次工程はユーザー承認後に決定する。詳細はdocs/04DECISIONS.md Decision097を参照。
+**iPhone実機確認（2026-08-09・ユーザー実施）**：縦画面＝**Complete**（本番表示・ログイン・Leader・案件表示・メニュー操作正常・白画面なし・無限ロードなし）。横画面＝**Known Issue継続・未修正**（正式リリース判定には影響させず、独立したResponsive対応工程として後続管理）。
+
+**次工程**：Instagram実運用を最優先とし、実AI IADP End-to-End確認はAPI費用のユーザー承認後に実施する。**iPhone Landscape Responsive対応**は実運用と並行可能な独立工程として管理する。Background Executionは実運用・Learning実測後。Completion Gate設計・NG keyword本体修正・iPhoneチャット履歴瞬間消失対応を後続候補として並列に記録する。正式な次工程はユーザー承認後に決定する。詳細はdocs/04DECISIONS.md Decision097を参照。
 
 ---
 

@@ -15,10 +15,11 @@
 - **Ready正式条件**：構造Passed＋内容Complete＋Evidence非Insufficient＋Reviewer重大不足なし＋Strategy再設計要求なし＋Quality Gate Passed＋Leader統合回答あり＋必須担当成果物あり＋User Approval Approved の全充足。**承認だけで品質不足を上書きしない**。未取得は`not_available`／`not_executed`として明示。
 - **Path B**：`inbox.qualityGate === null`のためComplete／Readyへ到達しない安全側仕様として正式容認。正式経路はPath A Auto Task（Path BへQuality Gateを新設しない）。
 - **Background Execution（方針記録のみ・今回未実装）**：Version1.1後半の大型工程。実装順＝正式化→Instagram実運用→KPI/Learning実測→ボトルネック確認→Background Execution。将来対象＝Job Queue／Background Processing／状態遷移／Progress保存／Resume／Retry／Cancel／Multiple Jobs／完了通知／Cross-case guard／二重実行防止／古い結果による上書き防止／コスト制御。**品質判断が安定する前にBackground化しない**。
-- **Known Issue**：Reviewer NG keyword partial-match issue（`NG`部分一致でBRANDING/MARKETINGを誤検出し得る既存バグ。IADP側は回避済み・本体修正は後続候補）／iPhoneチャット履歴の瞬間消失／iPhone Landscapeレイアウト崩れ。
+- **Known Issue**：Reviewer NG keyword partial-match issue（`NG`部分一致でBRANDING/MARKETINGを誤検出し得る既存バグ。IADP側は回避済み・本体修正は後続候補）／iPhoneチャット履歴の瞬間消失／**iPhone Landscapeレイアウト崩れ（2026-08-09実機確認で継続を再確認・左サイドバーとメイン領域の占有が大きくメニュー表示時も画面の大部分が覆われ実用上ほぼ使用不可。Responsive未対応が原因でIG-2F〜IG-2I実装による新規不具合ではない・独立したResponsive対応工程として後続管理）**。
+- **iPhone実機確認（2026-08-09・ユーザー実施）**：**縦画面＝Complete**（本番表示・ログイン・Leader・案件表示・メニュー操作正常・白画面なし・無限ロードなし・既存機能破壊なし）。**横画面＝Known Issue継続・未修正**（正式リリース判定には影響させない）。
 - **データ保全ルール**：実案件の`fields.iadp`変更時は「backup→test→restore→restore確認」を必須とし原則専用テスト案件を使用（IG-2G/IG-2Hは専用テスト案件で実案件書き込みゼロ・検証後削除）。
 - **検証**：Core合成テスト（IG-2F 9件・IG-2H 10件）／Reviewer・Strategy導出11件／UI 10ケース全合格。Reviewer failed・Strategy needs_revision・Quality Gate failedはApproved済みでもNot Ready、packageId変更で旧評価流用なし、案件切替でCross-case漏れなし、F5でsnapshot復元、legacyは自動Passedなし、iPhone相当幅375pxで横はみ出しなし。`node --check` OK・`git diff --check` CLEAN・Console Error 0・dev-check 200/200/200・**実AI追加実行なし**。Executive Decision／Constitution Validator／Quality Gate契約への非干渉をdiff実測で確認。
-- **Git・反映**：Code commit **b5a3d5e**＋**18fc04b**＋**4dd0400**＋docs commit（本更新）。Annotated Tag **v1.01-instagram-account-design-quality-ready**。main push・Render反映・PC本番確認・iPhone実機確認（ユーザー実施）。次工程＝Instagram実運用（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）。実AI End-to-EndはAPI費用承認後。Background Executionは実運用・Learning実測後。
+- **Git・反映**：Code commit **b5a3d5e**＋**18fc04b**＋**4dd0400**＋docs commit **42508c8**（IG-2I正式化）＋docs commit（本追記・iPhone実機確認結果）。Annotated Tag **v1.01-instagram-account-design-quality-ready**。main push・Render反映（本番200・配信物反映確認）・**PC本番確認 完了**・**iPhone実機確認 完了**。**Phase IG-2F〜IG-2I 正式リリースComplete**。次工程＝Instagram実運用（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）／iPhone Landscape Responsive対応（独立工程）。実AI End-to-EndはAPI費用承認後。Background Executionは実運用・Learning実測後。
 
 ---
 

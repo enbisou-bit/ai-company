@@ -1,7 +1,7 @@
 # ENBISOU_AI_COMPANY_MASTER.md
 
 > ENBISOU AI COMPANY 開発マスター（Version 2.3）
-> 更新日: 2026-08-09（Phase IG-2F〜IG-2H IADP Quality / Approval / Quality Signals 正式採用・Decision 097。Background ExecutionをVersion1.1後半の大型工程として方針記録・未実装）。以前: 2026-08-06（Phase IG-2E Instagram Account Design Package Output Draft Integration 正式採用・Decision 096）。以前: 2026-08-06（Phase B-9F 共通Leader Rule Engine 正式リリース・Decision 095）。以前: 2026-08-05（Phase B-9B Leader統合回答・会社正式回答責務 正式採用・Decision 094）。以前: 2026-08-04（Phase B-8 Quality Gate Executive Leader Report表示 正式Complete・Decision 093）。以前: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
+> 更新日: 2026-08-09（Phase IG-2F〜IG-2I IADP Quality / Approval / Quality Signals 正式リリースComplete・Decision 097。PC本番確認完了・iPhone実機確認完了＝縦画面Complete／横画面はLandscape Responsive未対応Known Issue継続。Background ExecutionをVersion1.1後半の大型工程として方針記録・未実装）。以前: 2026-08-06（Phase IG-2E Instagram Account Design Package Output Draft Integration 正式採用・Decision 096）。以前: 2026-08-06（Phase B-9F 共通Leader Rule Engine 正式リリース・Decision 095）。以前: 2026-08-05（Phase B-9B Leader統合回答・会社正式回答責務 正式採用・Decision 094）。以前: 2026-08-04（Phase B-8 Quality Gate Executive Leader Report表示 正式Complete・Decision 093）。以前: 2026-07-05（Version1 Final Complete・Mobile Topbar本番反映・iPhone実機確認完了・Version1.01 Realtime Sync Edition追加・Decision 044/045）
 
 ---
 
