@@ -6315,6 +6315,20 @@
   .iadp-cat-name { font-size: 12px; color: rgba(255,255,255,0.62); width: 70px; flex-shrink: 0; }
   .iadp-cat-bar { width: 54px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
   .iadp-cat-meta { font-size: 11px; color: #cbd5e5; }
+  /* Phase IG-2G: ユーザー承認アクション */
+  .iadp-approval-area { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .iadp-approved-at { font-size: 10.5px; color: rgba(255,255,255,0.5); font-weight: 400; }
+  .iadp-approval-approved { font-size: 12.5px; font-weight: 600; color: #4cff8e; }
+  .iadp-approval-hint { font-size: 11.5px; color: rgba(255,255,255,0.62); line-height: 1.5; margin-bottom: 8px; }
+  .iadp-approve-btn {
+    display: inline-block; padding: 9px 18px; font-size: 13px; font-weight: 700;
+    border: 1px solid rgba(76,255,142,0.5); border-radius: 9px;
+    background: rgba(76,255,142,0.12); color: #4cff8e; cursor: pointer;
+    transition: background 0.2s; min-height: 38px;
+  }
+  .iadp-approve-btn:hover { background: rgba(76,255,142,0.22); }
+  .iadp-approve-btn:active { background: rgba(76,255,142,0.3); }
+  .iadp-approve-msg { font-size: 11px; color: #4cff8e; margin-left: 8px; }
   @media (max-width: 768px) {
     .iadp-card { padding: 12px 10px; margin: 8px 0 10px; font-size: 12px; }
     .iadp-section { padding: 8px; }
@@ -12699,6 +12713,23 @@ let _lastInstagramAccountDesignQuality    = null; // Phase IG-2C: IADP専用品�
 //   生成時にdata.results / data.leaderFinalResultから捕捉し、fields.iadp.generationContextへ保存してF5復元する。
 //   旧保存IADP（このキーが無い）はnull＝legacy扱い（内容品質を自動Completeにしない・安全側）。
 let _lastInstagramAccountDesignGenContext = null;
+// Phase IG-2G: ユーザー承認状態。fields.iadp.approval として保存し、F5復元・案件切替復元する。
+//   {status:'pending'|'approved'|'rejected', packageId, caseId, approvedAt}。旧IADP（このキーが無い）はnull＝pending扱い。
+//   承認はcaseId＋packageId一致でのみ有効（新IADP＝新packageIdへは自動引き継ぎしない・案件間で漏らさない）。
+let _lastInstagramAccountDesignApproval = null;
+
+// Phase IG-2G: 現在表示中パッケージに対して「有効な」承認状態を返す（純粋関数・非破壊）。
+//   approval.packageId・caseId が現在のパッケージ／案件と一致し status==='approved' のときのみ 'approved'。
+//   不一致（新IADP・別案件）・欠損・rejected は安全側で 'pending' を返す。
+function _iadpEffectiveApprovalStatus(pkg, caseId, approval) {
+  try {
+    if (!approval || approval.status !== 'approved') return 'pending';
+    var pkgId = pkg && pkg.packageId;
+    if (!pkgId || approval.packageId !== pkgId) return 'pending';      // 新IADP＝packageId不一致→旧承認は無効
+    if (caseId && approval.caseId && approval.caseId !== caseId) return 'pending'; // 別案件の承認は漏らさない
+    return 'approved';
+  } catch (e) { return 'pending'; }
+}
 
 // Phase IG-2F: IADP対象担当（buildAccountIntelligenceTasksと一致）。担当実行状況の集計に使用（表示専用）。
 var IADP_REQUIRED_MEMBERS = [
@@ -12749,13 +12780,14 @@ function _iadpBuildGenerationContext(results, leaderFinalResult) {
   }
 }
 
-// Phase IG-2F: 生成時コンテキストからassess()用のcontextを組み立てる（純粋・非破壊・欠損に安全）。
-function _iadpBuildAssessmentContext(validation, genContext) {
+// Phase IG-2F/IG-2G: 生成時コンテキストからassess()用のcontextを組み立てる（純粋・非破壊・欠損に安全）。
+//   Phase IG-2G: userApproval を pending固定から、有効な承認状態（caseId＋packageId一致時のみapproved）へ接続する。
+function _iadpBuildAssessmentContext(validation, genContext, pkg, caseId, approval) {
   return {
     structureValid: !!(validation && validation.valid),
     leaderFinal: (genContext && genContext.leaderFinal) ? genContext.leaderFinal : null,
     memberSummary: (genContext && genContext.memberSummary) ? genContext.memberSummary : null,
-    userApproval: 'pending', // IADP承認機構は未実装＝常にpending（承認前に採用済みと表示しない）
+    userApproval: _iadpEffectiveApprovalStatus(pkg, caseId, approval),
   };
 }
 
@@ -12773,12 +12805,15 @@ function _iadpApplyRestoredFields(fields, fallbackCaseId) {
       _lastInstagramAccountDesignQuality    = iadp.quality || null;
       // Phase IG-2F: 生成時コンテキストを復元（旧保存IADPには存在しない＝null＝legacy扱い・安全側）
       _lastInstagramAccountDesignGenContext = iadp.generationContext || null;
+      // Phase IG-2G: ユーザー承認状態を復元（旧保存IADPには存在しない＝null＝pending扱い・自動Approvedにしない）
+      _lastInstagramAccountDesignApproval   = iadp.approval || null;
     } else {
       _lastInstagramAccountDesignPackage    = null;
       _lastInstagramAccountDesignValidation = null;
       _lastInstagramAccountDesignCaseId     = null;
       _lastInstagramAccountDesignQuality    = null;
       _lastInstagramAccountDesignGenContext = null;
+      _lastInstagramAccountDesignApproval   = null;
     }
     if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
   } catch (_iadpApplyErr) {
@@ -12831,10 +12866,14 @@ function _iadpBuildCardHtml(pkg, quality) {
   //   validation・generationContextはセッショングローバルから取得（旧保存IADPはgenContext=null＝legacy）。
   var validation = _lastInstagramAccountDesignValidation;
   var structValid = !!(validation && validation.valid);
+  // Phase IG-2G: 有効な承認状態（caseId＋packageId一致時のみapproved）を算出し、assessmentへ接続する。
+  var _iadpCaseIdForCard = pkg.caseId || _lastInstagramAccountDesignCaseId || null;
+  var _iadpEffApproval = _iadpEffectiveApprovalStatus(pkg, _iadpCaseIdForCard, _lastInstagramAccountDesignApproval);
+  var _iadpApprovedAt = (_iadpEffApproval === 'approved' && _lastInstagramAccountDesignApproval) ? (_lastInstagramAccountDesignApproval.approvedAt || null) : null;
   var assessment = null;
   try {
     if (typeof InstagramAccountDesignQuality !== 'undefined' && typeof InstagramAccountDesignQuality.assessInstagramAccountDesignPackage === 'function') {
-      var _asCtx = _iadpBuildAssessmentContext(validation, _lastInstagramAccountDesignGenContext);
+      var _asCtx = _iadpBuildAssessmentContext(validation, _lastInstagramAccountDesignGenContext, pkg, _iadpCaseIdForCard, _lastInstagramAccountDesignApproval);
       assessment = InstagramAccountDesignQuality.assessInstagramAccountDesignPackage(pkg, _asCtx);
     }
   } catch (_asErr) { assessment = null; }
@@ -12852,8 +12891,13 @@ function _iadpBuildCardHtml(pkg, quality) {
   var rdMap   = { ready: '✅ Ready', conditional: '🟡 Conditional（承認待ち）', not_ready: '⛔ Not Ready' };
   var rdLabel = rdMap[A.accountCreationReadiness] || '⛔ Not Ready';
   var rdClass = 'iadp-status-' + (A.accountCreationReadiness === 'ready' ? 'complete' : (A.accountCreationReadiness === 'conditional' ? 'needs_work' : 'insufficient'));
-  var apMap   = { approved: '承認済み', pending: '未実施', rejected: '却下', not_evaluated: '未評価' };
-  var apLabel = apMap[A.userApproval] || '未実施';
+  // Phase IG-2G: ユーザー承認の表示（承認済みは承認日時を併記）
+  function _iadpFmtApprovedAt(iso) {
+    try { if (!iso) return ''; var d = new Date(iso); if (isNaN(d.getTime())) return ''; var p = function(n){ return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); } catch (e) { return ''; }
+  }
+  var apLabel = (_iadpEffApproval === 'approved') ? '✅ Approved' : (_iadpEffApproval === 'rejected' ? '却下' : '⏳ Pending');
+  var apClass = 'iadp-status-' + (_iadpEffApproval === 'approved' ? 'complete' : 'needs_work');
+  var _iadpApprovedAtStr = _iadpFmtApprovedAt(_iadpApprovedAt);
   var structLabel = structValid ? '✅ Passed' : '⛔ Failed';
   var structClass = 'iadp-status-' + (structValid ? 'complete' : 'insufficient');
   var ec2 = A.evidenceCounts || (q.evidenceCounts) || {};
@@ -12874,8 +12918,30 @@ function _iadpBuildCardHtml(pkg, quality) {
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">内容品質</span><span class="iadp-sg-v ' + cqClass + '">' + cqLabel + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">Evidence</span><span class="iadp-sg-v ' + evClass + '">' + evLabel + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">アカウント作成</span><span class="iadp-sg-v ' + rdClass + '">' + rdLabel + '</span></div>';
-  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">ユーザー承認</span><span class="iadp-sg-v">' + apLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">ユーザー承認</span><span class="iadp-sg-v ' + apClass + '">' + apLabel + (_iadpApprovedAtStr ? ' <span class="iadp-approved-at">(' + _iadpApprovedAtStr + ')</span>' : '') + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">採用候補</span><span class="iadp-sg-v">' + esc(adoptedName) + '</span></div>';
+  html += '</div>';
+
+  // ── ユーザー承認アクション（Summary内・PC/iPhone操作可能） ──
+  //   Phase IG-2G: 承認は「現在表示しているIADP（packageId）そのもの」への承認。承認だけではReady化しない
+  //   （Ready条件は構造Passed＋内容Complete＋Evidence非insufficient＋承認Approvedの全充足）。
+  html += '<div class="iadp-approval-area">';
+  if (_iadpEffApproval === 'approved') {
+    html += '<div class="iadp-approval-approved">✅ この設計は承認済みです' + (_iadpApprovedAtStr ? '（' + _iadpApprovedAtStr + '）' : '') + '</div>';
+    if (A.accountCreationReadiness === 'conditional') {
+      html += '<div class="iadp-approval-hint">承認済みですが、品質条件が未達のためアカウント作成準備はまだ整っていません。</div>';
+    } else if (A.accountCreationReadiness === 'ready') {
+      html += '<div class="iadp-approval-hint iadp-status-complete">品質条件・承認ともに充足しました（アカウント作成準備 Ready）。</div>';
+    }
+  } else {
+    if (A.accountCreationReadiness === 'conditional') {
+      html += '<div class="iadp-approval-hint">品質条件は充足しています。この設計で進める場合は承認してください（承認するとReadyになります）。</div>';
+    } else {
+      html += '<div class="iadp-approval-hint">承認するとユーザー承認は完了しますが、品質条件が未達のためReadyにはなりません（Not Readyのまま）。</div>';
+    }
+    html += '<button class="iadp-approve-btn" id="iadp-approve-btn" onclick="_iadpApproveDesign()">この設計を承認</button>';
+  }
+  html += '<span class="iadp-approve-msg" id="iadp-approve-msg"></span>';
   html += '</div>';
   html += '<div class="iadp-summary-metrics">';
   html += '<span class="iadp-metric">構造充足スコア <b>' + scoreVal + '</b>/100</span>';
@@ -13079,6 +13145,41 @@ function _iadpCopyAccountProfile() {
       navigator.clipboard.writeText(text).then(showMsg).catch(function() {});
     }
   } catch (e) { console.warn('[IADP] copy account profile error:', e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2G: IADP ユーザー承認フロー
+//   ・承認対象は「現在表示しているIADP（packageId）そのもの」。caseId＋packageId一致でのみ有効。
+//   ・承認を fields.iadp.approval（任意サブキー）へ保存し、既存 pushOutputDraftToServer で永続化
+//     （新規API・新規DBカラムなし・既存fields.iadp構造は破壊しない）。
+//   ・承認だけではReady化しない（Ready条件は assess() 側で 構造Passed＋内容Complete＋Evidence非insufficient＋承認Approved）。
+//   ・承認後は同一操作内で 保存→再評価→再描画 まで完了する（F5不要）。
+// ══════════════════════════════════════════════════════════════
+function _iadpApproveDesign() {
+  try {
+    var pkg = _lastInstagramAccountDesignPackage;
+    if (!pkg || !pkg.packageId) return;
+    var caseId = pkg.caseId || _lastInstagramAccountDesignCaseId || (typeof getCurrentApprovalCaseId === 'function' ? getCurrentApprovalCaseId() : null);
+    // 別案件へ切替済みなら承認しない（Cross-case保護）
+    var curCase = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : caseId;
+    if (curCase && caseId && curCase !== caseId) return;
+    // 既に有効承認済みなら二重保存しない（誤操作による重複保存を避ける）
+    if (_iadpEffectiveApprovalStatus(pkg, caseId, _lastInstagramAccountDesignApproval) === 'approved') return;
+    var approval = { status: 'approved', packageId: pkg.packageId, caseId: caseId, approvedAt: new Date().toISOString() };
+    _lastInstagramAccountDesignApproval = approval;
+    // Output Draftへ保存（fields.iadp.approval 追加サブキー・package一致時のみ・既存構造は破壊しない）
+    try {
+      if (_lastOutputDraft && _lastOutputDraft.fields && _lastOutputDraft.fields.iadp
+          && _lastOutputDraft.fields.iadp.package && _lastOutputDraft.fields.iadp.package.packageId === pkg.packageId) {
+        _lastOutputDraft.fields.iadp.approval = approval;
+        pushOutputDraftToServer(_lastOutputDraft);
+      } else {
+        console.warn('[IADP] approve: draft/package mismatch — session-only approval (not persisted)');
+      }
+    } catch (_apSaveErr) { console.warn('[IADP] approve save error (fail-open):', _apSaveErr.message); }
+    // 即時再評価・再描画（F5不要）。Ready/Conditional/Not Ready は _iadpBuildCardHtml が再算出する。
+    if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
+  } catch (_apErr) { console.warn('[IADP] approve error (fail-open):', _apErr.message); }
 }
 
 function _iadpRenderIntoChatArea(chatEl) {
@@ -13948,6 +14049,9 @@ async function atRunWorkflow() {
             } catch (_iadpGenErr) {
               _lastInstagramAccountDesignGenContext = null; // fail-open（legacy扱い）
             }
+            // Phase IG-2G: 新IADP生成（新packageId）では旧承認を引き継がない。承認状態をpendingへ戻す
+            //   （下の保存では fields.iadp に approval を含めない＝保存側でも旧承認は消える）。
+            _lastInstagramAccountDesignApproval = null;
             // Phase IG-2E: Output Draft caseへ正式保存（1 case 1 正本・既存/api/output-drafts保存経路を流用）。
             //   完了時点で案件が切り替わっていた場合は保存しない（誤った案件への書き込み防止・既存stale判定と同方針）。
             //   Phase IG-2F: generationContext を任意サブキーとして追加保存（既存構造は破壊しない）。
