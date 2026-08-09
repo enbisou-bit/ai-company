@@ -321,7 +321,19 @@
   //     { structureValid: bool,                       // validateAccountDesignPackage().valid
   //       leaderFinal: { present: bool, integratedCount: number|null } | null,
   //       memberSummary: { requiredTotal, requiredCompleted, requiredWeak, weakMembers:[label] } | null,
-  //       userApproval: 'approved'|'pending'|'rejected'|'not_evaluated' }
+  //       userApproval: 'approved'|'pending'|'rejected'|'not_evaluated',
+  //       // Phase IG-2H: 既存の会社判定を再利用する任意入力（新しい独立判定基盤は作らない）
+  //       reviewerAssessment: { available, status:'passed'|'needs_work'|'failed'|'not_available',
+  //                             criticalIssueCount, requiresRework } | null,
+  //       strategyAssessment: { available, status:'accepted'|'needs_revision'|'insufficient'|'not_available',
+  //                             requiresRework } | null,
+  //       qualityGate: { executed, passed, status:'passed'|'failed', sourceStatus } | null }
+  //
+  //   Phase IG-2H の判定原則:
+  //     ・Reviewer failed / Strategy needs_revision・insufficient / Quality Gate failed の場合、
+  //       Content Quality を complete にしない（＝Ready へも到達しない）。
+  //     ・未取得（not_available・executed:false）は勝手にPassed扱いせず not_available として扱い、
+  //       Complete（＝Ready）にも到達させない（安全側）。ただし needs_work 相当に留め failed とは区別する。
   // ══════════════════════════════════════════════════════════════
   var RESEARCH_CATEGORY_IDS = ['marketResearch', 'competitorResearch', 'candidateComparison', 'adoptionDecision'];
   var CATEGORY_LABELS_JA = {
@@ -362,6 +374,36 @@
       var leaderBad = (lf && leaderOk === false);
       var membersBad = (ms && membersWeak > 0);
 
+      // ── Phase IG-2H: Reviewer / Strategy / Quality Gate（既存判定の再利用・欠損は not_available） ──
+      var rvIn = isPlainObject(ctx.reviewerAssessment) ? ctx.reviewerAssessment : null;
+      var stIn = isPlainObject(ctx.strategyAssessment) ? ctx.strategyAssessment : null;
+      var qgIn = isPlainObject(ctx.qualityGate) ? ctx.qualityGate : null;
+
+      var reviewerStatus = (rvIn && rvIn.available === true && typeof rvIn.status === 'string' && rvIn.status !== 'not_available')
+        ? rvIn.status : 'not_available';
+      var reviewerCriticalCount = (rvIn && typeof rvIn.criticalIssueCount === 'number' && isFinite(rvIn.criticalIssueCount))
+        ? rvIn.criticalIssueCount : 0;
+      var reviewerRequiresRework = !!(rvIn && rvIn.requiresRework === true);
+      var reviewerBad = (reviewerStatus === 'failed');                          // 重大不足＝Complete禁止
+      var reviewerWarn = (reviewerStatus === 'needs_work' || reviewerRequiresRework);
+
+      var strategyStatus = (stIn && stIn.available === true && typeof stIn.status === 'string' && stIn.status !== 'not_available')
+        ? stIn.status : 'not_available';
+      var strategyRequiresRework = !!(stIn && stIn.requiresRework === true);
+      var strategyBad = (strategyStatus === 'needs_revision' || strategyStatus === 'insufficient'); // 再設計要求＝Complete禁止
+      var strategyWarn = strategyRequiresRework;
+
+      // Quality Gate: executed:false / 欠損は 'not_executed'（Passed扱いにしない）
+      var qgExecuted = !!(qgIn && qgIn.executed === true);
+      var qgPassed = !!(qgExecuted && qgIn.passed === true);
+      var qualityGateStatus = qgExecuted ? (qgPassed ? 'passed' : 'failed') : 'not_executed';
+      var qgSourceStatus = (qgIn && typeof qgIn.sourceStatus === 'string') ? qgIn.sourceStatus : null;
+      var qgBad = (qualityGateStatus === 'failed');                            // Gate未通過＝Complete禁止
+
+      // 未取得（not_available / not_executed）は Passed 扱いにしない＝Complete へ到達させない（安全側・failedとは区別）
+      var signalsUnavailable = (reviewerStatus === 'not_available') || (strategyStatus === 'not_available') || (qualityGateStatus === 'not_executed');
+      var signalsBlockComplete = reviewerBad || strategyBad || qgBad || signalsUnavailable || reviewerWarn || strategyWarn;
+
       // ── Content Quality（構造充足だけではCompleteにしない） ──
       var contentQuality;
       if (!structureValid) {
@@ -374,15 +416,23 @@
                : base.status; // needs_work / insufficient
         if (evidenceStatus === 'insufficient' && (leaderBad || membersBad)) cq = 'insufficient';
         else if (cq === 'complete' && (evidenceStatus === 'insufficient' || leaderBad || membersBad)) cq = 'needs_work';
+        // Phase IG-2H: Reviewer重大不足／Strategy再設計要求／Quality Gate Failed は insufficient まで落とす。
+        //   未取得（not_available）のみの場合は needs_work に留める（failed と区別・自動Passedにはしない）。
+        if (reviewerBad || strategyBad || qgBad) cq = 'insufficient';
+        else if (cq === 'complete' && signalsBlockComplete) cq = 'needs_work';
         contentQuality = cq;
       }
 
       // ── User Approval（承認機構は未実装＝既定pending。承認前に採用済みと表示しない） ──
       var userApproval = (typeof ctx.userApproval === 'string' && ctx.userApproval) ? ctx.userApproval : 'pending';
 
-      // ── Account Creation Readiness（内容Complete＋構造Passed＋Evidence非insufficientでも承認前はconditional） ──
+      // ── Account Creation Readiness ──
+      //   Phase IG-2H: Reviewer failed／Strategy needs_revision・insufficient／Quality Gate failed の場合は
+      //   ユーザー承認済みでも必ず not_ready（承認だけで品質不足を上書きしない）。
+      //   contentQuality==='complete' は上記の各ゲートを通過済みであることを既に含意する。
       var accountCreationReadiness;
-      if (contentQuality === 'complete' && structureValid && evidenceStatus !== 'insufficient') {
+      if (contentQuality === 'complete' && structureValid && evidenceStatus !== 'insufficient'
+          && !reviewerBad && !strategyBad && !qgBad) {
         accountCreationReadiness = (userApproval === 'approved') ? 'ready' : 'conditional';
       } else {
         accountCreationReadiness = 'not_ready';
@@ -420,6 +470,15 @@
       if (evidenceStatus === 'insufficient') missing.push('市場・競合Evidenceなし（全' + hyp + '項目がAI仮説）');
       else if (evidenceStatus === 'partial') missing.push('Evidence不足（検証済み' + verified + '件のみ）');
       if (!genAvailable) missing.push('生成時の担当実行状況が保存されていないため内容品質は再評価不可（legacy）');
+      // Phase IG-2H: Reviewer／Strategy／Quality Gate の結果を主な不足へ反映
+      if (reviewerBad) missing.push('Reviewerが重大不足を検出' + (reviewerCriticalCount > 0 ? '（' + reviewerCriticalCount + '件）' : ''));
+      else if (reviewerStatus === 'needs_work') missing.push('Reviewerが要改善と判定');
+      else if (reviewerStatus === 'not_available') missing.push('Reviewer未評価（判定材料なし）');
+      if (strategyStatus === 'needs_revision') missing.push('Strategyが再設計・再実行を要求');
+      else if (strategyStatus === 'insufficient') missing.push('Strategyが情報不足と判定');
+      else if (strategyStatus === 'not_available') missing.push('Strategy未評価（判定材料なし）');
+      if (qgBad) missing.push('Quality Gate未通過' + (qgSourceStatus ? '（' + qgSourceStatus + '）' : ''));
+      else if (qualityGateStatus === 'not_executed') missing.push('Quality Gate未実行');
       var baseMissing = Array.isArray(base.missingRequiredFields) ? base.missingRequiredFields : [];
       if (baseMissing.length > 0) missing.push('必須項目欠損 ' + baseMissing.length + '件');
       if (ext > 0) missing.push('外部確認待ち ' + ext + '件（ASP登録・審査等）');
@@ -428,6 +487,13 @@
       if (membersBad || leaderBad) nextActions.push('不足している担当分析（' + (weakMembers.length ? weakMembers.join('・') : '担当') + '）を再実行してください');
       if (evidenceStatus === 'insufficient') nextActions.push('実データ・一次情報でEvidenceを補強してください');
       else if (evidenceStatus === 'partial') nextActions.push('残りの根拠を追加し検証済みEvidenceを増やしてください');
+      // Phase IG-2H: 3判定に応じた次の対応（既存判定の再実行を促す・新しい判定基盤は作らない）
+      if (reviewerBad || reviewerStatus === 'needs_work') nextActions.push('不足成果物を再生成し、Reviewer再評価を実施してください');
+      if (strategyBad) nextActions.push('Strategyの指摘に沿って設計を見直し、再評価を実施してください');
+      if (qgBad) nextActions.push('成果物を補完のうえQuality Gateを再実行してください');
+      if (signalsUnavailable && !reviewerBad && !strategyBad && !qgBad) {
+        nextActions.push('Auto Taskを再実行し、Reviewer・Strategy・Quality Gateの判定を取得してください');
+      }
       if (contentQuality === 'complete' && evidenceStatus !== 'insufficient' && userApproval === 'pending') {
         nextActions.push('内容を確認のうえユーザー承認へ進んでください');
       }
@@ -446,11 +512,21 @@
         verifiedEvidenceCount: verified,
         hypothesisCount: hyp,
         externalConfirmationCount: ext,
-        criticalGapCount: (leaderBad ? 1 : 0) + (membersBad ? membersWeak : 0) + (evidenceStatus === 'insufficient' ? 1 : 0) + (structureValid ? 0 : 1),
+        criticalGapCount: (leaderBad ? 1 : 0) + (membersBad ? membersWeak : 0) + (evidenceStatus === 'insufficient' ? 1 : 0) + (structureValid ? 0 : 1)
+          + (reviewerBad ? Math.max(1, reviewerCriticalCount) : 0) + (strategyBad ? 1 : 0) + (qgBad ? 1 : 0),
         categoryBreakdown: categoryBreakdown,
         missing: missing,
         nextActions: nextActions,
         leaderFinalEvaluated: !!lf, memberExecutionEvaluated: !!ms,
+        // Phase IG-2H: 既存判定の再利用結果（表示・監査用。判定ロジック自体は各既存正本のまま）
+        reviewerStatus: reviewerStatus,
+        reviewerCriticalIssueCount: reviewerCriticalCount,
+        reviewerRequiresRework: reviewerRequiresRework,
+        strategyStatus: strategyStatus,
+        strategyRequiresRework: strategyRequiresRework,
+        qualityGateStatus: qualityGateStatus,
+        qualityGateSourceStatus: qgSourceStatus,
+        signalsUnavailable: signalsUnavailable,
         adoptedNote: null,
       };
     } catch (e) {
@@ -462,7 +538,11 @@
         score: base.score || 0, requiredScore: REQUIRED_SCORE,
         evidenceCounts: base.evidenceCounts || {}, verifiedEvidenceCount: 0, hypothesisCount: 0, externalConfirmationCount: 0,
         criticalGapCount: 0, categoryBreakdown: [], missing: ['評価中に例外が発生しました'], nextActions: ['再評価してください'],
-        leaderFinalEvaluated: false, memberExecutionEvaluated: false, adoptedNote: null,
+        leaderFinalEvaluated: false, memberExecutionEvaluated: false,
+        reviewerStatus: 'not_available', reviewerCriticalIssueCount: 0, reviewerRequiresRework: false,
+        strategyStatus: 'not_available', strategyRequiresRework: false,
+        qualityGateStatus: 'not_executed', qualityGateSourceStatus: null, signalsUnavailable: true,
+        adoptedNote: null,
       };
     }
   }

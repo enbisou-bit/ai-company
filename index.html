@@ -12717,6 +12717,11 @@ let _lastInstagramAccountDesignGenContext = null;
 //   {status:'pending'|'approved'|'rejected', packageId, caseId, approvedAt}。旧IADP（このキーが無い）はnull＝pending扱い。
 //   承認はcaseId＋packageId一致でのみ有効（新IADP＝新packageIdへは自動引き継ぎしない・案件間で漏らさない）。
 let _lastInstagramAccountDesignApproval = null;
+// Phase IG-2H: Quality Gate等の評価snapshot（fields.iadp.assessmentContext として保存・F5復元用）。
+//   Quality Gateの正本は _leaderIntegration.qualityGate（セッション内）だがF5で失われるため、
+//   packageId・caseIdを刻んだsnapshotを保存し、復元時はpackageId一致検証のうえ再利用する。
+//   packageId不一致（新IADP）の場合は使用しない＝旧評価を新IADPへ流用しない。
+let _lastInstagramAccountDesignAssessmentCtx = null;
 
 // Phase IG-2G: 現在表示中パッケージに対して「有効な」承認状態を返す（純粋関数・非破壊）。
 //   approval.packageId・caseId が現在のパッケージ／案件と一致し status==='approved' のときのみ 'approved'。
@@ -12763,8 +12768,15 @@ function _iadpBuildGenerationContext(results, leaderFinalResult) {
     }
     var lfText = (leaderFinalResult && typeof leaderFinalResult.text === 'string') ? leaderFinalResult.text : '';
     var lfIntegrated = (leaderFinalResult && typeof leaderFinalResult.integratedCount === 'number') ? leaderFinalResult.integratedCount : null;
+    var leaderPresent = lfText.trim().length > 0 && (lfIntegrated == null || lfIntegrated > 0);
+    // Phase IG-2H: Reviewer／Strategy判定を既存 data.results から導出して同梱する（新規AI実行なし・再評価なし）。
+    //   corroborated＝構造的裏付け（必須担当成果物の不足／Leader統合回答なし）。自由文フレーズ単独で
+    //   failed・needs_revisionへ確定させないためのガードに使用する。
+    var corroborated = (weak > 0) || !leaderPresent;
+    var reviewerAssessment = _iadpDeriveReviewerAssessment(_iadpFindResultEntry(arr, 'reviewer'), corroborated);
+    var strategyAssessment = _iadpDeriveStrategyAssessment(_iadpFindResultEntry(arr, 'strategy'), corroborated);
     return {
-      version: 1,
+      version: 2,   // Phase IG-2H: reviewerAssessment／strategyAssessment を追加（v1データは欠損＝not_available扱い）
       capturedAt: new Date().toISOString(),
       leaderFinal: { present: lfText.trim().length > 0, integratedCount: lfIntegrated },
       members: members,
@@ -12774,20 +12786,151 @@ function _iadpBuildGenerationContext(results, leaderFinalResult) {
         requiredWeak: weak,
         weakMembers: weakMembers,
       },
+      reviewerAssessment: reviewerAssessment,
+      strategyAssessment: strategyAssessment,
     };
   } catch (e) {
     return null; // fail-open（コンテキスト構築失敗時はlegacy扱い）
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2H: Reviewer / Strategy 判定の導出（既存結果の再利用・新しい判定基盤は作らない）
+//   既存の構造化された判定値（status / 本文有無 / 情報不足スタブ）を第一のシグナルとし、
+//   自由文の否定表現は「単独では合否を確定させない」補助シグナルとして扱う
+//   （既存 LI_REVIEWER_REJECTION_KEYWORDS は 'NG' 部分一致でBRANDING/MARKETINGを誤検出する既知バグが
+//    あるため流用せず、より厳格な日本語フレーズのみを使用する。Leader Rule Engine・
+//    _liDetectConflictCandidates 等の既存関数・責務は一切変更しない）。
+//   ・status が completed 以外／本文が空／情報不足スタブ → 構造シグナル単独で failed / insufficient
+//   ・否定フレーズのみ検出 → needs_work（要改善）に留める
+//   ・否定フレーズ ＋ 構造的裏付け（担当成果物不足・Leader統合回答なし）→ failed へ昇格
+// ══════════════════════════════════════════════════════════════
+var IADP_REVIEWER_CRITICAL_PHRASES = [
+  '成果物ゼロ', '成果物が0', '成果物がゼロ', '要件を満たす成果物がな', '要件を満たしていな',
+  '再実行が必要', '再実行を推奨', '再生成が必要', '差し戻し', '不合格', '却下',
+];
+var IADP_REVIEWER_WARN_PHRASES = ['要修正', '修正が必要', '不十分', '不足しています', '改善が必要', '追加確認が必要'];
+var IADP_STRATEGY_REVISION_PHRASES = [
+  '再設計が必要', '再設計を推奨', '再実行が必要', '再実行を推奨', '見直しが必要', '再検討が必要',
+  '方針を変更', '設計をやり直', '再構築が必要',
+];
+var IADP_STRATEGY_INSUFFICIENT_PHRASES = ['情報が不足', '情報不足', '判断できません', '判断材料が不足', '前提が不明'];
+
+function _iadpCountPhrases(text, phrases) {
+  var t = String(text || '');
+  var n = 0;
+  for (var i = 0; i < phrases.length; i++) { if (t.indexOf(phrases[i]) !== -1) n++; }
+  return n;
+}
+
+// 情報不足スタブ（逆質問で停止）判定：Leader Rule Engineと同じ両マーカー一致方式を踏襲
+function _iadpIsInsufficientStub(text) {
+  var t = String(text || '');
+  return t.indexOf('【現状仮説】') !== -1 && t.indexOf('【確認したいこと】') !== -1;
+}
+
+// resultsからagentIdのエントリを取り出す（存在しなければnull）
+function _iadpFindResultEntry(results, agentId) {
+  var arr = Array.isArray(results) ? results : [];
+  for (var i = 0; i < arr.length; i++) { if (arr[i] && arr[i].agentId === agentId) return arr[i]; }
+  return null;
+}
+
+// Reviewer判定の導出。corroborated＝担当成果物不足・Leader統合回答なし等の構造的裏付けがある場合true。
+function _iadpDeriveReviewerAssessment(entry, corroborated) {
+  try {
+    if (!entry) return { available: false, status: 'not_available', criticalIssueCount: 0, requiresRework: false, source: 'missing' };
+    var status = entry.status || 'missing';
+    var text = (typeof entry.result === 'string') ? entry.result : (entry.result ? String(entry.result) : '');
+    var trimmed = text.trim();
+    if (status === 'error' || status === 'skipped') {
+      return { available: false, status: 'not_available', criticalIssueCount: 0, requiresRework: false, source: 'status_' + status };
+    }
+    if (status !== 'completed' || trimmed.length === 0) {
+      return { available: false, status: 'not_available', criticalIssueCount: 0, requiresRework: false, source: 'empty' };
+    }
+    if (_iadpIsInsufficientStub(trimmed)) {
+      // Reviewer自身が逆質問で停止＝評価が成立していない（構造シグナル単独で判定）
+      return { available: true, status: 'needs_work', criticalIssueCount: 0, requiresRework: true, source: 'insufficient_stub' };
+    }
+    var crit = _iadpCountPhrases(trimmed, IADP_REVIEWER_CRITICAL_PHRASES);
+    var warn = _iadpCountPhrases(trimmed, IADP_REVIEWER_WARN_PHRASES);
+    if (crit > 0) {
+      // 否定フレーズ単独ではfailedへ確定させない。構造的裏付けがある場合のみfailedへ昇格する。
+      if (corroborated) return { available: true, status: 'failed', criticalIssueCount: crit, requiresRework: true, source: 'critical_phrases_corroborated' };
+      return { available: true, status: 'needs_work', criticalIssueCount: crit, requiresRework: true, source: 'critical_phrases_only' };
+    }
+    if (warn > 0) return { available: true, status: 'needs_work', criticalIssueCount: 0, requiresRework: true, source: 'warn_phrases' };
+    return { available: true, status: 'passed', criticalIssueCount: 0, requiresRework: false, source: 'no_negative_signal' };
+  } catch (e) {
+    return { available: false, status: 'not_available', criticalIssueCount: 0, requiresRework: false, source: 'error' };
+  }
+}
+
+// Strategy判定の導出。Reviewerと同じ多シグナル方針（構造シグナル優先・フレーズ単独では確定させない）。
+function _iadpDeriveStrategyAssessment(entry, corroborated) {
+  try {
+    if (!entry) return { available: false, status: 'not_available', requiresRework: false, source: 'missing' };
+    var status = entry.status || 'missing';
+    var text = (typeof entry.result === 'string') ? entry.result : (entry.result ? String(entry.result) : '');
+    var trimmed = text.trim();
+    if (status === 'error' || status === 'skipped') {
+      return { available: false, status: 'not_available', requiresRework: false, source: 'status_' + status };
+    }
+    if (status !== 'completed' || trimmed.length === 0) {
+      return { available: false, status: 'not_available', requiresRework: false, source: 'empty' };
+    }
+    if (_iadpIsInsufficientStub(trimmed)) {
+      return { available: true, status: 'insufficient', requiresRework: true, source: 'insufficient_stub' };
+    }
+    var rev = _iadpCountPhrases(trimmed, IADP_STRATEGY_REVISION_PHRASES);
+    var insuf = _iadpCountPhrases(trimmed, IADP_STRATEGY_INSUFFICIENT_PHRASES);
+    if (rev > 0) {
+      if (corroborated) return { available: true, status: 'needs_revision', requiresRework: true, source: 'revision_phrases_corroborated' };
+      return { available: true, status: 'accepted', requiresRework: true, source: 'revision_phrases_only' }; // 単独では再設計要求と確定しない
+    }
+    if (insuf > 0) {
+      if (corroborated) return { available: true, status: 'insufficient', requiresRework: true, source: 'insufficient_phrases_corroborated' };
+      return { available: true, status: 'accepted', requiresRework: true, source: 'insufficient_phrases_only' };
+    }
+    return { available: true, status: 'accepted', requiresRework: false, source: 'no_negative_signal' };
+  } catch (e) {
+    return { available: false, status: 'not_available', requiresRework: false, source: 'error' };
+  }
+}
+
+// Phase IG-2H: Quality Gateの正本解決。既存 _leaderIntegration.qualityGate（Phase B-7E確定値）を
+//   そのまま再利用し、新しいQuality Gateは作らない・再実行もしない。
+//   ①セッション内に現在案件のLeader Integrationがあればそれを使用（caseId一致を必須とする）
+//   ②無ければ保存済みsnapshot（fields.iadp.assessmentContext.qualityGate）を使用（packageId一致検証済み）
+//   ③どちらも無ければnull（＝not_executed扱い・Passedにはしない）
+function _iadpResolveQualityGate(caseId, snapshot) {
+  try {
+    if (typeof _leaderIntegration !== 'undefined' && _leaderIntegration
+        && _leaderIntegration.caseId && caseId && _leaderIntegration.caseId === caseId
+        && _leaderIntegration.qualityGate) {
+      return _leaderIntegration.qualityGate;
+    }
+  } catch (e) { /* 取得不可時はsnapshotへフォールバック */ }
+  if (snapshot && snapshot.qualityGate) return snapshot.qualityGate;
+  return null;
+}
+
 // Phase IG-2F/IG-2G: 生成時コンテキストからassess()用のcontextを組み立てる（純粋・非破壊・欠損に安全）。
 //   Phase IG-2G: userApproval を pending固定から、有効な承認状態（caseId＋packageId一致時のみapproved）へ接続する。
-function _iadpBuildAssessmentContext(validation, genContext, pkg, caseId, approval) {
+//   Phase IG-2H: Reviewer／Strategy（generationContext由来）と Quality Gate（_leaderIntegration正本または
+//   保存済みsnapshot）を任意入力として追加する。いずれも欠損時はundefinedのまま渡し、Core側でnot_available扱い。
+function _iadpBuildAssessmentContext(validation, genContext, pkg, caseId, approval, assessmentSnapshot) {
   return {
     structureValid: !!(validation && validation.valid),
     leaderFinal: (genContext && genContext.leaderFinal) ? genContext.leaderFinal : null,
     memberSummary: (genContext && genContext.memberSummary) ? genContext.memberSummary : null,
     userApproval: _iadpEffectiveApprovalStatus(pkg, caseId, approval),
+    reviewerAssessment: (genContext && genContext.reviewerAssessment) ? genContext.reviewerAssessment
+      : ((assessmentSnapshot && assessmentSnapshot.reviewerAssessment) ? assessmentSnapshot.reviewerAssessment : null),
+    strategyAssessment: (genContext && genContext.strategyAssessment) ? genContext.strategyAssessment
+      : ((assessmentSnapshot && assessmentSnapshot.strategyAssessment) ? assessmentSnapshot.strategyAssessment : null),
+    qualityGate: _iadpResolveQualityGate(caseId, assessmentSnapshot),
   };
 }
 
@@ -12807,6 +12950,11 @@ function _iadpApplyRestoredFields(fields, fallbackCaseId) {
       _lastInstagramAccountDesignGenContext = iadp.generationContext || null;
       // Phase IG-2G: ユーザー承認状態を復元（旧保存IADPには存在しない＝null＝pending扱い・自動Approvedにしない）
       _lastInstagramAccountDesignApproval   = iadp.approval || null;
+      // Phase IG-2H: 評価snapshot（Quality Gate等）を復元。packageId不一致なら使用しない（旧評価を新IADPへ流用しない）。
+      //   旧保存IADP（このキーが無い）はnull＝not_available／not_executed扱い（自動Passedにしない）。
+      var _asSnap = iadp.assessmentContext || null;
+      var _pkgIdForSnap = iadp.package && iadp.package.packageId;
+      _lastInstagramAccountDesignAssessmentCtx = (_asSnap && _pkgIdForSnap && _asSnap.packageId === _pkgIdForSnap) ? _asSnap : null;
     } else {
       _lastInstagramAccountDesignPackage    = null;
       _lastInstagramAccountDesignValidation = null;
@@ -12814,6 +12962,7 @@ function _iadpApplyRestoredFields(fields, fallbackCaseId) {
       _lastInstagramAccountDesignQuality    = null;
       _lastInstagramAccountDesignGenContext = null;
       _lastInstagramAccountDesignApproval   = null;
+      _lastInstagramAccountDesignAssessmentCtx = null;
     }
     if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
   } catch (_iadpApplyErr) {
@@ -12873,7 +13022,7 @@ function _iadpBuildCardHtml(pkg, quality) {
   var assessment = null;
   try {
     if (typeof InstagramAccountDesignQuality !== 'undefined' && typeof InstagramAccountDesignQuality.assessInstagramAccountDesignPackage === 'function') {
-      var _asCtx = _iadpBuildAssessmentContext(validation, _lastInstagramAccountDesignGenContext, pkg, _iadpCaseIdForCard, _lastInstagramAccountDesignApproval);
+      var _asCtx = _iadpBuildAssessmentContext(validation, _lastInstagramAccountDesignGenContext, pkg, _iadpCaseIdForCard, _lastInstagramAccountDesignApproval, _lastInstagramAccountDesignAssessmentCtx);
       assessment = InstagramAccountDesignQuality.assessInstagramAccountDesignPackage(pkg, _asCtx);
     }
   } catch (_asErr) { assessment = null; }
@@ -12900,6 +13049,16 @@ function _iadpBuildCardHtml(pkg, quality) {
   var _iadpApprovedAtStr = _iadpFmtApprovedAt(_iadpApprovedAt);
   var structLabel = structValid ? '✅ Passed' : '⛔ Failed';
   var structClass = 'iadp-status-' + (structValid ? 'complete' : 'insufficient');
+  // Phase IG-2H: Reviewer／Strategy／Quality Gate の表示（色だけでなく文字でも状態を示す）
+  var rvMap = { passed: '✅ Passed', needs_work: '🔴 Needs Work', failed: '🔴 Failed', not_available: '⚪ Not Evaluated' };
+  var rvLabel = rvMap[A.reviewerStatus] || '⚪ Not Evaluated';
+  var rvClass = 'iadp-status-' + (A.reviewerStatus === 'passed' ? 'complete' : ((A.reviewerStatus === 'failed' || A.reviewerStatus === 'needs_work') ? 'insufficient' : 'needs_work'));
+  var stMap = { accepted: '✅ Accepted', needs_revision: '🟡 Revision Required', insufficient: '🔴 Insufficient', not_available: '⚪ Not Evaluated' };
+  var stLabel = stMap[A.strategyStatus] || '⚪ Not Evaluated';
+  var stClass = 'iadp-status-' + (A.strategyStatus === 'accepted' ? 'complete' : (A.strategyStatus === 'insufficient' ? 'insufficient' : 'needs_work'));
+  var qgMap = { passed: '✅ Passed', failed: '🔴 Failed', not_executed: '⚪ Not Executed' };
+  var qgLabel = qgMap[A.qualityGateStatus] || '⚪ Not Executed';
+  var qgClass = 'iadp-status-' + (A.qualityGateStatus === 'passed' ? 'complete' : (A.qualityGateStatus === 'failed' ? 'insufficient' : 'needs_work'));
   var ec2 = A.evidenceCounts || (q.evidenceCounts) || {};
   var scoreVal = (typeof A.score === 'number') ? A.score : (typeof q.score === 'number' ? q.score : 0);
 
@@ -12917,6 +13076,9 @@ function _iadpBuildCardHtml(pkg, quality) {
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">構造検証</span><span class="iadp-sg-v ' + structClass + '">' + structLabel + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">内容品質</span><span class="iadp-sg-v ' + cqClass + '">' + cqLabel + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">Evidence</span><span class="iadp-sg-v ' + evClass + '">' + evLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">Reviewer</span><span class="iadp-sg-v ' + rvClass + '">' + rvLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">Strategy</span><span class="iadp-sg-v ' + stClass + '">' + stLabel + '</span></div>';
+  html += '<div class="iadp-sg-item"><span class="iadp-sg-k">Quality Gate</span><span class="iadp-sg-v ' + qgClass + '">' + qgLabel + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">アカウント作成</span><span class="iadp-sg-v ' + rdClass + '">' + rdLabel + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">ユーザー承認</span><span class="iadp-sg-v ' + apClass + '">' + apLabel + (_iadpApprovedAtStr ? ' <span class="iadp-approved-at">(' + _iadpApprovedAtStr + ')</span>' : '') + '</span></div>';
   html += '<div class="iadp-sg-item"><span class="iadp-sg-k">採用候補</span><span class="iadp-sg-v">' + esc(adoptedName) + '</span></div>';
@@ -13180,6 +13342,46 @@ function _iadpApproveDesign() {
     // 即時再評価・再描画（F5不要）。Ready/Conditional/Not Ready は _iadpBuildCardHtml が再算出する。
     if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
   } catch (_apErr) { console.warn('[IADP] approve error (fail-open):', _apErr.message); }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2H: Leader Integration（_liCollectIntegration）完了直後にIADP側を再評価・再描画する。
+//   既存Workflowの順序（IADP生成 → Leader Integration → Quality Gate → Executive Decision → Output Draft）は
+//   一切変更せず、Quality Gateが確定した「後から」IADP assessmentを再評価する方式を採用する
+//   （＝Quality Gateの再実行や二重評価は行わない。既存 _leaderIntegration.qualityGate をそのまま読むだけ）。
+//   ・現在案件・現在packageIdと一致する場合のみsnapshotへQuality Gateを追記し保存する（Cross-case保護）。
+//   ・失敗しても既存Workflow・Executive Decision・Constitution Validatorへは一切影響させない（fail-open）。
+function _iadpRefreshAfterIntegration(caseId) {
+  try {
+    var pkg = _lastInstagramAccountDesignPackage;
+    if (!pkg || !pkg.packageId) return;
+    if (!caseId || _lastInstagramAccountDesignCaseId !== caseId) return;      // 別案件・不一致時は何もしない
+    var qg = (typeof _leaderIntegration !== 'undefined' && _leaderIntegration
+              && _leaderIntegration.caseId === caseId) ? _leaderIntegration.qualityGate : null;
+    if (!qg) { if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember); return; }
+    var snap = _lastInstagramAccountDesignAssessmentCtx;
+    if (!snap || snap.packageId !== pkg.packageId) {
+      snap = { version: 1, packageId: pkg.packageId, caseId: caseId, capturedAt: new Date().toISOString(),
+               reviewerAssessment: (_lastInstagramAccountDesignGenContext && _lastInstagramAccountDesignGenContext.reviewerAssessment) || null,
+               strategyAssessment: (_lastInstagramAccountDesignGenContext && _lastInstagramAccountDesignGenContext.strategyAssessment) || null,
+               qualityGate: null };
+    }
+    snap.qualityGate = qg;
+    snap.qualityGateCapturedAt = new Date().toISOString();
+    _lastInstagramAccountDesignAssessmentCtx = snap;
+    // Output Draftへ追記保存（packageId一致時のみ・既存fields.iadp構造は破壊しない）
+    try {
+      if (_lastOutputDraft && _lastOutputDraft.fields && _lastOutputDraft.fields.iadp
+          && _lastOutputDraft.fields.iadp.package && _lastOutputDraft.fields.iadp.package.packageId === pkg.packageId) {
+        _lastOutputDraft.fields.iadp.assessmentContext = snap;
+        pushOutputDraftToServer(_lastOutputDraft);
+      }
+    } catch (_snapSaveErr) { console.warn('[IADP] assessment snapshot save error (fail-open):', _snapSaveErr.message); }
+    // Quality Gate反映後のSummaryへ即時再描画（F5不要）
+    if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
+  } catch (_refreshErr) {
+    console.warn('[IADP] post-integration refresh error (fail-open):', _refreshErr.message);
+  }
 }
 
 function _iadpRenderIntoChatArea(chatEl) {
@@ -14052,6 +14254,19 @@ async function atRunWorkflow() {
             // Phase IG-2G: 新IADP生成（新packageId）では旧承認を引き継がない。承認状態をpendingへ戻す
             //   （下の保存では fields.iadp に approval を含めない＝保存側でも旧承認は消える）。
             _lastInstagramAccountDesignApproval = null;
+            // Phase IG-2H: 新IADPでは旧評価snapshot（Quality Gate等）も引き継がない。
+            //   この時点ではQuality Gateは未評価（_liCollectIntegrationはこの後で実行される）のため、
+            //   packageId・caseIdのみを刻んだ空snapshotを作り、Quality Gate確定後に
+            //   _iadpRefreshAfterIntegration() が同じsnapshotへ追記して保存する。
+            _lastInstagramAccountDesignAssessmentCtx = {
+              version: 1,
+              packageId: _iadpNormalized.packageId || null,
+              caseId: _atRunCaseId,
+              capturedAt: new Date().toISOString(),
+              reviewerAssessment: (_lastInstagramAccountDesignGenContext && _lastInstagramAccountDesignGenContext.reviewerAssessment) || null,
+              strategyAssessment: (_lastInstagramAccountDesignGenContext && _lastInstagramAccountDesignGenContext.strategyAssessment) || null,
+              qualityGate: null,   // Quality Gateは _liCollectIntegration 実行後に反映（既存Workflow順は変更しない）
+            };
             // Phase IG-2E: Output Draft caseへ正式保存（1 case 1 正本・既存/api/output-drafts保存経路を流用）。
             //   完了時点で案件が切り替わっていた場合は保存しない（誤った案件への書き込み防止・既存stale判定と同方針）。
             //   Phase IG-2F: generationContext を任意サブキーとして追加保存（既存構造は破壊しない）。
@@ -14063,6 +14278,7 @@ async function atRunWorkflow() {
                   validation: _iadpValidation,
                   quality:    _lastInstagramAccountDesignQuality,
                   generationContext: _lastInstagramAccountDesignGenContext,
+                  assessmentContext: _lastInstagramAccountDesignAssessmentCtx,   // Phase IG-2H（Quality Gateは後段で追記）
                   caseId:     _atRunCaseId,
                   savedAt:    new Date().toISOString(),
                 };
@@ -14168,6 +14384,11 @@ async function atRunWorkflow() {
       //   対応確認ロジックは無変更・呼び出しタイミングの追加のみ）。
       if (currentMember && currentMember.id === 'leader' && typeof _elrRefreshInChatArea === 'function') {
         _elrRefreshInChatArea();
+      }
+      // Phase IG-2H: Quality Gate（_leaderIntegration.qualityGate）確定直後にIADP側を再評価・再描画する。
+      //   既存Workflow順・Quality Gate契約・Executive Decisionは一切変更せず、確定値を読むだけ（fail-open）。
+      if (_iadpRequested && typeof _iadpRefreshAfterIntegration === 'function') {
+        _iadpRefreshAfterIntegration(_atRunCaseId);
       }
       // Phase B-4B: Approved Decision Packageの安全な取得（_liCollectIntegration()は_executiveDecisionを
       //   同期的に確定済みのため戻り値を受け取る必要はない・正式取得元は_executiveDecision.approvedDecisionPackageのみ）。
