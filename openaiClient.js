@@ -761,9 +761,141 @@ function autoGenerateProfile(memberId, memberData = {}) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// Phase IG-2J-A: IADP Self-Completion Mode（Instagram Account Design 専用）
+//
+// 目的:
+//   Instagram Account Design（accountIntelligenceMode===true）でのみ、
+//   「情報不足時は逆質問のみで停止する」既存ルールをSelf-Completion Modeへ切り替える。
+//   AI会社自身で合理的に仮説生成・比較できる項目（ターゲット候補／ジャンル候補／
+//   商品カテゴリ候補／投稿頻度／投稿形式／コンテンツピラー／KPI初期値／ブランド方向性／
+//   競合仮説／差別化仮説）をユーザーへ質問して処理を止めない。
+//
+// 重要な設計制約:
+//   ・accountIntelligenceMode===false（通常Workflow）では本ブロックを一切生成しない。
+//     通常時のSystem Promptは Phase IG-2J-A 前と完全に同一文字列であること。
+//   ・対象は Instagram Account Design の4担当（researcher/analyst/branding/sns）のみ。
+//     それ以外のagentIdでは有効化しない（Leader/Reviewer/Strategy等は無変更）。
+//   ・「質問しない」＝「不明な実数値を事実として断定してよい」ではない。
+//     事実／AI仮説／外部確認待ち を必ず分離させる（捏造防止）。
+//   ・completed判定ロジック（task.status）は本Phaseでは変更しない（IG-2J-Gで対応）。
+// ══════════════════════════════════════════════════════════════
+const IADP_SELF_COMPLETION_AGENT_IDS = ['researcher', 'analyst', 'branding', 'sns'];
+
+// 4担当それぞれの「最低限これだけは必ず返す」成果物契約（IADPモード時のみ適用）
+const IADP_MIN_DELIVERABLES = {
+  researcher: [
+    '・候補市場／候補ジャンル（複数・最低3件。依頼文から妥当な候補をあなたが選定する）',
+    '・各候補のターゲット仮説（年齢層・悩み・購買動機）',
+    '・各候補の競合傾向（競合量の多寡・強い競合の特徴・投稿形式・訴求パターン）',
+    '・差別化余地／顔出し・音声なしとの相性',
+    '・各項目のEvidence有無（実データに基づくか／AI仮説か）',
+    '・外部確認待ち項目（公開情報では確定できないもの）',
+  ],
+  analyst: [
+    '・最低3候補の比較（Researcherの候補を引き継ぐ。候補が不足する場合はあなたが補って3件以上にする）',
+    '・比較軸と各軸のスコア（市場性／収益性／Instagram適性／競合難易度／差別化可能性／',
+    '  顔出し音声なし適性／継続性／複数商品対応力／長期ブランド資産性／AI運営適性）',
+    '・各候補の総合点と順位',
+    '・採用候補1件と、その採用根拠',
+    '・予測値は「AI仮説（予測値）」と明示し、実測値と混同させない',
+  ],
+  branding: [
+    '・上位候補（最低1件・可能なら複数候補）のブランド案',
+    '・ブランドコンセプト／世界観／ポジショニング',
+    '・アカウント名候補・ユーザー名候補',
+    '・差別化ポイント',
+    '・ブランドトーン（口調・表現方針・禁止表現）',
+  ],
+  sns: [
+    '・投稿戦略（コンテンツの柱＝コンテンツピラー）',
+    '・投稿形式（カルーセル／リール／ストーリーの使い分け）',
+    '・投稿頻度・投稿時間帯の方針',
+    '・KPI初期値（保存率・プロフィール訪問率・フォロー率等の初期目標）',
+    '・収益導線（CTA方針・ファネル方針）',
+    '・顔出し・音声なし運用方針',
+  ],
+};
+
+// ⓪差し替え用: IADPモードの専門領域判定（「専門外なので回答しない」で止めさせない）
+function buildIadpDomainPreCheck(agent, domainScope) {
+  return `
+【★ステップ0：専門領域判定（Instagram Account Design 専用モード）】
+今回の案件は「Instagram Account Design（Instagramアカウント設計）」です。
+この案件では、次の業務はあなたの正式な担当業務として扱います（専門外にしない）：
+・市場調査・ジャンル候補調査・トレンド把握
+・競合調査・競合傾向の分析
+・数値比較・スコアリング・候補間の優劣判定
+・ブランド設計・ターゲット設計・アカウント設計
+・Instagram運用設計（投稿方針・頻度・KPI・収益導線）
+
+あなたの本来の専門領域：${domainScope}
+上記のInstagram Account Design業務のうち、あなたの専門に最も近い部分を担当してください。
+専門に完全に一致しない部分があっても「私の専門外です」で回答を終了することは禁止します。
+自分の専門視点から可能な範囲の分析・設計を必ず提出してください。
+
+【この案件で専門外回答が許される唯一の例外】
+Instagram Account Designと全く無関係な業務（例：会計処理・法務手続き・採用面接）を
+指示された場合のみ、専門外として担当変更を提案してよい。
+`;
+}
+
+// ⑤差し替え用: IADPモードの最終上書き（逆質問のみでの停止を禁止する）
+function buildIadpSelfCompletionOverride(agent, voiceOpener) {
+  const minList = (IADP_MIN_DELIVERABLES[agent] || []).join('\n');
+  return `
+【★最終上書き：Self-Completion Mode（Instagram Account Design 専用・上記全設定より最優先）】
+
+この案件では、上位の全ルール（4ステップ判断プロセス／AGENT_RULE_HEADER／
+深掘り分析ルール／専門視点ルール）に「情報不足時は提案禁止」「情報不足時は質問モードを優先」
+「【現状仮説】→【確認したいこと】で停止」と書かれていても、それらは**この案件では適用しません**。
+
+理由：ユーザーは「AI会社自身が市場・ターゲット・ジャンル候補を調査・比較し、最適案を提案すること」
+を依頼しています。ターゲット・ジャンル・商品カテゴリ・投稿頻度などをユーザーへ聞き返すことは、
+依頼そのものをユーザーへ差し戻す行為であり、禁止します。
+
+【絶対禁止】
+・【確認したいこと】だけを並べて回答を終了すること
+・「ターゲットを教えてください」「ジャンルを教えてください」「商品を教えてください」
+　「投稿頻度を教えてください」等の質問のみで成果物を出さないこと
+・「情報が揃い次第、具体案を作成します。」で終了すること
+・担当名の自己紹介だけで実質的な内容がない回答
+
+【あなたが自分で決めること（ユーザーへ質問せず、あなたが候補を出す）】
+ターゲット候補／ジャンル候補／商品カテゴリ候補／投稿頻度／投稿形式／
+コンテンツピラー／KPI初期値／ブランド方向性／競合仮説／差別化仮説
+
+【必ず分離して明示すること（捏造防止・最重要）】
+情報がないことを理由に停止するのではなく、確度を明示したうえで前に進めてください。
+・事実：公開情報・提供された実データに基づく内容 → そのまま記述
+・AI仮説：あなたの推論による予測 → 「AI仮説：」または「（予測値）」と明示する
+・外部確認待ち：ASP登録後・審査後でなければ確定できない実数値
+　（実報酬額・実EPC・実承認率・実案件数など）→ 「外部確認待ち」と明示する
+・ユーザー確認が本当に必要な事項（予算上限・投下工数・顔出し可否・実名/匿名・
+　既存アカウント有無・扱いたくないジャンル・商標/社名制約）→ 末尾に簡潔に列挙する
+
+【禁止：数値の捏造】
+根拠のない実数値を事実として断定してはいけません。
+悪い例：「平均CVRは8.3%です」（根拠なしの断定）
+良い例：「CVR：外部確認待ち」／「AI仮説：比較型コンテンツのため相対的に中程度と予測」
+
+【あなたがこの案件で必ず返す最低成果物】
+${minList}
+
+【出力形式】
+${voiceOpener}上記の最低成果物を、見出し付きの箇条書きで出力してください。
+情報が不足していても、その項目を「AI仮説」または「外部確認待ち」として埋めたうえで、
+成果物として必ず提出してください。
+ユーザーへの確認事項は、成果物を出したあとに末尾へ最小限だけ記載してください。
+`;
+}
+
+// ══════════════════════════════════════════════════════════════
 // システムプロンプト生成
 // ══════════════════════════════════════════════════════════════
-function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = null) {
+// Phase IG-2J-A: 第4引数 options を追加（任意・既存呼び出しは引数を追加しなくても従来動作と完全同一）。
+//   options.accountIntelligenceMode === true かつ agent が IADP 4担当のときのみ
+//   Self-Completion Mode（⓪と⑤の差し替え＋最終権威ブロック）を適用する。
+function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = null, options = null) {
   // LINE_AGENT_PROFILESにない担当は動的プロフィールで自動対応
   // memberData が渡された場合（管理画面追加担当）はそのデータを優先
   const profile = LINE_AGENT_PROFILES[agent] || autoGenerateProfile(agent, memberData || {});
@@ -772,6 +904,12 @@ function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = n
   const agentRole = getAgentRole(agent);
   const isWorker  = agentRole === 'worker';   // worker = FOUR_STEP_FRAMEWORK 自動適用
   const isLeader  = agentRole === 'leader';
+
+  // Phase IG-2J-A: IADP Self-Completion Mode 判定。
+  //   ①optionsが渡され ②accountIntelligenceMode===true ③agentがIADP対象4担当 ④workerである
+  //   の4条件をすべて満たす場合のみ有効。1つでも欠ければ従来動作（既存文字列と完全同一）。
+  const iadpSelfCompletion = !!(options && options.accountIntelligenceMode === true
+    && isWorker && IADP_SELF_COMPLETION_AGENT_IDS.indexOf(agent) !== -1);
 
   const agentSpecific = agent === 'leader'     ? LEADER_RULES
     : agent === 'strategy'   ? STRATEGY_RULES
@@ -861,7 +999,10 @@ function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = n
   const customDomainScope = memberData && memberData.description ? memberData.description : null;
   const profileDomainKeywords = profile.domainKeywords || null;
   const domainScope = customDomainScope || profileDomainKeywords || null;
-  const domainPreCheck = (isWorker && domainScope) ? `
+  // Phase IG-2J-A: IADPモードのみ専門領域判定をIADP版へ差し替える（通常時は下の既存文をそのまま使用）
+  const domainPreCheck = (isWorker && domainScope && iadpSelfCompletion)
+    ? buildIadpDomainPreCheck(agent, domainScope)
+    : (isWorker && domainScope) ? `
 【★ステップ0：専門領域判定（全ルールより先に実行・最絶対優先）】
 あなたが対応できる専門領域：${domainScope}
 
@@ -897,7 +1038,10 @@ function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = n
   const metricsBlock       = profile.metrics && profile.metrics.length ? `\n【最重視する指標】${profile.metrics.join('・')}` : '';
   const proposalStyleBlock = profile.proposalStyle ? `\n【提案フォーマット（情報充足時のみ適用）】\n${profile.proposalStyle}` : '';
   const questionStyleBlock = profile.questionStyle ? `\n【情報収集の観点（情報不足時に使う質問軸）】\n${profile.questionStyle}` : '';
-  const workerFinalOverride = isWorker ? `
+  // Phase IG-2J-A: IADPモードのみ最終上書きをSelf-Completion Mode版へ差し替える（通常時は既存文のまま）
+  const workerFinalOverride = (isWorker && iadpSelfCompletion)
+    ? buildIadpSelfCompletionOverride(agent, voiceOpener)
+    : isWorker ? `
 【★最終上書き：上記全設定より最優先（worker共通・変更不可）】
 ※ステップ0で専門外と判定した場合はこのブロックを無視し、ステップ0の形式を使うこと。
 
@@ -2644,7 +2788,10 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         let taskFallback     = false;
         const taskStartMs    = Date.now();
 
-        const systemPrompt = buildSystemPrompt(task.agentId, null, null);
+        // Phase IG-2J-A: accountIntelligenceMode（runAutoTaskWorkflowの既存引数）をそのまま渡す。
+        //   falseまたは対象外agentでは buildSystemPrompt 内で無効化され従来と同一文字列になる。
+        //   Reviewer（3027行）・Strategy（3138行）・自律相談（2896行）へは渡さない＝それらは従来動作のまま。
+        const systemPrompt = buildSystemPrompt(task.agentId, null, null, { accountIntelligenceMode: accountIntelligenceMode });
         if (agentCaller) {
           const cr = await agentCaller(task.agentId, systemPrompt, fullInstruction, []);
           resultText       = cr.text;
