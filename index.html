@@ -6329,6 +6329,51 @@
   .iadp-approve-btn:hover { background: rgba(76,255,142,0.22); }
   .iadp-approve-btn:active { background: rgba(76,255,142,0.3); }
   .iadp-approve-msg { font-size: 11px; color: #4cff8e; margin-left: 8px; }
+  /* ══ Phase IG-2J-B: Leader Final Summary（チャット最下部・結論確認用） ══ */
+  .lfs-card {
+    background: linear-gradient(135deg, rgba(12,28,24,0.96), rgba(16,38,34,0.94));
+    border: 1px solid rgba(76,255,142,0.32);
+    border-left: 3px solid rgba(76,255,142,0.75);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 12px 0 10px;
+    color: #d6e4dc;
+    flex-shrink: 0;
+    overflow: visible;
+    word-break: break-word;
+    max-width: 100%;
+  }
+  .lfs-title { font-size: 14px; font-weight: 700; color: #4cff8e; margin-bottom: 10px; }
+  .lfs-verdict { font-size: 19px; font-weight: 700; line-height: 1.3; }
+  .lfs-verdict-sub { font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 2px; }
+  .lfs-note { font-size: 11px; color: #ffcf6a; margin-top: 6px; line-height: 1.5; }
+  .lfs-block { margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .lfs-block-title { font-size: 11px; font-weight: 600; color: rgba(76,255,142,0.8); letter-spacing: 0.04em; margin-bottom: 4px; }
+  .lfs-adopted { font-size: 15px; font-weight: 700; color: #eaf5ee; }
+  .lfs-adopted-score { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.55); }
+  .lfs-warn { font-size: 11px; color: #ffcf6a; margin-top: 3px; line-height: 1.5; }
+  .lfs-list { margin: 0; padding-left: 18px; }
+  .lfs-list li { font-size: 12.5px; line-height: 1.6; color: #d6e4dc; margin: 1px 0; }
+  .lfs-axes { font-size: 11.5px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+  .lfs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; }
+  .lfs-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 2px 0; font-size: 12.5px; }
+  .lfs-k { color: rgba(255,255,255,0.55); flex-shrink: 0; }
+  .lfs-v { color: #eaf5ee; font-weight: 600; text-align: right; word-break: break-word; }
+  .lfs-sub { font-size: 10.5px; font-weight: 400; color: rgba(255,255,255,0.45); }
+  .lfs-approval-state { font-size: 13px; font-weight: 700; color: #eaf5ee; }
+  .lfs-approve-btn {
+    display: inline-block; margin-top: 8px; padding: 9px 18px; font-size: 13px; font-weight: 700;
+    border: 1px solid rgba(76,255,142,0.5); border-radius: 9px;
+    background: rgba(76,255,142,0.14); color: #4cff8e; cursor: pointer; min-height: 38px;
+    transition: background 0.2s;
+  }
+  .lfs-approve-btn:hover { background: rgba(76,255,142,0.24); }
+  .lfs-footer { margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .lfs-detail-btn {
+    font-size: 11.5px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.7);
+  }
+  .lfs-detail-btn:hover { background: rgba(255,255,255,0.1); }
   @media (max-width: 768px) {
     .iadp-card { padding: 12px 10px; margin: 8px 0 10px; font-size: 12px; }
     .iadp-section { padding: 8px; }
@@ -6340,6 +6385,13 @@
     .iadp-cat-name { width: auto; }
     .iadp-btn-row { gap: 6px; }
     .iadp-copy-btn { padding: 5px 10px; font-size: 11px; }
+    /* Phase IG-2J-B: iPhone縦画面では1カラム化し、Summaryが画面を過度に占有しないよう縮小 */
+    .lfs-card { padding: 11px 12px; margin: 10px 0 8px; }
+    .lfs-title { font-size: 13px; margin-bottom: 8px; }
+    .lfs-verdict { font-size: 17px; }
+    .lfs-grid { grid-template-columns: 1fr; gap: 1px; }
+    .lfs-adopted { font-size: 14px; }
+    .lfs-list li { font-size: 12px; }
   }
 </style>
 </head>
@@ -10539,6 +10591,8 @@ function reRenderChatArea(m) {
   const filtered = getFilteredHistory(m.id);
   if (filtered.length === 0) {
     addBubble('ai', `${m.role}として対応します。ご相談をどうぞ。`, m, false);
+    // Phase IG-2J-B: 履歴が空でも復元済みIADPがあれば結論だけは最下部へ出す（追加のみ・fail-open）
+    if (m.id === 'leader' && typeof _lfsRenderIntoChatArea === 'function') { _lfsRenderIntoChatArea(chat); }
     return;
   }
   filtered.forEach(h => {
@@ -10553,6 +10607,10 @@ function reRenderChatArea(m) {
   });
   const lastAi = [...filtered].reverse().find(h => h.role === 'assistant' && h.suggestions && h.suggestions.length > 0);
   if (lastAi) renderSuggestionButtons(lastAi.suggestions);
+  // Phase IG-2J-B: Leader Final Summary をチャット最新位置（最下部）へ追加する。
+  //   IADPカード・Executive Leader Report（ともに insertBefore で最上部）は無変更のまま維持し、
+  //   ここでは appendChild のみを行う。直後の scrollTop=scrollHeight により完了時に必ず視界へ入る。
+  if (m.id === 'leader' && typeof _lfsRenderIntoChatArea === 'function') { _lfsRenderIntoChatArea(chat); }
   chat.scrollTop = chat.scrollHeight;
 }
 
@@ -13397,6 +13455,271 @@ function _iadpRenderIntoChatArea(chatEl) {
     if (wrap.firstChild) chatEl.insertBefore(wrap.firstChild, chatEl.firstChild);
   } catch (_iadpRenderErr) {
     console.warn('[IADP] card render error (fail-open):', _iadpRenderErr.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2J-B: Leader Final Summary（チャット最新位置＝最下部へ表示）
+//
+// 目的:
+//   IADPカード・Executive Leader Reportはチャット最上部へ挿入されるため（insertBefore）、
+//   Workflow完了直後に最下部へ自動スクロールしたユーザーは結論を見るために大きく上へ戻る必要があった。
+//   本Summaryは messages の appendChild ループ後に appendChild で追加され、
+//   「上へ戻らずに結論・採用候補・品質状況・次の対応を確認できる」ことだけを担う。
+//
+// 設計制約:
+//   ・既存の _iadpRenderIntoChatArea() / _elrRenderIntoChatArea() / Leader Final本文は一切変更しない（追加のみ）。
+//   ・新規AI呼び出しは行わない。既存の保存済みデータ・既存assessment結果を短く整形するだけ。
+//   ・新規保存フィールドを作らない。F5後は fields.iadp から復元済みのグローバルから再構築する。
+//   ・Cross-case guard は IADPカードと同一方式（_liCurrentCaseId() 一致のみ描画）。
+//   ・採用候補の整合ロジックは新規実装しない（IG-2J-Dで正式化）。不一致は安全側で「要確認」を付す。
+// ══════════════════════════════════════════════════════════════
+
+// Summary用モデルを既存データから構築する（純粋寄り・非破壊・例外を投げない）。
+function _lfsBuildSummaryModel() {
+  try {
+    var pkg = _lastInstagramAccountDesignPackage;
+    if (!pkg) return null;
+    var caseId = pkg.caseId || _lastInstagramAccountDesignCaseId || null;
+    var validation = _lastInstagramAccountDesignValidation;
+    var genCtx = _lastInstagramAccountDesignGenContext;
+    var approval = _lastInstagramAccountDesignApproval;
+    var snap = _lastInstagramAccountDesignAssessmentCtx;
+
+    // 既存の階層分離アセスメントをそのまま利用（新規判定ロジックは作らない）
+    var A = {};
+    try {
+      if (typeof InstagramAccountDesignQuality !== 'undefined'
+          && typeof InstagramAccountDesignQuality.assessInstagramAccountDesignPackage === 'function') {
+        var ctx = _iadpBuildAssessmentContext(validation, genCtx, pkg, caseId, approval, snap);
+        A = InstagramAccountDesignQuality.assessInstagramAccountDesignPackage(pkg, ctx) || {};
+      }
+    } catch (_asErr) { A = {}; }
+
+    // ── 採用候補（既存正本を使用。整合しない場合は「要確認」を付す・自動修正はしない） ──
+    var cc = (pkg.intelligence && pkg.intelligence.candidateComparison) || {};
+    var ad = (pkg.intelligence && pkg.intelligence.adoptionDecision) || {};
+    var cands = Array.isArray(cc.candidates) ? cc.candidates : [];
+    var mrCands = (pkg.intelligence && pkg.intelligence.marketResearch && Array.isArray(pkg.intelligence.marketResearch.candidates))
+      ? pkg.intelligence.marketResearch.candidates : [];
+    var nameByGenre = {};
+    for (var i = 0; i < mrCands.length; i++) {
+      if (mrCands[i] && mrCands[i].genreId) nameByGenre[mrCands[i].genreId] = mrCands[i].genreName || '';
+    }
+    function labelOf(c) {
+      if (!c) return '';
+      if (c.genreName) return c.genreName;
+      if (c.genreId && nameByGenre[c.genreId]) return nameByGenre[c.genreId];
+      return c.candidateId || '';
+    }
+    var adoptedId = ad.adoptedCandidateId || null;
+    var adoptedCand = null;
+    for (var j = 0; j < cands.length; j++) { if (cands[j] && cands[j].candidateId === adoptedId) { adoptedCand = cands[j]; break; } }
+    // 軽量な整合チェックのみ（正式なSingle Source of TruthはIG-2J-Dで実装）
+    var declaredAdopt = null;
+    for (var k = 0; k < cands.length; k++) { if (cands[k] && cands[k].decision === 'adopt') { declaredAdopt = cands[k]; break; } }
+    var rankTop = null;
+    for (var r = 0; r < cands.length; r++) {
+      if (!cands[r]) continue;
+      if (!rankTop || (typeof cands[r].totalScore === 'number' && typeof rankTop.totalScore === 'number' && cands[r].totalScore > rankTop.totalScore)) rankTop = cands[r];
+    }
+    var mainGenre = (pkg.finalProfile && pkg.finalProfile.contentStrategy && pkg.finalProfile.contentStrategy.mainGenre) || '';
+    var adoptedLabel = adoptedCand ? labelOf(adoptedCand) : '';
+    var mismatch = [];
+    if (!adoptedCand) mismatch.push('採用IDが3案比較に存在しない');
+    if (adoptedCand && declaredAdopt && declaredAdopt.candidateId !== adoptedCand.candidateId) mismatch.push('比較表のadoptと採用IDが不一致');
+    if (adoptedCand && rankTop && rankTop.candidateId !== adoptedCand.candidateId) mismatch.push('採用案が総合点1位ではない');
+    if (adoptedCand && adoptedLabel && mainGenre && mainGenre.indexOf(adoptedLabel) === -1 && adoptedLabel.indexOf(mainGenre) === -1) {
+      mismatch.push('Final Profileの主ジャンルと不一致');
+    }
+
+    // ── なぜこの案か（既存文言を短く整形するだけ・新規生成なし） ──
+    var reasonSrc = (adoptedCand && adoptedCand.adoptionReason) || ad.decisionRationale || '';
+    var reasonLines = String(reasonSrc || '').split(/\r?\n|。/).map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; }).slice(0, 4)
+      .map(function (s) { return s.length > 90 ? s.slice(0, 90) + '…' : s; });
+    // 補助: 採用案の上位軸を2つだけ添える（既存スコアの読み替えのみ）
+    var topAxes = [];
+    if (adoptedCand && adoptedCand.scores && typeof adoptedCand.scores === 'object') {
+      var axisLabels = { marketPotential:'市場性', profitability:'収益性', instagramFit:'Instagram適性',
+        competitionDifficulty:'競合難易度', differentiationPotential:'差別化', noFaceNoVoiceFit:'顔出しなし適性',
+        continuity:'継続性', multiProductFit:'複数商品対応', longTermBrandAsset:'長期ブランド', aiOperationFit:'AI運営適性' };
+      var pairs = Object.keys(adoptedCand.scores).map(function (kk) { return { k: kk, v: adoptedCand.scores[kk] }; })
+        .filter(function (p) { return typeof p.v === 'number'; })
+        .sort(function (a2, b2) { return b2.v - a2.v; }).slice(0, 2);
+      topAxes = pairs.map(function (p) { return (axisLabels[p.k] || p.k) + ' ' + p.v; });
+    }
+
+    var ec = A.evidenceCounts || (_lastInstagramAccountDesignQuality && _lastInstagramAccountDesignQuality.evidenceCounts) || {};
+    return {
+      caseId: caseId,
+      packageId: pkg.packageId || null,
+      legacy: !!A.legacy,
+      overall: A.overall || null,
+      structureValidation: A.structureValidation || null,
+      contentQuality: A.contentQuality || null,
+      evidenceStatus: A.evidenceStatus || null,
+      readiness: A.accountCreationReadiness || null,
+      approvalStatus: A.userApproval || 'pending',
+      approvedAt: (approval && approval.status === 'approved') ? (approval.approvedAt || null) : null,
+      structureScore: (typeof A.score === 'number') ? A.score : null,
+      verifiedEvidence: (ec.evidence_supported || 0) + (ec.user_confirmed || 0),
+      hypothesisCount: ec.generated_hypothesis || 0,
+      externalPending: ec.external_confirmation_required || 0,
+      reviewerStatus: A.reviewerStatus || 'not_available',
+      strategyStatus: A.strategyStatus || 'not_available',
+      qualityGateStatus: A.qualityGateStatus || 'not_executed',
+      adoptedLabel: adoptedLabel,
+      adoptedTotalScore: (adoptedCand && typeof adoptedCand.totalScore === 'number') ? adoptedCand.totalScore : null,
+      adoptionMismatch: mismatch,
+      reasonLines: reasonLines,
+      topAxes: topAxes,
+      missing: Array.isArray(A.missing) ? A.missing.slice(0, 3) : [],
+      nextActions: Array.isArray(A.nextActions) ? A.nextActions.slice(0, 3) : [],
+      hasDetailCard: true,
+    };
+  } catch (e) {
+    console.warn('[LeaderFinalSummary] model build error (fail-open):', e.message);
+    return null;
+  }
+}
+
+// SummaryのHTMLを構築する（表示専用・色だけに依存せず文字でも状態を示す）。
+function _lfsBuildSummaryHtml(mo) {
+  var esc = escapeHtml;
+  var overallMap = { complete: '✅ Ready相当（品質条件クリア）', needs_work: '⛔ Not Ready', insufficient: '⛔ Not Ready' };
+  var rdMap = { ready: '✅ Ready', conditional: '🟡 Conditional（承認待ち）', not_ready: '⛔ Not Ready' };
+  var rdLabel = rdMap[mo.readiness] || '⛔ Not Ready';
+  var rdClass = 'iadp-status-' + (mo.readiness === 'ready' ? 'complete' : (mo.readiness === 'conditional' ? 'needs_work' : 'insufficient'));
+  var cqMap = { complete: 'Complete', needs_work: 'Needs Work', insufficient: 'Insufficient', failed: 'Failed', not_evaluated: '一部評価未実施' };
+  var evMap = { sufficient: 'Sufficient', partial: 'Partial', insufficient: 'Insufficient', not_required: '不要' };
+  var rvMap = { passed: '✅ Passed', needs_work: '🔴 Needs Work', failed: '🔴 Failed', not_available: '⚪ Not Evaluated' };
+  var stMap = { accepted: '✅ Accepted', needs_revision: '🟡 Revision Required', insufficient: '🔴 Insufficient', not_available: '⚪ Not Evaluated' };
+  var qgMap = { passed: '✅ Passed', failed: '🔴 Failed', not_executed: '⚪ Not Executed' };
+  var apLabel = (mo.approvalStatus === 'approved') ? '✅ Approved' : (mo.approvalStatus === 'rejected' ? '却下' : '⏳ Pending');
+
+  var h = '<div class="lfs-card" id="lfs-summary-display">';
+  h += '<div class="lfs-title">🎯 Leader Final Summary</div>';
+
+  // 最終判断（最も大きく・一目で読める位置）
+  h += '<div class="lfs-verdict ' + rdClass + '">' + rdLabel + '</div>';
+  h += '<div class="lfs-verdict-sub">内容品質：' + esc(cqMap[mo.contentQuality] || '—') + '</div>';
+  if (mo.legacy) h += '<div class="lfs-note">⚠ 生成時の担当実行状況が保存されていない旧データです（一部評価未実施）。</div>';
+
+  // 採用候補
+  h += '<div class="lfs-block"><div class="lfs-block-title">採用候補</div>';
+  if (mo.adoptedLabel) {
+    h += '<div class="lfs-adopted">' + esc(mo.adoptedLabel)
+      + (mo.adoptedTotalScore !== null ? ' <span class="lfs-adopted-score">総合 ' + mo.adoptedTotalScore + '</span>' : '') + '</div>';
+    if (mo.adoptionMismatch.length > 0) {
+      h += '<div class="lfs-warn">要確認：' + esc(mo.adoptionMismatch.join(' / ')) + '</div>';
+    }
+  } else {
+    h += '<div class="lfs-adopted">要確認（採用候補を特定できません）</div>';
+  }
+  h += '</div>';
+
+  // なぜこの案か
+  if (mo.reasonLines.length > 0 || mo.topAxes.length > 0) {
+    h += '<div class="lfs-block"><div class="lfs-block-title">なぜこの案か</div>';
+    if (mo.reasonLines.length > 0) {
+      h += '<ul class="lfs-list">';
+      for (var i = 0; i < mo.reasonLines.length; i++) h += '<li>' + esc(mo.reasonLines[i]) + '</li>';
+      h += '</ul>';
+    }
+    if (mo.topAxes.length > 0) h += '<div class="lfs-axes">強み：' + esc(mo.topAxes.join(' ／ ')) + '</div>';
+    h += '</div>';
+  }
+
+  // 品質状況（4軸＋会社判定。単一の「品質スコア」を主表示にしない）
+  h += '<div class="lfs-block"><div class="lfs-block-title">品質状況</div><div class="lfs-grid">';
+  h += '<div class="lfs-row"><span class="lfs-k">構造充足</span><span class="lfs-v">' + (mo.structureScore !== null ? mo.structureScore + '%' : '—') + '</span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">Evidence</span><span class="lfs-v">' + esc(evMap[mo.evidenceStatus] || '—')
+    + ' <span class="lfs-sub">（確認済 ' + mo.verifiedEvidence + '件 / AI仮説 ' + mo.hypothesisCount + '件'
+    + (mo.externalPending > 0 ? ' / 外部確認待ち ' + mo.externalPending + '件' : '') + '）</span></span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">内容品質</span><span class="lfs-v">' + esc(cqMap[mo.contentQuality] || '—') + '</span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">実運用可否</span><span class="lfs-v">' + rdLabel + '</span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">Reviewer</span><span class="lfs-v">' + (rvMap[mo.reviewerStatus] || '⚪ Not Evaluated') + '</span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">Strategy</span><span class="lfs-v">' + (stMap[mo.strategyStatus] || '⚪ Not Evaluated') + '</span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">Quality Gate</span><span class="lfs-v">' + (qgMap[mo.qualityGateStatus] || '⚪ Not Executed') + '</span></div>';
+  h += '</div></div>';
+
+  // 現在の問題（最大3件）
+  if (mo.missing.length > 0) {
+    h += '<div class="lfs-block"><div class="lfs-block-title">現在の主な問題</div><ul class="lfs-list">';
+    for (var m2 = 0; m2 < mo.missing.length; m2++) h += '<li>' + esc(mo.missing[m2]) + '</li>';
+    h += '</ul></div>';
+  }
+
+  // 次に必要なこと（最大3件・AI自律/ユーザー判断の正式分離はIG-2J-Cで実装）
+  if (mo.nextActions.length > 0) {
+    h += '<div class="lfs-block"><div class="lfs-block-title">次に必要なこと</div><ul class="lfs-list">';
+    for (var n2 = 0; n2 < mo.nextActions.length; n2++) h += '<li>' + esc(mo.nextActions[n2]) + '</li>';
+    h += '</ul></div>';
+  }
+
+  // ユーザー承認（IG-2Gの既存状態を表示。承認は既存 _iadpApproveDesign() を再利用）
+  h += '<div class="lfs-block lfs-approval"><div class="lfs-block-title">ユーザー承認</div>';
+  h += '<div class="lfs-approval-state">' + apLabel + (mo.approvedAt ? ' <span class="lfs-sub">' + esc(String(mo.approvedAt).slice(0, 16).replace('T', ' ')) + '</span>' : '') + '</div>';
+  if (mo.approvalStatus !== 'approved') {
+    h += '<button class="lfs-approve-btn" id="lfs-approve-btn" onclick="_iadpApproveDesign()">この設計を承認</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="lfs-footer">';
+  h += '<button class="lfs-detail-btn" onclick="_lfsScrollToDetails()">▲ 詳細を確認（IADP / Executive Report）</button>';
+  h += '</div>';
+
+  h += '</div>';
+  return h;
+}
+
+// 詳細（IADPカード／Executive Leader Report）へスクロールする（表示専用・状態変更なし）。
+function _lfsScrollToDetails() {
+  try {
+    var el = document.getElementById('iadp-card-display') || document.querySelector('.executive-leader-report');
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start' });
+  } catch (e) { /* スクロール失敗でもUIを止めない */ }
+}
+
+// チャット最下部へSummaryを追加する（appendChild・Cross-case guard・重複防止・fail-open）。
+function _lfsRenderIntoChatArea(chatEl) {
+  try {
+    if (!chatEl || !_lastInstagramAccountDesignPackage || !_lastInstagramAccountDesignCaseId) return;
+    var curCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+    if (!curCaseId || _lastInstagramAccountDesignCaseId !== curCaseId) return;   // 別案件では描画しない
+    if (chatEl.querySelector('#lfs-summary-display')) return;                    // 重複防止
+    var mo = _lfsBuildSummaryModel();
+    if (!mo) return;
+    var wrap = document.createElement('div');
+    wrap.innerHTML = _lfsBuildSummaryHtml(mo);
+    if (wrap.firstChild) chatEl.appendChild(wrap.firstChild);                     // ★最新位置＝最下部へ追加
+    // 呼び出し元 reRenderChatArea() の `chat.scrollTop = chat.scrollHeight` は、Summary追加直後の
+    //   同期実行時点ではSummary分の高さがまだ scrollHeight へ反映されておらず、
+    //   scroll-behavior:smooth と相まって目標値が小さくクランプされる（＝最下部まで届かない）。
+    //   既存行は変更せず、レイアウト確定後（2フレーム後）に最下部へ再アサートする。
+    //   Summaryを描画した場合のみ実行されるため、IADPが無い通常チャットへは影響しない。
+    //   さらに、Summaryがチャット表示領域より高い場合は最下部へ寄せると「最終判断」が視界外へ出るため、
+    //   その場合のみSummary先頭を表示領域上端へ合わせる（結論を最初に読める位置にする）。
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          try {
+            var el = chatEl.querySelector('#lfs-summary-display');
+            var maxScroll = chatEl.scrollHeight - chatEl.clientHeight;
+            if (el && el.getBoundingClientRect().height > chatEl.clientHeight) {
+              var delta = el.getBoundingClientRect().top - chatEl.getBoundingClientRect().top;
+              var target = chatEl.scrollTop + delta;
+              chatEl.scrollTop = Math.max(0, Math.min(target, maxScroll));
+            } else {
+              chatEl.scrollTop = chatEl.scrollHeight;
+            }
+          } catch (e) { /* スクロール失敗は無視 */ }
+        });
+      });
+    }
+  } catch (_lfsErr) {
+    console.warn('[LeaderFinalSummary] render error (fail-open):', _lfsErr.message);
   }
 }
 
