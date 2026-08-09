@@ -4,6 +4,24 @@
 
 ---
 
+## Phase IG-2F〜IG-2H IADP Quality / Approval / Quality Signals **正式リリース**（2026-08-09）
+
+**IADPがComplete／100点／Readyと誤表示される問題（Evidence 0件・担当成果物不足・Leader統合回答なしでも100点）をIG-2F〜IG-2Hの3工程で解消し、IADP品質基盤を統合正式リリースした**（Decision097）。**index.html／shared/instagramAccountDesignQuality.js**。**server.js／shared/instagramAccountDesign.js／shared/leaderRuleEngine.js／supabase/schema.sql／DB／API契約は無変更・新規API/新規DBカラムなし**。**Phase54 Complete維持・Phase55未着手**（Decision097）。
+
+- **根本原因**：`evaluateInstagramAccountDesignQuality()`がJSONのフィールド存在のみでscore/status/readyを決定しており、①Evidence件数が判定入力に含まれない、②担当実行状況とLeader統合回答が未接続かつ未保存でF5消失、③readyにユーザー承認ゲートなし。Summary潰れは`flex-shrink:1`＋`overflow-x:hidden`によるもの。
+- **Phase IG-2F（階層品質判定・Summary UI改善）**：`assessInstagramAccountDesignPackage()`新設で構造検証／内容品質／Evidence／Readiness／User Approvalの5軸へ分離（既存評価関数は無変更で内部再利用＝後方互換）。Evidence 0件を「実データ検証済み」と表示せず、Category Scoresを「構造充足／Evidence信頼度／内容品質」へ分離。担当成果物不足・Leader統合回答不足はComplete化禁止。legacy安全判定。`.iadp-card`へ`flex-shrink:0`／`overflow:visible`（26px→547px）。Code commit **b5a3d5e**。
+- **Phase IG-2G（User Approval Flow）**：`fields.iadp.approval`へ永続化・**caseId＋packageId一致時のみapproved**・新IADP生成で旧承認無効化・承認後は同一操作内でReady再評価（F5不要）。Code commit **18fc04b**。
+- **Phase IG-2H（Reviewer／Strategy／Quality Gate 正式接続）**：**新しい独立判定基盤は作らず既存判定を再利用**。Quality Gateは既存正本`inbox.qualityGate`を読むのみで再実行なし。Reviewer／Strategyは既存`data.results`から多シグナル導出（**単純キーワードだけでfailed判定しない**・既知バグの`LI_REVIEWER_REJECTION_KEYWORDS`は流用しない）。既存Workflow順は変更せず`_liCollectIntegration()`直後の`_iadpRefreshAfterIntegration()`で後から再評価。`fields.iadp.assessmentContext`へsnapshot保存・packageId一致検証。Code commit **4dd0400**。
+- **Ready正式条件**：構造Passed＋内容Complete＋Evidence非Insufficient＋Reviewer重大不足なし＋Strategy再設計要求なし＋Quality Gate Passed＋Leader統合回答あり＋必須担当成果物あり＋User Approval Approved の全充足。**承認だけで品質不足を上書きしない**。未取得は`not_available`／`not_executed`として明示。
+- **Path B**：`inbox.qualityGate === null`のためComplete／Readyへ到達しない安全側仕様として正式容認。正式経路はPath A Auto Task（Path BへQuality Gateを新設しない）。
+- **Background Execution（方針記録のみ・今回未実装）**：Version1.1後半の大型工程。実装順＝正式化→Instagram実運用→KPI/Learning実測→ボトルネック確認→Background Execution。将来対象＝Job Queue／Background Processing／状態遷移／Progress保存／Resume／Retry／Cancel／Multiple Jobs／完了通知／Cross-case guard／二重実行防止／古い結果による上書き防止／コスト制御。**品質判断が安定する前にBackground化しない**。
+- **Known Issue**：Reviewer NG keyword partial-match issue（`NG`部分一致でBRANDING/MARKETINGを誤検出し得る既存バグ。IADP側は回避済み・本体修正は後続候補）／iPhoneチャット履歴の瞬間消失／iPhone Landscapeレイアウト崩れ。
+- **データ保全ルール**：実案件の`fields.iadp`変更時は「backup→test→restore→restore確認」を必須とし原則専用テスト案件を使用（IG-2G/IG-2Hは専用テスト案件で実案件書き込みゼロ・検証後削除）。
+- **検証**：Core合成テスト（IG-2F 9件・IG-2H 10件）／Reviewer・Strategy導出11件／UI 10ケース全合格。Reviewer failed・Strategy needs_revision・Quality Gate failedはApproved済みでもNot Ready、packageId変更で旧評価流用なし、案件切替でCross-case漏れなし、F5でsnapshot復元、legacyは自動Passedなし、iPhone相当幅375pxで横はみ出しなし。`node --check` OK・`git diff --check` CLEAN・Console Error 0・dev-check 200/200/200・**実AI追加実行なし**。Executive Decision／Constitution Validator／Quality Gate契約への非干渉をdiff実測で確認。
+- **Git・反映**：Code commit **b5a3d5e**＋**18fc04b**＋**4dd0400**＋docs commit（本更新）。Annotated Tag **v1.01-instagram-account-design-quality-ready**。main push・Render反映・PC本番確認・iPhone実機確認（ユーザー実施）。次工程＝Instagram実運用（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）。実AI End-to-EndはAPI費用承認後。Background Executionは実運用・Learning実測後。
+
+---
+
 ## Phase IG-2D〜IG-2E Instagram Account Design Package Output Draft Integration **正式採用**（2026-08-06）
 
 **IADP（Instagram Account Design Package）の実AI検証・品質調整（IG-2D）に続き、IADPを既存Output Draft永続化へ正式接続した（IG-2E）**（Decision096）。**index.htmlのみ**（IG-2D・IG-2Eとも）。**server.js／shared/instagramAccountDesign.js／shared/leaderRuleEngine.js／supabase/schema.sql 無変更**。**新規API・新規DBカラムなし**。**Phase54 Complete維持・Phase55未着手**（Decision096）。

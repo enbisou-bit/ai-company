@@ -8,6 +8,49 @@
 
 ---
 
+## IADP Quality / Approval / Quality Signals 正式採用（Phase IG-2F〜IG-2H統合・正式リリース・2026-08-09・Decision 097）
+
+> 追記日: 2026-08-09。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.html／shared/instagramAccountDesignQuality.js**。**server.js／shared/instagramAccountDesign.js／shared/leaderRuleEngine.js／supabase/schema.sql／DB／API契約は無変更・新規API/新規DBカラムなし**。
+
+IADPがComplete／100点／Readyと誤表示される問題（Evidence 0件・担当成果物不足・Leader統合回答なしでも100点）をIG-2F〜IG-2Hの3工程で解消し、IADP品質基盤を正式リリースした（詳細はDecision097）。
+
+**正式ロードマップ（改訂・確定・実装順）**：
+
+```
+Phase IG-2D   IADP構造化JSON品質調整 ────────────────── 正式Complete（2026-08-06・Decision096）
+  ↓
+Phase IG-2E   Output Draft保存・F5復元・1 Case 1 正本 ── 正式Complete（2026-08-06・Decision096）
+  ↓
+Phase IG-2F   階層品質判定・Summary UI改善 ──────────── 正式Complete（Code commit b5a3d5e）
+              構造検証／内容品質／Evidence／Readiness／User Approvalの5軸分離
+  ↓
+Phase IG-2G   User Approval Flow ───────────────────── 正式Complete（Code commit 18fc04b）
+              approval永続化・caseId＋packageId一致・承認後Ready即時再評価
+  ↓
+Phase IG-2H   Reviewer／Strategy／Quality Gate 接続 ─── 正式Complete（Code commit 4dd0400）
+              既存正本の再利用のみ・Quality Gate再実行なし・多シグナル導出
+  ↓
+Phase IG-2I   docs正式化・Tag・Push・Render・本番確認 ─ 正式Complete（2026-08-09・Decision097）
+  ↓
+【次工程】     Instagram実運用 ─────────────────────── 未着手（ユーザー承認後）
+              アカウント作成 → プロフィール設定 → ASP登録 → 商品調査
+              → 投稿企画 → 初回投稿 → KPI取得 → Learning実測
+  ↓
+【後半工程】   Background Execution ────────────────── 未着手（実運用・Learning実測後）
+```
+
+**Ready正式条件**：①Structure Validation Passed ②Content Quality Complete ③Evidence Status ≠ Insufficient ④Reviewer重大不足なし ⑤Strategy再設計要求なし ⑥Quality Gate Passed ⑦Leader統合回答あり ⑧必須担当成果物あり ⑨User Approval Approved の全充足。承認だけで品質不足を上書きしない。
+
+**Path B（安全側仕様として正式化）**：Path Bは`inbox.qualityGate === null`となるためIADPはComplete／Readyへ到達しない。正式経路はPath A Auto Taskを基本とし、Path BへQuality Gateを新設しない（Decision087継承）。
+
+**Background Execution（Version1.1後半の大型工程・今回未実装）**：目的＝ユーザーがPC／iPhone／ブラウザを開き続けなくてもAI会社がサーバー側で処理を継続できる状態。将来対象＝Job Queue／Background Processing／queued・running・completed・failed・cancelled・retrying／Progress保存／Resume／Retry／Cancel／Multiple Jobs／完了通知／Cross-case guard／二重実行防止／古い結果による上書き防止／コスト制御。基本方針＝既存のIntelligence・Evidence・Leader Rule Engine・Reviewer・Strategy・Quality Gate・Executive Decision・Output Draftを可能な限り維持し、実行基盤を段階的にサーバー側へ移行する。**品質判断が安定する前にBackground化しない**（実運用・Learning実測後に着手）。
+
+**Known Issue**：Reviewer NG keyword partial-match issue（既存`LI_REVIEWER_REJECTION_KEYWORDS`の`NG`部分一致でBRANDING/MARKETINGを誤検出し得る。IADP側は回避済み・本体修正は後続候補）／iPhoneチャット履歴の瞬間消失／iPhone Landscapeレイアウト崩れ。
+
+**次工程**：Instagram実運用を最優先とし、実AI IADP End-to-End確認はAPI費用のユーザー承認後に実施する。Background Executionは実運用・Learning実測後。Completion Gate設計・NG keyword本体修正・iPhone Known Issue対応を後続候補として並列に記録する。正式な次工程はユーザー承認後に決定する。詳細はdocs/04DECISIONS.md Decision097を参照。
+
+---
+
 ## Instagram Account Design Package Output Draft Integration 正式採用（Phase IG-2D〜IG-2E統合・2026-08-06・Decision 096）
 
 > 追記日: 2026-08-06。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**。**Phase54 Complete維持・Phase55未着手**。**index.htmlのみ**。**server.js／shared/instagramAccountDesign.js／shared/leaderRuleEngine.js／supabase/schema.sql 無変更・新規API/新規DBカラムなし**。
