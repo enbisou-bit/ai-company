@@ -7455,6 +7455,8 @@
 <script src="shared/instagramAccountDesignQuality.js"></script>
 <!-- Phase IG-2J-E: 既存Affiliate IntelligenceをIADP4担当へ渡すための薄いAdapter（新Engine・新DB・新APIなし） -->
 <script src="shared/iadpIntelligenceContext.js"></script>
+<!-- Phase IG-2J-G: AI社員成果物の構造正規化（reply wrapper / json fence の除去・純関数） -->
+<script src="shared/agentResultNormalizer.js"></script>
 <script>
 // ── Supabase DB同期ヘルパー ────────────────────────────
 // タスクをサーバー（Supabase経由）に保存。失敗してもlocalStorage側は継続
@@ -12814,6 +12816,18 @@ function _iadpEffectiveApprovalStatus(pkg, caseId, approval) {
   } catch (e) { return 'pending'; }
 }
 
+// Phase IG-2J-G: AI社員成果物の構造正規化（表示・判定の入口で共通利用する薄いラッパ）。
+//   shared/agentResultNormalizer.js の純関数を呼ぶだけ。保存内容は一切変更しない。
+//   モジュール未ロード時・例外時は原文をそのまま返す（fail-open）。
+function _argNormalizeText(text) {
+  try {
+    if (typeof AgentResultNormalizer !== 'undefined' && typeof AgentResultNormalizer.normalizeAgentResultText === 'function') {
+      return AgentResultNormalizer.normalizeAgentResultText(text);
+    }
+  } catch (e) { /* fail-open */ }
+  return (typeof text === 'string') ? text : (text ? String(text) : '');
+}
+
 // Phase IG-2F: IADP対象担当（buildAccountIntelligenceTasksと一致）。担当実行状況の集計に使用（表示専用）。
 var IADP_REQUIRED_MEMBERS = [
   { agentId: 'researcher', label: 'Researcher' },
@@ -12836,7 +12850,9 @@ function _iadpBuildGenerationContext(results, leaderFinalResult) {
       var def = IADP_REQUIRED_MEMBERS[m];
       var r = byId[def.agentId];
       var status = r && r.status ? r.status : 'missing';
-      var resultText = r && typeof r.result === 'string' ? r.result : (r && r.result ? String(r.result) : '');
+      // Phase IG-2J-G: 構造ノイズ（reply wrapper / json fence）を除いてから充足判定する。
+      //   `{"reply":""}` のようにwrapperだけで中身が空の成果物を「本文あり」と誤認しないため。
+      var resultText = _argNormalizeText(r && r.result);
       var trimmed = resultText.trim();
       // 情報不足スタブ（逆質問で停止）: Leader Rule Engineと同じ判定（両マーカー一致）
       var isInsufficientStub = trimmed.indexOf('【現状仮説】') !== -1 && trimmed.indexOf('【確認したいこと】') !== -1;
@@ -12931,7 +12947,8 @@ function _iadpDeriveReviewerAssessment(entry, corroborated) {
   try {
     if (!entry) return { available: false, status: 'not_available', criticalIssueCount: 0, requiresRework: false, source: 'missing' };
     var status = entry.status || 'missing';
-    var text = (typeof entry.result === 'string') ? entry.result : (entry.result ? String(entry.result) : '');
+    // Phase IG-2J-G: 構造ノイズ除去後の本文で判定する（生JSON中の文字列を否定フレーズと誤認しないため）
+    var text = _argNormalizeText(entry.result);
     var trimmed = text.trim();
     if (status === 'error' || status === 'skipped') {
       return { available: false, status: 'not_available', criticalIssueCount: 0, requiresRework: false, source: 'status_' + status };
@@ -12962,7 +12979,8 @@ function _iadpDeriveStrategyAssessment(entry, corroborated) {
   try {
     if (!entry) return { available: false, status: 'not_available', requiresRework: false, source: 'missing' };
     var status = entry.status || 'missing';
-    var text = (typeof entry.result === 'string') ? entry.result : (entry.result ? String(entry.result) : '');
+    // Phase IG-2J-G: Reviewerと同じく構造ノイズ除去後の本文で判定する
+    var text = _argNormalizeText(entry.result);
     var trimmed = text.trim();
     if (status === 'error' || status === 'skipped') {
       return { available: false, status: 'not_available', requiresRework: false, source: 'status_' + status };
@@ -14408,7 +14426,12 @@ function atRenderResults(tasks) {
       </div>
       ${showDep ? depHtml : ''}
       ${showCollab ? collabHtml : ''}
-      <div class="at-result-body" id="at-body-${t.id}">${t.result ? escapeHtml(t.result) : (t.skippedReason ? `⏭ ${escapeHtml(t.skippedReason)}` : '（待機中）')}</div>
+      <div class="at-result-body" id="at-body-${t.id}">${(() => {
+        // Phase IG-2J-G: 表示時にも正規化を通す（保存済みの旧データ＝生JSON/```json fenceが残っている
+        //   成果物にも効く。純関数・保存内容は変更しない・正常な文章は完全に不変）。
+        const _shown = _argNormalizeText(t.result);
+        return _shown ? escapeHtml(_shown) : (t.skippedReason ? `⏭ ${escapeHtml(t.skippedReason)}` : '（待機中）');
+      })()}</div>
       ${acHtml}
       ${t.isLeaderFinal && t.status === 'completed' ? `<div class="at-leader-final-stats">
         <span class="at-leader-final-stat">📝 ${(t.replyLength || (t.result||'').length).toLocaleString()}文字</span>

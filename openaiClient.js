@@ -2,6 +2,8 @@ const axios = require('axios');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const { costTracker, addOpenAIUsage, calculateOpenAICost, USD_TO_JPY } = require('./costTracker');
+// Phase IG-2J-G: AI社員成果物の構造正規化（純関数のみ・副作用なし・DB/API非依存）
+const { normalizeAgentResult } = require('./shared/agentResultNormalizer');
 // A-2-5: OpenAI料金イベントの Supabase 保存は lib/costDb.js 経由。
 //   require は遅延（persistOpenAICostEvent 内）で行う。トップレベルで require すると
 //   server.js の dotenv.config()（line 50）より前に supabase が初回ロードされ null 固定化して
@@ -2842,20 +2844,31 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         }
         const taskResponseMs = Date.now() - taskStartMs;
 
-        // JSON返答から reply 部分だけを取り出す（OpenAI 返答用）
+        // JSON返答から reply 部分だけを取り出す。
+        // Phase IG-2J-G: 共通正規化（shared/agentResultNormalizer.js）へ統一。
+        //   従来の実装には2つの構造的な欠陥があり、成果物へ構造ノイズが残っていた：
+        //     ①Claude担当（writer/reviewer/strategy）はこの処理を丸ごとスキップしていたため
+        //       ```json フェンス付きのJSON回答がそのまま成果物として残った。
+        //     ②OpenAI担当でも indexOf('{')/lastIndexOf('}') → JSON.parse のみで、
+        //       reply本文に実改行を含むJSON（LLMが頻繁に生成する）はparseに失敗し、
+        //       catchで握り潰されて生JSONがそのまま残った（Branding生JSONの原因）。
+        //   正規化はProvider非依存で適用する。原文は task.rawResult へ保持し失わない。
+        //   ※status（completed/error）の判定契約は一切変更しない。
         let cleanResult = resultText || '';
-        if (taskProviderUsed !== 'claude' && taskProviderUsed !== 'claude_fallback') {
-          try {
-            const start = (resultText || '').indexOf('{');
-            const end   = (resultText || '').lastIndexOf('}');
-            if (start !== -1 && end > start) {
-              const parsed = JSON.parse(resultText.slice(start, end + 1));
-              if (parsed.reply) cleanResult = parsed.reply;
-            }
-          } catch (_) {}
-        }
+        let taskNormalization = null;
+        try {
+          taskNormalization = normalizeAgentResult(resultText);
+          cleanResult = taskNormalization.text;
+        } catch (_) { cleanResult = resultText || ''; } // fail-open: 原文のまま
 
         task.result        = cleanResult;
+        // Phase IG-2J-G: 原文保持（正規化で実際に変化した場合のみ・任意フィールド）
+        if (taskNormalization && taskNormalization.changed) {
+          task.rawResult   = taskNormalization.raw;
+          task.normalized  = { hadReplyWrapper: taskNormalization.hadReplyWrapper, hadJsonFence: taskNormalization.hadJsonFence };
+        }
+        // Phase IG-2J-G: 実質的な成果物の有無（status契約とは別軸の派生判定・completedは書き換えない）
+        task.hasMeaningfulResult = taskNormalization ? taskNormalization.hasMeaningfulResult : (String(cleanResult || '').trim().length > 0);
         task.status        = 'completed';  // 進行状態を「完了」に更新
         task.completedAt   = new Date().toISOString();
         task.providerUsed  = taskProviderUsed;
@@ -3119,6 +3132,16 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         }
       }
 
+      // Phase IG-2J-G: 既存抽出のあとに共通正規化を通す（冪等・既存抽出が成功していれば何も変わらない）。
+      //   既存の fallback は `rvText.trimStart().startsWith('{')` を条件にしていたため、
+      //   ```json フェンスが前置されると条件を満たさず、フェンス＋生JSONがそのまま残っていた。
+      try {
+        var rvNorm = normalizeAgentResult(rvText);
+        rvText = rvNorm.text;
+        if (rvNorm.changed) reviewerTask.rawResult = rvNorm.raw;
+        reviewerTask.hasMeaningfulResult = rvNorm.hasMeaningfulResult;
+      } catch (_) { /* fail-open: 既存rvTextのまま */ }
+
       reviewerTask.result      = rvText;
       reviewerTask.status      = 'completed';
       reviewerTask.completedAt = new Date().toISOString();
@@ -3231,6 +3254,14 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
           if (extracted.length > 10) stText = extracted;
         }
       }
+
+      // Phase IG-2J-G: Reviewerと同様に既存抽出のあとへ共通正規化を通す（冪等・fail-open）。
+      try {
+        var stNorm = normalizeAgentResult(stText);
+        stText = stNorm.text;
+        if (stNorm.changed) strategyTask.rawResult = stNorm.raw;
+        strategyTask.hasMeaningfulResult = stNorm.hasMeaningfulResult;
+      } catch (_) { /* fail-open: 既存stTextのまま */ }
 
       strategyTask.result      = stText;
       strategyTask.status      = 'completed';
