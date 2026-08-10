@@ -431,6 +431,182 @@
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Phase IG-2J-F: Evidence正本の解決（intelligenceContext.evidence[] → IADP Evidence Status）
+  //
+  //   正本＝ outputDraft.fields.intelligenceContext.evidence[]。
+  //   既存 fieldStatus は廃止せず、正本Evidenceが利用できない場合のfallbackとして維持する
+  //   （IADP品質層側で優先順位を実装。過去データが突然Insufficientへ落ちないようにする）。
+  //
+  //   既存契約の再利用（新しい判定基盤・新しい点数式は作らない）:
+  //     ・Verified / Derived の区別は既存 INTEL_DERIVED_EVIDENCE_TYPES と一致させる。
+  //     ・「派生Evidenceは独立件数に含めない」という既存 _intelIsIndependentEvidence の
+  //       判定条件（派生型である／derivedFromEvidenceIdsを持つ）をそのまま踏襲する。
+  //     ・件数しきい値は既存 INTEL_CONFIDENCE_MIN_EVIDENCE（＝3）をそのまま使用する。
+  //
+  //   新規に追加した唯一のルール（independentSourceCount >= 2）については後述。
+  // ══════════════════════════════════════════════════════════════
+
+  var VERIFIED_EVIDENCE_TYPES = FACT_EVIDENCE_TYPES;      // public_fact / manual_observation / user_input / learning_result
+  var MIN_VERIFIED_EVIDENCE   = 3;                        // 既存 INTEL_CONFIDENCE_MIN_EVIDENCE と同値（新設しない）
+  var MIN_INDEPENDENT_SOURCES = 2;                        // ★IG-2J-Fで追加した唯一の新ルール（理由は下記コメント）
+  var UNKNOWN_SOURCE_KEY      = '(source-unknown)';
+
+  // ★MIN_INDEPENDENT_SOURCES を追加した理由（実測にもとづく）:
+  //   既存 _intelCountIndependentEvidence は sourceReference＋各identifier＋observedAt をキーに
+  //   重複除去するが、実際のProduct Evidenceは sourceReference が
+  //   'product-input:<productIdentifier>:<field>' とフィールドごとに異なるため、
+  //   「1件のAffiliate評価を手入力しただけ」で入力11項目＝独立11件と数えられてしまう。
+  //   これをそのままEvidence Statusへ使うと「単一ソースの手入力だけでSufficient」となり、
+  //   IG-2J-Fの原則「Evidence件数だけでSufficientにしない」に反する。
+  //   そのため sourceName 単位で数え直した independentSourceCount を別途保持し、
+  //   Sufficient条件にのみ使用する。既存 _intelCountIndependentEvidence の契約・
+  //   Confidence計算式・しきい値は一切変更していない。
+
+  // 派生Evidenceか（既存 _intelIsIndependentEvidence と同一条件）
+  function isDerivedEvidence(e) {
+    if (!e) return true;
+    if (Array.isArray(e.derivedFromEvidenceIds) && e.derivedFromEvidenceIds.length > 0) return true;
+    return DERIVED_EVIDENCE_TYPES.indexOf(e.evidenceType) !== -1;
+  }
+  function isVerifiedEvidence(e) {
+    if (!e || isDerivedEvidence(e)) return false;
+    return VERIFIED_EVIDENCE_TYPES.indexOf(e.evidenceType) !== -1;
+  }
+  // 独立ソースキー（sourceName優先。無ければsourceReference。どちらも無ければ安全側で1つへ畳む）
+  function sourceKeyOf(e) {
+    var n = str(e && e.sourceName).trim();
+    if (n) return 'name:' + n;
+    var r = str(e && e.sourceReference).trim();
+    if (r) return 'ref:' + r;
+    return UNKNOWN_SOURCE_KEY;
+  }
+  // 既存 _intelCountIndependentEvidence と同一キーでの独立件数（互換値・参考表示用）
+  function legacyIndependentKey(e) {
+    return [str(e.sourceReference), str(e.productIdentifier), str(e.accountIdentifier), str(e.contentIdentifier), str(e.observedAt)].join('|');
+  }
+
+  // ── 公開API④ Evidence正本の解決（純粋関数・非破壊・fail-open） ─────
+  //   intelligenceContext: outputDraft.fields.intelligenceContext（読み取り専用）
+  //   options: { caseId }
+  //   available:false のとき、呼び出し側は既存 fieldStatus 判定へfallbackする。
+  function resolveIadpEvidence(intelligenceContext, options) {
+    var res = {
+      version: BUILDER_VERSION, available: false, source: 'none',
+      caseId: null, caseIdMatched: false,
+      totalCount: 0, verifiedCount: 0, derivedCount: 0,
+      independentSourceCount: 0, independentEvidenceCount: 0,
+      staleCount: 0, staleAll: false,
+      types: {}, reliability: {}, sources: [],
+      status: 'insufficient', reasons: [],
+    };
+    try {
+      var opts = isPlainObject(options) ? options : {};
+      var caseId = (opts.caseId !== undefined && opts.caseId !== null) ? String(opts.caseId) : null;
+      var ctx = intelligenceContext;
+
+      if (!isPlainObject(ctx)) { res.reasons.push('保存済みEvidence正本がありません'); return res; }
+      res.caseId = str(ctx.caseId) || null;
+      if (!caseId) { res.reasons.push('案件が特定できないためEvidenceを採用しません'); return res; }
+      if (res.caseId && res.caseId !== caseId) {
+        res.reasons.push('別案件のEvidenceのため採用しません（' + res.caseId + '）');
+        return res;   // Cross-case guard: 別案件は一切採用しない
+      }
+      res.caseIdMatched = true;
+
+      var all = Array.isArray(ctx.evidence) ? ctx.evidence : [];
+      // Evidence単位のcaseId guard（空は上位のcaseId一致に委ねる）
+      var list = all.filter(function (e) {
+        if (!isPlainObject(e)) return false;
+        if (e.caseId === undefined || e.caseId === null || e.caseId === '') return true;
+        return String(e.caseId) === caseId;
+      });
+      var excluded = all.length - list.length;
+      if (excluded > 0) res.reasons.push('別案件のEvidence ' + excluded + '件を除外しました');
+
+      if (list.length === 0) {
+        res.reasons.push('保存済みEvidenceが0件です');
+        return res;   // available:false → fieldStatusへfallback
+      }
+
+      res.available = true;
+      res.source = 'intelligence_context';
+      res.totalCount = list.length;
+
+      var srcSet = {}, legacySeen = {}, legacyCount = 0;
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        var t = str(e.evidenceType) || '(unknown)';
+        res.types[t] = (res.types[t] || 0) + 1;
+        var rel = str(e.reliability) || 'unknown';
+        res.reliability[rel] = (res.reliability[rel] || 0) + 1;
+
+        var age = ageDaysOf(str(e.observedAt) || str(e.recordedAt));
+        if (age !== null && age > STALE_DAYS) res.staleCount++;
+
+        if (isVerifiedEvidence(e)) {
+          res.verifiedCount++;
+          var sk = sourceKeyOf(e);
+          if (!srcSet[sk]) { srcSet[sk] = 0; res.sources.push({ key: sk, name: str(e.sourceName) || str(e.sourceReference) || '(不明)', count: 0 }); }
+          srcSet[sk]++;
+        } else {
+          res.derivedCount++;
+        }
+
+        // 既存 _intelCountIndependentEvidence 互換の独立件数（参考値・判定には使わない）
+        if (!isDerivedEvidence(e)) {
+          var lk = legacyIndependentKey(e);
+          if (lk === '||||') { legacyCount++; }
+          else if (!legacySeen[lk]) { legacySeen[lk] = 1; legacyCount++; }
+        }
+      }
+      for (var s = 0; s < res.sources.length; s++) res.sources[s].count = srcSet[res.sources[s].key] || 0;
+      res.independentSourceCount = res.sources.length;
+      res.independentEvidenceCount = legacyCount;
+      res.staleAll = (res.staleCount > 0 && res.staleCount === res.totalCount);
+
+      // reliabilityが low のみで構成される場合は Sufficient へ上げない（unknownは減点しない＝実データを潰さない）
+      var verifiedRelLow = 0, verifiedRelOther = 0;
+      for (var v = 0; v < list.length; v++) {
+        if (!isVerifiedEvidence(list[v])) continue;
+        if (str(list[v].reliability) === 'low') verifiedRelLow++; else verifiedRelOther++;
+      }
+      var lowOnly = (verifiedRelLow > 0 && verifiedRelOther === 0);
+
+      // ── Evidence Status の確定 ──
+      if (res.verifiedCount === 0) {
+        res.status = 'insufficient';
+        res.reasons.push(res.derivedCount > 0
+          ? '検証済みEvidenceが0件です（派生・推定Evidenceのみ ' + res.derivedCount + '件。AI仮説・計算値はEvidenceの代替になりません）'
+          : '検証済みEvidenceが0件です');
+      } else if (res.verifiedCount >= MIN_VERIFIED_EVIDENCE
+                 && res.independentSourceCount >= MIN_INDEPENDENT_SOURCES && !lowOnly) {
+        res.status = 'sufficient';
+        res.reasons.push('検証済みEvidence ' + res.verifiedCount + '件・独立source ' + res.independentSourceCount + '件');
+      } else {
+        res.status = 'partial';
+        if (res.verifiedCount < MIN_VERIFIED_EVIDENCE) res.reasons.push('検証済みEvidenceが' + res.verifiedCount + '件（' + MIN_VERIFIED_EVIDENCE + '件未満）');
+        if (res.independentSourceCount < MIN_INDEPENDENT_SOURCES) res.reasons.push('独立sourceが' + res.independentSourceCount + '件のみ（単一ソースに依存）');
+        if (lowOnly) res.reasons.push('検証済みEvidenceの信頼度がすべてlowです');
+      }
+
+      // stale は理由として明示するのみ（自動無効化しない＝既存契約優先・安全側）
+      if (res.staleCount > 0) {
+        res.reasons.push('うち' + res.staleCount + '件は' + STALE_DAYS + '日超の古いEvidenceです（無効化はしていません）');
+      }
+      if (res.derivedCount > 0 && res.verifiedCount > 0) {
+        res.reasons.push('派生・推定Evidence ' + res.derivedCount + '件は補助情報として扱い、検証済み件数には算入していません');
+      }
+      return res;
+    } catch (e) {
+      // fail-open: available:false（＝既存fieldStatus判定へfallback。突然Insufficientにしない）
+      res.available = false;
+      res.status = 'insufficient';
+      res.reasons = ['Evidence解決中に例外が発生したため既存判定へフォールバックしました'];
+      return res;
+    }
+  }
+
   // ── 公開API③ 保存用の参照元メタデータ（Context本体は保存しない） ─────
   //   IADPのgenerationContextへ「どのIntelligenceを参照したか」だけを最小限残す。
   function buildIntelligenceSourceMeta(context) {
@@ -466,8 +642,14 @@
     LIMITS: LIMITS,
     STALE_DAYS: STALE_DAYS,
 
+    VERIFIED_EVIDENCE_TYPES: VERIFIED_EVIDENCE_TYPES.slice(),
+    MIN_VERIFIED_EVIDENCE: MIN_VERIFIED_EVIDENCE,
+    MIN_INDEPENDENT_SOURCES: MIN_INDEPENDENT_SOURCES,
+
     buildIadpIntelligenceContext: buildIadpIntelligenceContext,
     buildAgentIntelligenceBlock: buildAgentIntelligenceBlock,
     buildIntelligenceSourceMeta: buildIntelligenceSourceMeta,
+    // Phase IG-2J-F: Evidence正本の解決（純粋関数・非破壊・fail-open）
+    resolveIadpEvidence: resolveIadpEvidence,
   };
 });

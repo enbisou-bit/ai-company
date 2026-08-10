@@ -13021,11 +13021,26 @@ function _iadpResolveAdoption(pkg) {
   return null;
 }
 
+// Phase IG-2J-F: Evidence正本（intelligenceContext.evidence[]）の解決。
+//   現在案件のOutput Draftに保存されているintelligenceContextのみを参照する（Cross-case guard）。
+//   利用できない場合はnullを返し、品質層は従来のfieldStatus判定へfallbackする。
+function _iadpResolveEvidence(caseId) {
+  try {
+    if (typeof IadpIntelligenceContext === 'undefined' || !caseId) return null;
+    if (!_lastOutputDraft || _lastOutputDraft.caseId !== caseId) return null;   // 別案件のDraftは参照しない
+    var ic = _lastOutputDraft.fields && _lastOutputDraft.fields.intelligenceContext;
+    if (!ic) return null;
+    return IadpIntelligenceContext.resolveIadpEvidence(ic, { caseId: caseId });
+  } catch (e) { return null; } // fail-open: 従来判定へ
+}
+
 function _iadpBuildAssessmentContext(validation, genContext, pkg, caseId, approval, assessmentSnapshot) {
   return {
     structureValid: !!(validation && validation.valid),
     // Phase IG-2J-D: 採用案の正本解決結果を品質層へ渡す（品質層は再判定しない）
     adoptionResolution: _iadpResolveAdoption(pkg),
+    // Phase IG-2J-F: Evidence正本の解決結果を品質層へ渡す（無ければfieldStatusへfallback）
+    evidenceResolution: _iadpResolveEvidence(caseId),
     leaderFinal: (genContext && genContext.leaderFinal) ? genContext.leaderFinal : null,
     memberSummary: (genContext && genContext.memberSummary) ? genContext.memberSummary : null,
     userApproval: _iadpEffectiveApprovalStatus(pkg, caseId, approval),
@@ -13670,9 +13685,15 @@ function _lfsBuildSummaryModel() {
       approvalStatus: A.userApproval || 'pending',
       approvedAt: (approval && approval.status === 'approved') ? (approval.approvedAt || null) : null,
       structureScore: (typeof A.score === 'number') ? A.score : null,
-      verifiedEvidence: (ec.evidence_supported || 0) + (ec.user_confirmed || 0),
+      verifiedEvidence: (typeof A.verifiedEvidenceCount === 'number')
+        ? A.verifiedEvidenceCount : ((ec.evidence_supported || 0) + (ec.user_confirmed || 0)),
       hypothesisCount: ec.generated_hypothesis || 0,
       externalPending: ec.external_confirmation_required || 0,
+      // Phase IG-2J-F: Evidence正本接続の内訳（正本使用時のみ表示に使う）
+      evidenceSource: A.evidenceSource || 'field_status',
+      evidenceDerivedCount: (typeof A.evidenceDerivedCount === 'number') ? A.evidenceDerivedCount : null,
+      evidenceIndependentSourceCount: (typeof A.evidenceIndependentSourceCount === 'number') ? A.evidenceIndependentSourceCount : null,
+      evidenceStaleCount: (typeof A.evidenceStaleCount === 'number') ? A.evidenceStaleCount : null,
       reviewerStatus: A.reviewerStatus || 'not_available',
       strategyStatus: A.strategyStatus || 'not_available',
       qualityGateStatus: A.qualityGateStatus || 'not_executed',
@@ -13766,9 +13787,20 @@ function _lfsBuildSummaryHtml(mo) {
   // 品質状況（4軸＋会社判定。単一の「品質スコア」を主表示にしない）
   h += '<div class="lfs-block"><div class="lfs-block-title">品質状況</div><div class="lfs-grid">';
   h += '<div class="lfs-row"><span class="lfs-k">構造充足</span><span class="lfs-v">' + (mo.structureScore !== null ? mo.structureScore + '%' : '—') + '</span></div>';
+  // Phase IG-2J-F: Evidence正本を使っている場合は 確認済／派生／独立source の内訳で表示する。
+  var evDetail;
+  if (mo.evidenceSource === 'intelligence_context') {
+    evDetail = '（確認済 ' + mo.verifiedEvidence + '件'
+      + (mo.evidenceDerivedCount !== null ? ' / 派生 ' + mo.evidenceDerivedCount + '件' : '')
+      + (mo.evidenceIndependentSourceCount !== null ? ' / 独立source ' + mo.evidenceIndependentSourceCount : '')
+      + (mo.evidenceStaleCount ? ' / 古い ' + mo.evidenceStaleCount + '件' : '')
+      + (mo.externalPending > 0 ? ' / 外部確認待ち ' + mo.externalPending + '件' : '') + '）';
+  } else {
+    evDetail = '（確認済 ' + mo.verifiedEvidence + '件 / AI仮説 ' + mo.hypothesisCount + '件'
+      + (mo.externalPending > 0 ? ' / 外部確認待ち ' + mo.externalPending + '件' : '') + '）';
+  }
   h += '<div class="lfs-row"><span class="lfs-k">Evidence</span><span class="lfs-v">' + esc(evMap[mo.evidenceStatus] || '—')
-    + ' <span class="lfs-sub">（確認済 ' + mo.verifiedEvidence + '件 / AI仮説 ' + mo.hypothesisCount + '件'
-    + (mo.externalPending > 0 ? ' / 外部確認待ち ' + mo.externalPending + '件' : '') + '）</span></span></div>';
+    + ' <span class="lfs-sub">' + esc(evDetail) + '</span></span></div>';
   h += '<div class="lfs-row"><span class="lfs-k">内容品質</span><span class="lfs-v">' + esc(cqMap[mo.contentQuality] || '—') + '</span></div>';
   h += '<div class="lfs-row"><span class="lfs-k">実運用可否</span><span class="lfs-v">' + rdLabel + '</span></div>';
   h += '<div class="lfs-row"><span class="lfs-k">Reviewer</span><span class="lfs-v">' + (rvMap[mo.reviewerStatus] || '⚪ Not Evaluated') + '</span></div>';

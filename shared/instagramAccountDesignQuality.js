@@ -426,12 +426,29 @@
       var structureValid = ctx.structureValid === true;
       var structureValidation = structureValid ? 'passed' : 'failed';
 
-      // ── Evidence Status（検証済み＝evidence_supported＋user_confirmed。仮説のみ／0件はinsufficient） ──
+      // ── Evidence Status ──
+      //   Phase IG-2J-F: Evidence正本（intelligenceContext.evidence[]）が利用できる場合はそれを優先する。
+      //     ・正本は verified / derived を分離し、派生・推定Evidenceを検証済み件数へ算入しない。
+      //     ・正本が無い（旧IADP・Intelligence未保存・別案件）場合のみ、従来の fieldStatus 判定へfallbackする
+      //       ＝過去データが本Phase導入によって突然Insufficientへ落ちることはない。
+      var evRes = isPlainObject(ctx.evidenceResolution) ? ctx.evidenceResolution : null;
+      var evidenceSourceUsed = 'field_status';
+      var evidenceReasons = [];
+
+      // fieldStatus由来（従来ロジック・無変更）
       var verified = sup + usr;
-      var evidenceStatus;
-      if (verified === 0) evidenceStatus = 'insufficient';
-      else if (verified >= 3) evidenceStatus = 'sufficient';   // 既存Confidence設計の「独立3件」に整合
-      else evidenceStatus = 'partial';
+      var fieldStatusEvidence;
+      if (verified === 0) fieldStatusEvidence = 'insufficient';
+      else if (verified >= 3) fieldStatusEvidence = 'sufficient';   // 既存Confidence設計の「独立3件」に整合
+      else fieldStatusEvidence = 'partial';
+
+      var evidenceStatus = fieldStatusEvidence;
+      if (evRes && evRes.available === true && typeof evRes.status === 'string') {
+        evidenceStatus = evRes.status;                              // 正本優先
+        evidenceSourceUsed = 'intelligence_context';
+        verified = (typeof evRes.verifiedCount === 'number') ? evRes.verifiedCount : verified;
+        evidenceReasons = Array.isArray(evRes.reasons) ? evRes.reasons.slice() : [];
+      }
 
       // ── 生成時コンテキスト（担当実行状況・Leader統合回答）──
       var ms = isPlainObject(ctx.memberSummary) ? ctx.memberSummary : null;
@@ -560,8 +577,17 @@
       if (!structureValid) missing.push('構造検証に失敗（必須キー・型の欠損）');
       if (leaderBad) missing.push('Leader統合回答本文が空（担当成果の統合なし）');
       if (membersBad) missing.push('担当成果物が不足' + (weakMembers.length ? '（' + weakMembers.join('・') + '）' : ''));
-      if (evidenceStatus === 'insufficient') missing.push('市場・競合Evidenceなし（全' + hyp + '項目がAI仮説）');
-      else if (evidenceStatus === 'partial') missing.push('Evidence不足（検証済み' + verified + '件のみ）');
+      // Phase IG-2J-F: 正本Evidence使用時は件数の内訳（検証済み／派生／独立source）で説明する。
+      if (evidenceSourceUsed === 'intelligence_context') {
+        if (evidenceStatus === 'insufficient') {
+          missing.push('検証済みEvidenceが0件' + (evRes.derivedCount > 0 ? '（派生・推定Evidenceのみ' + evRes.derivedCount + '件）' : ''));
+        } else if (evidenceStatus === 'partial') {
+          missing.push('Evidence不足（検証済み' + evRes.verifiedCount + '件 / 独立source ' + evRes.independentSourceCount + '件）');
+        }
+      } else {
+        if (evidenceStatus === 'insufficient') missing.push('市場・競合Evidenceなし（全' + hyp + '項目がAI仮説）');
+        else if (evidenceStatus === 'partial') missing.push('Evidence不足（検証済み' + verified + '件のみ）');
+      }
       if (!genAvailable) missing.push('生成時の担当実行状況が保存されていないため内容品質は再評価不可（legacy）');
       // Phase IG-2H: Reviewer／Strategy／Quality Gate の結果を主な不足へ反映
       if (reviewerBad) missing.push('Reviewerが重大不足を検出' + (reviewerCriticalCount > 0 ? '（' + reviewerCriticalCount + '件）' : ''));
@@ -683,6 +709,14 @@
         verifiedEvidenceCount: verified,
         hypothesisCount: hyp,
         externalConfirmationCount: ext,
+        // Phase IG-2J-F: Evidence正本接続の内訳（表示・監査用。判定は上記 evidenceStatus が正）
+        evidenceSource: evidenceSourceUsed,                 // 'intelligence_context' | 'field_status'
+        evidenceFieldStatusFallback: fieldStatusEvidence,   // fallback時の従来判定（比較・監査用）
+        evidenceDerivedCount: evRes && evRes.available ? evRes.derivedCount : null,
+        evidenceIndependentSourceCount: evRes && evRes.available ? evRes.independentSourceCount : null,
+        evidenceStaleCount: evRes && evRes.available ? evRes.staleCount : null,
+        evidenceTotalCount: evRes && evRes.available ? evRes.totalCount : null,
+        evidenceReasons: evidenceReasons,
         criticalGapCount: (leaderBad ? 1 : 0) + (membersBad ? membersWeak : 0) + (evidenceStatus === 'insufficient' ? 1 : 0) + (structureValid ? 0 : 1)
           + (reviewerBad ? Math.max(1, reviewerCriticalCount) : 0) + (strategyBad ? 1 : 0) + (qgBad ? 1 : 0),
         categoryBreakdown: categoryBreakdown,
@@ -721,6 +755,8 @@
         accountCreationReadiness: 'not_ready', userApproval: 'pending',
         score: base.score || 0, requiredScore: REQUIRED_SCORE,
         evidenceCounts: base.evidenceCounts || {}, verifiedEvidenceCount: 0, hypothesisCount: 0, externalConfirmationCount: 0,
+        evidenceSource: 'field_status', evidenceFieldStatusFallback: 'insufficient', evidenceDerivedCount: null,
+        evidenceIndependentSourceCount: null, evidenceStaleCount: null, evidenceTotalCount: null, evidenceReasons: [],
         criticalGapCount: 0, categoryBreakdown: [], missing: ['評価中に例外が発生しました'], nextActions: ['再評価してください'],
         actionItems: { aiActions: [], userInputs: [], unclassified: [] },
         leaderFinalEvaluated: false, memberExecutionEvaluated: false,
