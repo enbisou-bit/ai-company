@@ -463,6 +463,25 @@
       var strategyBad = (strategyStatus === 'needs_revision' || strategyStatus === 'insufficient'); // 再設計要求＝Complete禁止
       var strategyWarn = strategyRequiresRework;
 
+      // ── Phase IG-2J-D: 採用案 Single Source of Truth の整合状態 ──
+      //   正本解決は shared/instagramAccountDesign.js の resolveAdoptedCandidate() が行い、
+      //   本Coreはその結果を context.adoptionResolution として受け取るだけ（依存を持たない・再判定しない）。
+      //   欠損時は 'not_evaluated' とし、Passed扱いにもBlock扱いにもしない（既存挙動を変えない）。
+      var adIn = isPlainObject(ctx.adoptionResolution) ? ctx.adoptionResolution : null;
+      var adoptionConsistency = (adIn && typeof adIn.consistency === 'string') ? adIn.consistency : 'not_evaluated';
+      var adoptedCandidateId = (adIn && adIn.adoptedCandidateId) ? adIn.adoptedCandidateId : null;
+      var adoptedLabel = (adIn && typeof adIn.adoptedLabel === 'string') ? adIn.adoptedLabel : '';
+      var adoptionIssues = (adIn && Array.isArray(adIn.issues)) ? adIn.issues.slice() : [];
+      var selectionVsRanking = (adIn && adIn.selectionVsRanking) ? adIn.selectionVsRanking : null;
+      var finalProfileConsistency = (adIn && typeof adIn.finalProfileConsistency === 'string') ? adIn.finalProfileConsistency : 'unknown';
+      // Complete/Readyを止めるのは「正本を特定できない」「正本フィールドが欠損」
+      // 「Final Profileが正式採用案と不一致（Profile全体が別候補向けの可能性）」の3ケース。
+      // 比較表decisionのみの不整合（repairable）は決定論的に整合表示できるためBlockしない。
+      var adoptionUnresolved = (adoptionConsistency === 'unresolved');
+      var adoptionOfficialIdMissing = !!(adIn && adIn.officialIdMissing === true);
+      var finalProfileMismatch = (finalProfileConsistency === 'mismatch');
+      var adoptionBlocksComplete = adoptionUnresolved || adoptionOfficialIdMissing || finalProfileMismatch;
+
       // Quality Gate: executed:false / 欠損は 'not_executed'（Passed扱いにしない）
       var qgExecuted = !!(qgIn && qgIn.executed === true);
       var qgPassed = !!(qgExecuted && qgIn.passed === true);
@@ -490,6 +509,9 @@
         //   未取得（not_available）のみの場合は needs_work に留める（failed と区別・自動Passedにはしない）。
         if (reviewerBad || strategyBad || qgBad) cq = 'insufficient';
         else if (cq === 'complete' && signalsBlockComplete) cq = 'needs_work';
+        // Phase IG-2J-D: 正式採用案が特定できない／Final Profileが正式採用案と不一致の場合は
+        //   「どの案の設計なのか」が確定していないためCompleteにしない（安全側・自動修正はしない）。
+        if (cq === 'complete' && adoptionBlocksComplete) cq = 'needs_work';
         contentQuality = cq;
       }
 
@@ -500,9 +522,10 @@
       //   Phase IG-2H: Reviewer failed／Strategy needs_revision・insufficient／Quality Gate failed の場合は
       //   ユーザー承認済みでも必ず not_ready（承認だけで品質不足を上書きしない）。
       //   contentQuality==='complete' は上記の各ゲートを通過済みであることを既に含意する。
+      //   Phase IG-2J-D: 正式採用案が未確定・Final Profile不一致の場合も必ず not_ready。
       var accountCreationReadiness;
       if (contentQuality === 'complete' && structureValid && evidenceStatus !== 'insufficient'
-          && !reviewerBad && !strategyBad && !qgBad) {
+          && !reviewerBad && !strategyBad && !qgBad && !adoptionBlocksComplete) {
         accountCreationReadiness = (userApproval === 'approved') ? 'ready' : 'conditional';
       } else {
         accountCreationReadiness = 'not_ready';
@@ -549,6 +572,11 @@
       else if (strategyStatus === 'not_available') missing.push('Strategy未評価（判定材料なし）');
       if (qgBad) missing.push('Quality Gate未通過' + (qgSourceStatus ? '（' + qgSourceStatus + '）' : ''));
       else if (qualityGateStatus === 'not_executed') missing.push('Quality Gate未実行');
+      // Phase IG-2J-D: 採用案の整合状態（総合点1位でないこと自体は問題として出さない）
+      if (adoptionUnresolved) missing.push('正式採用案を特定できない（採用IDが欠損または候補表に不在）');
+      else if (adoptionOfficialIdMissing) missing.push('正式な採用判断（adoptedCandidateId）が未記録');
+      else if (finalProfileMismatch) missing.push('Final Profileが正式採用案「' + (adoptedLabel || '—') + '」と不一致');
+      if (!adoptionUnresolved && adIn && adIn.comparisonRepairNeeded) missing.push('3案比較の採用表示が正式採用案と不一致');
       var baseMissing = Array.isArray(base.missingRequiredFields) ? base.missingRequiredFields : [];
       if (baseMissing.length > 0) missing.push('必須項目欠損 ' + baseMissing.length + '件');
       if (ext > 0) missing.push('外部確認待ち ' + ext + '件（ASP登録・審査等）');
@@ -598,6 +626,18 @@
         addItem(aiActions, 'ai.signals_acquire', 'ai_rerun', 'Auto Taskを再実行し、Reviewer・Strategy・Quality Gateの判定を取得する', 'leader');
       }
       if (baseMissing.length > 0) addItem(aiActions, 'ai.required_fields_fill', 'ai_rerun', '必須項目の欠損（' + baseMissing.length + '件）を補完して再生成する', 'leader');
+      // Phase IG-2J-D: 採用案整合はAI会社側の作業（ユーザーへ質問しない）
+      if (adoptionUnresolved || adoptionOfficialIdMissing) {
+        addItem(aiActions, 'ai.adoption_decide', 'ai_rerun',
+          '3案比較の結果をもとに正式採用案（adoptedCandidateId）をLeader判断として確定し、再生成する', 'leader');
+      } else if (adIn && adIn.comparisonRepairNeeded) {
+        addItem(aiActions, 'ai.adoption_align', 'ai_rerun',
+          '3案比較の採用表示を正式採用案「' + (adoptedLabel || adoptedCandidateId || '—') + '」へ整合させる', 'leader');
+      }
+      if (finalProfileMismatch) {
+        addItem(aiActions, 'ai.final_profile_realign', 'ai_rerun',
+          'Final Profile全体（ブランド／ターゲット／アカウント／投稿方針／収益導線）を正式採用案「' + (adoptedLabel || '—') + '」向けに再設計する', 'leader');
+      }
 
       // User Input Required（AI会社では決定できないものだけ）
       //   ①IADP契約内の外部確認項目（requiredExternalChecks / confirmationChecklist）を分類器に通す
@@ -660,7 +700,18 @@
         qualityGateStatus: qualityGateStatus,
         qualityGateSourceStatus: qgSourceStatus,
         signalsUnavailable: signalsUnavailable,
-        adoptedNote: null,
+        // Phase IG-2J-D: 採用案 Single Source of Truth（正本はadoptionDecision.adoptedCandidateId）
+        adoptionConsistency: adoptionConsistency,
+        adoptedCandidateId: adoptedCandidateId,
+        adoptedLabel: adoptedLabel,
+        adoptionIssues: adoptionIssues,
+        adoptionBlocksComplete: adoptionBlocksComplete,
+        finalProfileConsistency: finalProfileConsistency,
+        selectionVsRanking: selectionVsRanking,
+        adoptedNote: adoptionUnresolved ? '正式採用案を特定できません（推測での自動採用は行いません）'
+          : (adoptionOfficialIdMissing ? '正式な採用判断が未記録のため暫定表示です'
+          : (finalProfileMismatch ? 'Final Profileが正式採用案と一致していません'
+          : ((adIn && adIn.comparisonRepairNeeded) ? '3案比較の採用表示を正式採用案へ整合させて表示しています' : null))),
       };
     } catch (e) {
       return {
@@ -676,6 +727,8 @@
         reviewerStatus: 'not_available', reviewerCriticalIssueCount: 0, reviewerRequiresRework: false,
         strategyStatus: 'not_available', strategyRequiresRework: false,
         qualityGateStatus: 'not_executed', qualityGateSourceStatus: null, signalsUnavailable: true,
+        adoptionConsistency: 'not_evaluated', adoptedCandidateId: null, adoptedLabel: '', adoptionIssues: [],
+        adoptionBlocksComplete: false, finalProfileConsistency: 'unknown', selectionVsRanking: null,
         adoptedNote: null,
       };
     }

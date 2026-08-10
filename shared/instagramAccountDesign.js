@@ -547,6 +547,22 @@
           });
         }
 
+        // Phase IG-2J-D: 採用案整合の検証。
+        //   既存の errors 契約は一切変更せず warnings のみを追加する（＝これまで valid だった
+        //   パッケージが invalid へ転落しない＝保存・既存フローを止めない）。
+        //   Complete/Ready を止める実効的な安全側判定は品質層
+        //   （assessInstagramAccountDesignPackage の adoptionConsistency）が担当する。
+        try {
+          var adoptionRes = resolveAdoptedCandidate(pkg);
+          for (var ai = 0; ai < adoptionRes.issues.length; ai++) {
+            var iss = adoptionRes.issues[ai];
+            if (!iss || iss.severity === 'info') continue;
+            // 既存errorsと重複するコード（adopted_candidate_id_not_found 等）はwarningへ二重計上しない
+            if (iss.code === 'adopted_candidate_id_not_found' || iss.code === 'adopted_candidate_id_missing') continue;
+            warnings.push({ code: 'adoption_' + iss.code, message: iss.message });
+          }
+        } catch (adoptErr) { /* fail-open: 採用整合の検証失敗で構造Validatorを止めない */ }
+
         // 外部確認待ちは構造エラーではなくwarning（Package生成を止めない）
         var apr = pkg.intelligence.aspProductResearch;
         if (isPlainObject(apr) && isPlainObject(apr.externalConfirmationRequired)
@@ -620,6 +636,326 @@
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Phase IG-2J-D: 正式採用案の Single Source of Truth（正本＝adoptionDecision.adoptedCandidateId）
+  //
+  //   正本の根拠（IG-2J-D調査結果）:
+  //     ・adoptedCandidateId は normalizeAdoptionDecision() が入力値をそのまま保持するか null にする
+  //       だけであり、正規化・client補正・スコアからの自動生成は一切行われない
+  //       ＝ Leaderの意思決定結果がそのまま残る唯一のフィールドである。
+  //     ・decisionMadeBy は 'leader' 契約固定であり、この判断主体はLeaderと定義されている。
+  //     ・validateAccountDesignPackage() は既に「存在すること」「候補表に実在すること」を必須検証している。
+  //     ・candidateComparison.candidates[].decision は不正値が 'hold' へ既定化されるため、
+  //       欠損と「意図的な保留」を区別できない＝正本には使えない。
+  //     ・finalProfile.contentStrategy.mainGenre は自由文字列であり候補IDから導出されていない。
+  //
+  //   絶対原則:
+  //     ・総合点1位を自動的に正式採用案へ昇格させない（順位は判断材料の1つに過ぎない）。
+  //     ・正式採用案IDを推測で補わない・書き換えない。
+  //     ・本関数群は純粋関数であり、入力パッケージを一切変更しない（保存副作用ゼロ）。
+  // ══════════════════════════════════════════════════════════════
+
+  var ADOPTION_CONSISTENCY_VALUES = ['consistent', 'repairable', 'unresolved'];
+  var ADOPTION_SOURCE_VALUES      = ['adoption_decision', 'legacy_single_adopt', 'none'];
+
+  // marketResearch.candidates の genreId → genreName（表示名の逆引き。candidateComparison側は
+  // genreIdしか保持しないため。表示専用であり判定には使用しない）
+  function buildGenreNameMap(pkg) {
+    var map = {};
+    try {
+      var list = (pkg && pkg.intelligence && pkg.intelligence.marketResearch
+        && Array.isArray(pkg.intelligence.marketResearch.candidates))
+        ? pkg.intelligence.marketResearch.candidates : [];
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (c && typeof c.genreId === 'string' && c.genreId) map[c.genreId] = (typeof c.genreName === 'string') ? c.genreName : '';
+      }
+    } catch (e) { /* fail-open */ }
+    return map;
+  }
+
+  function candidateLabel(candidate, genreNameMap) {
+    if (!candidate) return '';
+    if (typeof candidate.genreName === 'string' && candidate.genreName) return candidate.genreName;
+    if (candidate.genreId && genreNameMap && genreNameMap[candidate.genreId]) return genreNameMap[candidate.genreId];
+    return (typeof candidate.candidateId === 'string') ? candidate.candidateId : '';
+  }
+
+  // 総合点の降順順位（同点は入力順を維持＝決定的）。順位そのものは一切変更しない（読み取りのみ）。
+  function buildRanking(candidates) {
+    var indexed = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (!c) continue;
+      indexed.push({ id: c.candidateId, score: (typeof c.totalScore === 'number' && isFinite(c.totalScore)) ? c.totalScore : -1, order: i });
+    }
+    indexed.sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.order - b.order; // 同点は入力順（決定的タイブレーク・順位を作り変えない）
+    });
+    var orderedIds = indexed.map(function (x) { return x.id; });
+    var topScore = indexed.length > 0 ? indexed[0].score : null;
+    var tiedTop = indexed.filter(function (x) { return x.score === topScore; }).length > 1;
+    return {
+      orderedIds: orderedIds,
+      topCandidateId: indexed.length > 0 ? indexed[0].id : null,
+      topScore: topScore,
+      tiedTop: tiedTop,
+    };
+  }
+
+  // 文字列同士の緩い一致（表記ゆれ吸収。片方がもう片方を含む場合も一致とみなす）
+  function looseTextMatch(a, b) {
+    var x = String(a || '').trim();
+    var y = String(b || '').trim();
+    if (!x || !y) return false;
+    if (x === y) return true;
+    return x.indexOf(y) !== -1 || y.indexOf(x) !== -1;
+  }
+
+  // ── 公開API⑤ 正式採用案の解決（純粋関数・非破壊・自動修正なし） ─────
+  //   戻り値は「判定結果」のみであり、パッケージは変更しない。
+  //   consistency:
+  //     'consistent'  … 正本IDが解決でき、比較表のadopt・Final Profileとも整合している
+  //     'repairable'  … 正本IDは解決できるが、比較表decision等に表示上の不整合がある（決定論的に整合可能）
+  //     'unresolved'  … 正本IDを確定できない（存在しない／候補表にない／候補ID重複）。推測で補わない。
+  function resolveAdoptedCandidate(pkg) {
+    var issues = [];
+    var genreNameMap = buildGenreNameMap(pkg);
+    try {
+      var cc = (pkg && pkg.intelligence && pkg.intelligence.candidateComparison) || {};
+      var ad = (pkg && pkg.intelligence && pkg.intelligence.adoptionDecision) || {};
+      var candidates = Array.isArray(cc.candidates) ? cc.candidates : [];
+      var ranking = buildRanking(candidates);
+
+      // 候補ID重複の検出（重複があると「どの候補が正式採用か」を一意に解決できない）
+      var seen = {}, duplicateCandidateIds = [];
+      for (var i = 0; i < candidates.length; i++) {
+        var cid = candidates[i] && candidates[i].candidateId;
+        if (typeof cid !== 'string' || !cid) continue;
+        if (seen[cid]) { if (duplicateCandidateIds.indexOf(cid) === -1) duplicateCandidateIds.push(cid); }
+        seen[cid] = true;
+      }
+      if (duplicateCandidateIds.length > 0) {
+        issues.push({ code: 'duplicate_candidate_id', severity: 'error',
+          message: '候補IDが重複しています（' + duplicateCandidateIds.join('・') + '）。正式採用案を一意に特定できません。' });
+      }
+
+      // 比較表側で adopt と宣言されている候補
+      var comparisonAdoptIds = [];
+      for (var j = 0; j < candidates.length; j++) {
+        if (candidates[j] && candidates[j].decision === 'adopt') comparisonAdoptIds.push(candidates[j].candidateId);
+      }
+
+      // ── 正本IDの決定 ──
+      var officialId = (typeof ad.adoptedCandidateId === 'string' && ad.adoptedCandidateId) ? ad.adoptedCandidateId : null;
+      var source = 'none';
+      var officialIdMissing = false;
+
+      if (officialId) {
+        source = 'adoption_decision';
+      } else if (comparisonAdoptIds.length === 1) {
+        // legacy fallback: 正本フィールドが欠損していても、比較表のadoptが「ちょうど1件」の場合に限り
+        // それをLeaderの採用宣言として解決する（新たな候補を推測で選ぶわけではない）。
+        // ただし正本フィールド自体は欠損しているため officialIdMissing=true として区別し、
+        // 品質層でComplete到達を許さない（安全側）。
+        officialId = comparisonAdoptIds[0];
+        source = 'legacy_single_adopt';
+        officialIdMissing = true;
+        issues.push({ code: 'adopted_candidate_id_missing_legacy_fallback', severity: 'warning',
+          message: 'adoptionDecision.adoptedCandidateId が欠損しています。比較表で唯一 adopt と宣言された候補を暫定的に採用案として表示していますが、正式な採用判断としては未確定です。' });
+      } else {
+        // 総合点1位を自動採用しない（絶対原則）。ここでは解決不能として返す。
+        issues.push({ code: 'adopted_candidate_id_missing', severity: 'error',
+          message: 'adoptionDecision.adoptedCandidateId が欠損しており、比較表にも一意の adopt がありません。正式採用案を特定できません（総合点1位を自動採用することはしません）。' });
+      }
+
+      // 正本IDが候補表に実在するか
+      var adoptedCandidate = null;
+      if (officialId) {
+        for (var k = 0; k < candidates.length; k++) {
+          if (candidates[k] && candidates[k].candidateId === officialId) { adoptedCandidate = candidates[k]; break; }
+        }
+        if (!adoptedCandidate) {
+          issues.push({ code: 'adopted_candidate_id_not_found', severity: 'error',
+            message: '正式採用ID（' + officialId + '）が3案比較の候補表に存在しません。別候補を自動採用することはしません。' });
+        }
+      }
+
+      var resolved = !!adoptedCandidate && duplicateCandidateIds.length === 0;
+
+      // ── 比較表 decision との整合 ──
+      var comparisonRepairNeeded = false;
+      if (resolved) {
+        if (comparisonAdoptIds.length === 0) {
+          comparisonRepairNeeded = true;
+          issues.push({ code: 'comparison_adopt_missing', severity: 'warning',
+            message: '3案比較のどの候補にも adopt が付いていません（正式採用案：' + officialId + '）。' });
+        } else if (comparisonAdoptIds.length > 1) {
+          comparisonRepairNeeded = true;
+          issues.push({ code: 'comparison_multiple_adopt', severity: 'warning',
+            message: '3案比較で複数（' + comparisonAdoptIds.length + '件）が adopt になっています。正式採用案は1件のみです（' + officialId + '）。' });
+        } else if (comparisonAdoptIds[0] !== officialId) {
+          comparisonRepairNeeded = true;
+          issues.push({ code: 'comparison_adopt_mismatch', severity: 'warning',
+            message: '3案比較の adopt（' + comparisonAdoptIds[0] + '）が正式採用案（' + officialId + '）と一致していません。正式採用案を正としてadopt表示を整合させます。' });
+        }
+      }
+
+      // ── adoptionDecision内部の整合（正本IDがrejected/heldへ同時に含まれていないか） ──
+      function listHasId(list, id) {
+        if (!Array.isArray(list)) return false;
+        for (var n = 0; n < list.length; n++) {
+          var e = list[n];
+          if (!e) continue;
+          if (typeof e === 'string' && e === id) return true;
+          if (isPlainObject(e) && e.candidateId === id) return true;
+        }
+        return false;
+      }
+      if (resolved && (listHasId(ad.rejectedCandidates, officialId) || listHasId(ad.heldCandidates, officialId))) {
+        issues.push({ code: 'adoption_decision_lists_conflict', severity: 'warning',
+          message: '正式採用案（' + officialId + '）が却下/保留リストにも含まれています。' });
+      }
+
+      // ── 総合点順位との関係（不一致はエラーではない＝説明対象） ──
+      var adoptedRank = null;
+      if (resolved) {
+        var idx = ranking.orderedIds.indexOf(officialId);
+        adoptedRank = (idx === -1) ? null : (idx + 1);
+      }
+      var adoptedIsTop = !!(resolved && ranking.topCandidateId === officialId);
+      var selectionVsRanking = null;
+      if (resolved && adoptedRank !== null && !adoptedIsTop) {
+        var topCand = null;
+        for (var t = 0; t < candidates.length; t++) {
+          if (candidates[t] && candidates[t].candidateId === ranking.topCandidateId) { topCand = candidates[t]; break; }
+        }
+        // 「総合点1位ではない」ことは不具合ではなくLeaderの判断結果として説明する（自動で1位へ変更しない）
+        selectionVsRanking = {
+          adoptedCandidateId: officialId,
+          adoptedLabel: candidateLabel(adoptedCandidate, genreNameMap),
+          adoptedRank: adoptedRank,
+          adoptedTotalScore: (typeof adoptedCandidate.totalScore === 'number') ? adoptedCandidate.totalScore : null,
+          topCandidateId: ranking.topCandidateId,
+          topLabel: candidateLabel(topCand, genreNameMap),
+          topTotalScore: (topCand && typeof topCand.totalScore === 'number') ? topCand.totalScore : null,
+          reason: (typeof adoptedCandidate.adoptionReason === 'string' && adoptedCandidate.adoptionReason)
+            ? adoptedCandidate.adoptionReason
+            : ((typeof ad.decisionRationale === 'string') ? ad.decisionRationale : ''),
+        };
+        issues.push({ code: 'adopted_candidate_not_top_ranked', severity: 'info',
+          message: '正式採用案は総合点1位ではありません（採用：' + adoptedRank + '位）。これはLeaderの判断結果であり、自動的に1位へ変更することはしません。' });
+      }
+
+      // ── Final Profile との整合 ──
+      //   mainGenre の文字列だけを差し替えると、brand/target/account/monetization/contentStrategy が
+      //   別候補向けのまま残る「見た目だけ整合」状態になるため、文字列補正は一切行わず不一致として報告する。
+      var mainGenre = (pkg && pkg.finalProfile && pkg.finalProfile.contentStrategy
+        && typeof pkg.finalProfile.contentStrategy.mainGenre === 'string')
+        ? pkg.finalProfile.contentStrategy.mainGenre : '';
+      var adoptedLabelText = resolved ? candidateLabel(adoptedCandidate, genreNameMap) : '';
+      var finalProfileConsistency = 'unknown';
+      var finalProfileMatchedCandidateId = null;
+      if (resolved && mainGenre && adoptedLabelText) {
+        if (looseTextMatch(mainGenre, adoptedLabelText)) {
+          finalProfileConsistency = 'consistent';
+          finalProfileMatchedCandidateId = officialId;
+        } else {
+          finalProfileConsistency = 'mismatch';
+          // どの候補向けに生成されたProfileなのかを特定できる場合は併記する（説明用・書き換えはしない）
+          for (var f = 0; f < candidates.length; f++) {
+            if (!candidates[f]) continue;
+            if (looseTextMatch(mainGenre, candidateLabel(candidates[f], genreNameMap))) {
+              finalProfileMatchedCandidateId = candidates[f].candidateId; break;
+            }
+          }
+          issues.push({ code: 'final_profile_main_genre_mismatch', severity: 'warning',
+            message: 'Final Profileの主ジャンル「' + mainGenre + '」が正式採用案「' + adoptedLabelText + '」と一致しません'
+              + (finalProfileMatchedCandidateId ? '（' + finalProfileMatchedCandidateId + '向けに生成された可能性）' : '')
+              + '。Profile全体の整合が保証できないため自動修正は行いません。' });
+        }
+      }
+
+      var consistency;
+      if (!resolved) consistency = 'unresolved';
+      else if (comparisonRepairNeeded || officialIdMissing || finalProfileConsistency === 'mismatch') consistency = 'repairable';
+      else consistency = 'consistent';
+
+      return {
+        evaluated: true,
+        resolved: resolved,
+        source: source,
+        officialIdMissing: officialIdMissing,
+        adoptedCandidateId: resolved ? officialId : null,
+        adoptedCandidate: adoptedCandidate,
+        adoptedLabel: adoptedLabelText,
+        adoptedTotalScore: (resolved && typeof adoptedCandidate.totalScore === 'number') ? adoptedCandidate.totalScore : null,
+        consistency: consistency,
+        issues: issues,
+        comparisonAdoptIds: comparisonAdoptIds,
+        comparisonRepairNeeded: comparisonRepairNeeded,
+        duplicateCandidateIds: duplicateCandidateIds,
+        ranking: ranking,
+        adoptedRank: adoptedRank,
+        adoptedIsTop: adoptedIsTop,
+        selectionVsRanking: selectionVsRanking,
+        finalProfileConsistency: finalProfileConsistency,
+        finalProfileMainGenre: mainGenre,
+        finalProfileMatchedCandidateId: finalProfileMatchedCandidateId,
+      };
+    } catch (e) {
+      // fail-open: 解決不能として返す（呼び出し元を止めない・自動採用もしない）
+      return {
+        evaluated: false, resolved: false, source: 'none', officialIdMissing: false,
+        adoptedCandidateId: null, adoptedCandidate: null, adoptedLabel: '', adoptedTotalScore: null,
+        consistency: 'unresolved',
+        issues: [{ code: 'adoption_resolution_exception', severity: 'error', message: String(e && e.message || e) }],
+        comparisonAdoptIds: [], comparisonRepairNeeded: false, duplicateCandidateIds: [],
+        ranking: { orderedIds: [], topCandidateId: null, topScore: null, tiedTop: false },
+        adoptedRank: null, adoptedIsTop: false, selectionVsRanking: null,
+        finalProfileConsistency: 'unknown', finalProfileMainGenre: '', finalProfileMatchedCandidateId: null,
+      };
+    }
+  }
+
+  // ── 公開API⑥ 表示用の採用整合（純粋関数・新規オブジェクトを返す・保存副作用なし） ─────
+  //   正式採用案（正本）と一致する候補のみを decision:'adopt' とし、他候補に残った adopt は
+  //   'hold' へ寄せる。hold / reject の理由（adoptionReason・mainRisks）は維持する。
+  //   変更するのは candidates[].decision のみであり、
+  //   adoptedCandidateId・totalScore・順位・scores・finalProfile・packageId は一切変更しない。
+  //   正本が解決できない場合（unresolved）・legacy fallback時は何も変更しない（推測で確定させない）。
+  function applyAdoptionConsistency(pkg, resolution) {
+    try {
+      if (!isPlainObject(pkg)) return { package: pkg, changed: false, changes: [] };
+      var res = isPlainObject(resolution) ? resolution : resolveAdoptedCandidate(pkg);
+      if (!res.resolved || res.source !== 'adoption_decision' || !res.comparisonRepairNeeded) {
+        return { package: pkg, changed: false, changes: [] };
+      }
+      var out = deepCloneJson(pkg);
+      if (!isPlainObject(out) || !out.intelligence || !out.intelligence.candidateComparison
+        || !Array.isArray(out.intelligence.candidateComparison.candidates)) {
+        return { package: pkg, changed: false, changes: [] };
+      }
+      var list = out.intelligence.candidateComparison.candidates;
+      var changes = [];
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (!c) continue;
+        if (c.candidateId === res.adoptedCandidateId) {
+          if (c.decision !== 'adopt') { changes.push({ candidateId: c.candidateId, from: c.decision, to: 'adopt' }); c.decision = 'adopt'; }
+        } else if (c.decision === 'adopt') {
+          // 正式採用案ではないのに adopt が残っている → hold へ寄せる（rejectへは落とさない＝安全側）
+          changes.push({ candidateId: c.candidateId, from: 'adopt', to: DEFAULT_DECISION });
+          c.decision = DEFAULT_DECISION;
+        }
+      }
+      return { package: changes.length > 0 ? out : pkg, changed: changes.length > 0, changes: changes };
+    } catch (e) {
+      return { package: pkg, changed: false, changes: [] }; // fail-open
+    }
+  }
+
   // ── 公開API④ 1 case＝1正本の選択（純粋関数・実DB操作なし） ─────
   // rows: output_drafts相当の行配列（{output_id/case_id/type/updated_at, ...}）を想定。
   // 正本選択のみを行い、重複行の削除は一切行わない。
@@ -666,10 +1002,16 @@
     FINAL_PROFILE_SECTIONS: FINAL_PROFILE_SECTIONS.slice(),
     MIN_CANDIDATES: MIN_CANDIDATES,
 
+    ADOPTION_CONSISTENCY_VALUES: ADOPTION_CONSISTENCY_VALUES.slice(),
+    ADOPTION_SOURCE_VALUES: ADOPTION_SOURCE_VALUES.slice(),
+
     createBlankAccountDesignPackage: createBlankAccountDesignPackage,
     normalizeAccountDesignPackage: normalizeAccountDesignPackage,
     validateAccountDesignPackage: validateAccountDesignPackage,
     protectUserConfirmedFields: protectUserConfirmedFields,
+    // Phase IG-2J-D: 正式採用案の正本解決・表示用整合（いずれも純粋関数・保存副作用なし）
+    resolveAdoptedCandidate: resolveAdoptedCandidate,
+    applyAdoptionConsistency: applyAdoptionConsistency,
     adaptExistingIntelligenceContext: adaptExistingIntelligenceContext,
     selectCanonicalAccountDesignPackage: selectCanonicalAccountDesignPackage,
 

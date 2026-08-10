@@ -12797,6 +12797,14 @@ function _iadpEffectiveApprovalStatus(pkg, caseId, approval) {
     var pkgId = pkg && pkg.packageId;
     if (!pkgId || approval.packageId !== pkgId) return 'pending';      // 新IADP＝packageId不一致→旧承認は無効
     if (caseId && approval.caseId && approval.caseId !== caseId) return 'pending'; // 別案件の承認は漏らさない
+    // Phase IG-2J-D: 承認は「どの案を正式採用したか」に対して与えられる。同一packageIdのまま
+    //   正式採用案（adoptedCandidateId）が変わった場合は実質的に別の設計であるため承認を維持しない。
+    //   旧承認（このキーを持たない）は後方互換のため検査しない＝既存の承認を無効化しない。
+    if (approval.adoptedCandidateId) {
+      var curAdoptedId = (pkg && pkg.intelligence && pkg.intelligence.adoptionDecision
+        && pkg.intelligence.adoptionDecision.adoptedCandidateId) || null;
+      if (curAdoptedId && curAdoptedId !== approval.adoptedCandidateId) return 'pending';
+    }
     return 'approved';
   } catch (e) { return 'pending'; }
 }
@@ -12985,9 +12993,22 @@ function _iadpResolveQualityGate(caseId, snapshot) {
 //   Phase IG-2G: userApproval を pending固定から、有効な承認状態（caseId＋packageId一致時のみapproved）へ接続する。
 //   Phase IG-2H: Reviewer／Strategy（generationContext由来）と Quality Gate（_leaderIntegration正本または
 //   保存済みsnapshot）を任意入力として追加する。いずれも欠損時はundefinedのまま渡し、Core側でnot_available扱い。
+// Phase IG-2J-D: 正式採用案（Single Source of Truth）の解決。Core純関数を呼ぶだけで、
+//   パッケージ・保存内容は一切変更しない（読み取り専用・fail-open）。
+function _iadpResolveAdoption(pkg) {
+  try {
+    if (typeof InstagramAccountDesign !== 'undefined' && typeof InstagramAccountDesign.resolveAdoptedCandidate === 'function') {
+      return InstagramAccountDesign.resolveAdoptedCandidate(pkg);
+    }
+  } catch (e) { /* fail-open */ }
+  return null;
+}
+
 function _iadpBuildAssessmentContext(validation, genContext, pkg, caseId, approval, assessmentSnapshot) {
   return {
     structureValid: !!(validation && validation.valid),
+    // Phase IG-2J-D: 採用案の正本解決結果を品質層へ渡す（品質層は再判定しない）
+    adoptionResolution: _iadpResolveAdoption(pkg),
     leaderFinal: (genContext && genContext.leaderFinal) ? genContext.leaderFinal : null,
     memberSummary: (genContext && genContext.memberSummary) ? genContext.memberSummary : null,
     userApproval: _iadpEffectiveApprovalStatus(pkg, caseId, approval),
@@ -13069,12 +13090,27 @@ function _iadpBuildCardHtml(pkg, quality) {
     if (c.genreId && _iadpGenreNameById[c.genreId]) return _iadpGenreNameById[c.genreId];
     return c.candidateId || '—';
   }
-  for (var ci = 0; ci < candidates.length; ci++) {
-    if (candidates[ci] && candidates[ci].candidateId === ad.adoptedCandidateId) {
-      adoptedName = _iadpCandidateLabel(candidates[ci]);
-      break;
-    }
+  // Phase IG-2J-D: 採用案名は正本（adoptionDecision.adoptedCandidateId）から解決する。
+  //   比較表のdecisionからは決めない（不一致時に別候補が表示されるのを防ぐ）。
+  var _iadpAdoption = _iadpResolveAdoption(pkg);
+  if (_iadpAdoption && _iadpAdoption.resolved) {
+    adoptedName = _iadpAdoption.adoptedLabel || _iadpAdoption.adoptedCandidateId || '—';
+  } else {
+    adoptedName = '要確認';
   }
+  // 3案比較の表示用に「正式採用案のみadopt」へ整合させたパッケージを作る（表示専用・保存しない）
+  var _iadpDisplayPkg = pkg;
+  var _iadpAdoptionRepaired = false;
+  try {
+    if (typeof InstagramAccountDesign !== 'undefined' && typeof InstagramAccountDesign.applyAdoptionConsistency === 'function') {
+      var _adFix = InstagramAccountDesign.applyAdoptionConsistency(pkg, _iadpAdoption);
+      _iadpDisplayPkg = _adFix.package || pkg;
+      _iadpAdoptionRepaired = !!_adFix.changed;
+    }
+  } catch (_adFixErr) { _iadpDisplayPkg = pkg; }
+  var _iadpDisplayCandidates = (_iadpDisplayPkg.intelligence && _iadpDisplayPkg.intelligence.candidateComparison
+    && Array.isArray(_iadpDisplayPkg.intelligence.candidateComparison.candidates))
+    ? _iadpDisplayPkg.intelligence.candidateComparison.candidates : candidates;
 
   // Phase IG-2F: 階層分離アセスメント（構造/内容/Evidence/Readiness/Approval を別軸で判定）。
   //   validation・generationContextはセッショングローバルから取得（旧保存IADPはgenContext=null＝legacy）。
@@ -13196,12 +13232,16 @@ function _iadpBuildCardHtml(pkg, quality) {
   html += '<details class="iadp-details"><summary class="iadp-details-summary">詳細を表示（3案比較・Final Profile・Category Scores）</summary>';
 
   // 3案比較
-  if (candidates.length > 0) {
+  if (_iadpDisplayCandidates.length > 0) {
     html += '<div class="iadp-section"><div class="iadp-section-title">3案比較</div>';
+    // Phase IG-2J-D: 表示は正式採用案（正本）に整合させている旨を明示する（保存内容は変更していない）
+    if (_iadpAdoptionRepaired) {
+      html += '<div class="iadp-summary-note">※ 採用表示を正式採用案「' + esc(adoptedName) + '」へ整合させて表示しています（総合点・順位は変更していません）。</div>';
+    }
     html += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">';
     html += '<table class="iadp-cand-tbl"><thead><tr><th>候補名</th><th>総合点</th><th>判定</th><th>理由</th><th>リスク</th></tr></thead><tbody>';
-    for (var i = 0; i < candidates.length; i++) {
-      var c = candidates[i];
+    for (var i = 0; i < _iadpDisplayCandidates.length; i++) {
+      var c = _iadpDisplayCandidates[i];
       if (!c) continue;
       var dec = c.decision || '—';
       var decClass = dec === 'adopt' ? 'iadp-cand-adopt' : (dec === 'hold' ? 'iadp-cand-hold' : 'iadp-cand-reject');
@@ -13392,7 +13432,10 @@ function _iadpApproveDesign() {
     if (curCase && caseId && curCase !== caseId) return;
     // 既に有効承認済みなら二重保存しない（誤操作による重複保存を避ける）
     if (_iadpEffectiveApprovalStatus(pkg, caseId, _lastInstagramAccountDesignApproval) === 'approved') return;
-    var approval = { status: 'approved', packageId: pkg.packageId, caseId: caseId, approvedAt: new Date().toISOString() };
+    // Phase IG-2J-D: 承認時点の正式採用案IDを併記する（同一Package内で採用案が変わった場合に承認を維持しないため）
+    var _apAdoptedId = (pkg.intelligence && pkg.intelligence.adoptionDecision
+      && pkg.intelligence.adoptionDecision.adoptedCandidateId) || null;
+    var approval = { status: 'approved', packageId: pkg.packageId, caseId: caseId, adoptedCandidateId: _apAdoptedId, approvedAt: new Date().toISOString() };
     _lastInstagramAccountDesignApproval = approval;
     // Output Draftへ保存（fields.iadp.approval 追加サブキー・package一致時のみ・既存構造は破壊しない）
     try {
@@ -13551,41 +13594,33 @@ function _lfsBuildSummaryModel() {
       }
     } catch (_asErr) { A = {}; }
 
-    // ── 採用候補（既存正本を使用。整合しない場合は「要確認」を付す・自動修正はしない） ──
+    // ── 採用候補（Phase IG-2J-D: 正本＝adoptionDecision.adoptedCandidateId から解決する） ──
+    //   正本が解決できた場合は「採用候補：○○」を確定表示し、解決できない場合のみ「要確認」を維持する。
+    //   総合点1位でないことは不具合ではないため mismatch には入れず selectionVsRanking として説明する。
     var cc = (pkg.intelligence && pkg.intelligence.candidateComparison) || {};
     var ad = (pkg.intelligence && pkg.intelligence.adoptionDecision) || {};
     var cands = Array.isArray(cc.candidates) ? cc.candidates : [];
-    var mrCands = (pkg.intelligence && pkg.intelligence.marketResearch && Array.isArray(pkg.intelligence.marketResearch.candidates))
-      ? pkg.intelligence.marketResearch.candidates : [];
-    var nameByGenre = {};
-    for (var i = 0; i < mrCands.length; i++) {
-      if (mrCands[i] && mrCands[i].genreId) nameByGenre[mrCands[i].genreId] = mrCands[i].genreName || '';
-    }
-    function labelOf(c) {
-      if (!c) return '';
-      if (c.genreName) return c.genreName;
-      if (c.genreId && nameByGenre[c.genreId]) return nameByGenre[c.genreId];
-      return c.candidateId || '';
-    }
-    var adoptedId = ad.adoptedCandidateId || null;
-    var adoptedCand = null;
-    for (var j = 0; j < cands.length; j++) { if (cands[j] && cands[j].candidateId === adoptedId) { adoptedCand = cands[j]; break; } }
-    // 軽量な整合チェックのみ（正式なSingle Source of TruthはIG-2J-Dで実装）
-    var declaredAdopt = null;
-    for (var k = 0; k < cands.length; k++) { if (cands[k] && cands[k].decision === 'adopt') { declaredAdopt = cands[k]; break; } }
-    var rankTop = null;
-    for (var r = 0; r < cands.length; r++) {
-      if (!cands[r]) continue;
-      if (!rankTop || (typeof cands[r].totalScore === 'number' && typeof rankTop.totalScore === 'number' && cands[r].totalScore > rankTop.totalScore)) rankTop = cands[r];
-    }
-    var mainGenre = (pkg.finalProfile && pkg.finalProfile.contentStrategy && pkg.finalProfile.contentStrategy.mainGenre) || '';
-    var adoptedLabel = adoptedCand ? labelOf(adoptedCand) : '';
+    var adoption = _iadpResolveAdoption(pkg) || { resolved: false, consistency: 'not_evaluated', issues: [] };
+    var adoptedCand = adoption.adoptedCandidate || null;
+    var adoptedLabel = adoption.resolved ? (adoption.adoptedLabel || adoption.adoptedCandidateId || '') : '';
+    // 「要確認」として明示すべき不整合のみを集める（infoは含めない＝順位差は警告にしない）
     var mismatch = [];
-    if (!adoptedCand) mismatch.push('採用IDが3案比較に存在しない');
-    if (adoptedCand && declaredAdopt && declaredAdopt.candidateId !== adoptedCand.candidateId) mismatch.push('比較表のadoptと採用IDが不一致');
-    if (adoptedCand && rankTop && rankTop.candidateId !== adoptedCand.candidateId) mismatch.push('採用案が総合点1位ではない');
-    if (adoptedCand && adoptedLabel && mainGenre && mainGenre.indexOf(adoptedLabel) === -1 && adoptedLabel.indexOf(mainGenre) === -1) {
-      mismatch.push('Final Profileの主ジャンルと不一致');
+    var adIssues = Array.isArray(adoption.issues) ? adoption.issues : [];
+    for (var mi2 = 0; mi2 < adIssues.length; mi2++) {
+      var isu = adIssues[mi2];
+      if (!isu || isu.severity === 'info') continue;
+      var shortMap = {
+        adopted_candidate_id_missing: '正式採用IDが未記録',
+        adopted_candidate_id_missing_legacy_fallback: '正式採用IDが未記録（暫定表示）',
+        adopted_candidate_id_not_found: '採用IDが3案比較に存在しない',
+        duplicate_candidate_id: '候補IDが重複',
+        comparison_adopt_mismatch: '比較表のadoptを正式採用案へ整合表示',
+        comparison_multiple_adopt: '比較表のadoptが複数（正式採用案へ整合表示）',
+        comparison_adopt_missing: '比較表にadoptなし（正式採用案へ整合表示）',
+        adoption_decision_lists_conflict: '採用案が却下/保留リストにも存在',
+        final_profile_main_genre_mismatch: 'Final Profileが正式採用案と不一致',
+      };
+      mismatch.push(shortMap[isu.code] || isu.code);
     }
 
     // ── なぜこの案か（既存文言を短く整形するだけ・新規生成なし） ──
@@ -13627,6 +13662,12 @@ function _lfsBuildSummaryModel() {
       adoptedLabel: adoptedLabel,
       adoptedTotalScore: (adoptedCand && typeof adoptedCand.totalScore === 'number') ? adoptedCand.totalScore : null,
       adoptionMismatch: mismatch,
+      // Phase IG-2J-D: 正本解決の結果（表示専用）
+      adoptionResolved: !!adoption.resolved,
+      adoptionConsistency: adoption.consistency || 'not_evaluated',
+      adoptionProvisional: !!adoption.officialIdMissing,
+      selectionVsRanking: adoption.selectionVsRanking || null,
+      finalProfileConsistency: adoption.finalProfileConsistency || 'unknown',
       reasonLines: reasonLines,
       topAxes: topAxes,
       missing: Array.isArray(A.missing) ? A.missing.slice(0, 3) : [],
@@ -13667,16 +13708,29 @@ function _lfsBuildSummaryHtml(mo) {
   h += '<div class="lfs-verdict-sub">内容品質：' + esc(cqMap[mo.contentQuality] || '—') + '</div>';
   if (mo.legacy) h += '<div class="lfs-note">⚠ 生成時の担当実行状況が保存されていない旧データです（一部評価未実施）。</div>';
 
-  // 採用候補
+  // 採用候補（Phase IG-2J-D: 正本が解決できていれば確定表示・解決不能時のみ「要確認」）
   h += '<div class="lfs-block"><div class="lfs-block-title">採用候補</div>';
-  if (mo.adoptedLabel) {
+  if (mo.adoptionResolved && mo.adoptedLabel) {
     h += '<div class="lfs-adopted">' + esc(mo.adoptedLabel)
-      + (mo.adoptedTotalScore !== null ? ' <span class="lfs-adopted-score">総合 ' + mo.adoptedTotalScore + '</span>' : '') + '</div>';
+      + (mo.adoptedTotalScore !== null ? ' <span class="lfs-adopted-score">総合 ' + mo.adoptedTotalScore + '</span>' : '')
+      + (mo.adoptionProvisional ? ' <span class="lfs-adopted-score">（暫定）</span>' : '') + '</div>';
+    // 総合点1位でない場合は「不具合」ではなくLeaderの判断結果として説明する
+    if (mo.selectionVsRanking) {
+      var svr = mo.selectionVsRanking;
+      h += '<div class="lfs-sub" style="margin-top:3px;">総合点順位：' + svr.adoptedRank + '位'
+        + (svr.topLabel ? '（1位は' + esc(svr.topLabel) + (svr.topTotalScore !== null && svr.topTotalScore !== undefined ? ' 総合 ' + svr.topTotalScore : '') + '）' : '') + '</div>';
+      if (svr.reason) {
+        h += '<div class="lfs-sub" style="margin-top:2px;">理由：' + esc(String(svr.reason).slice(0, 90)) + '</div>';
+      }
+    }
     if (mo.adoptionMismatch.length > 0) {
       h += '<div class="lfs-warn">要確認：' + esc(mo.adoptionMismatch.join(' / ')) + '</div>';
     }
   } else {
     h += '<div class="lfs-adopted">要確認（採用候補を特定できません）</div>';
+    if (mo.adoptionMismatch.length > 0) {
+      h += '<div class="lfs-warn">' + esc(mo.adoptionMismatch.join(' / ')) + '</div>';
+    }
   }
   h += '</div>';
 
