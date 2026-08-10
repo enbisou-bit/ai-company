@@ -6375,6 +6375,16 @@
   .lfs-userinput { background: rgba(255,207,106,0.07); border-radius: 8px; padding: 8px 10px 9px; border-top-color: rgba(255,207,106,0.25); }
   .lfs-none { font-size: 12.5px; color: rgba(255,255,255,0.55); }
   .lfs-more { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 3px; }
+  /* Phase IG-2J-H: AI Action 自律再実行の導線 */
+  .lfs-rerun { margin-top: 8px; }
+  .lfs-rerun-target { font-size: 11.5px; color: rgba(255,255,255,0.65); margin-bottom: 5px; line-height: 1.5; }
+  .lfs-rerun-btn {
+    width: 100%; padding: 9px 12px; border-radius: 8px; cursor: pointer;
+    background: rgba(0,212,255,0.16); border: 1px solid rgba(0,212,255,0.45);
+    color: #7fe9ff; font-size: 13px; font-weight: 600;
+  }
+  .lfs-rerun-btn:hover:not(:disabled) { background: rgba(0,212,255,0.26); }
+  .lfs-rerun-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .lfs-footer { margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.08); }
   .lfs-detail-btn {
     font-size: 11.5px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
@@ -12816,6 +12826,283 @@ function _iadpEffectiveApprovalStatus(pkg, caseId, approval) {
   } catch (e) { return 'pending'; }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase IG-2J-H: AI Action Required の自律再実行接続
+//
+//   IG-2J-C が分離した actionItems.aiActions[] を、既存Auto Task経路
+//   （atRunWorkflow → /api/auto-task → Leader Final → IADP再評価）へ接続する。
+//   新しいWorkflow Engineは作らない。Reviewer／Strategy／Quality Gate／Leader Finalは
+//   既存の後処理として自動的に再実行されるため、ここでは「main担当タスク」だけを組み立てる。
+//
+//   絶対制約:
+//     ・userInputs[] は絶対にTask化しない（ユーザー判断事項をAIへ投げない）。
+//     ・自動起動しない。ユーザーが1回開始する操作のみを入口とする（費用・意図の制御）。
+//     ・無限ループ防止（案件あたり回数上限／同一reason codeの再試行上限）。
+//     ・二重実行防止・Cross-case guard・stale result guard。
+//     ・再実行が成功してもUser Approvalを自動Approvedにしない。
+// ══════════════════════════════════════════════════════════════
+
+// reason code → 再実行する main担当。
+//   '__weak__' は「不足している担当（weakMembers）を実体として解決する」プレースホルダ。
+//   空配列＝main担当の再実行は不要（Leader Final／Reviewer／Strategy／QGの再生成だけで足りる）。
+var IADP_RERUN_AGENT_MAP = {
+  'ai.structure_fix':         [],                                              // Leader FinalのJSON構造問題
+  'ai.members_rerun':         ['__weak__'],                                     // 不足担当のみ
+  'ai.evidence_acquire':      ['researcher', 'analyst'],
+  'ai.evidence_reinforce':    ['researcher', 'analyst'],
+  'ai.reviewer_rework':       ['__weak__'],                                     // 不足成果物を直せばReviewerは自動再評価
+  'ai.strategy_redesign':     ['analyst', 'branding', 'sns'],                   // 戦略変更の波及先を含める
+  'ai.quality_gate_rerun':    [],                                               // 既存Quality Gateが自動再評価
+  'ai.signals_acquire':       ['researcher', 'analyst', 'branding', 'sns'],     // 判定材料が無い＝全体を取り直す
+  'ai.required_fields_fill':  ['researcher', 'analyst', 'branding', 'sns'],
+  // Phase IG-2J-D 由来
+  'ai.adoption_decide':       ['analyst'],
+  'ai.adoption_align':        ['analyst'],
+  'ai.final_profile_realign': ['branding', 'sns'],
+};
+// 実行順（buildAccountIntelligenceTasks と同一。dependsOnはこの順で直列に張る）
+var IADP_RERUN_ORDER = ['researcher', 'analyst', 'branding', 'sns'];
+
+// 無限ループ防止の上限（セッション内・案件単位）
+var IADP_RERUN_MAX_PER_CASE = 3;   // 1案件あたりの自律再実行回数
+var IADP_RERUN_MAX_PER_CODE = 2;   // 同一reason codeの再試行回数
+
+// 自律再実行の状態（セッション内のみ・永続化しない）
+var _iadpRerunState = {
+  running: false, caseId: null, workflowId: null, packageId: null,
+  generation: 0, startedAt: null,
+  attemptsByCode: {},   // key: caseId + '::' + code → 回数
+  runsByCase: {},       // key: caseId → 回数
+  lastResult: null,     // 'completed' | 'failed' | null
+};
+
+function _iadpRerunKey(caseId, code) { return String(caseId || '') + '::' + String(code || ''); }
+
+// 担当ラベル（Branding等）→ agentId の逆引き（IADP_REQUIRED_MEMBERS を正本とする）
+function _iadpAgentIdFromLabel(label) {
+  var l = String(label || '').trim().toLowerCase();
+  for (var i = 0; i < IADP_REQUIRED_MEMBERS.length; i++) {
+    if (IADP_REQUIRED_MEMBERS[i].label.toLowerCase() === l) return IADP_REQUIRED_MEMBERS[i].agentId;
+    if (IADP_REQUIRED_MEMBERS[i].agentId === l) return IADP_REQUIRED_MEMBERS[i].agentId;
+  }
+  return null;
+}
+
+// assessment.actionItems.aiActions[] から再実行計画を作る（純粋関数・副作用なし・API実行なし）。
+//   戻り値: { runnable, agents[], codes[], skippedCodes[], tasks[], reasons[], actionTexts[] }
+function _iadpBuildRerunPlan(assessment, caseId, userMessage, intelligenceContext) {
+  var plan = { runnable: false, agents: [], codes: [], skippedCodes: [], tasks: [], reasons: [], actionTexts: [] };
+  try {
+    var ai = (assessment && assessment.actionItems && Array.isArray(assessment.actionItems.aiActions))
+      ? assessment.actionItems.aiActions : [];
+    if (ai.length === 0) { plan.reasons.push('AI Actionが0件のため再実行は不要です'); return plan; }
+
+    // 案件単位の実行回数上限（無限ループ防止）
+    var runs = _iadpRerunState.runsByCase[String(caseId)] || 0;
+    if (runs >= IADP_RERUN_MAX_PER_CASE) {
+      plan.reasons.push('この案件の自律再実行は上限（' + IADP_RERUN_MAX_PER_CASE + '回）に達しています');
+      return plan;
+    }
+
+    var agentSet = {}, seenCode = {};
+    for (var i = 0; i < ai.length; i++) {
+      var item = ai[i];
+      if (!item || !item.code) continue;
+      if (seenCode[item.code]) continue;                 // 同一codeは1件のみ（二重Task化しない）
+      seenCode[item.code] = true;
+
+      // 同一reason codeの再試行上限（同じActionを何度も回さない）
+      var attempts = _iadpRerunState.attemptsByCode[_iadpRerunKey(caseId, item.code)] || 0;
+      if (attempts >= IADP_RERUN_MAX_PER_CODE) {
+        plan.skippedCodes.push(item.code);
+        continue;
+      }
+
+      var mapped = IADP_RERUN_AGENT_MAP[item.code];
+      if (mapped === undefined) { plan.skippedCodes.push(item.code); continue; }  // 未知codeは実行しない（安全側）
+      plan.codes.push(item.code);
+      if (item.text) plan.actionTexts.push(item.text);
+
+      for (var m = 0; m < mapped.length; m++) {
+        if (mapped[m] === '__weak__') {
+          // item.agent には IG-2J-C が weakMembers のラベルを 'Branding,SNS' 形式で入れている
+          var labels = String(item.agent || '').split(',');
+          for (var w = 0; w < labels.length; w++) {
+            var aid = _iadpAgentIdFromLabel(labels[w]);
+            if (aid) agentSet[aid] = true;
+          }
+        } else {
+          agentSet[mapped[m]] = true;
+        }
+      }
+    }
+
+    if (plan.skippedCodes.length > 0) {
+      plan.reasons.push('再試行上限に達した項目は除外しました（' + plan.skippedCodes.join('・') + '）');
+    }
+    if (plan.codes.length === 0) { plan.reasons.push('再実行可能なAI Actionがありません'); return plan; }
+
+    // 実行順に整列（dependsOnはこの順で直列に張る＝既存IADP Workflowと同じ契約）
+    for (var o = 0; o < IADP_RERUN_ORDER.length; o++) {
+      if (agentSet[IADP_RERUN_ORDER[o]]) plan.agents.push(IADP_RERUN_ORDER[o]);
+    }
+    if (plan.agents.length === 0) {
+      plan.reasons.push('担当の再実行は不要です（Leader Final・Reviewer・Strategy・Quality Gateの再生成のみで解消できる項目です）');
+      return plan;
+    }
+
+    // 既存の指示文ビルダーをそのまま再利用し、対象担当だけを抜き出す
+    //   （IG-2J-E のIntelligence注入もこの経路で自動的に適用される）
+    var full = buildAccountIntelligenceTasks(userMessage, intelligenceContext, caseId);
+    var byAgent = {};
+    for (var f = 0; f < full.length; f++) byAgent[full[f].agentId] = full[f];
+
+    var purpose = plan.actionTexts.length > 0
+      ? ['', '【今回の再実行で解消すべき点（AI会社の自己点検結果）】'].concat(
+          plan.actionTexts.slice(0, 5).map(function (t) { return '・' + t; })).join('\n')
+      : '';
+
+    for (var a = 0; a < plan.agents.length; a++) {
+      var agentId = plan.agents[a];
+      var base = byAgent[agentId];
+      if (!base) continue;
+      plan.tasks.push({
+        id: 'iadp-rerun-' + (a + 1) + '-' + Date.now(),
+        agentId: agentId,
+        instruction: base.instruction + purpose,
+        dependsOn: a === 0 ? [] : ['iadp-rerun-' + a + '-' + Date.now()],
+      });
+    }
+    // dependsOn を実IDへ張り直す（Date.now()差異で不一致にならないようにする）
+    for (var d = 1; d < plan.tasks.length; d++) plan.tasks[d].dependsOn = [plan.tasks[d - 1].id];
+    if (plan.tasks.length > 0) plan.tasks[0].dependsOn = [];
+
+    plan.runnable = plan.tasks.length > 0;
+    return plan;
+  } catch (e) {
+    plan.runnable = false;
+    plan.reasons.push('再実行計画の作成に失敗しました');
+    return plan;
+  }
+}
+
+// 現在のSummary状態から再実行計画を作る（UI・実行の共通入口）
+function _iadpCurrentRerunPlan() {
+  try {
+    var pkg = _lastInstagramAccountDesignPackage;
+    if (!pkg) return null;
+    var caseId = pkg.caseId || _lastInstagramAccountDesignCaseId || null;
+    if (!caseId) return null;
+    var ctx = _iadpBuildAssessmentContext(_lastInstagramAccountDesignValidation, _lastInstagramAccountDesignGenContext,
+      pkg, caseId, _lastInstagramAccountDesignApproval, _lastInstagramAccountDesignAssessmentCtx);
+    var A = (typeof InstagramAccountDesignQuality !== 'undefined')
+      ? InstagramAccountDesignQuality.assessInstagramAccountDesignPackage(pkg, ctx) : null;
+    if (!A) return null;
+    var userMessage = _iadpRerunUserMessage(caseId);
+    var ic = (_lastOutputDraft && _lastOutputDraft.caseId === caseId && _lastOutputDraft.fields)
+      ? _lastOutputDraft.fields.intelligenceContext : null;
+    var plan = _iadpBuildRerunPlan(A, caseId, userMessage, ic);
+    plan.caseId = caseId;
+    plan.packageId = pkg.packageId || null;
+    plan.userMessage = userMessage;
+    return plan;
+  } catch (e) { return null; }
+}
+
+// 再実行に使う依頼文（元の依頼を正とする。無ければ案件の依頼内容へフォールバック）
+function _iadpRerunUserMessage(caseId) {
+  try {
+    var el = document.getElementById('auto-task-message');
+    var v = el ? String(el.value || '').trim() : '';
+    if (v) return v;
+    // 既存の案件キャッシュ（caseId -> {id,title,userText,...} のマップ）を参照する
+    var c = (typeof cases !== 'undefined' && cases && caseId) ? cases[caseId] : null;
+    if (c && (c.userText || c.title)) return String(c.userText || c.title);
+  } catch (e) { /* fallback below */ }
+  return 'Instagramアフィリエイト収益化を目的としたアカウント設計をお願いします。';
+}
+
+// ユーザー操作による自律再実行の開始（自動起動しない・1操作＝1回）
+async function _iadpStartAiActionRerun() {
+  try {
+    if (_iadpRerunState.running) { console.warn('[IADP rerun] 実行中のため二重起動しません'); return; }
+    // 既存Auto Taskが実行中なら開始しない（既存ボタン状態を正本として利用する）
+    var runBtn = document.getElementById('at-run-btn');
+    if (runBtn && runBtn.disabled) { alert('自動タスクを実行中です。完了後に再度お試しください。'); return; }
+    if (typeof billingLock !== 'undefined' && billingLock) { alert('課金ロック中のため自律再実行を開始できません。'); return; }
+
+    var plan = _iadpCurrentRerunPlan();
+    if (!plan || !plan.runnable) {
+      alert('再実行できるAI Actionがありません。\n' + ((plan && plan.reasons.join('\n')) || ''));
+      return;
+    }
+    // Cross-case guard: 表示中の案件と実行対象案件が一致していることを必須にする
+    var curCase = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : plan.caseId;
+    if (curCase && plan.caseId && curCase !== plan.caseId) {
+      alert('案件が切り替わっています。対象案件を開き直してから実行してください。');
+      return;
+    }
+
+    var agentLabels = plan.agents.map(function (a) {
+      var m = IADP_REQUIRED_MEMBERS.find(function (x) { return x.agentId === a; });
+      return m ? m.label : a;
+    });
+    var confirmMsg = 'AI会社が次の作業を自律実行します。\n\n'
+      + plan.actionTexts.slice(0, 5).map(function (t) { return '・' + t; }).join('\n')
+      + '\n\n対象AI社員：' + agentLabels.join(' / ')
+      + '\n実行タスク数：' + plan.tasks.length + '件（＋Reviewer・Strategy・Leader統合の再生成）'
+      + '\n\n※ 実際のAI APIを使用します。開始しますか？';
+    if (!window.confirm(confirmMsg)) return;
+
+    // 実行状態を記録（二重実行・無限ループ防止）
+    _iadpRerunState.running    = true;
+    _iadpRerunState.caseId     = plan.caseId;
+    _iadpRerunState.packageId  = plan.packageId;
+    _iadpRerunState.generation = (_iadpRerunState.generation || 0) + 1;
+    _iadpRerunState.startedAt  = new Date().toISOString();
+    _iadpRerunState.lastResult = null;
+    _iadpRerunState.runsByCase[String(plan.caseId)] = (_iadpRerunState.runsByCase[String(plan.caseId)] || 0) + 1;
+    plan.codes.forEach(function (code) {
+      var k = _iadpRerunKey(plan.caseId, code);
+      _iadpRerunState.attemptsByCode[k] = (_iadpRerunState.attemptsByCode[k] || 0) + 1;
+    });
+
+    _iadpRerunSetButtonState(true);
+    try {
+      // 既存Auto Task経路をそのまま再利用（新Engineなし）。
+      // 完了後のIADP再抽出・再評価・Leader統合・Output Draft保存はすべて既存処理が行う。
+      await atRunWorkflow({
+        tasksOverride: plan.tasks,
+        userMessageOverride: plan.userMessage,
+        iadpRerun: { generation: _iadpRerunState.generation, codes: plan.codes, sourcePackageId: plan.packageId },
+      });
+      _iadpRerunState.lastResult = 'completed';
+    } catch (runErr) {
+      _iadpRerunState.lastResult = 'failed';
+      console.warn('[IADP rerun] 実行に失敗しました（安全側停止）:', runErr && runErr.message);
+    } finally {
+      _iadpRerunState.running = false;
+      _iadpRerunState.workflowId = _atCurrentWorkflowId || null;
+      _iadpRerunSetButtonState(false);
+      // 再評価後のSummaryへ反映（既存の再描画経路を利用）
+      if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
+    }
+  } catch (e) {
+    _iadpRerunState.running = false;
+    _iadpRerunSetButtonState(false);
+    console.warn('[IADP rerun] error (fail-open):', e && e.message);
+  }
+}
+
+function _iadpRerunSetButtonState(running) {
+  try {
+    var b = document.getElementById('lfs-rerun-btn');
+    if (!b) return;
+    b.disabled = !!running;
+    b.textContent = running ? '⏳ AI会社が実行中…' : '▶ AI会社に修正させる';
+  } catch (e) { /* no-op */ }
+}
+
 // Phase IG-2J-G: AI社員成果物の構造正規化（表示・判定の入口で共通利用する薄いラッパ）。
 //   shared/agentResultNormalizer.js の純関数を呼ぶだけ。保存内容は一切変更しない。
 //   モジュール未ロード時・例外時は原文をそのまま返す（fail-open）。
@@ -13012,7 +13299,11 @@ function _iadpDeriveStrategyAssessment(entry, corroborated) {
 //   ①セッション内に現在案件のLeader Integrationがあればそれを使用（caseId一致を必須とする）
 //   ②無ければ保存済みsnapshot（fields.iadp.assessmentContext.qualityGate）を使用（packageId一致検証済み）
 //   ③どちらも無ければnull（＝not_executed扱い・Passedにはしない）
-function _iadpResolveQualityGate(caseId, snapshot) {
+//   Phase IG-2J-H: 第3引数 packageId を追加（stale result guard）。
+//     自律再実行で新IADP（新packageId）が生成された直後に、旧packageIdのsnapshotが
+//     残っていた場合、それを新IADPのQuality Gate結果として流用しない。
+//     packageId未指定時は従来どおり（既存呼び出しは後方互換）。
+function _iadpResolveQualityGate(caseId, snapshot, packageId) {
   try {
     if (typeof _leaderIntegration !== 'undefined' && _leaderIntegration
         && _leaderIntegration.caseId && caseId && _leaderIntegration.caseId === caseId
@@ -13020,8 +13311,11 @@ function _iadpResolveQualityGate(caseId, snapshot) {
       return _leaderIntegration.qualityGate;
     }
   } catch (e) { /* 取得不可時はsnapshotへフォールバック */ }
-  if (snapshot && snapshot.qualityGate) return snapshot.qualityGate;
-  return null;
+  if (!snapshot || !snapshot.qualityGate) return null;
+  // snapshotのpackageId・caseIdが現在のIADPと一致する場合のみ再利用する（古い評価を流用しない）
+  if (packageId && snapshot.packageId && snapshot.packageId !== packageId) return null;
+  if (caseId && snapshot.caseId && snapshot.caseId !== caseId) return null;
+  return snapshot.qualityGate;
 }
 
 // Phase IG-2F/IG-2G: 生成時コンテキストからassess()用のcontextを組み立てる（純粋・非破壊・欠損に安全）。
@@ -13066,7 +13360,7 @@ function _iadpBuildAssessmentContext(validation, genContext, pkg, caseId, approv
       : ((assessmentSnapshot && assessmentSnapshot.reviewerAssessment) ? assessmentSnapshot.reviewerAssessment : null),
     strategyAssessment: (genContext && genContext.strategyAssessment) ? genContext.strategyAssessment
       : ((assessmentSnapshot && assessmentSnapshot.strategyAssessment) ? assessmentSnapshot.strategyAssessment : null),
-    qualityGate: _iadpResolveQualityGate(caseId, assessmentSnapshot),
+    qualityGate: _iadpResolveQualityGate(caseId, assessmentSnapshot, pkg && pkg.packageId),
   };
 }
 
@@ -13732,6 +14026,21 @@ function _lfsBuildSummaryModel() {
       //   旧IADP（actionItems未生成）でも例外にせず、既存nextActionsから安全側で導出する。
       aiActions: _lfsPickActionTexts(A, 'aiActions'),
       userInputs: _lfsPickActionTexts(A, 'userInputs'),
+      // Phase IG-2J-H: 自律再実行の可否と対象（表示用。実行は必ずユーザー操作を起点とする）
+      rerun: (function () {
+        try {
+          var ic = (_lastOutputDraft && _lastOutputDraft.caseId === caseId && _lastOutputDraft.fields)
+            ? _lastOutputDraft.fields.intelligenceContext : null;
+          var p = _iadpBuildRerunPlan(A, caseId, _iadpRerunUserMessage(caseId), ic);
+          return {
+            runnable: !!p.runnable, taskCount: p.tasks.length, codes: p.codes, reasons: p.reasons,
+            agentLabels: p.agents.map(function (a) {
+              var m = IADP_REQUIRED_MEMBERS.find(function (x) { return x.agentId === a; });
+              return m ? m.label : a;
+            }),
+          };
+        } catch (e) { return { runnable: false, taskCount: 0, codes: [], reasons: [], agentLabels: [] }; }
+      })(),
       aiActionsTotal: _lfsCountActions(A, 'aiActions'),
       userInputsTotal: _lfsCountActions(A, 'userInputs'),
       hasDetailCard: true,
@@ -13842,7 +14151,18 @@ function _lfsBuildSummaryHtml(mo) {
     if (mo.aiActionsTotal > mo.aiActions.length) {
       h += '<div class="lfs-more">ほか ' + (mo.aiActionsTotal - mo.aiActions.length) + '件（詳細で確認できます）</div>';
     }
-    h += '<div class="lfs-ai-note">※ 現時点では自動再実行は行いません（次工程で自動化予定）。</div>';
+    // Phase IG-2J-H: 自律再実行の導線（自動起動しない・ユーザーが1回開始する方式）
+    if (mo.rerun && mo.rerun.runnable) {
+      h += '<div class="lfs-rerun">';
+      h += '<div class="lfs-rerun-target">対象AI社員：' + esc(mo.rerun.agentLabels.join(' / '))
+        + '<span class="lfs-sub">（' + mo.rerun.taskCount + '件＋Reviewer・Strategy・Leader統合の再生成）</span></div>';
+      h += '<button class="lfs-rerun-btn" id="lfs-rerun-btn" onclick="_iadpStartAiActionRerun()">▶ AI会社に修正させる</button>';
+      h += '<div class="lfs-ai-note">※ 実際のAI APIを使用します。開始前に内容を確認できます。自動では実行されません。</div>';
+      h += '</div>';
+    } else {
+      h += '<div class="lfs-ai-note">※ 自動再実行は行いません'
+        + (mo.rerun && mo.rerun.reasons.length ? '（' + esc(mo.rerun.reasons[0]) + '）' : '') + '。</div>';
+    }
     h += '</div>';
   }
   h += '<div class="lfs-block lfs-userinput"><div class="lfs-block-title lfs-user-title">▶ あなたの判断が必要なこと</div>';
@@ -14590,37 +14910,59 @@ async function atConsult(taskId, fromAgentId, toAgentId, btnEl) {
 }
 
 // ワークフローを実行する（run workflow）
-async function atRunWorkflow() {
+// Phase IG-2J-H: 任意の options を追加（省略時は従来と完全に同一動作）。
+//   options.tasksOverride       … DOM由来のタスク収集をスキップし、渡されたタスク定義で実行する
+//   options.userMessageOverride … 依頼文をDOMではなく引数から取る
+//   options.iadpRerun           … IADP AI Action 自律再実行であることの目印（IADP判定・guardに使用）
+//   いずれも未指定なら既存の画面操作フローと1文字も変わらない。
+async function atRunWorkflow(options) {
   console.log('[CL-START] atRunWorkflow ENTERED at', new Date().toISOString());
-  const userMessage = (document.getElementById('auto-task-message').value || '').trim();
+  const _atOpts = (options && typeof options === 'object') ? options : {};
+  const _atTasksOverride = Array.isArray(_atOpts.tasksOverride) ? _atOpts.tasksOverride : null;
+
+  const userMessage = _atTasksOverride
+    ? String(_atOpts.userMessageOverride || '').trim()
+    : (document.getElementById('auto-task-message').value || '').trim();
   if (!userMessage) {
+    if (_atTasksOverride) { console.warn('[IADP rerun] userMessage未指定のため中止'); return; }
     alert('元の依頼内容を入力してください。');
     return;
   }
-  // 現在のdispatchセッションのタスク行のみを対象にする（workflowIdでスコープ）
-  const rows = _atCurrentWorkflowId
-    ? document.querySelectorAll(`.at-task-row[data-workflow-id="${_atCurrentWorkflowId}"]`)
-    : document.querySelectorAll('.at-task-row');
-  if (rows.length === 0) {
-    alert('タスクを1件以上追加してください。');
-    return;
-  }
 
-  // タスク定義を収集
+  // タスク定義を収集（override指定時はDOMを一切参照しない）
   const tasks = [];
-  rows.forEach(row => {
-    const id      = row.dataset.taskId;
-    const agentId = row.querySelector('.at-task-agent-select').value;
-    const instr   = (row.querySelector('.at-task-instr').value || '').trim();
-    const depSel  = row.querySelector('.at-task-dep-select');
-    const depVal  = depSel ? depSel.value : '';
-    tasks.push({
-      id,
-      agentId,
-      instruction: instr || userMessage,
-      dependsOn: depVal ? [depVal] : [],
+  if (_atTasksOverride) {
+    if (_atTasksOverride.length === 0) { console.warn('[IADP rerun] 再実行対象タスクが0件のため中止'); return; }
+    _atTasksOverride.forEach(t => {
+      tasks.push({
+        id: t.id, agentId: t.agentId,
+        instruction: t.instruction || userMessage,
+        dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.slice() : [],
+      });
     });
-  });
+  } else {
+    // 現在のdispatchセッションのタスク行のみを対象にする（workflowIdでスコープ）
+    const rows = _atCurrentWorkflowId
+      ? document.querySelectorAll(`.at-task-row[data-workflow-id="${_atCurrentWorkflowId}"]`)
+      : document.querySelectorAll('.at-task-row');
+    if (rows.length === 0) {
+      alert('タスクを1件以上追加してください。');
+      return;
+    }
+    rows.forEach(row => {
+      const id      = row.dataset.taskId;
+      const agentId = row.querySelector('.at-task-agent-select').value;
+      const instr   = (row.querySelector('.at-task-instr').value || '').trim();
+      const depSel  = row.querySelector('.at-task-dep-select');
+      const depVal  = depSel ? depSel.value : '';
+      tasks.push({
+        id,
+        agentId,
+        instruction: instr || userMessage,
+        dependsOn: depVal ? [depVal] : [],
+      });
+    });
+  }
 
   // 前半工程 修正1・5: 実行開始時点の案件を捕捉し、Task接続・チャットcaseId付与に一貫して使用する
   //   （完了時点で別案件へ画面切替されていても、実行開始案件へ保存・表示されるようにする）
@@ -14648,8 +14990,13 @@ async function atRunWorkflow() {
           && _lastOutputDraft.fields && _lastOutputDraft.fields.intelligenceContext) {
         _iadpExistingIntelligenceContext = _lastOutputDraft.fields.intelligenceContext;
       }
-      var _iadpTasks = buildAccountIntelligenceTasks(userMessage, _iadpExistingIntelligenceContext, _atRunCaseId);
-      tasks.splice.apply(tasks, [0, tasks.length].concat(_iadpTasks));
+      // Phase IG-2J-H: AI Action自律再実行では、呼び出し側が既に「必要な担当だけ」のタスクを
+      //   組み立て済みのため4担当フル構成で上書きしない（部分再実行を潰さない）。
+      //   通常の画面操作では従来どおり4担当構成へ置き換える（既存動作は無変更）。
+      if (!_atTasksOverride) {
+        var _iadpTasks = buildAccountIntelligenceTasks(userMessage, _iadpExistingIntelligenceContext, _atRunCaseId);
+        tasks.splice.apply(tasks, [0, tasks.length].concat(_iadpTasks));
+      }
     }
   } catch (_iadpDetectErr) {
     _iadpRequested = false; // fail-open: 判定失敗時は既存Workflowへ
