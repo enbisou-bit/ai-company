@@ -6368,6 +6368,13 @@
     transition: background 0.2s;
   }
   .lfs-approve-btn:hover { background: rgba(76,255,142,0.24); }
+  /* Phase IG-2J-C: AI自律実行分とユーザー判断分の視覚分離 */
+  .lfs-ai-title { color: rgba(120,190,255,0.9) !important; }
+  .lfs-user-title { color: rgba(255,207,106,0.95) !important; }
+  .lfs-ai-note { font-size: 10.5px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+  .lfs-userinput { background: rgba(255,207,106,0.07); border-radius: 8px; padding: 8px 10px 9px; border-top-color: rgba(255,207,106,0.25); }
+  .lfs-none { font-size: 12.5px; color: rgba(255,255,255,0.55); }
+  .lfs-more { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 3px; }
   .lfs-footer { margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.08); }
   .lfs-detail-btn {
     font-size: 11.5px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
@@ -13475,6 +13482,54 @@ function _iadpRenderIntoChatArea(chatEl) {
 //   ・採用候補の整合ロジックは新規実装しない（IG-2J-Dで正式化）。不一致は安全側で「要確認」を付す。
 // ══════════════════════════════════════════════════════════════
 
+// Phase IG-2J-C: actionItemsの取り出し（最大3件）。旧IADPでactionItemsが無い場合は
+//   既存nextActionsを既存分類器へ通して安全側で導出する（新規保存フィールドは作らない）。
+var LFS_ACTION_DISPLAY_MAX = 3;
+
+function _lfsFallbackActionItems(A) {
+  // actionItems未生成（legacy等）向けのフォールバック。既存nextActionsを分類するだけ。
+  var out = { aiActions: [], userInputs: [], unclassified: [] };
+  try {
+    var src = Array.isArray(A && A.nextActions) ? A.nextActions : [];
+    var seen = {};
+    for (var i = 0; i < src.length; i++) {
+      var t = String(src[i] || '').trim();
+      if (!t) continue;
+      var cls = (typeof InstagramAccountDesignQuality !== 'undefined'
+        && typeof InstagramAccountDesignQuality.classifyActionItem === 'function')
+        ? InstagramAccountDesignQuality.classifyActionItem(t) : { target: 'ai' };
+      var norm = (typeof InstagramAccountDesignQuality !== 'undefined'
+        && typeof InstagramAccountDesignQuality.normalizeActionText === 'function')
+        ? InstagramAccountDesignQuality.normalizeActionText(t) : t;
+      if (norm && seen[norm]) continue;
+      if (norm) seen[norm] = true;
+      if (cls.target === 'user') out.userInputs.push({ code: 'fallback', category: cls.category, text: t });
+      else if (cls.target === 'ai') out.aiActions.push({ code: 'fallback', category: cls.category, text: t });
+      else out.unclassified.push({ code: 'fallback', category: cls.category, text: t });
+    }
+  } catch (e) { /* fail-open */ }
+  return out;
+}
+
+function _lfsResolveActionItems(A) {
+  var ai = A && A.actionItems;
+  if (ai && Array.isArray(ai.aiActions) && Array.isArray(ai.userInputs)
+      && (ai.aiActions.length > 0 || ai.userInputs.length > 0)) return ai;
+  return _lfsFallbackActionItems(A);
+}
+
+function _lfsPickActionTexts(A, key) {
+  try {
+    var items = _lfsResolveActionItems(A)[key] || [];
+    return items.slice(0, LFS_ACTION_DISPLAY_MAX).map(function (x) { return x && x.text ? String(x.text) : ''; })
+      .filter(function (s) { return s.length > 0; });
+  } catch (e) { return []; }
+}
+
+function _lfsCountActions(A, key) {
+  try { return (_lfsResolveActionItems(A)[key] || []).length; } catch (e) { return 0; }
+}
+
 // Summary用モデルを既存データから構築する（純粋寄り・非破壊・例外を投げない）。
 function _lfsBuildSummaryModel() {
   try {
@@ -13576,6 +13631,12 @@ function _lfsBuildSummaryModel() {
       topAxes: topAxes,
       missing: Array.isArray(A.missing) ? A.missing.slice(0, 3) : [],
       nextActions: Array.isArray(A.nextActions) ? A.nextActions.slice(0, 3) : [],
+      // Phase IG-2J-C: 確認事項の単一集約。AI自律実行分とユーザー判断分を分離して受け取る。
+      //   旧IADP（actionItems未生成）でも例外にせず、既存nextActionsから安全側で導出する。
+      aiActions: _lfsPickActionTexts(A, 'aiActions'),
+      userInputs: _lfsPickActionTexts(A, 'userInputs'),
+      aiActionsTotal: _lfsCountActions(A, 'aiActions'),
+      userInputsTotal: _lfsCountActions(A, 'userInputs'),
       hasDetailCard: true,
     };
   } catch (e) {
@@ -13651,12 +13712,30 @@ function _lfsBuildSummaryHtml(mo) {
     h += '</ul></div>';
   }
 
-  // 次に必要なこと（最大3件・AI自律/ユーザー判断の正式分離はIG-2J-Cで実装）
-  if (mo.nextActions.length > 0) {
-    h += '<div class="lfs-block"><div class="lfs-block-title">次に必要なこと</div><ul class="lfs-list">';
-    for (var n2 = 0; n2 < mo.nextActions.length; n2++) h += '<li>' + esc(mo.nextActions[n2]) + '</li>';
-    h += '</ul></div>';
+  // Phase IG-2J-C: 次に必要なことを「AI会社が自律的に行うこと」と「あなたの判断が必要なこと」へ分離。
+  //   ユーザーへ質問として提示する場所は下の userInputs ブロックのみ（単一集約点）。
+  if (mo.aiActions.length > 0) {
+    h += '<div class="lfs-block"><div class="lfs-block-title lfs-ai-title">▶ AI会社が自律的に行うこと</div><ul class="lfs-list">';
+    for (var a2 = 0; a2 < mo.aiActions.length; a2++) h += '<li>' + esc(mo.aiActions[a2]) + '</li>';
+    h += '</ul>';
+    if (mo.aiActionsTotal > mo.aiActions.length) {
+      h += '<div class="lfs-more">ほか ' + (mo.aiActionsTotal - mo.aiActions.length) + '件（詳細で確認できます）</div>';
+    }
+    h += '<div class="lfs-ai-note">※ 現時点では自動再実行は行いません（次工程で自動化予定）。</div>';
+    h += '</div>';
   }
+  h += '<div class="lfs-block lfs-userinput"><div class="lfs-block-title lfs-user-title">▶ あなたの判断が必要なこと</div>';
+  if (mo.userInputs.length > 0) {
+    h += '<ul class="lfs-list">';
+    for (var u2 = 0; u2 < mo.userInputs.length; u2++) h += '<li>' + esc(mo.userInputs[u2]) + '</li>';
+    h += '</ul>';
+    if (mo.userInputsTotal > mo.userInputs.length) {
+      h += '<div class="lfs-more">ほか ' + (mo.userInputsTotal - mo.userInputs.length) + '件</div>';
+    }
+  } else {
+    h += '<div class="lfs-none">現在ありません（AI会社側で対応を進めます）</div>';
+  }
+  h += '</div>';
 
   // ユーザー承認（IG-2Gの既存状態を表示。承認は既存 _iadpApproveDesign() を再利用）
   h += '<div class="lfs-block lfs-approval"><div class="lfs-block-title">ユーザー承認</div>';

@@ -335,6 +335,76 @@
   //     ・未取得（not_available・executed:false）は勝手にPassed扱いせず not_available として扱い、
   //       Complete（＝Ready）にも到達させない（安全側）。ただし needs_work 相当に留め failed とは区別する。
   // ══════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
+  // Phase IG-2J-C: 確認事項の正式分類（AI Action Required / User Input Required）
+  //
+  // 目的:
+  //   ユーザーへ「質問」として提示する項目を1か所へ集約するため、確認事項を
+  //   ①AI会社自身で処理できるもの（aiActions）②AI会社では決定できないもの（userInputs）
+  //   ③判定できないもの（unclassified）へ決定論的に分類する。
+  //
+  // 設計制約:
+  //   ・既存 missing / nextActions は削除・変更しない（本分類は追加情報）。
+  //   ・分類は自然言語推論ではなく reason code ＋ キーワード表による決定論的判定のみ。
+  //   ・不明なものを勝手に userInputs へ上げない（安全側で unclassified）。
+  //   ・AI会社自身で仮説生成・比較できる項目（ターゲット/ジャンル/投稿頻度/KPI等）は
+  //     たとえ「教えてください」という文面で来ても userInputs にしない（質問禁止項目）。
+  // ══════════════════════════════════════════════════════════════
+
+  // 外部確認待ち（ASP登録・審査後でなければ確定できない実数値）
+  var AI_EXTERNAL_CONFIRMATION_KEYWORDS = [
+    'ASP審査', '審査結果', '審査状況', '登録後', '提携', '実報酬', '報酬額', 'EPC', '承認率',
+    '実案件数', '外部確認', '実測値', '実データ取得'
+  ];
+  // ユーザー固有制約（AI会社が代わりに決めてはいけない本人事情）
+  var AI_USER_CONSTRAINT_KEYWORDS = [
+    '顔出し', '実名', '匿名', '予算', '工数', '既存アカウント', '既存のアカウント',
+    '扱いたくない', '扱わない', '避けたいジャンル', '商標', '社名', '屋号', 'リスク許容'
+  ];
+  // 最終承認
+  var AI_FINAL_APPROVAL_KEYWORDS = ['最終承認', 'ユーザー承認', '承認へ進'];
+  // AI会社側の実行アクション動詞（これが含まれる場合はユーザー質問にしない）
+  var AI_ACTION_VERB_KEYWORDS = [
+    '再実行', '再評価', '再設計', '再生成', '再取得', '再計算', '再比較', '補完', '補強', '見直し', '追加取得'
+  ];
+  // AI会社自身で仮説生成・比較できる項目（質問禁止項目）
+  var AI_DECIDABLE_TOPIC_KEYWORDS = [
+    'ターゲット', 'ジャンル', '商品カテゴリ', '商材カテゴリ', '投稿頻度', '投稿形式',
+    'コンテンツピラー', 'KPI', 'ブランド方向', 'ブランド', '競合', '差別化', '投稿テーマ',
+    'CTA', 'Evidence', '市場', 'ペルソナ', '収益導線'
+  ];
+
+  function containsAny(text, list) {
+    var t = String(text || '');
+    for (var i = 0; i < list.length; i++) { if (t.indexOf(list[i]) !== -1) return true; }
+    return false;
+  }
+
+  // 重複除去用の正規化（空白・記号・敬体語尾を落として比較する。過度な推論はしない）
+  function normalizeActionText(text) {
+    return String(text || '')
+      .replace(/[\s　]/g, '')
+      .replace(/[。、．，,.\-―・（）()「」【】]/g, '')
+      .replace(/(してください|して下さい|をお願いします|ください|下さい|です|ます)$/g, '')
+      .toLowerCase();
+  }
+
+  // 公開API: 1件の確認事項テキストを分類する（純粋関数）。
+  //   判定順序（仕様どおり）:
+  //     ①明確な外部確認待ち ②ユーザー固有制約 ③最終承認 ④AI再実行可能 ⑤不明
+  //   ただし②の前に「AI実行動詞を含む場合はAI側」を優先する。
+  //   例:「顔出しなし前提で投稿形式を再設計」はユーザーへの質問ではなくAI作業であるため。
+  function classifyActionItem(text) {
+    var t = String(text || '').trim();
+    if (!t) return { category: 'unclassified', target: 'ai' };
+    if (containsAny(t, AI_EXTERNAL_CONFIRMATION_KEYWORDS)) return { category: 'external_confirmation', target: 'user' };
+    if (containsAny(t, AI_ACTION_VERB_KEYWORDS)) return { category: 'ai_rerun', target: 'ai' };
+    if (containsAny(t, AI_USER_CONSTRAINT_KEYWORDS)) return { category: 'user_constraint', target: 'user' };
+    if (containsAny(t, AI_FINAL_APPROVAL_KEYWORDS)) return { category: 'final_approval', target: 'user' };
+    if (containsAny(t, AI_DECIDABLE_TOPIC_KEYWORDS)) return { category: 'ai_decidable', target: 'ai' };
+    return { category: 'unclassified', target: 'unclassified' };   // 安全側：ユーザー質問へ昇格させない
+  }
+
   var RESEARCH_CATEGORY_IDS = ['marketResearch', 'competitorResearch', 'candidateComparison', 'adoptionDecision'];
   var CATEGORY_LABELS_JA = {
     marketResearch: '市場調査', competitorResearch: '競合調査', candidateComparison: '3案比較',
@@ -499,6 +569,67 @@
       }
       if (nextActions.length === 0) nextActions.push('不足項目を補完後、再評価してください');
 
+      // ── Phase IG-2J-C: 確認事項の正式分類（既存 missing / nextActions は無変更・追加のみ） ──
+      //   reason code で生成するため、同一原因は構造的に1件しか出ない（＝重複除去が保証される）。
+      var aiActions = [], userInputs = [], unclassified = [];
+      var seenCodes = {}, seenNorm = {};
+      function addItem(bucket, code, category, text, agent) {
+        if (!text) return;
+        if (seenCodes[code]) return;                       // 同一reason codeは1件のみ
+        var norm = normalizeActionText(text);
+        if (norm && seenNorm[norm]) return;                // 文面が実質同一のものも1件のみ
+        seenCodes[code] = true; if (norm) seenNorm[norm] = true;
+        bucket.push({ code: code, category: category, agent: agent || null, text: text });
+      }
+
+      // AI Action Required（AI会社自身で処理できる＝ユーザーへ質問しない）
+      if (!structureValid) addItem(aiActions, 'ai.structure_fix', 'ai_rerun', 'IADP構造を修正して再生成する', 'leader');
+      if (membersBad || leaderBad) {
+        addItem(aiActions, 'ai.members_rerun', 'ai_rerun',
+          '不足している担当分析（' + (weakMembers.length ? weakMembers.join('・') : '担当') + '）を再実行して成果物を補完する',
+          weakMembers.length ? weakMembers.join(',') : null);
+      }
+      if (evidenceStatus === 'insufficient') addItem(aiActions, 'ai.evidence_acquire', 'ai_rerun', '市場・競合のEvidenceを再取得して補強する', 'researcher');
+      else if (evidenceStatus === 'partial') addItem(aiActions, 'ai.evidence_reinforce', 'ai_rerun', '検証済みEvidenceを追加取得して補強する', 'researcher');
+      if (reviewerBad || reviewerStatus === 'needs_work') addItem(aiActions, 'ai.reviewer_rework', 'ai_rerun', 'Reviewerの指摘箇所を修正し、Reviewer再評価を行う', 'reviewer');
+      if (strategyBad) addItem(aiActions, 'ai.strategy_redesign', 'ai_rerun', 'Strategyの指摘に沿って設計を見直し、再評価を行う', 'strategy');
+      if (qgBad) addItem(aiActions, 'ai.quality_gate_rerun', 'ai_rerun', '成果物を補完のうえQuality Gateを再評価する', 'leader');
+      if (signalsUnavailable && !reviewerBad && !strategyBad && !qgBad) {
+        addItem(aiActions, 'ai.signals_acquire', 'ai_rerun', 'Auto Taskを再実行し、Reviewer・Strategy・Quality Gateの判定を取得する', 'leader');
+      }
+      if (baseMissing.length > 0) addItem(aiActions, 'ai.required_fields_fill', 'ai_rerun', '必須項目の欠損（' + baseMissing.length + '件）を補完して再生成する', 'leader');
+
+      // User Input Required（AI会社では決定できないものだけ）
+      //   ①IADP契約内の外部確認項目（requiredExternalChecks / confirmationChecklist）を分類器に通す
+      //     ＝AI会社側で決められる内容が混ざっていた場合はユーザー質問へ昇格させない。
+      var fp = isPlainObject(iadp.finalProfile) ? iadp.finalProfile : {};
+      var execBlock = isPlainObject(fp.execution) ? fp.execution : {};
+      var aspBlock = (isPlainObject(iadp.intelligence) && isPlainObject(iadp.intelligence.aspProductResearch))
+        ? iadp.intelligence.aspProductResearch : {};
+      var extReq = isPlainObject(aspBlock.externalConfirmationRequired) ? aspBlock.externalConfirmationRequired : {};
+      var candidateTexts = []
+        .concat(Array.isArray(execBlock.requiredExternalChecks) ? execBlock.requiredExternalChecks : [])
+        .concat(Array.isArray(extReq.confirmationChecklist) ? extReq.confirmationChecklist : []);
+      for (var ci = 0; ci < candidateTexts.length; ci++) {
+        var raw = candidateTexts[ci];
+        if (typeof raw !== 'string' || !raw.trim()) continue;
+        var cls = classifyActionItem(raw);
+        var codeKey = 'item.' + normalizeActionText(raw).slice(0, 40);
+        if (cls.target === 'user') addItem(userInputs, codeKey, cls.category, raw.trim(), null);
+        else if (cls.target === 'ai') addItem(aiActions, codeKey, cls.category, raw.trim(), null);
+        else addItem(unclassified, codeKey, cls.category, raw.trim(), null);
+      }
+      //   ②fieldStatusの外部確認待ち件数（実報酬額・実EPC・実承認率等）
+      if (ext > 0) {
+        addItem(userInputs, 'user.external_confirmation', 'external_confirmation',
+          'ASP登録・審査後に確定する実数値（' + ext + '件）を確認する', null);
+      }
+      //   ③最終承認（品質条件を満たし承認だけ待っている場合のみ）
+      if (contentQuality === 'complete' && structureValid && evidenceStatus !== 'insufficient'
+          && !reviewerBad && !strategyBad && !qgBad && userApproval === 'pending') {
+        addItem(userInputs, 'user.final_approval', 'final_approval', 'この設計で進めてよいか最終承認する', null);
+      }
+
       return {
         version: ASSESSMENT_VERSION, executed: true, legacy: !genAvailable,
         overall: overall,
@@ -517,6 +648,8 @@
         categoryBreakdown: categoryBreakdown,
         missing: missing,
         nextActions: nextActions,
+        // Phase IG-2J-C: 確認事項の正式分類（既存missing/nextActionsは無変更のまま併存）
+        actionItems: { aiActions: aiActions, userInputs: userInputs, unclassified: unclassified },
         leaderFinalEvaluated: !!lf, memberExecutionEvaluated: !!ms,
         // Phase IG-2H: 既存判定の再利用結果（表示・監査用。判定ロジック自体は各既存正本のまま）
         reviewerStatus: reviewerStatus,
@@ -538,6 +671,7 @@
         score: base.score || 0, requiredScore: REQUIRED_SCORE,
         evidenceCounts: base.evidenceCounts || {}, verifiedEvidenceCount: 0, hypothesisCount: 0, externalConfirmationCount: 0,
         criticalGapCount: 0, categoryBreakdown: [], missing: ['評価中に例外が発生しました'], nextActions: ['再評価してください'],
+        actionItems: { aiActions: [], userInputs: [], unclassified: [] },
         leaderFinalEvaluated: false, memberExecutionEvaluated: false,
         reviewerStatus: 'not_available', reviewerCriticalIssueCount: 0, reviewerRequiresRework: false,
         strategyStatus: 'not_available', strategyRequiresRework: false,
@@ -557,5 +691,8 @@
     REQUIRED_SCORE: REQUIRED_SCORE,
     evaluateInstagramAccountDesignQuality: evaluateInstagramAccountDesignQuality,
     assessInstagramAccountDesignPackage: assessInstagramAccountDesignPackage,
+    // Phase IG-2J-C: 確認事項の分類（純粋関数・単体検証用にも公開）
+    classifyActionItem: classifyActionItem,
+    normalizeActionText: normalizeActionText,
   };
 });
