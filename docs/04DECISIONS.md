@@ -6,6 +6,45 @@
 
 ---
 
+# Decision 098
+## Instagram Account Design Self-Completion / AI Action Rerun 正式採用（Phase IG-2J-A〜I統合・Code Complete）（2026-08-10）
+
+> **本Decision記録時点の状態**：Code commit・最終統合検証（回帰441項目全PASS・実AI End-to-End 1回）まで完了。**Annotated Tag／main push／Render反映／PC本番確認／iPhone Portrait実機確認はいずれも未実施**。これらの完了状況は実施後の最終docs更新で追記する。
+
+**背景**：Decision097（IG-2F〜IG-2I・IADP品質判定基盤）正式リリース後、実際のInstagramアカウント設計結果を確認したところ、①AI社員が情報不足を理由に逆質問だけで停止する ②Leader Finalの重要な結論がチャット上部にあり見づらい ③確認事項が複数箇所へ分散する ④採用案が複数レイヤーで不一致になる ⑤「構造99点」と実運用品質が混同される ⑥Evidence不足でも一見完成して見える ⑦生JSON等の成果物正規化問題 ⑧AI会社自身で処理できることまでユーザーへ質問する ⑨最終的に「勝てるInstagramアカウント」を作るための自律処理が不足、という9つのUX・品質問題が判明した。本DecisionはこれらをIG-2J-A〜Hの8工程で解消し、IG-2J-Iの最終統合検証（回帰441項目全PASS・実AI End-to-End 1回）を経て統合正式採用する。
+
+**決定（正式）**：
+
+- **① Self-Completion（IG-2J-A・Code commit d95f196）**：IADP対象4担当（Researcher／Analyst／Branding／SNS）は、情報不足時も逆質問のみで停止せず、**事実／AI仮説／外部確認待ち／User Input Required**を分離した成果物を必ず返す。`buildSystemPrompt()`へ任意第4引数optionsを追加し、`accountIntelligenceMode===true`かつ対象4担当かつworkerの場合のみ適用する。**通常Workflowでは本ブロックを一切生成せず、System PromptはIG-2J-A以前と完全に同一文字列**。「質問しない」＝「不明な実数値を事実として断定してよい」ではなく、**数値の捏造は明確に禁止**する。
+
+- **② Leader Final Summary（IG-2J-B・Code commit 7a33296）**：Leaderチャットの最新位置へ、実運用可否／採用候補／採用理由／構造充足／Evidence／内容品質／Reviewer／Strategy／Quality Gate／User Approval／AI会社が自律的に行うこと／ユーザーの判断が必要なこと、を要約表示する。既存のIADPカード・Executive Leader Report・Leader Final本文は削除・改変せず詳細情報として維持する。Summaryは新規AI生成ではなく**既存IADP正本から決定論的に再構築**する。**「構造充足99%」は実運用品質とは別軸である**ことを画面上で明示する。
+
+- **③ AI Action / User Input分離（IG-2J-C・Code commit 244cad2）**：確認事項を`actionItems.aiActions`（AI会社自身で処理する）と`actionItems.userInputs`（AI会社では決定できない）へ正式分離する。分類はAI自然言語推論ではなく**reason code＋決定論的分類**で行う。既存`missing`／`nextActions`は削除せず併存させる。**ターゲット／ジャンル／商品カテゴリ／投稿頻度／投稿形式／コンテンツピラー／KPI初期値／ブランド方向性／競合傾向／差別化案／投稿テーマ／初期CTA／市場／ペルソナ／収益導線は、たとえ「教えてください」という文面で来てもUser Inputへ昇格させない**。User Inputは顔出し可否／実名・匿名／予算上限／扱いたくないジャンル／商標・社名制約／ASP審査結果／実報酬額／実EPC／実承認率／最終承認等に限定する。
+
+- **④ 採用案 Single Source of Truth（IG-2J-D・Code commit 144b0ff）**：会社としての正式採用案の正本を **`intelligence.adoptionDecision.adoptedCandidateId`** の1つへ統一する。採用根拠＝当該フィールドはnormalize時に入力値を保持するかnullにするだけで、normalize生成・client補正・スコアからの自動導出が一切行われない唯一のフィールドであり、`decisionMadeBy:'leader'`が契約固定されているため。`candidateComparison.candidates[].decision`は不正値が`hold`へ既定化され欠損と意図的保留を区別できないため正本に使わない。`finalProfile.contentStrategy.mainGenre`は自由文字列で候補IDから導出されていないため正本に使わない。**総合点1位を自動的に正式採用へ昇格させない**（順位差は不具合ではなくLeaderの判断結果として`selectionVsRanking`で説明する）。比較表のadopt表示は**表示時のみ**正本へ整合させ（`decision`のみ変更・総合点/順位/finalProfile/packageIdは不変・**保存副作用なし**）、正本を特定できない場合（ID欠損・候補表に不在・候補ID重複）は推測で別候補を採用せずNeeds Workとする。**Final Profileの不一致はmainGenre文字列だけを差し替えない**（Profile全体が別候補向けに生成されている可能性があるため安全側でNot Readyとし、AI Actionとして全体再設計を提示する）。構造Validatorへの追加はwarningのみとし既存errors契約は変更しない（従来validだったPackageがinvalidへ転落しない）。
+
+- **⑤ Intelligence実数値の担当指示注入（IG-2J-E・Code commit fa91cae）**：既存 `outputDraft.fields.intelligenceContext`（product／asp／revenue／content／competition／market の6層＋共通Evidence＋Confidence）を、IADP 4担当の**Task指示文へ**構造化して注入する。**新しいIntelligence Engine・新DBテーブル・新外部API・新スコア式・新Confidence式は作らない**（既存データの読み取り専用Adapter `shared/iadpIntelligenceContext.js` のみ新設）。注入時は **Fact／Evidence／Prediction／Unknown** を決定論的に分離し、分類はEvidenceの`evidenceType`で決定する。**裏付けEvidenceのない数値は必ずPredictionとする（根拠不明の数字を会社実績として渡さない）**。`saveRatePred`／`clickRatePred`／`igFit`／`integratedScore`／`estimatedSales`／`estimatedProfit`は常にPrediction。caseIdはtop-levelとモジュール単位の二重guardで、**Global最新値を無条件採用しない**。保存から30日超は`stale`として明示（自動無効化はしない）。担当ごとに必要カテゴリのみを渡し、件数・文字数・ブロック長の上限でToken/Costを制御する。Intelligenceが0件でもSelf-Completionを維持し逆質問へ戻さない。IADPへはContext本体を保存せず`generationContext.intelligenceSources`へ参照元メタデータのみ記録する。
+
+- **⑥ Evidence正本接続（IG-2J-F・Code commit d7d21dd）**：IADPのEvidence判定の正本を **`outputDraft.fields.intelligenceContext.evidence[]`** へ接続する。**Verified**＝`public_fact`／`manual_observation`／`user_input`／`learning_result`かつ派生でないもの、**Derived**＝`calculated`／`heuristic`／`ai_interpretation`または`derivedFromEvidenceIds`を持つもの（既存`_intelIsIndependentEvidence`と同一条件）。**派生・推定EvidenceおよびAI仮説をEvidenceへ昇格させず、検証済み件数へ算入しない**。Sufficient条件＝Verified 3件以上（既存`INTEL_CONFIDENCE_MIN_EVIDENCE`と同値）かつ**独立source 2件以上**かつ低reliabilityのみでないこと。独立source条件のみ本Phaseで新設した（理由＝実データのProduct Evidenceは`sourceReference`がフィールドごとに異なるため既存の独立件数では「1件の手入力＝独立11件」と数えられ、単一ソースだけでSufficientになってしまうため。既存の独立件数・Confidence計算式・しきい値は一切変更していない）。**`fieldStatus`はlegacy fallbackとして維持**し、正本Evidenceが利用できない場合のみ従来判定を用いる（本Phase導入によって過去データが突然Insufficientへ落ちない）。`stale`は理由として明示するのみで自動無効化しない。
+
+- **⑦ 成果物正規化（IG-2J-G・Code commit 7ff4140）**：AI社員成果物に残る `{"reply":...}` wrapper と ```json コードフェンスの**構造ノイズのみ**を決定論的に除去する（`shared/agentResultNormalizer.js`新設）。**内容の要約・再生成・意味変更・不足内容の推測補完・文章改善・スコア変更・Reviewer判定変更は一切行わない**。原因＝①タスク実行ループのreply抽出が`indexOf('{')`/`lastIndexOf('}')`＋`JSON.parse`のみで、reply本文に実改行を含むJSONはparseに失敗しcatchで握り潰され生JSONが残っていた ②同ループがClaude担当（writer/reviewer/strategy）をprovider判定で丸ごとスキップし、Reviewer側fallbackも`startsWith('{')`条件のため```jsonフェンス前置時に発動しなかった。**通常文章・一般Markdownコードブロック・reply以外の正式構造JSON（`{"status":..,"score":..}`等）・文章中のJSONは一切変更しない**（迷ったら原文維持）。原文は`task.rawResult`へ保持する。正規化後に実質的な成果物が無い場合は`hasMeaningfulResult:false`として検出するが、**`task.status`（completed/error/skipped）の契約は変更しない**。
+
+- **⑧ AI Action Required 自律再実行（IG-2J-H・Code commit f845db0）**：`actionItems.aiActions[]`を既存Auto Task経路（`atRunWorkflow()`／`POST /api/auto-task`／`runAutoTaskWorkflow()`）へ接続する。**新しいWorkflow Engineは作らない**。`atRunWorkflow()`へ任意引数`options.tasksOverride`等を追加し（省略時は従来と完全に同一動作）、reason codeに応じた**必要担当だけ**を部分再実行する（evidence系＝Researcher→Analyst／members_rerun・reviewer_rework＝weakMembersのみ／strategy_redesign＝Analyst・Branding・SNS／signals・required_fields＝4担当／structure_fix・quality_gate_rerunは担当再実行不要）。**Reviewer／Strategy／Leader Final／Quality Gateは既存の後処理として自動再実行される**ため専用タスクを作らない。指示文は既存`buildAccountIntelligenceTasks()`を再利用しIG-2J-EのIntelligence注入も自動適用する。安全弁として、**自動起動しない（ユーザーが1回開始する方式・実行前に対象担当と件数とAPI使用を明示）／二重実行防止（実行中フラグ＋既存Auto Task実行状態）／課金ロック中は開始しない／無限ループ防止（案件あたり3回・同一reason code 2回の上限）／Cross-case guard／stale Quality Gate guard（`_iadpResolveQualityGate()`へpackageId・caseId照合を追加し新IADPへ旧snapshotを流用しない）**を設ける。**`actionItems.userInputs[]`は絶対にTask化しない**（ASP審査・アカウント作成・ユーザー承認・外部サービス登録・本人確認等をAI社員が勝手に実行しない）。
+
+- **⑨ User Approval境界の維持**：自律再実行が成功しても**AI会社がユーザー承認を代行しない**。再実行で新IADP（新packageId）が生成された場合、既存IG-2G契約どおり旧承認は引き継がず`pending`へ戻る。加えて同一packageIdのまま正式採用案（`adoptedCandidateId`）が変わった場合も承認を維持しない（承認時に`adoptedCandidateId`を記録し照合する。旧approvalは後方互換のため検査しない）。**承認だけ・Quality Gate通過だけではReadyにしない**（Reviewer重大不足／Strategy再設計要求／Quality Gate未通過／採用案未確定／Final Profile不一致のいずれかがあれば必ずNot Ready）。
+
+- **⑩ 非責務（今回作っていないもの）**：新Engine／新DBテーブル／新schema／新API／新scoring formula／新threshold（独立source 2件のみ例外・上記⑥に理由記載）／Workflow再設計／サーバー側Background Execution／Instagramアカウント実作成／ASP登録。`server.js`／DB／`supabase/schema.sql`／API契約は全工程を通じて無変更。
+
+**検証**：回帰**441項目全PASS**（IG-2J-A 26／D 111／E 87／F 93／G 71／H 53）。**実AI End-to-End 1回実施**（専用検証案件`case-msmymywv6hdl`・Researcher→Analystのみ部分再実行→Reviewer→Strategy→Leader Final 9,229字→新IADP生成・validate成功→SSOT解決（総合点1位ではない候補を正本として正しく解決）→Evidence判定→Quality Gate再評価→Approval pending維持→User Input非実行→F5復元一致→Cross-case問題なし）。**API追加費用 約¥30**（OpenAI +¥0.55／Claude +$0.18375・上限¥100内）。課金ロックは実行直前に一時解除し完了と同時に自動でONへ復帰。実案件2件は読み取り専用・書き込み0件・初回取得時とバイト単位で完全一致。検証用テストデータは案件削除＋`output_drafts`削除で**remaining=0**を実測確認。`node --check`全7ファイルOK・index.htmlインラインJS OK・`git diff --check` CLEAN・**Console Error 0**・`npm run dev-check` 200/200/200。
+
+**実データで確認できた効果**：実AI応答が実際に`{"reply":...}`形式で返り、IG-2J-Gの正規化が実運用で機能した（原文は`rawResult`へ保持）。Quality Gate通過後もReviewer needs_workのため`readiness:not_ready`／`approval:pending`を維持し、承認だけ・QGだけでReadyにしない設計が実AI結果に対しても守られた。
+
+**Known Issue（正式リリース判定をBlockしないと評価）**：①チャット経路`generateReply`のreply wrapper残存（IADP経路とは別サブシステム。保存済みメッセージ122件中1件で実確認）②Reviewer NG partial-match（`NG`部分一致でBRANDING/MARKETINGを誤検出し得る既存バグ。使用箇所はLeader Inboxの矛盾*候補*生成1箇所のみで`label:'candidate'`／`confidence:'low'`。IADP側は回避済み）③iPhone Landscapeレイアウト崩れ（Responsive未対応・独立工程）④iPhoneチャット履歴の瞬間消失⑤Background Execution未実装（Version1.1後半の大型工程）。
+
+**Git（本Decision記録時点）**：Code commit **d95f196**（A）＋**7a33296**（B）＋**244cad2**（C）＋**144b0ff**（D）＋**fa91cae**（E）＋**d7d21dd**（F）＋**7ff4140**（G）＋**f845db0**（H）＋docs commit（本Decision含む）。**Phase IG-2J-A〜I Code Complete**。**Annotated Tag（予定名 `v1.01-instagram-account-design-self-complete`）・main push・Render反映・PC本番確認・iPhone Portrait実機確認はいずれも未実施**であり、実施後の最終docs更新で正式リリースCompleteとして記録する。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**は変更なし。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagram実運用準備／実運用開始**（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）。
+
+---
+
 # Decision 097
 ## IADP Quality / Approval / Quality Signals 正式採用（Phase IG-2F〜IG-2H統合・正式リリース）（2026-08-09）
 
