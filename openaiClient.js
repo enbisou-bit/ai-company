@@ -781,6 +781,25 @@ function autoGenerateProfile(memberId, memberData = {}) {
 // ══════════════════════════════════════════════════════════════
 const IADP_SELF_COMPLETION_AGENT_IDS = ['researcher', 'analyst', 'branding', 'sns'];
 
+// Phase IG-2J-E: 既存Affiliate Intelligenceに「使える実データ」が入っているかの読み取り専用判定。
+//   既存 _iadpBuildIntelligenceContextSummary（Leader Final側）と同一条件を使い、新しい判定基準は作らない。
+//   実データが無い場合はfalse＝System Promptへ何も追加しない（IG-2J-A時点と完全に同一文字列）。
+function _iadpHasUsableIntelligence(eic) {
+  try {
+    if (!eic || typeof eic !== 'object') return false;
+    const keys = ['product', 'asp', 'competition', 'revenue', 'content', 'market'];
+    for (let i = 0; i < keys.length; i++) {
+      const mod = eic[keys[i]];
+      if (!mod || typeof mod !== 'object') continue;
+      const hasConfidence = (mod.confidence !== null && mod.confidence !== undefined);
+      const hasDerived = mod.derived && typeof mod.derived === 'object'
+        && typeof mod.derived.status === 'string' && mod.derived.status !== 'insufficient';
+      if (hasConfidence || hasDerived) return true;
+    }
+    return false;
+  } catch (e) { return false; } // fail-open
+}
+
 // 4担当それぞれの「最低限これだけは必ず返す」成果物契約（IADPモード時のみ適用）
 const IADP_MIN_DELIVERABLES = {
   researcher: [
@@ -839,10 +858,24 @@ Instagram Account Designと全く無関係な業務（例：会計処理・法�
 `;
 }
 
+// Phase IG-2J-E: 既存Intelligenceが担当指示へ注入されている場合のみ追加する短い注意書き。
+//   巨大JSONはSystem Promptへ埋め込まない（実データ本体はTask Message側へ必要分だけ注入する）。
+//   注入が無い場合は空文字列＝IG-2J-A時点のSystem Promptと完全に同一文字列を維持する。
+const IADP_INTELLIGENCE_CONTEXT_NOTICE = `
+【★AI会社が保有するIntelligenceの扱い（今回の指示文に含まれています）】
+今回のタスク指示には、AI会社が既に保有しているIntelligence（実データ）が添付されています。
+・Fact／Evidence：保存済みの実データです。一般論で上書きせず、判断の第一根拠にしてください。
+・Prediction：既存Intelligence内の予測値・計算値です。事実として断定してはいけません。
+・Unknown：未取得の項目です。推測で数値を埋めず「外部確認待ち」と明示してください。
+Fact・Prediction・Unknownを混同しないでください。
+なお、Intelligenceが不足していても質問だけで停止せず、AI仮説で補って成果物を完成させてください。
+`;
+
 // ⑤差し替え用: IADPモードの最終上書き（逆質問のみでの停止を禁止する）
-function buildIadpSelfCompletionOverride(agent, voiceOpener) {
+function buildIadpSelfCompletionOverride(agent, voiceOpener, intelligenceContextAvailable) {
   const minList = (IADP_MIN_DELIVERABLES[agent] || []).join('\n');
-  return `
+  const intelNotice = intelligenceContextAvailable === true ? IADP_INTELLIGENCE_CONTEXT_NOTICE : '';
+  return intelNotice + `
 【★最終上書き：Self-Completion Mode（Instagram Account Design 専用・上記全設定より最優先）】
 
 この案件では、上位の全ルール（4ステップ判断プロセス／AGENT_RULE_HEADER／
@@ -1040,7 +1073,7 @@ function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = n
   const questionStyleBlock = profile.questionStyle ? `\n【情報収集の観点（情報不足時に使う質問軸）】\n${profile.questionStyle}` : '';
   // Phase IG-2J-A: IADPモードのみ最終上書きをSelf-Completion Mode版へ差し替える（通常時は既存文のまま）
   const workerFinalOverride = (isWorker && iadpSelfCompletion)
-    ? buildIadpSelfCompletionOverride(agent, voiceOpener)
+    ? buildIadpSelfCompletionOverride(agent, voiceOpener, !!(options && options.intelligenceContextAvailable === true))
     : isWorker ? `
 【★最終上書き：上記全設定より最優先（worker共通・変更不可）】
 ※ステップ0で専門外と判定した場合はこのブロックを無視し、ステップ0の形式を使うこと。
@@ -2791,7 +2824,12 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         // Phase IG-2J-A: accountIntelligenceMode（runAutoTaskWorkflowの既存引数）をそのまま渡す。
         //   falseまたは対象外agentでは buildSystemPrompt 内で無効化され従来と同一文字列になる。
         //   Reviewer（3027行）・Strategy（3138行）・自律相談（2896行）へは渡さない＝それらは従来動作のまま。
-        const systemPrompt = buildSystemPrompt(task.agentId, null, null, { accountIntelligenceMode: accountIntelligenceMode });
+        //   Phase IG-2J-E: 既存Intelligenceが担当指示へ注入されている場合のみ、Fact/Prediction/Unknownの
+        //   取り扱い注意をSystem Promptへ追加する（注入なしのときは IG-2J-A 時点と完全に同一文字列）。
+        const systemPrompt = buildSystemPrompt(task.agentId, null, null, {
+          accountIntelligenceMode: accountIntelligenceMode,
+          intelligenceContextAvailable: _iadpHasUsableIntelligence(existingIntelligenceContext),
+        });
         if (agentCaller) {
           const cr = await agentCaller(task.agentId, systemPrompt, fullInstruction, []);
           resultText       = cr.text;

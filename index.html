@@ -7453,6 +7453,8 @@
 <script src="shared/instagramAccountDesign.js"></script>
 <!-- Phase IG-2C: Instagram Account Design Package 専用品質評価 Core（構造Validatorとは別レイヤー） -->
 <script src="shared/instagramAccountDesignQuality.js"></script>
+<!-- Phase IG-2J-E: 既存Affiliate IntelligenceをIADP4担当へ渡すための薄いAdapter（新Engine・新DB・新APIなし） -->
+<script src="shared/iadpIntelligenceContext.js"></script>
 <script>
 // ── Supabase DB同期ヘルパー ────────────────────────────
 // タスクをサーバー（Supabase経由）に保存。失敗してもlocalStorage側は継続
@@ -12787,6 +12789,9 @@ let _lastInstagramAccountDesignApproval = null;
 //   packageId・caseIdを刻んだsnapshotを保存し、復元時はpackageId一致検証のうえ再利用する。
 //   packageId不一致（新IADP）の場合は使用しない＝旧評価を新IADPへ流用しない。
 let _lastInstagramAccountDesignAssessmentCtx = null;
+// Phase IG-2J-E: 直近のIADP実行で4担当へ注入したIntelligence Contextのビルド結果（読み取り専用の記録）。
+//   Context本体はIADPへ保存せず、参照元メタデータ（intelligenceSources）のみを生成するために使用する。
+let _lastIadpIntelligenceContext = null;
 
 // Phase IG-2G: 現在表示中パッケージに対して「有効な」承認状態を返す（純粋関数・非破壊）。
 //   approval.packageId・caseId が現在のパッケージ／案件と一致し status==='approved' のときのみ 'approved'。
@@ -12861,10 +12866,22 @@ function _iadpBuildGenerationContext(results, leaderFinalResult) {
       },
       reviewerAssessment: reviewerAssessment,
       strategyAssessment: strategyAssessment,
+      // Phase IG-2J-E: 4担当へ注入した既存Intelligenceの「参照元」だけを最小限記録する
+      //   （Context本体・実数値は保存しない。新規DBカラム・新規APIなし）。
+      intelligenceSources: _iadpBuildIntelligenceSourceMeta(),
     };
   } catch (e) {
     return null; // fail-open（コンテキスト構築失敗時はlegacy扱い）
   }
+}
+
+// Phase IG-2J-E: 参照元メタデータの生成（失敗しても生成時コンテキスト全体を壊さない）。
+function _iadpBuildIntelligenceSourceMeta() {
+  try {
+    if (typeof IadpIntelligenceContext === 'undefined') return null;
+    if (!_lastIadpIntelligenceContext) return null;
+    return IadpIntelligenceContext.buildIntelligenceSourceMeta(_lastIadpIntelligenceContext);
+  } catch (e) { return null; }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -13883,8 +13900,32 @@ function detectAccountIntelligenceRequest(text) {
 // Account Intelligence専用の固定4担当（Main）タスクを構築する。
 // Reviewer/StrategyはrunAutoTaskWorkflow()が既存仕様どおり自動追加するため、ここには含めない
 // （completedMainTasks.length>0で自動的にisPostProcess:trueとして追加される・新しいAI社員は追加しない）。
-function buildAccountIntelligenceTasks(userMessage) {
+// Phase IG-2J-E: 既存Intelligenceを担当指示へ注入する。
+//   intelligenceContext / caseId が渡されない、またはIntelligenceが1件も無い場合は
+//   ブロックを一切追加しない＝IG-2J-A〜D時点の指示文と完全に同一文字列になる（非干渉）。
+function buildAccountIntelligenceTasks(userMessage, intelligenceContext, caseId) {
   var msg = String(userMessage || '');
+  // 担当ごとの注入ブロック（存在しなければ空文字列）
+  var _iadpIntelCtx = null;
+  var _iadpIntelBlocks = { researcher: '', analyst: '', branding: '', sns: '' };
+  try {
+    if (typeof IadpIntelligenceContext !== 'undefined' && intelligenceContext && caseId) {
+      _iadpIntelCtx = IadpIntelligenceContext.buildIadpIntelligenceContext(intelligenceContext, { caseId: caseId });
+      if (_iadpIntelCtx && _iadpIntelCtx.available) {
+        ['researcher', 'analyst', 'branding', 'sns'].forEach(function (a) {
+          _iadpIntelBlocks[a] = IadpIntelligenceContext.buildAgentIntelligenceBlock(_iadpIntelCtx, a) || '';
+        });
+      }
+    }
+  } catch (_iadpIntelErr) {
+    _iadpIntelCtx = null;   // fail-open: 注入なしで既存どおり実行する（Self-Completionは維持）
+  }
+  // 直近ビルド結果を保持（保存メタ・実データ確認用。表示/保存側から参照する読み取り専用の記録）
+  _lastIadpIntelligenceContext = _iadpIntelCtx;
+  function _iadpWithIntel(baseLines, agentId) {
+    var block = _iadpIntelBlocks[agentId];
+    return block ? baseLines.concat(['', block]).join('\n') : baseLines.join('\n');
+  }
   var researcherInstruction = [
     '【Instagram Account Intelligence — Researcher専用調査】',
     '依頼：' + msg,
@@ -13897,7 +13938,8 @@ function buildAccountIntelligenceTasks(userMessage) {
     '・外部確認が必要な事項がある場合は、該当箇所に【外部確認必要】と明記してください',
     '公開情報にもとづく調査結果と、公開情報がない場合の予測を明確に区別してください。',
     '質問だけで処理を止めず、情報が不足していても安全側の仮説を含めた調査成果物を返してください。',
-  ].join('\n');
+  ];
+  researcherInstruction = _iadpWithIntel(researcherInstruction, 'researcher');
   var analystInstruction = [
     '【Instagram Account Intelligence — Analyst専用評価】',
     '依頼：' + msg,
@@ -13907,21 +13949,27 @@ function buildAccountIntelligenceTasks(userMessage) {
     '複数商品対応力(multiProductFit)／長期ブランド資産性(longTermBrandAsset)／AI運営適性(aiOperationFit)',
     '実Evidenceに基づかない数値は、必ず予測値であることを明示してください。',
     '外部確認が必要な事項がある場合は、該当箇所に【外部確認必要】と明記してください。',
-  ].join('\n');
+    // Phase IG-2J-E: 既存Intelligenceのスコアは10軸とは別指標。同一視して流用しない。
+    '既存Intelligenceのスコア（統合スコア・Instagram適性スコア等）が提示された場合は、判断材料として参照しつつ、',
+    'IADP独自の10軸とは別指標として扱ってください（そのまま同じ点数として転記しないでください）。',
+  ];
+  analystInstruction = _iadpWithIntel(analystInstruction, 'analyst');
   var brandingInstruction = [
     '【Instagram Account Intelligence — Branding専用設計】',
     '依頼：' + msg,
     'Analystが評価した最低3案について、それぞれ以下を作成してください：',
     'ブランド名／ブランドコンセプト／世界観／差別化／ターゲット／アカウント名候補／ユーザー名候補／bio／アイコン方針',
     '追加質問だけで処理を止めないでください。情報が不足する場合は安全側の仮説を明示して作成してください。',
-  ].join('\n');
+  ];
+  brandingInstruction = _iadpWithIntel(brandingInstruction, 'branding');
   var snsInstruction = [
     '【Instagram Account Intelligence — SNS専用方針】',
     '依頼：' + msg,
     '以下の運用方針を作成してください（投稿本文・カルーセル・キャプション自体は今回生成しないでください）：',
     '投稿ジャンル／投稿カテゴリ／投稿比率／投稿頻度／投稿時間方針／信頼構築方針／',
     '顔出し・音声なし運用方針／CTA方針／収益導線方針',
-  ].join('\n');
+  ];
+  snsInstruction = _iadpWithIntel(snsInstruction, 'sns');
   return [
     { id: 'iadp-task-1', agentId: 'researcher', instruction: researcherInstruction, dependsOn: [] },
     { id: 'iadp-task-2', agentId: 'analyst',    instruction: analystInstruction,    dependsOn: ['iadp-task-1'] },
@@ -14539,12 +14587,14 @@ async function atRunWorkflow() {
   try {
     if (detectAccountIntelligenceRequest(userMessage)) {
       _iadpRequested = true;
-      var _iadpTasks = buildAccountIntelligenceTasks(userMessage);
-      tasks.splice.apply(tasks, [0, tasks.length].concat(_iadpTasks));
+      // Phase IG-2J-E: 既存Intelligenceを先に解決してから担当指示を組み立てる（担当へ実データを注入するため）。
+      //   caseId一致は既存条件をそのまま利用（別案件のIntelligenceは読み込まない＝Cross-case guard）。
       if (_lastOutputDraft && _lastOutputDraft.caseId === _atRunCaseId
           && _lastOutputDraft.fields && _lastOutputDraft.fields.intelligenceContext) {
         _iadpExistingIntelligenceContext = _lastOutputDraft.fields.intelligenceContext;
       }
+      var _iadpTasks = buildAccountIntelligenceTasks(userMessage, _iadpExistingIntelligenceContext, _atRunCaseId);
+      tasks.splice.apply(tasks, [0, tasks.length].concat(_iadpTasks));
     }
   } catch (_iadpDetectErr) {
     _iadpRequested = false; // fail-open: 判定失敗時は既存Workflowへ
