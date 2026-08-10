@@ -4,9 +4,7 @@
 
 ---
 
-## Phase IG-2J-A〜I Instagram Account Design Self-Completion / AI Action Rerun **Code Complete**（2026-08-10）
-
-> **本エントリ時点の状態**：Code commit・最終統合検証まで完了。**Annotated Tag／main push／Render反映／PC本番確認／iPhone Portrait実機確認はいずれも未実施**。これらの完了は実施後の最終docs更新で記録する。
+## Phase IG-2J-A〜I Instagram Account Design Self-Completion / AI Action Rerun **正式リリース**（2026-08-10）
 
 **IADPを「AI会社自身が不足を判定し、必要なAI社員を再実行し、Leader Finalを再生成して再評価できる」状態まで到達させた**（Decision098）。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/iadpIntelligenceContext.js（新規）／shared/agentResultNormalizer.js（新規）**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。**Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**。
 
@@ -21,7 +19,10 @@
 - **IG-2J-I 最終統合検証**（Code変更なし）＝回帰**441項目全PASS**（A 26／D 111／E 87／F 93／G 71／H 53）。**実AI End-to-End 1回実施**（専用検証案件・Researcher→Analyst再実行→Reviewer→Strategy→Leader Final 9,229字→新IADP生成→SSOT解決→Evidence判定→Quality Gate再評価→F5復元）。**API追加費用 約¥30**（上限¥100内）。実案件は読み取り専用・書き込み0件・完全一致。検証用テストデータは`remaining=0`を実測確認。
 - **実データで確認できた効果**：実AI応答が実際に`{"reply":...}`形式で返り、IG-2J-Gの正規化が実運用で機能（原文は保持）。採用案は総合点1位ではない候補が正本として正しく解決され、Quality Gate通過後もReviewer needs_workのため`not_ready`／`pending`を維持（**承認だけ・QGだけでReadyにしない**設計を実証）。
 - **Known Issue（IG-2Jの正式リリース判定をBlockしないと評価）**：①チャット経路`generateReply`のreply wrapper残存（IADP経路とは別サブシステム）②Reviewer NG partial-match（Leader Inboxの矛盾*候補*のみ・IADPは回避済み）③iPhone Landscapeレイアウト崩れ④iPhoneチャット履歴の瞬間消失⑤Background Execution未実装。
-- **Git（本エントリ時点）**：Code commit **d95f196＋7a33296＋244cad2＋144b0ff＋fa91cae＋d7d21dd＋7ff4140＋f845db0**＋docs commit（本追記）。Decision **098**。**Annotated Tag・main push・Render反映・PC本番確認・iPhone Portrait実機確認は未実施**（実施後に本項を更新する）。次工程＝Instagram実運用準備／実運用開始。
+- **Render本番反映（2026-08-10実測）**：本番`/`・`/api/task-history`・`/api/workflow-dashboard`いずれも**200**。配信物へIG-2J全工程の反映を10項目で確認（B Summary／C 分類表示／D SSOT／E Adapter読込／F Evidence正本／G 正規化読込・ラッパ／H 再実行計画・実行導線・上限guard）。新規共有モジュール`shared/iadpIntelligenceContext.js`・`shared/agentResultNormalizer.js`を含む4モジュールとも**200**。build error／runtime errorなし。
+- **PC本番確認 完了（2026-08-10）**：本番URLで保存済み実データ（実AI再実行なし・**書き込み0件**）により、Leader Final Summary／IADPカード／採用候補（正本解決）／Evidence／Quality Gate／Reviewer・Strategy／AI Action・User Input分離／Approval／「AI会社に修正させる」導線をすべて表示確認。**横はみ出しなし・Console Error 0**。
+- **iPhone Portrait実機確認 完了（2026-08-10・ユーザー実施）**：本番表示・Leader Final Summary・IADPカード・1カラム表示・横はみ出しなし・AI Action / User Input表示・承認ボタン・詳細ボタン・チャット入力欄・スクロールいずれも正常。**Landscapeは既存Known Issue継続**（Responsive未対応・IG-2J実装による新規不具合ではない・正式リリース判定には影響させない）。
+- **Git・反映**：Code commit **d95f196＋7a33296＋244cad2＋144b0ff＋fa91cae＋d7d21dd＋7ff4140＋f845db0**＋docs commit **32b0821**（＋本追記commit）。Decision **098**。Annotated Tag **v1.01-instagram-account-design-self-complete**（→`32b0821`）。**main push完了**（`540411e..32b0821`）・**tag push完了**・**Render反映完了**・**PC本番確認完了**・**iPhone Portrait実機確認完了**。**Phase IG-2J-A〜I 正式リリースComplete**。次工程＝Instagram実運用準備／実運用開始。
 
 ---
 

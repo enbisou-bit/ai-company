@@ -7,9 +7,7 @@
 ---
 
 # Decision 098
-## Instagram Account Design Self-Completion / AI Action Rerun 正式採用（Phase IG-2J-A〜I統合・Code Complete）（2026-08-10）
-
-> **本Decision記録時点の状態**：Code commit・最終統合検証（回帰441項目全PASS・実AI End-to-End 1回）まで完了。**Annotated Tag／main push／Render反映／PC本番確認／iPhone Portrait実機確認はいずれも未実施**。これらの完了状況は実施後の最終docs更新で追記する。
+## Instagram Account Design Self-Completion / AI Action Rerun 正式採用（Phase IG-2J-A〜I統合・正式リリース）（2026-08-10）
 
 **背景**：Decision097（IG-2F〜IG-2I・IADP品質判定基盤）正式リリース後、実際のInstagramアカウント設計結果を確認したところ、①AI社員が情報不足を理由に逆質問だけで停止する ②Leader Finalの重要な結論がチャット上部にあり見づらい ③確認事項が複数箇所へ分散する ④採用案が複数レイヤーで不一致になる ⑤「構造99点」と実運用品質が混同される ⑥Evidence不足でも一見完成して見える ⑦生JSON等の成果物正規化問題 ⑧AI会社自身で処理できることまでユーザーへ質問する ⑨最終的に「勝てるInstagramアカウント」を作るための自律処理が不足、という9つのUX・品質問題が判明した。本DecisionはこれらをIG-2J-A〜Hの8工程で解消し、IG-2J-Iの最終統合検証（回帰441項目全PASS・実AI End-to-End 1回）を経て統合正式採用する。
 
@@ -41,7 +39,9 @@
 
 **Known Issue（正式リリース判定をBlockしないと評価）**：①チャット経路`generateReply`のreply wrapper残存（IADP経路とは別サブシステム。保存済みメッセージ122件中1件で実確認）②Reviewer NG partial-match（`NG`部分一致でBRANDING/MARKETINGを誤検出し得る既存バグ。使用箇所はLeader Inboxの矛盾*候補*生成1箇所のみで`label:'candidate'`／`confidence:'low'`。IADP側は回避済み）③iPhone Landscapeレイアウト崩れ（Responsive未対応・独立工程）④iPhoneチャット履歴の瞬間消失⑤Background Execution未実装（Version1.1後半の大型工程）。
 
-**Git（本Decision記録時点）**：Code commit **d95f196**（A）＋**7a33296**（B）＋**244cad2**（C）＋**144b0ff**（D）＋**fa91cae**（E）＋**d7d21dd**（F）＋**7ff4140**（G）＋**f845db0**（H）＋docs commit（本Decision含む）。**Phase IG-2J-A〜I Code Complete**。**Annotated Tag（予定名 `v1.01-instagram-account-design-self-complete`）・main push・Render反映・PC本番確認・iPhone Portrait実機確認はいずれも未実施**であり、実施後の最終docs更新で正式リリースCompleteとして記録する。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**は変更なし。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagram実運用準備／実運用開始**（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）。
+**本番反映・実機確認（2026-08-10実測）**：**Render本番反映完了**（本番`/`・`/api/task-history`・`/api/workflow-dashboard`とも200／配信物へIG-2J全工程の反映を10項目で確認／新規共有モジュール4件とも200／build error・runtime errorなし）。**PC本番確認完了**（保存済み実データで Leader Final Summary・IADPカード・採用候補の正本解決・Evidence・Quality Gate・Reviewer/Strategy・AI Action/User Input分離・Approval・「AI会社に修正させる」導線を表示確認。横はみ出しなし・Console Error 0・実AI再実行なし・書き込み0件）。**iPhone Portrait実機確認完了**（ユーザー実施：本番表示・Summary・IADPカード・1カラム・横はみ出しなし・AI Action/User Input表示・承認ボタン・詳細ボタン・チャット入力欄・スクロールいずれも正常）。**iPhone Landscapeは既存Known Issue継続**（Responsive未対応・IG-2J実装による新規不具合ではないため正式リリース判定には影響させない）。
+
+**Git・反映**：Code commit **d95f196**（A）＋**7a33296**（B）＋**244cad2**（C）＋**144b0ff**（D）＋**fa91cae**（E）＋**d7d21dd**（F）＋**7ff4140**（G）＋**f845db0**（H）＋docs commit **32b0821**（本Decision含む）＋本追記commit。Annotated Tag **v1.01-instagram-account-design-self-complete**（→`32b0821`）・**main push完了**（`540411e..32b0821`）・**tag push完了**・**Render反映完了**・**PC本番確認完了**・**iPhone Portrait実機確認完了**。**Phase IG-2J-A〜I 正式リリースComplete**。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**は変更なし。**Phase54 Complete維持・Phase55未着手**。次工程＝**Instagram実運用準備／実運用開始**（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）。
 
 ---
 

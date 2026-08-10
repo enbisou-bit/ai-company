@@ -8,7 +8,7 @@
 
 ---
 
-## Instagram Account Design Self-Completion / AI Action Rerun（Phase IG-2J-A〜I統合・Code Complete・2026-08-10・Decision 098）
+## Instagram Account Design Self-Completion / AI Action Rerun（Phase IG-2J-A〜I統合・正式リリース・2026-08-10・Decision 098）
 
 > 追記日: 2026-08-10。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/iadpIntelligenceContext.js（新規）／shared/agentResultNormalizer.js（新規）**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。
 
@@ -16,7 +16,7 @@
   - A Self-Completion（`d95f196`）／B Leader Final Summary（`7a33296`）／C AI Action・User Input分離（`244cad2`）／D 採用案SSOT（`144b0ff`）／E Intelligence注入（`fa91cae`）／F Evidence正本接続（`d7d21dd`）／G 成果物正規化（`7ff4140`）／H AI Action自律再実行（`f845db0`）／I 最終統合検証（Code変更なし）。
 - **正式契約（今後の実装が守るべき正本）**：採用案の正本＝`intelligence.adoptionDecision.adoptedCandidateId`（**総合点1位を自動採用しない**）。Evidenceの正本＝`outputDraft.fields.intelligenceContext.evidence[]`（`fieldStatus`はlegacy fallback）。確認事項は`actionItems.aiActions`／`userInputs`へ分離し、**userInputsはAuto Task化しない**。User Approvalは**AI会社が代行しない**（新packageId・採用案変更で承認は無効化。承認だけ・Quality Gate通過だけではReadyにしない）。
 - **検証実績**：回帰**441項目全PASS**／**実AI End-to-End 1回PASS**（Researcher→Analystの部分再実行→Reviewer→Strategy→Leader Final→新IADP生成→SSOT解決→Evidence判定→Quality Gate再評価→F5復元）／API追加費用**約¥30**（上限¥100内）／実案件書き込み0件／テストデータ**remaining=0**。
-- **本追記時点で未実施**：Annotated Tag・main push・Render反映・PC本番確認・iPhone Portrait実機確認（実施後の最終docs更新で正式リリースCompleteとして記録する）。
+- **正式リリース実績（2026-08-10）**：docs commit `32b0821`／Annotated Tag **v1.01-instagram-account-design-self-complete**／main push（`540411e..32b0821`）／tag push／**Render反映完了**（本番200・配信物へ全10項目反映確認）／**PC本番確認完了**（横はみ出しなし・Console Error 0）／**iPhone Portrait実機確認完了**（ユーザー実施）。**iPhone LandscapeはKnown Issue継続**（Responsive未対応・IG-2J実装による新規不具合ではない）。
 - **次工程（第一候補）**：**Instagram実運用準備／実運用開始**（アカウント作成→プロフィール設定→ASP登録→商品調査→投稿企画→初回投稿→KPI取得→Learning実測）。**新しいPhase番号は作らない**。Phase55へは移行しない。
 - **後続工程候補（未着手）**：iPhone Landscape Responsive対応（独立工程）／Background Execution（実運用・Learning実測後・Version1.1後半の大型工程）／Completion Gate設計／Reviewer NG keyword本体修正／チャット経路`generateReply`のreply wrapper修正／iPhoneチャット履歴瞬間消失対応。
 
