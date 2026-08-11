@@ -6,6 +6,41 @@
 
 ---
 
+# Decision 099
+## Instagram Account Design Package Post-Release Stability / Operational Quality 正式採用（IADP Post-Release Hotfix + Hotfix-Quality + Stability統合・正式リリース）（2026-08-11）
+
+**背景**：Decision098（IG-2J-A〜I）正式リリース後の実運用確認で、IADP生成物に構造・品質面の不備が判明した。**Post-Release Hotfix**（Code commit **585360c**）でLeader Final構造安定化・`adoptionDecision`/`adoptedCandidateId`のSSOT維持・Final Profile統合・IADP保存/表示・Output Draft生JSON汚染防止・invalid時安全案内・F5復元・Cross-case独立性・User Approval pending維持・AI Action/User Input境界維持を修正した。続く**Hotfix-Quality**（Code commit **4b92f0d**）でAI会社自身が決定できる運用設計項目（顔出しなし・本人音声なし方針／KPI5項目／KPI改善条件／6リスク／リスク回避策／`first30DaysOperatingPolicy`／Reviewer指摘のLeader自律補完）を未完成のままユーザーへ返さないよう強化した。専用テスト案件`case-msolp1yuv5rq`での実AI再検証で①JSON末尾`}`不足②finalProfile誤配置③adoptionDecision誤配置④KPI5がnull⑤`first30DaysOperatingPolicy`が配列、の5件FAILが判明し、**Stability Hotfix**（Code commit **936cd77**）でLeader Final Promptの出力安定化（KPI5=number明示・`first30DaysOperatingPolicy`=string明示・サンプルJSON型仕様整合・出力前チェックリスト・JSON括弧を最後まで閉じる契約。`max_output_tokens`は8192のまま変更なし）と、決定論的JSON Recovery（`IADP_MAX_SYNTHETIC_CLOSERS=2`・末尾閉じ括弧不足のみ限定補修・内容の発明/推測は禁止・補修結果を監査保持・parse失敗時は`json_parse_failed`診断でinvalid再生成導線へ接続）、finalProfile/adoptionDecision誤配置救済（正位置優先・adoptedCandidateIdを発明しない・総合点1位を自動採用しない・`misplaced_final_profile`／`misplaced_adoption_decision`警告を記録）を追加した。
+
+**決定（正式）**：上記3工程（Post-Release Hotfix・Hotfix-Quality・Stability Hotfix）を実AI再検証PASSをもって現行仕様のまま正式採用する。新規機能・新規Prompt方針・schema変更は伴わない。
+
+**実AI最終再検証（専用新規テスト案件`case-msoplrg6gdkr`・費用¥52.62／上限¥100以内）**：前回FAILの5件すべて解消を確認した。
+- JSON：`validation.valid=true`／`json_parse_failed`なし／synthetic closer recovery不発動（Leader自身が正常JSONを生成し、Recoveryへ依存しなかった）
+- finalProfile：`package.finalProfile`正位置。誤配置なし
+- adoptionDecision：`intelligence.adoptionDecision`正位置。`misplaced_adoption_decision`警告なし
+- KPI5：全項目number型で生成（実測：保存率15／プロフィール遷移8／フォロー率3／CTR4／CVR5）。EvidenceのないKPI初期値は`generated_hypothesis`として扱いFactにしない
+- `first30DaysOperatingPolicy`：string型（Week1〜Week4の週単位方針）
+- `adoptedCandidateId`あり・`decisionRationale`／`rejectedCandidates`／`heldCandidates`理由明示・採用案とfinalProfileジャンル一致・IADPカード表示と一致
+- Reviewer Passed／Strategy Accepted／Quality Gate Passed／User Approval Pending（自動承認なし）
+- Output Draft汚染なし（slides/caption/CTA等に生JSON混入なし）・F5復元一致・Cross-case独立性維持（実案件3件・既存テスト案件2件をバイト単位で無傷確認）・Console Error 0・dev-check 200/200/200
+
+**Readinessについて**：今回の結果はAccount Creation = **Not Ready**（Evidence Insufficient：確認済み0件・AI仮説9件）。これはFAILではなく、構造充足100点でもEvidence不足ならReadyへ進めない既存設計（Decision097 Ready正式条件）が正常に機能した結果であり、Decision097の判定契約は変更していない。
+
+**実AI dispatch回数の正確な記録**：実AI dispatchは2回発生した。1回目はAuto Task自動開始OFFのままLeaderへ送信したためLeaderチャット応答のみで終了し、AI社員Workflowは実行されていない（費用約¥4.9）。Auto Task自動開始を検証目的で一時ONにして再送した2回目で、Researcher→Analyst→Branding→SNS→Reviewer→Strategy→Leader Finalまで完走した。**成果物を生成した完全なAI社員Workflow実行は1回のみ**。1回目のdispatchで`case-msoplrg6gdkr`配下にpending Task 12件が生成されたが、DB直接削除は禁止のためKnown Test Dataとして残置する（実運用への影響なし・実案件への書き込み0件）。
+
+**総合点1位自動採用について**：今回の実AIでは採用案（cand-1）が結果的に総合点1位（83点）とも一致したため、本検証1回だけでは「総合点1位以外を採用する実AI経路」を実地確認したものではない。ただし`adoptionDecision`をSSOTとする設計・`decisionRationale`／`rejected`／`held`理由の存在・総合点1位自動採用禁止の契約・既存合成回帰テストPASSは確認済みであり、この点を誇張せず記録する。
+
+**実案件保護**：過去引継ぎ記録にある実案件4件のうち、今回実測できたのは3件（`case-msnarlxcjd13`／`case-mslvxioehypa`／`case-mshmumd8l93j`）。3件ともBefore/Afterでバイト単位一致・書き込みなし。過去引継ぎの「4件」表記は今回の実測と異なることを正確に記録する。
+
+**軽微な残課題（今回のリリースを妨げない）**：KPI改善条件に「改善トリガー」「AI会社の改善アクション」は生成されるが、判定期間（何日・何投稿で判定するか）の記述が弱い。追加Hotfix・追加実AI実行は今回行わず、将来の品質改善候補としてのみ記録する。
+
+**変更ファイル**：`index.html`／`openaiClient.js`／`shared/instagramAccountDesign.js`／`shared/instagramAccountDesignQuality.js`／`shared/agentResultNormalizer.js`。**`server.js`／DB／`supabase/schema.sql`／API契約は全工程で無変更・新規API/新規DBカラム/新Engineなし**。
+
+**Version/Phase**：Version1 Final Complete／Version1.1 Connected AI Company 開発中（変更なし）。Phase54 Complete維持・Phase55未着手（変更なし）。
+
+**Git**：Code commit **585360c**（Post-Release Hotfix）／**4b92f0d**（Hotfix-Quality）／**936cd77**（Stability Hotfix）。docs commit・Annotated Tag・Pushは本Decision記録後に別途実施する。
+
+---
+
 # Decision 098
 ## Instagram Account Design Self-Completion / AI Action Rerun 正式採用（Phase IG-2J-A〜I統合・正式リリース）（2026-08-10）
 

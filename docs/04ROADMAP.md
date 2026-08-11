@@ -8,6 +8,20 @@
 
 ---
 
+## IADP Post-Release Hotfix / Hotfix-Quality / Stability Hotfix（正式リリース・2026-08-11・Decision 099）
+
+> 追記日: 2026-08-11。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/agentResultNormalizer.js**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。
+
+- **背景**：Decision098（IG-2J-A〜I）後の実運用確認で、IADP生成物に構造・品質面の不備が判明した。
+- **Post-Release Hotfix**（Code commit `585360c`）＝Leader Final構造安定化・SSOT維持・IADP保存/表示・Output Draft生JSON汚染防止・F5復元・Cross-case独立性・User Approval pending維持・AI Action/User Input境界維持。
+- **Hotfix-Quality**（Code commit `4b92f0d`）＝顔出しなし・本人音声なし方針／KPI5項目／KPI改善条件／6リスク／リスク回避策／`first30DaysOperatingPolicy`／Reviewer指摘のLeader自律補完を強化。専用テスト案件での実AI再検証で①JSON末尾括弧不足②finalProfile誤配置③adoptionDecision誤配置④KPI5がnull⑤`first30DaysOperatingPolicy`が配列、の5件FAILが判明。
+- **Stability Hotfix**（Code commit `936cd77`）＝Leader Final Prompt出力安定化＋決定論的JSON Recovery（`IADP_MAX_SYNTHETIC_CLOSERS=2`）＋finalProfile/adoptionDecision誤配置救済で上記5件を解消。
+- **実AI最終再検証**：専用新規テスト案件`case-msoplrg6gdkr`（費用¥52.62・上限¥100以内）で前回FAILの5件すべて解消。Reviewer Passed／Strategy Accepted／Quality Gate Passed／User Approval Pending／Output Draft汚染なし／F5復元一致／Cross-case独立性維持（実案件3件・既存テスト案件2件無傷）／Console Error 0／dev-check 200/200/200。結果はAccount Creation = Not Ready（Evidence Insufficient）＝Decision097 Ready正式条件が正常機能した結果でFAILではない。
+- **正直な記録**：実AI dispatchは2回発生し、成果物を生成した完全なAI社員Workflow実行は1回のみ（詳細はDecision099参照）。総合点1位自動採用禁止契約は今回のサンプルでは1位=採用案が一致したため実地未確認だが、契約・回帰テストは維持。
+- 次工程 ＝ **Instagram実運用準備／実運用開始**（Decision098時点から変更なし）。
+
+---
+
 ## Instagram Account Design Self-Completion / AI Action Rerun（Phase IG-2J-A〜I統合・正式リリース・2026-08-10・Decision 098）
 
 > 追記日: 2026-08-10。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/iadpIntelligenceContext.js（新規）／shared/agentResultNormalizer.js（新規）**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。

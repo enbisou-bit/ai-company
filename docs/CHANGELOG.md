@@ -4,6 +4,19 @@
 
 ---
 
+## IADP Post-Release Hotfix / Hotfix-Quality / Stability Hotfix **正式リリース**（2026-08-11・Decision099）
+
+Decision098（IG-2J-A〜I）後の実運用確認で、IADP生成物に構造・品質面の不備が判明した。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/agentResultNormalizer.js**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。
+
+- **Post-Release Hotfix**（Code commit **585360c**）＝Leader Final構造安定化・`adoptionDecision`/`adoptedCandidateId`のSSOT維持・Final Profile統合・IADP保存/表示・Output Draft生JSON汚染防止・invalid時安全案内・F5復元・Cross-case独立性・User Approval pending維持・AI Action/User Input境界維持。
+- **Hotfix-Quality**（Code commit **4b92f0d**）＝AI会社自身が決定できる運用設計項目（顔出しなし・本人音声なし方針／KPI5項目／KPI改善条件／6リスク／リスク回避策／`first30DaysOperatingPolicy`／Reviewer指摘のLeader自律補完）を未完成のままユーザーへ返さないよう強化。専用テスト案件`case-msolp1yuv5rq`での実AI再検証で①JSON末尾`}`不足②finalProfile誤配置③adoptionDecision誤配置④KPI5がnull⑤`first30DaysOperatingPolicy`が配列、の5件FAILが判明。
+- **Stability Hotfix**（Code commit **936cd77**）＝Leader Final Prompt出力安定化（KPI5=number明示・`first30DaysOperatingPolicy`=string明示・サンプルJSON型仕様整合・出力前チェックリスト・JSON括弧を最後まで閉じる契約。`max_output_tokens`は8192のまま変更なし）＋決定論的JSON Recovery（`IADP_MAX_SYNTHETIC_CLOSERS=2`・末尾閉じ括弧不足のみ限定補修・内容の発明/推測は禁止・補修結果を監査保持・parse失敗時は`json_parse_failed`診断でinvalid再生成導線へ接続）＋finalProfile/adoptionDecision誤配置救済（正位置優先・adoptedCandidateIdを発明しない・総合点1位を自動採用しない）。
+- **実AI最終再検証**＝専用新規テスト案件`case-msoplrg6gdkr`（費用**¥52.62**・上限¥100以内）で前回FAILの5件すべて解消を確認。JSON parse成功・synthetic closer recovery不発動／finalProfile・adoptionDecisionとも正位置／KPI5全項目number型／`first30DaysOperatingPolicy`がstring型／Reviewer Passed・Strategy Accepted・Quality Gate Passed・User Approval Pending／Output Draft汚染なし・F5復元一致・Cross-case独立性維持（実案件3件・既存テスト案件2件をバイト単位で無傷確認）・Console Error 0・dev-check 200/200/200。**結果はAccount Creation = Not Ready（Evidence Insufficient）＝Decision097 Ready正式条件が正常に機能した結果でありFAILではない**。
+- 実AI dispatchは2回発生（1回目はAuto Task自動開始OFFでLeaderチャット応答のみ・AI社員Workflow未実行。2回目でAuto Task一時ONにより全工程完走）し、**成果物を生成した完全なAI社員Workflow実行は1回のみ**。1回目dispatchの残置pending Task 12件はDB直接削除禁止のためKnown Test Dataとして残置。過去引継ぎの実案件「4件」表記は今回実測3件（無傷）と異なることを記録。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。詳細は docs/04DECISIONS.md Decision099参照。
+
+---
+
 ## Phase IG-2J-A〜I Instagram Account Design Self-Completion / AI Action Rerun **正式リリース**（2026-08-10）
 
 **IADPを「AI会社自身が不足を判定し、必要なAI社員を再実行し、Leader Finalを再生成して再評価できる」状態まで到達させた**（Decision098）。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/iadpIntelligenceContext.js（新規）／shared/agentResultNormalizer.js（新規）**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。**Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**。
