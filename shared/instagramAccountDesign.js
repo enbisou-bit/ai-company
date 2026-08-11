@@ -487,6 +487,25 @@
         adaptation = { misplacedFinalProfile: true, resolution: 'top_level_preferred' };
       }
 
+      // ── Stability Hotfix: adoptionDecision の誤階層も同じ原則で吸収する ──
+      //   実運用でLeaderが adoptionDecision を candidateComparison の中へ入れて出力する事象が発生した。
+      //   finalProfileの誤位置救済と同一クラス（同一JSON内の誤った階層を契約上の位置へ移すだけ）であり、
+      //   内容は一切変更しない。正しい位置に存在する場合は必ずそちらを優先する。
+      //   ★ここで adoptedCandidateId を発明・補完することは絶対にしない（欠損はinvalidのまま）。
+      var adoptionSrc = intelligenceSrc.adoptionDecision;
+      var misplacedAD = isPlainObject(intelligenceSrc.candidateComparison)
+        ? intelligenceSrc.candidateComparison.adoptionDecision : null;
+      if (!isPlainObject(adoptionSrc) && isPlainObject(misplacedAD)) {
+        adoptionSrc = misplacedAD;
+        adaptation = adaptation || {};
+        adaptation.misplacedAdoptionDecision = true;
+        adaptation.adoptionResolution = 'adopted_from_candidate_comparison';
+      } else if (isPlainObject(adoptionSrc) && isPlainObject(misplacedAD)) {
+        adaptation = adaptation || {};
+        adaptation.misplacedAdoptionDecision = true;
+        adaptation.adoptionResolution = 'top_level_preferred';
+      }
+
       var pkg = {
         version: CORE_VERSION,
         packageId: packageId,
@@ -499,7 +518,7 @@
           competitorResearch: normalizeCompetitorResearch(intelligenceSrc.competitorResearch),
           aspProductResearch: normalizeAspProductResearch(intelligenceSrc.aspProductResearch),
           candidateComparison: normalizeCandidateComparison(intelligenceSrc.candidateComparison),
-          adoptionDecision: normalizeAdoptionDecision(intelligenceSrc.adoptionDecision),
+          adoptionDecision: normalizeAdoptionDecision(adoptionSrc),
         },
         finalProfile: normalizeFinalProfile(finalProfileSrc),
         fieldStatus: normalizeFieldStatusMap(src.fieldStatus),
@@ -613,6 +632,14 @@
           message: pkg.structureAdaptation.resolution === 'top_level_preferred'
             ? 'finalProfile が intelligence 配下にも存在します。契約どおりトップレベルを採用し、誤位置側は使用していません。'
             : 'finalProfile が intelligence 配下へ誤配置されていたため、契約上のトップレベルへ移して正規化しました（内容は変更していません）。',
+        });
+      }
+      if (isPlainObject(pkg.structureAdaptation) && pkg.structureAdaptation.misplacedAdoptionDecision) {
+        warnings.push({
+          code: 'misplaced_adoption_decision',
+          message: pkg.structureAdaptation.adoptionResolution === 'top_level_preferred'
+            ? 'adoptionDecision が candidateComparison 配下にも存在します。契約どおり intelligence 直下を採用し、誤位置側は使用していません。'
+            : 'adoptionDecision が candidateComparison 配下へ誤配置されていたため、契約上の intelligence 直下へ移して正規化しました（採用IDを含め内容は変更していません）。',
         });
       }
 

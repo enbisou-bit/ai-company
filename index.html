@@ -13890,6 +13890,8 @@ var IADP_INVALID_ERROR_LABELS = {
   missing_case_id: '案件IDが未設定',
   missing_intelligence: 'intelligenceブロックが欠落',
   missing_adoption_decision: '採用判断ブロックが欠落',
+  // Stability Hotfix: JSON自体が読み取れなかったケース
+  json_parse_failed: '設計データのJSON構文が壊れていた（末尾括弧の自動補修でも復旧できず）',
 };
 
 function _iadpBuildInvalidCardHtml(diag) {
@@ -14513,6 +14515,73 @@ function buildAccountIntelligenceTasks(userMessage, intelligenceContext, caseId)
 //   ・JSONが壊れていても例外を投げない（found:trueでjson:nullを返す＝Leader自由文章は失われない）
 //   ・Leader自身の最終出力のみを対象とし、AI社員の生テキストは対象にしない（Prompt Injection耐性。
 //     eval等は使用せずJSON.parseのみで構造化するため、抽出結果はIADP Coreの正規化・検証を必ず経由する）
+// ══════════════════════════════════════════════════════════════
+// Stability Hotfix: IADP JSONの「末尾の閉じ括弧だけが不足している」ケースの厳格な補修。
+//
+//   採用条件（すべて満たす場合のみ補修する）:
+//     ① 先頭が「{」で始まる
+//     ② 文字列がすべて終端している（未終端文字列があれば中止）
+//     ③ エスケープが途中で切れていない
+//     ④ 引用符の外側だけで括弧の対応をスタックとして解析できる
+//     ⑤ 不足が「末尾へ閉じ括弧を積むだけ」で説明できる
+//     ⑥ 補完数が MAX_SYNTHETIC_CLOSERS 以内
+//     ⑦ 補修後のJSON.parseが1回で成功する
+//
+//   禁止（内容の発明はしない）:
+//     キー補完／値補完／カンマ挿入／引用符補完／プロパティ削除／
+//     adoptionDecision生成／KPI生成／finalProfile内容補正／再帰的な汎用JSON repair。
+//
+//   ★補修は「JSONが読めるようにする」だけであり、成果物の完成を意味しない。
+//     adoptedCandidateId欠損等は補修後も通常どおり validate invalid となる（SSOT契約は不変）。
+// ══════════════════════════════════════════════════════════════
+var IADP_MAX_SYNTHETIC_CLOSERS = 2;
+
+function _iadpRepairTrailingClosers(inner) {
+  try {
+    var s = String(inner == null ? '' : inner);
+    var t = s.trim();
+    if (t.charAt(0) !== '{') return null;                       // ①オブジェクト以外は対象外
+
+    var stack = [];
+    var inStr = false, esc = false;
+    for (var i = 0; i < t.length; i++) {
+      var c = t.charAt(i);
+      if (esc) { esc = false; continue; }
+      if (c === '\\') { if (!inStr) return null; esc = true; continue; }  // 文字列外のバックスラッシュは異常
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;                                       // ④引用符の内側は数えない
+      if (c === '{' || c === '[') stack.push(c);
+      else if (c === '}' || c === ']') {
+        var open = stack.pop();
+        if (open === undefined) return null;                     // 閉じ過多＝末尾補修では説明できない
+        if ((c === '}' && open !== '{') || (c === ']' && open !== '[')) return null;  // 対応崩れ
+      }
+    }
+    if (inStr) return null;                                      // ②未終端文字列 → 補修禁止
+    if (esc) return null;                                        // ③エスケープ途中終了 → 補修禁止
+    if (stack.length === 0) return null;                         // 括弧不足ではない別の構文エラー
+    if (stack.length > IADP_MAX_SYNTHETIC_CLOSERS) return null;  // ⑥安全上限超え → 補修禁止
+
+    var closers = '';
+    for (var k = stack.length - 1; k >= 0; k--) closers += (stack[k] === '{' ? '}' : ']');
+    var repaired = t + closers;
+    var json = null;
+    try { json = JSON.parse(repaired); } catch (e) { return null; }   // ⑦1回で成功しなければ不成立
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+    return {
+      json: json,
+      recovery: {
+        recovered: true,
+        recoveryType: 'trailing_closer_completion',
+        appendedClosers: closers,
+        appendedCount: closers.length,
+        originalLength: s.length,
+        repairedLength: repaired.length,
+      },
+    };
+  } catch (e) { return null; }   // fail-open: 補修できなければ原文のまま失敗扱い
+}
+
 function extractIadpJsonFromLeaderText(text) {
   var OPEN = '<IADP_JSON>';
   var CLOSE = '</IADP_JSON>';
@@ -14544,7 +14613,17 @@ function extractIadpJsonFromLeaderText(text) {
         } catch (e2b) { parsed = null; }
       }
     }
-    return { found: true, json: parsed, raw: inner };
+    // ── Stability Hotfix: 末尾の閉じ括弧のみが不足しているケースの厳格な構造補修 ──
+    //   実運用でLeaderが巨大なJSONの最後の「}」を1個閉じ忘れる事象が発生したため。
+    //   **内容は一切発明しない**。末尾へ閉じ括弧を足す以外の変更は行わない。
+    //   キー補完・値補完・カンマ挿入・引用符補完・プロパティ削除・再帰的repairはすべて禁止。
+    //   1回のparseで成功しなければ補修は不成立として原文のまま失敗を返す。
+    var recovery = null;
+    if (parsed === null) {
+      var rep = _iadpRepairTrailingClosers(inner);
+      if (rep && rep.json !== null) { parsed = rep.json; recovery = rep.recovery; }
+    }
+    return { found: true, json: parsed, raw: inner, recovery: recovery };
   } catch (e) {
     return { found: false, json: null, raw: null }; // fail-open
   }
@@ -15316,6 +15395,11 @@ async function atRunWorkflow(options) {
             //   この時点で手元にあるがF5では失われるため、fields.iadp.generationContextへ保存して復元可能にする。
             try {
               _lastInstagramAccountDesignGenContext = _iadpBuildGenerationContext(data.results, data.leaderFinalResult);
+              // Stability Hotfix: JSON構造補修が発生した場合のみ監査情報を残す（既存構造は破壊しない）。
+              //   IADP schema本体は汚さず、生成時コンテキストの任意サブキーとして記録する。
+              if (_lastInstagramAccountDesignGenContext && _iadpExtract.recovery) {
+                _lastInstagramAccountDesignGenContext.parseRecovery = _iadpExtract.recovery;
+              }
             } catch (_iadpGenErr) {
               _lastInstagramAccountDesignGenContext = null; // fail-open（legacy扱い）
             }
@@ -15375,6 +15459,21 @@ async function atRunWorkflow(options) {
           }
         } else {
           console.warn('[IADP] no <IADP_JSON> block found or unparseable; Leader free-text response is preserved as-is.');
+          // Stability Hotfix: ブロックは出力されたがJSONとして解釈できなかった場合も
+          //   invalid診断を残し、「AI会社に再生成させる」導線を成立させる。
+          //   （従来はここでconsole.warnのみだったため、案内文だけ出て再生成導線が無い状態になっていた）
+          try {
+            if (_iadpExtract.found && _iadpExtract.json === null) {
+              _iadpInvalidDiagnostic = {
+                caseId: _atRunCaseId,
+                at: new Date().toISOString(),
+                errorCodes: ['json_parse_failed'],
+                rawLength: _iadpExtract.raw ? _iadpExtract.raw.length : 0,
+                candidateCount: 0,
+                structureAdaptation: null,
+              };
+            }
+          } catch (_pfErr) { _iadpInvalidDiagnostic = null; }
         }
       } catch (_iadpConnectErr) {
         console.warn('[IADP] core connection error (fail-open, existing Workflow unaffected):', _iadpConnectErr.message);
