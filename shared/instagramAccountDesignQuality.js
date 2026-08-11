@@ -179,10 +179,27 @@
     return { score: scoreCategory(results), results: results };
   }
 
+  // Quality Hotfix: 実運用開始に必要な「AI会社自身で埋められる」設計項目を必須化する。
+  //   ・KPI 5項目（保存率／プロフィール遷移率／フォロー率／CTR／CVR）の正式フィールド
+  //   ・6リスク（競合／案件終了＝収益化／市場縮小／広告規制／アルゴリズム変更／投稿ネタ不足＝継続性）
+  //   ・顔出しなし・本人音声なしの運用条件
+  //   ・30日運用方針
+  //   いずれも「値が存在するか」だけを決定論的に見る。数値の妥当性や意味的一致は判定しない
+  //   （ブランド名がジャンルに合うか等の意味判断はLeader/Reviewerの責務）。
+  var REQUIRED_KPI_FIELDS = ['saveRateTarget', 'profileVisitTarget', 'followRateTarget', 'ctrTarget', 'cvrTarget'];
+  var REQUIRED_RISK_FIELDS = ['competitionRisk', 'monetizationRisk', 'marketShrinkRisk', 'regulationRisk', 'platformAlgorithmRisk', 'continuityRisk'];
+  var KPI_LABELS_JA = { saveRateTarget: '保存率', profileVisitTarget: 'プロフィール遷移率', followRateTarget: 'フォロー率', ctrTarget: 'CTR', cvrTarget: 'CVR' };
+  var RISK_LABELS_JA = { competitionRisk: '競合', monetizationRisk: '案件終了', marketShrinkRisk: '市場縮小', regulationRisk: '広告規制', platformAlgorithmRisk: 'アルゴリズム変更', continuityRisk: '投稿ネタ不足' };
+  // KPIは数値（0も有効値）。null/undefined/空文字のみ未設定とみなす。
+  function isKpiSet(v) { return (typeof v === 'number' && isFinite(v)) || isNonEmptyString(v); }
+
   function evalMonetizationAndExecution(iadp) {
     var results = [];
     var m = (iadp.finalProfile && iadp.finalProfile.monetization) || {};
     var ex = (iadp.finalProfile && iadp.finalProfile.execution) || {};
+    var kpi = (iadp.finalProfile && iadp.finalProfile.kpi) || {};
+    var risk = (iadp.finalProfile && iadp.finalProfile.risk) || {};
+    var cs = (iadp.finalProfile && iadp.finalProfile.contentStrategy) || {};
     ['aspCandidates', 'productGenres'].forEach(function (f) {
       results.push({ path: 'finalProfile.monetization.' + f, filled: isNonEmptyArray(m[f]) });
     });
@@ -194,6 +211,16 @@
       results.push({ path: 'finalProfile.execution.' + f, filled: isNonEmptyArray(ex[f]) });
     });
     results.push({ path: 'finalProfile.execution.first30DaysOperatingPolicy', filled: isNonEmptyString(ex.first30DaysOperatingPolicy) });
+    // Quality Hotfix: 運用開始に必要な必須項目（AI会社自身で設計値を置ける範囲）
+    results.push({ path: 'finalProfile.contentStrategy.noFaceNoVoicePolicy', filled: isNonEmptyString(cs.noFaceNoVoicePolicy) });
+    REQUIRED_KPI_FIELDS.forEach(function (f) {
+      results.push({ path: 'finalProfile.kpi.' + f, filled: isKpiSet(kpi[f]) });
+    });
+    results.push({ path: 'finalProfile.kpi.improvementConditions', filled: isNonEmptyArray(kpi.improvementConditions) });
+    REQUIRED_RISK_FIELDS.forEach(function (f) {
+      results.push({ path: 'finalProfile.risk.' + f, filled: isNonEmptyString(risk[f]) });
+    });
+    results.push({ path: 'finalProfile.risk.avoidanceActions', filled: isNonEmptyArray(risk.avoidanceActions) });
     return { score: scoreCategory(results), results: results };
   }
 
@@ -604,6 +631,18 @@
       else if (finalProfileMismatch) missing.push('Final Profileが正式採用案「' + (adoptedLabel || '—') + '」と不一致');
       if (!adoptionUnresolved && adIn && adIn.comparisonRepairNeeded) missing.push('3案比較の採用表示が正式採用案と不一致');
       var baseMissing = Array.isArray(base.missingRequiredFields) ? base.missingRequiredFields : [];
+      // Quality Hotfix: 実運用に必要な必須項目の不足を、種別ごとに人が読める形で提示する
+      //   （AI会社自身で埋められる範囲＝ユーザーへの質問にはしない）。
+      var missKpi = baseMissing.filter(function (p) { return p.indexOf('finalProfile.kpi.') === 0; })
+        .map(function (p) { return KPI_LABELS_JA[p.split('.').pop()] || p.split('.').pop(); });
+      var missRisk = baseMissing.filter(function (p) { return p.indexOf('finalProfile.risk.') === 0; })
+        .map(function (p) { return RISK_LABELS_JA[p.split('.').pop()] || p.split('.').pop(); });
+      var missNoFace = baseMissing.indexOf('finalProfile.contentStrategy.noFaceNoVoicePolicy') !== -1;
+      var miss30d = baseMissing.indexOf('finalProfile.execution.first30DaysOperatingPolicy') !== -1;
+      if (missKpi.length > 0) missing.push('KPI目標が未設定（' + missKpi.join('・') + '）');
+      if (missRisk.length > 0) missing.push('リスク評価が未記載（' + missRisk.join('・') + '）');
+      if (missNoFace) missing.push('顔出しなし・本人音声なしの運用条件が未記載');
+      if (miss30d) missing.push('最初の30日間の運用方針が未記載');
       if (baseMissing.length > 0) missing.push('必須項目欠損 ' + baseMissing.length + '件');
       if (ext > 0) missing.push('外部確認待ち ' + ext + '件（ASP登録・審査等）');
 

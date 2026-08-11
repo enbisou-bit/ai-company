@@ -108,6 +108,10 @@
       mainGenre: '', contentPillars: [], postCategories: [], postRatio: {},
       postFrequency: '', postTimePolicy: '', carouselPolicy: '', reelPolicy: '',
       storyPolicy: '', trustBuildingPolicy: '',
+      // Quality Hotfix: 顔出しなし・本人音声なしを正式な運用条件として記録する。
+      //   ユーザー依頼で明示される確定条件であり、AI仮説として扱わない。
+      //   既存フィールドでは表現できないため追加（旧データはmergeWithDefaultsで空文字＝後方互換）。
+      noFaceNoVoicePolicy: '',
     },
     monetization: {
       aspCandidates: [], productGenres: [], productSelectionPolicy: '',
@@ -121,6 +125,11 @@
     risk: {
       competitionRisk: '', regulationRisk: '', credibilityRisk: '',
       continuityRisk: '', monetizationRisk: '', avoidanceActions: [],
+      // Quality Hotfix: 正式IADPで必須とする6リスクのうち、既存フィールドで表現できない2種を追加。
+      //   競合＝competitionRisk／案件終了＝monetizationRisk／広告規制＝regulationRisk／
+      //   投稿ネタ不足＝continuityRisk は既存で表現可能。以下2種のみ追加（旧データは空文字＝後方互換）。
+      marketShrinkRisk: '',        // 市場縮小リスク
+      platformAlgorithmRisk: '',   // Instagramアルゴリズム変更リスク
     },
     execution: {
       accountCreationChecklist: [], aspRegistrationChecklist: [],
