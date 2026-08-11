@@ -9741,14 +9741,43 @@ function safeLeaderReply(memberId, replyText) {
   var cleaned = safeJsonReply(replyText);
   return _iadpStripJsonBlock(cleaned);
 }
+// Leader Final本文から <IADP_JSON> ブロックのみを取り除く（純粋な文字列処理）。
+//   Hotfix（IG-2J Post-Release）: 通常Output Draft解析側からも再利用するため、
+//   案内文の生成とブロック除去を分離した（本関数は除去だけを行う）。
+function _iadpRemoveJsonBlock(text) {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/```json\s*<IADP_JSON>[\s\S]*?<\/IADP_JSON>\s*```/g, '')
+    .replace(/<IADP_JSON>[\s\S]*?<\/IADP_JSON>/g, '')
+    .trim();
+}
+
+// Hotfix（IG-2J Post-Release）: IADPカードが実際に描画可能な状態かを判定する。
+//   従来は「<IADP_JSON>が存在する」だけで「カードをご確認ください」と案内していたため、
+//   validate失敗でカードが存在しない場合でも案内文だけが表示される事象が発生した。
+function _iadpCardRenderable() {
+  try {
+    if (!_lastInstagramAccountDesignPackage) return false;
+    if (!(_lastInstagramAccountDesignValidation && _lastInstagramAccountDesignValidation.valid)) return false;
+    if (!_lastInstagramAccountDesignCaseId) return false;
+    var cur = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+    if (cur && cur !== _lastInstagramAccountDesignCaseId) return false;
+    return true;
+  } catch (e) { return false; }
+}
+
 function _iadpStripJsonBlock(text) {
   if (typeof text !== 'string') return text;
   var hadIadpBlock = text.indexOf('<IADP_JSON>') !== -1;
-  var stripped = text.replace(/<IADP_JSON>[\s\S]*?<\/IADP_JSON>/g, '').replace(/```json\s*<IADP_JSON>[\s\S]*?<\/IADP_JSON>\s*```/g, '').trim();
-  // Leaderが構造化ブロックのみを出力し自由文章を省略した場合、チャット吹き出しが空になるのを防ぐ
-  // （IADPカード側に全内容が表示されるため、Fail-open的な短い案内文のみを表示する・追加のみ）
+  var stripped = _iadpRemoveJsonBlock(text);
+  // Leaderが構造化ブロックのみを出力し自由文章を省略した場合、チャット吹き出しが空になるのを防ぐ。
+  //   Hotfix: 実際にカードを描画できるときだけ「カードをご確認ください」と案内する。
+  //   描画できない場合は、存在しないカードへ誘導せず実態を伝える（技術詳細は出しすぎない）。
   if (!stripped && hadIadpBlock) {
-    return 'Instagramアカウント設計の詳細は、下記のIADPカードをご確認ください。';
+    if (_iadpCardRenderable()) {
+      return 'Instagramアカウント設計の詳細は、下記のIADPカードをご確認ください。';
+    }
+    return 'Instagramアカウント設計データを生成しましたが、正式採用案の確定に失敗したためIADPカードを作成できませんでした。AI会社側での再生成が必要です。';
   }
   return stripped;
 }
@@ -10609,6 +10638,8 @@ function reRenderChatArea(m) {
   // Phase B-3: Executive Leader Report（Leaderチャットのみ・表示専用・Output制御なし・追加のみ）
   if (m.id === 'leader' && typeof _elrRenderIntoChatArea === 'function') { _elrRenderIntoChatArea(chat); }
   if (m.id === 'leader' && typeof _iadpRenderIntoChatArea === 'function') { _iadpRenderIntoChatArea(chat); }
+  // Hotfix（IG-2J Post-Release）: 正式IADPが出せない場合のみ、invalid診断カード＋再生成導線を表示する
+  if (m.id === 'leader' && typeof _iadpRenderInvalidIntoChatArea === 'function') { _iadpRenderInvalidIntoChatArea(chat); }
   const filtered = getFilteredHistory(m.id);
   if (filtered.length === 0) {
     addBubble('ai', `${m.role}として対応します。ご相談をどうぞ。`, m, false);
@@ -12801,6 +12832,10 @@ let _lastInstagramAccountDesignApproval = null;
 //   packageId・caseIdを刻んだsnapshotを保存し、復元時はpackageId一致検証のうえ再利用する。
 //   packageId不一致（新IADP）の場合は使用しない＝旧評価を新IADPへ流用しない。
 let _lastInstagramAccountDesignAssessmentCtx = null;
+// Hotfix（IG-2J Post-Release）: IADPが契約違反でinvalidになった際の診断状態。
+//   クライアント一時メモリのみ（F5で消失・DB保存なし・新API/新DBカラムなし）。
+//   正式Packageの代替ではなく、「AI会社に再生成させる」導線を成立させるためだけに使う。
+let _iadpInvalidDiagnostic = null;
 // Phase IG-2J-E: 直近のIADP実行で4担当へ注入したIntelligence Contextのビルド結果（読み取り専用の記録）。
 //   Context本体はIADPへ保存せず、参照元メタデータ（intelligenceSources）のみを生成するために使用する。
 let _lastIadpIntelligenceContext = null;
@@ -13385,6 +13420,8 @@ function _iadpApplyRestoredFields(fields, fallbackCaseId) {
       var _asSnap = iadp.assessmentContext || null;
       var _pkgIdForSnap = iadp.package && iadp.package.packageId;
       _lastInstagramAccountDesignAssessmentCtx = (_asSnap && _pkgIdForSnap && _asSnap.packageId === _pkgIdForSnap) ? _asSnap : null;
+      // Hotfix: 正式IADPを復元できた案件では invalid診断を残さない
+      _iadpInvalidDiagnostic = null;
     } else {
       _lastInstagramAccountDesignPackage    = null;
       _lastInstagramAccountDesignValidation = null;
@@ -13393,6 +13430,8 @@ function _iadpApplyRestoredFields(fields, fallbackCaseId) {
       _lastInstagramAccountDesignGenContext = null;
       _lastInstagramAccountDesignApproval   = null;
       _lastInstagramAccountDesignAssessmentCtx = null;
+      // Hotfix: 案件切替・IADP未保存案件では invalid診断も持ち越さない（Cross-case漏れ防止）
+      if (_iadpInvalidDiagnostic && _iadpInvalidDiagnostic.caseId !== (fallbackCaseId || null)) _iadpInvalidDiagnostic = null;
     }
     if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
   } catch (_iadpApplyErr) {
@@ -13833,6 +13872,125 @@ function _iadpRefreshAfterIntegration(caseId) {
     if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
   } catch (_refreshErr) {
     console.warn('[IADP] post-integration refresh error (fail-open):', _refreshErr.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// Hotfix（IG-2J Post-Release）: IADPが契約違反でinvalidになった場合の表示と再生成導線。
+//   ・存在しないIADPカードへ誘導しない（Hotfix-7と対）。
+//   ・Quality Gateは通常Output Draftの評価であり、IADP完成の根拠ではないことを明示（Hotfix-12）。
+//   ・正式Packageとして保存はせず、再生成導線だけを成立させる（Hotfix-8）。
+// ══════════════════════════════════════════════════════════════
+var IADP_INVALID_ERROR_LABELS = {
+  missing_adopted_candidate_id: '正式採用案（adoptedCandidateId）が未確定',
+  adopted_candidate_id_not_found: '正式採用案IDが3案比較に存在しない',
+  insufficient_candidates: '比較候補が3件に満たない',
+  missing_final_profile: 'Final Profileが生成されていない',
+  missing_final_profile_section: 'Final Profileの一部セクションが欠落',
+  missing_case_id: '案件IDが未設定',
+  missing_intelligence: 'intelligenceブロックが欠落',
+  missing_adoption_decision: '採用判断ブロックが欠落',
+};
+
+function _iadpBuildInvalidCardHtml(diag) {
+  var esc = escapeHtml;
+  var codes = (diag && Array.isArray(diag.errorCodes)) ? diag.errorCodes : [];
+  var h = '<div class="lfs-card" id="iadp-invalid-display">';
+  h += '<div class="lfs-title">⚠ Instagramアカウント設計：未完成</div>';
+  h += '<div class="lfs-verdict iadp-status-insufficient">⛔ IADP未生成（正式採用案が未確定）</div>';
+  h += '<div class="lfs-verdict-sub">設計データは生成されましたが、会社としての正式採用案が確定していないため成果物として保存していません。</div>';
+  h += '<div class="lfs-block"><div class="lfs-block-title">確定できなかった理由</div><ul class="lfs-list">';
+  if (codes.length === 0) h += '<li>' + esc('契約検証に失敗しました') + '</li>';
+  codes.slice(0, 4).forEach(function (c) {
+    h += '<li>' + esc(IADP_INVALID_ERROR_LABELS[c] || c) + '</li>';
+  });
+  h += '</ul></div>';
+  // Hotfix-12: Quality Gate の責務を明示（IADP完成の根拠として誤読させない）
+  h += '<div class="lfs-block"><div class="lfs-block-title">判定の内訳</div><div class="lfs-grid">';
+  h += '<div class="lfs-row"><span class="lfs-k">IADP</span><span class="lfs-v iadp-status-insufficient">Invalid / 未保存</span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">Quality Gate</span><span class="lfs-v">通常Output Draftの評価 <span class="lfs-sub">（IADPの完成度ではありません）</span></span></div>';
+  h += '<div class="lfs-row"><span class="lfs-k">実運用可否</span><span class="lfs-v iadp-status-insufficient">⛔ Not Ready</span></div>';
+  h += '</div></div>';
+  h += '<div class="lfs-block"><div class="lfs-block-title lfs-ai-title">▶ AI会社が自律的に行うこと</div><ul class="lfs-list">';
+  h += '<li>' + esc('正式採用案を1つ確定し、その候補に整合したFinal Profileを再生成する') + '</li>';
+  h += '</ul>';
+  h += '<div class="lfs-rerun">';
+  h += '<button class="lfs-rerun-btn" id="iadp-regen-btn" onclick="_iadpStartInvalidRegeneration()">▶ AI会社に再生成させる</button>';
+  h += '<div class="lfs-ai-note">※ 実際のAI APIを使用します。開始前に内容を確認できます。自動では実行されません。</div>';
+  h += '</div></div>';
+  h += '<div class="lfs-block lfs-userinput"><div class="lfs-block-title lfs-user-title">▶ あなたの判断が必要なこと</div>';
+  h += '<div class="lfs-none">現在ありません（AI会社側で対応を進めます）</div></div>';
+  h += '</div>';
+  return h;
+}
+
+// invalid診断カードをチャットへ描画する（Cross-case guard・重複防止・fail-open）。
+function _iadpRenderInvalidIntoChatArea(chatEl) {
+  try {
+    if (!chatEl || !_iadpInvalidDiagnostic || !_iadpInvalidDiagnostic.caseId) return;
+    if (_iadpCardRenderable()) return;                       // 正式カードが出せるなら不要
+    var cur = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+    if (!cur || cur !== _iadpInvalidDiagnostic.caseId) return;   // 別案件では描画しない
+    if (chatEl.querySelector('#iadp-invalid-display')) return;   // 重複防止
+    var wrap = document.createElement('div');
+    wrap.innerHTML = _iadpBuildInvalidCardHtml(_iadpInvalidDiagnostic);
+    if (wrap.firstChild) chatEl.insertBefore(wrap.firstChild, chatEl.firstChild);
+  } catch (e) {
+    console.warn('[IADP] invalid card render error (fail-open):', e.message);
+  }
+}
+
+// Hotfix-8: invalid IADPからの再生成（ユーザーが1回開始する方式・自動起動しない）。
+//   既存Auto Task経路（atRunWorkflow）とIG-2J-Hのguardをそのまま再利用する。
+async function _iadpStartInvalidRegeneration() {
+  try {
+    if (_iadpRerunState.running) { console.warn('[IADP regen] 実行中のため二重起動しません'); return; }
+    var runBtn = document.getElementById('at-run-btn');
+    if (runBtn && runBtn.disabled) { alert('自動タスクを実行中です。完了後に再度お試しください。'); return; }
+    if (typeof billingLock !== 'undefined' && billingLock) { alert('課金ロック中のため再生成を開始できません。'); return; }
+    var diag = _iadpInvalidDiagnostic;
+    if (!diag || !diag.caseId) { alert('再生成対象の設計データがありません。'); return; }
+    var cur = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : diag.caseId;
+    if (cur && cur !== diag.caseId) { alert('案件が切り替わっています。対象案件を開き直してから実行してください。'); return; }
+    // 無限ループ防止（IG-2J-Hと同一のguardを共用）
+    var runs = _iadpRerunState.runsByCase[String(diag.caseId)] || 0;
+    if (runs >= IADP_RERUN_MAX_PER_CASE) { alert('この案件の自律再実行は上限（' + IADP_RERUN_MAX_PER_CASE + '回）に達しています。'); return; }
+
+    var userMessage = _iadpRerunUserMessage(diag.caseId);
+    var ic = (_lastOutputDraft && _lastOutputDraft.caseId === diag.caseId && _lastOutputDraft.fields)
+      ? _lastOutputDraft.fields.intelligenceContext : null;
+    // 構造契約違反はLeader Finalの再統合で解消する。既存の指示文ビルダーをそのまま再利用する。
+    var tasks = buildAccountIntelligenceTasks(userMessage, ic, diag.caseId);
+    if (!Array.isArray(tasks) || tasks.length === 0) { alert('再生成タスクを構成できませんでした。'); return; }
+
+    if (!window.confirm('AI会社が設計を再生成します。\n\n・正式採用案を1つ確定する\n・採用案に整合したFinal Profileを作り直す\n\n対象AI社員：Researcher / Analyst / Branding / SNS\n実行タスク数：' + tasks.length + '件（＋Reviewer・Strategy・Leader統合）\n\n※ 実際のAI APIを使用します。開始しますか？')) return;
+
+    _iadpRerunState.running = true;
+    _iadpRerunState.caseId = diag.caseId;
+    _iadpRerunState.generation = (_iadpRerunState.generation || 0) + 1;
+    _iadpRerunState.startedAt = new Date().toISOString();
+    _iadpRerunState.lastResult = null;
+    _iadpRerunState.runsByCase[String(diag.caseId)] = runs + 1;
+    var b = document.getElementById('iadp-regen-btn');
+    if (b) { b.disabled = true; b.textContent = '⏳ AI会社が再生成中…'; }
+    try {
+      await atRunWorkflow({
+        tasksOverride: tasks,
+        userMessageOverride: userMessage,
+        iadpRerun: { generation: _iadpRerunState.generation, codes: ['iadp.invalid_regeneration'], sourcePackageId: null },
+      });
+      _iadpRerunState.lastResult = 'completed';
+    } catch (runErr) {
+      _iadpRerunState.lastResult = 'failed';
+      console.warn('[IADP regen] 実行に失敗しました（安全側停止）:', runErr && runErr.message);
+    } finally {
+      _iadpRerunState.running = false;
+      if (b) { b.disabled = false; b.textContent = '▶ AI会社に再生成させる'; }
+      if (currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
+    }
+  } catch (e) {
+    _iadpRerunState.running = false;
+    console.warn('[IADP regen] error (fail-open):', e && e.message);
   }
 }
 
@@ -15137,6 +15295,8 @@ async function atRunWorkflow(options) {
           }
           var _iadpValidation = InstagramAccountDesign.validateAccountDesignPackage(_iadpNormalized);
           if (_iadpValidation.valid) {
+            // Hotfix: 正式Packageが成立したので invalid診断は破棄する
+            _iadpInvalidDiagnostic = null;
             // セッション内正本候補として保持（DB保存・F5復元は今回対象外）
             _lastInstagramAccountDesignPackage    = _iadpNormalized;
             _lastInstagramAccountDesignValidation = _iadpValidation;
@@ -15199,6 +15359,19 @@ async function atRunWorkflow(options) {
             // invalid時は既存正本候補を上書きしない。検証結果のみ開発用状態として記録する
             _lastInstagramAccountDesignValidation = _iadpValidation;
             console.warn('[IADP] validation failed, keeping existing canonical package if any:', _iadpValidation.errors);
+            // Hotfix（IG-2J Post-Release）: 契約違反で正式Packageにできなかった事実を
+            //   クライアント一時状態としてのみ保持し、AI会社側の再生成導線を成立させる。
+            //   ★正式Packageとしては保存しない（DB保存なし・新DBカラム/新APIなし）。
+            try {
+              _iadpInvalidDiagnostic = {
+                caseId: _atRunCaseId,
+                at: new Date().toISOString(),
+                errorCodes: (_iadpValidation.errors || []).map(function (e) { return e && e.code; }).filter(Boolean),
+                candidateCount: ((_iadpNormalized.intelligence || {}).candidateComparison || {}).candidates
+                  ? _iadpNormalized.intelligence.candidateComparison.candidates.length : 0,
+                structureAdaptation: _iadpNormalized.structureAdaptation || null,
+              };
+            } catch (_diagErr) { _iadpInvalidDiagnostic = null; }
           }
         } else {
           console.warn('[IADP] no <IADP_JSON> block found or unparseable; Leader free-text response is preserved as-is.');
@@ -15320,7 +15493,18 @@ async function atRunWorkflow(options) {
       }
       // Phase46-8: Output Draft + Compare Log を Path A でも記録する（既存内容・引数・POST回数は無変更）
       // Phase B-4B: opts.approvedDecisionPackageは受け渡し契約の追加のみ（本文・status・packageQualityへは未接続）。
-      try { buildOutputDraftFromLeaderFinal(data.leaderFinalResult.text, { noCompletedResults: data.leaderFinalResult.integratedCount === 0, approvedDecisionPackage: _edApprovedPackageForOutput }); } catch(_e) {}
+      // Hotfix（IG-2J Post-Release）: IADP JSONブロックを通常Output Draftのfields
+      //   （slides/caption/benefit/targetAudience/imagePrompts等）へ流入させない。
+      //   責務分離: IADP抽出は raw のまま（上流で実施済み）／Output Draft解析は除去後の本文。
+      //   IADP案件でない場合は元の文字列と完全に同一（既存動作は不変）。
+      var _odSourceText = data.leaderFinalResult.text;
+      try {
+        if (typeof _iadpRemoveJsonBlock === 'function' && String(_odSourceText || '').indexOf('<IADP_JSON>') !== -1) {
+          var _odStripped = _iadpRemoveJsonBlock(_odSourceText);
+          _odSourceText = _odStripped || '（Instagram Account Design Packageとして生成されたため、通常成果物の本文はありません）';
+        }
+      } catch (_odErr) { _odSourceText = data.leaderFinalResult.text; }
+      try { buildOutputDraftFromLeaderFinal(_odSourceText, { noCompletedResults: data.leaderFinalResult.integratedCount === 0, approvedDecisionPackage: _edApprovedPackageForOutput }); } catch(_e) {}
     }
 
     _atMarkComplete(); // ✅ 自動タスク完了 — ボタン状態を更新

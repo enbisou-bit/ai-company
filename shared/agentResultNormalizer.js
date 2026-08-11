@@ -44,11 +44,38 @@
   //   ``` だけの一般コードブロック（JS・SQL等）は絶対に除去しない。
   var FENCE_RE = /^```([A-Za-z0-9_+-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?```$/;
 
+  // 未閉じフェンス（開始 ```json はあるが閉じ ``` が無い）専用の救済。
+  //   実運用でReviewerがトークン上限等により閉じフェンスなしで返す事象が確認されたため、
+  //   「確実にreply wrapperと判定できる場合のみ」開始フェンスを除去する。
+  //   条件を厳格にし、一般Markdownコードブロックへは絶対に波及させない：
+  //     ①言語指定が json であること（``` のみ／js/sql等は対象外）
+  //     ②残りが { で始まること
+  //     ③残りに "reply" が含まれること
+  //   1つでも欠ければ null（原文維持）。
+  var UNCLOSED_FENCE_RE = /^```([A-Za-z0-9_+-]*)[ \t]*\r?\n([\s\S]*)$/;
+
+  function stripUnclosedJsonFence(text) {
+    try {
+      var t = String(text == null ? '' : text).trim();
+      if (t.indexOf('```') !== 0) return null;
+      // 閉じフェンスがある場合は通常の除去に任せる（ここでは扱わない）
+      if (t.slice(3).indexOf('```') !== -1) return null;
+      var m = t.match(UNCLOSED_FENCE_RE);
+      if (!m) return null;
+      if (String(m[1] || '').toLowerCase() !== 'json') return null;   // json指定のみ
+      var inner = String(m[2] || '');
+      var probe = inner.trim();
+      if (probe.charAt(0) !== '{') return null;                        // JSONオブジェクトの開始のみ
+      if (probe.indexOf('"reply"') === -1) return null;                // reply wrapperと確信できる場合のみ
+      return inner;
+    } catch (e) { return null; }
+  }
+
   function stripJsonFence(text) {
     try {
       var t = String(text == null ? '' : text).trim();
       var m = t.match(FENCE_RE);
-      if (!m) return null;
+      if (!m) return stripUnclosedJsonFence(t);   // 閉じフェンスなし → 厳格条件での救済を試す
       var lang = String(m[1] || '').toLowerCase();
       var inner = m[2];
       if (lang === 'json') return inner;                 // json指定 → 除去してよい
@@ -217,6 +244,7 @@
     hasMeaningfulAgentResult: hasMeaningfulAgentResult,
     // 単体検証用（内部関数の公開・呼び出し側では通常使用しない）
     stripJsonFence: stripJsonFence,
+    stripUnclosedJsonFence: stripUnclosedJsonFence,
     unwrapReplyOnce: unwrapReplyOnce,
   };
 });

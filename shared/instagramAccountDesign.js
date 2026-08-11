@@ -458,6 +458,26 @@
 
       var intelligenceSrc = isPlainObject(src.intelligence) ? src.intelligence : {};
 
+      // ── Hotfix（IG-2J Post-Release）: finalProfile の誤階層を安全に吸収する ──
+      //   実運用でLeaderが finalProfile を intelligence の中へネストして出力し、
+      //   トップレベルの finalProfile が空のまま正規化される事象が発生した。
+      //   これは「判断の発明」ではなく、同一JSON内の誤った階層を契約上の正しい位置へ
+      //   移し替えるだけの構造吸収であり、内容は一切変更しない。
+      //   ・トップレベルが存在する場合は必ずトップレベルを優先する（勝手な上書きをしない）
+      //   ・候補IDからfinalProfileを生成しない／mainGenre・brandName等を書き換えない
+      //   ・吸収した事実は structureAdaptation として監査用に残す（発生時のみ付与）
+      var finalProfileSrc = src.finalProfile;
+      var adaptation = null;
+      var hasTopLevelFP = isPlainObject(finalProfileSrc);
+      var hasMisplacedFP = isPlainObject(intelligenceSrc.finalProfile);
+      if (!hasTopLevelFP && hasMisplacedFP) {
+        finalProfileSrc = intelligenceSrc.finalProfile;
+        adaptation = { misplacedFinalProfile: true, resolution: 'adopted_from_intelligence' };
+      } else if (hasTopLevelFP && hasMisplacedFP) {
+        // 両方存在 → トップレベルを正とし、誤位置側は採用しない（監査対象として記録のみ）
+        adaptation = { misplacedFinalProfile: true, resolution: 'top_level_preferred' };
+      }
+
       var pkg = {
         version: CORE_VERSION,
         packageId: packageId,
@@ -472,10 +492,12 @@
           candidateComparison: normalizeCandidateComparison(intelligenceSrc.candidateComparison),
           adoptionDecision: normalizeAdoptionDecision(intelligenceSrc.adoptionDecision),
         },
-        finalProfile: normalizeFinalProfile(src.finalProfile),
+        finalProfile: normalizeFinalProfile(finalProfileSrc),
         fieldStatus: normalizeFieldStatusMap(src.fieldStatus),
         approval: normalizeApproval(src.approval),
       };
+      // 構造吸収が発生した場合のみ付与（既存パッケージの形は一切変えない）
+      if (adaptation) pkg.structureAdaptation = adaptation;
 
       // 既存Affiliate Intelligence（実データ）を読み取り専用で優先入力する。
       // 置換ではなく参照コピーであり、intelligenceContext自体は一切変更しない。
@@ -572,6 +594,17 @@
             message: 'ASP/product data requires external confirmation (e.g. ASP registration) before real operation.',
           });
         }
+      }
+
+      // Hotfix（IG-2J Post-Release）: 構造吸収が発生したことを監査用warningとして残す。
+      //   errors契約は一切変更しない（adoptedCandidateId必須はinvalidのまま維持する）。
+      if (isPlainObject(pkg.structureAdaptation) && pkg.structureAdaptation.misplacedFinalProfile) {
+        warnings.push({
+          code: 'misplaced_final_profile',
+          message: pkg.structureAdaptation.resolution === 'top_level_preferred'
+            ? 'finalProfile が intelligence 配下にも存在します。契約どおりトップレベルを採用し、誤位置側は使用していません。'
+            : 'finalProfile が intelligence 配下へ誤配置されていたため、契約上のトップレベルへ移して正規化しました（内容は変更していません）。',
+        });
       }
 
       if (!isPlainObject(pkg.finalProfile)) {
