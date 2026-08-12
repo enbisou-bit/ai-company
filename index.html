@@ -1660,12 +1660,57 @@
     flex-direction: column;
     gap: 14px;
     scroll-behavior: smooth;
+    /* UI Nav Hotfix: Firefoxでも掴みやすい太さへ（'thin'より太い唯一の選択肢='auto'） */
+    scrollbar-width: auto;
+    scrollbar-color: rgba(0,212,255,0.65) rgba(255,255,255,0.1);
   }
 
-  #chat-area::-webkit-scrollbar { width: 6px; }
-  #chat-area::-webkit-scrollbar-track { background: rgba(0,212,255,0.06); border-radius: 6px; }
-  #chat-area::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.5); border-radius: 6px; }
-  #chat-area::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.8); }
+  /* UI Nav Hotfix追加調整: Windows+Edge等でマウスドラッグしやすいよう14pxへ再拡幅。
+     thumbは枠なしのベタ塗りにしてクリック領域を実クリック幅いっぱい確保し、
+     trackとのコントラストも上げて位置を見つけやすくする。#chat-area以外は変更しない。 */
+  #chat-area::-webkit-scrollbar { width: 14px; }
+  #chat-area::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 7px; }
+  #chat-area::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.65); border-radius: 7px; }
+  #chat-area::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.95); }
+  #chat-area::-webkit-scrollbar-thumb:active { background: #00d4ff; }
+  /* 原因調査で判明: track/thumbのみ指定し ::-webkit-scrollbar-button を未指定のままだと、
+     Windows Chromium/Edgeは上下端に既定色（システムグレー）の矢印ボタンを自動描画する。
+     これがカスタム配色のバーと混在し「色が異なる細い一部分だけが反応する」ように見える主因のため、
+     明示的に無効化してバー全長をtrack/thumbのみで構成する（#chat-area以外は変更しない）。 */
+  #chat-area::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  #chat-area::-webkit-scrollbar-corner { background: transparent; }
+
+  /* ── UI Nav Hotfix: チャット上端/下端ジャンプ（表示専用・状態変更なし・追加のみ） ── */
+  #chat-scroll-nav {
+    position: fixed;
+    right: 18px;
+    bottom: 86px;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+  }
+  #chat-scroll-nav button {
+    pointer-events: auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,212,255,0.35);
+    background: rgba(16,24,48,0.85);
+    color: #00d4ff;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background 0.2s, transform 0.15s;
+  }
+  #chat-scroll-nav button:hover { background: rgba(0,212,255,0.22); }
+  #chat-scroll-nav button:active { transform: scale(0.92); }
+  @media (max-width: 768px) {
+    #chat-scroll-nav { right: 10px; bottom: calc(68px + env(safe-area-inset-bottom)); gap: 5px; }
+    #chat-scroll-nav button { width: 30px; height: 30px; font-size: 13px; }
+  }
 
   /* switch animation */
   #chat-area.switching {
@@ -4462,8 +4507,14 @@
     width: 0%;
   }
 
-  /* 知識パネル */
-  #knowledge-panel {
+  /* 知識パネル（顧客記憶パネル）
+     スクロールバー当たり判定 追加調査で判明: このIDが #knowledge-panel（ナレッジエンジン・別機能／
+     line ~2935・6715）と衝突しており、cascadeで本ブロックのtop/right/width等が後勝ちし、
+     ナレッジエンジン側のtransform:translateX(100%)による画面外退避と競合。結果としてナレッジエンジン
+     パネルの「閉」状態が画面外に完全に出ず、右端に幅約12pxの帯が常時残り、#chat-areaのスクロール
+     バー（右端約15px）の大半を覆ってpointer eventを奪っていた。IDを分離してこの衝突を解消する
+     （本パネル自身の表示/非表示ロジック・機能は無変更）。 */
+  #company-memory-panel {
     position: fixed;
     top: 60px; right: 12px;
     width: 380px;
@@ -4476,7 +4527,7 @@
     flex-direction: column;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   }
-  #knowledge-panel.hidden { display: none; }
+  #company-memory-panel.hidden { display: none; }
   #knowledge-panel-header {
     display: flex;
     justify-content: space-between;
@@ -7353,8 +7404,8 @@
     <span class="cs-item cs-knowledge" title="顧客数">👤 <span id="cs-customers">0</span>名</span>
   </div>
 
-  <!-- 顧客記憶パネル -->
-  <div id="knowledge-panel" class="hidden">
+  <!-- 顧客記憶パネル（スクロールバー当たり判定Hotfix: id="knowledge-panel"の衝突解消のためrename） -->
+  <div id="company-memory-panel" class="hidden">
     <div id="knowledge-panel-header">
       <span>🧠 会社記憶・顧客管理</span>
       <button onclick="toggleKnowledgePanel()">✕</button>
@@ -7402,6 +7453,11 @@
       <p>縁美創 AI COMPANY</p>
       <p style="font-size:11px">左のメンバーを選んで会話を始めてください</p>
     </div>
+  </div>
+  <!-- UI Nav Hotfix: チャット上端/下端ジャンプ（表示専用・#chat-areaを対象にスクロール） -->
+  <div id="chat-scroll-nav">
+    <button type="button" onclick="_chatScrollToTop()" title="チャット最上部へ">↑</button>
+    <button type="button" onclick="_chatScrollToBottom()" title="チャット最下部へ">↓</button>
   </div>
 
   <!-- Leader標準フロー テンプレートバー -->
@@ -11220,7 +11276,7 @@ function removeTyping() {
 let _kpCurrentTab = 'customers';
 
 function toggleKnowledgePanel() {
-  const panel = document.getElementById('knowledge-panel');
+  const panel = document.getElementById('company-memory-panel');
   if (panel.classList.contains('hidden')) {
     panel.classList.remove('hidden');
     loadKpTab(_kpCurrentTab);
@@ -13548,6 +13604,8 @@ function _iadpBuildCardHtml(pkg, quality) {
 
   var html = '<div class="iadp-card" id="iadp-card-display">';
   html += '<div class="iadp-card-title">📋 Instagram Account Design Package</div>';
+  // UI Nav Hotfix: 同一案件のLeader Final Summaryへ直接ジャンプ（表示専用・状態変更なし）
+  html += '<div class="iadp-btn-row" style="margin:0 0 10px;"><button type="button" class="iadp-copy-btn" onclick="_iadpJumpToLfs()">↓ Leader Final Summaryへ</button></div>';
 
   // ── Summary（重要判定を初期表示・文字でも状態を明示・色だけに依存しない） ──
   html += '<div class="iadp-summary">';
@@ -14227,6 +14285,8 @@ function _lfsBuildSummaryHtml(mo) {
 
   var h = '<div class="lfs-card" id="lfs-summary-display">';
   h += '<div class="lfs-title">🎯 Leader Final Summary</div>';
+  // UI Nav Hotfix: 同一案件のIADPカードへ直接戻る（既存 _lfsScrollToDetails() を再利用・表示専用）
+  h += '<div style="margin:0 0 8px;"><button type="button" class="lfs-detail-btn" onclick="_lfsScrollToDetails()">↑ Instagram Account Design Packageへ</button></div>';
 
   // 最終判断（最も大きく・一目で読める位置）
   h += '<div class="lfs-verdict ' + rdClass + '">' + rdLabel + '</div>';
@@ -14359,6 +14419,34 @@ function _lfsScrollToDetails() {
   try {
     var el = document.getElementById('iadp-card-display') || document.querySelector('.executive-leader-report');
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start' });
+  } catch (e) { /* スクロール失敗でもUIを止めない */ }
+}
+
+// ── UI Nav Hotfix: IADP⇄LFS直接ジャンプ／チャット上端・下端ジャンプ（表示専用・状態変更なし・追加のみ） ──
+// いずれもクリック時にIDをその場で検索するため、再描画・案件切替後も安全（固定DOM参照を持たない）。
+// #iadp-card-display / #lfs-summary-display は現在表示中の案件のみに存在する既存の一意ID契約
+//（_iadpRenderIntoChatArea / _lfsRenderIntoChatArea の Cross-case guard）にそのまま乗るため、
+// 別案件への誤ジャンプは発生しない。
+
+// IADPカード → 現在表示されているLeader Final Summaryへジャンプ。
+function _iadpJumpToLfs() {
+  try {
+    var el = document.getElementById('lfs-summary-display');
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'start' });
+  } catch (e) { /* スクロール失敗でもUIを止めない */ }
+}
+
+// チャット表示領域（#chat-area）自体の上端／下端へジャンプ（ページ全体ではなくチャット内スクロールのみ）。
+function _chatScrollToTop() {
+  try {
+    var chatEl = document.getElementById('chat-area');
+    if (chatEl && typeof chatEl.scrollTo === 'function') chatEl.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) { /* スクロール失敗でもUIを止めない */ }
+}
+function _chatScrollToBottom() {
+  try {
+    var chatEl = document.getElementById('chat-area');
+    if (chatEl && typeof chatEl.scrollTo === 'function') chatEl.scrollTo({ top: chatEl.scrollHeight, behavior: 'smooth' });
   } catch (e) { /* スクロール失敗でもUIを止めない */ }
 }
 
