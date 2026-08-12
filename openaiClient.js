@@ -4,6 +4,8 @@ const dotenv = require('dotenv');
 const { costTracker, addOpenAIUsage, calculateOpenAICost, USD_TO_JPY } = require('./costTracker');
 // Phase IG-2J-G: AI社員成果物の構造正規化（純関数のみ・副作用なし・DB/API非依存）
 const { normalizeAgentResult } = require('./shared/agentResultNormalizer');
+// EEA-2: External Evidence Acquisition Web Search Adapter（純関数のみ・APIキー非依存・request/response変換専用）
+const EvidenceAcquisition = require('./shared/evidenceAcquisition');
 // A-2-5: OpenAI料金イベントの Supabase 保存は lib/costDb.js 経由。
 //   require は遅延（persistOpenAICostEvent 内）で行う。トップレベルで require すると
 //   server.js の dotenv.config()（line 50）より前に supabase が初回ロードされ null 固定化して
@@ -14,6 +16,13 @@ dotenv.config({ path: '.env.local' });
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = 'gpt-4.1-nano';
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
+
+// EEA-2: External Evidence Acquisition専用モデル（既存OPENAI_MODELとは独立した別定数。
+//   既存AI社員（Leader/Researcher等）は引き続きOPENAI_MODELのまま・本定数の影響を受けない）。
+//   2026-08-12時点のOpenAI公式仕様でResponses API web_search対応が確認できているモデルを第一候補とする。
+//   将来別モデルへ切替える場合はこの1定数のみ変更すればよい。
+const EEA_WEB_SEARCH_MODEL = 'gpt-5.6-terra';
+const EEA_WEB_SEARCH_CONTEXT_SIZE = 'low';   // 初期値は必ずlow固定（high・mediumは使用しない）
 
 // ══════════════════════════════════════════════════════════════
 // AI社員プロフィール定義
@@ -1398,6 +1407,70 @@ async function callOpenAI(systemPrompt, userMessage, history = [], options = {})
   } catch (error) {
     console.error('OpenAI request failed:', error.response?.data || error.message);
     return null;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// EEA-2: External Evidence Acquisition 専用 Web Search呼び出し
+//
+//   既存 callOpenAI() とは完全に独立した経路（既存関数・既存OPENAI_MODEL・既存Prompt構築は無変更）。
+//   OPENAI_API_KEYを扱うのは本ファイル（server-only・ブラウザへは一切配信されない）のみ。
+//   request body構築・response解析・Evidence Candidate化は shared/evidenceAcquisition.js
+//   （APIキーを含まない純関数のみ）へ委譲する。
+//
+//   EEA-2時点では本関数はどこからも呼び出されない（Dead code）。
+//   Researcher / Auto Task / IADP等の既存実行経路への接続はEEA-3以降で行う。
+//   billingLockはブラウザ側の状態のため本関数（server-side）では判定しない。
+//   将来の接続時は、呼び出し元（ブラウザ側）で既存billingLock判定を本関数呼び出し前に置くこと。
+//
+//   fail-open: どのような異常（タイムアウト・HTTPエラー・不正response・0件）でも例外を投げず、
+//   { ok:false, ... } を返すのみ。既存Researcher等の呼び出し元を停止させない。
+// ══════════════════════════════════════════════════════════════
+async function callOpenAIWebSearch(query, options = {}) {
+  const fallback = {
+    ok: false, reason: null, query: (typeof query === 'string' ? query : null),
+    evidenceCandidates: [], sources: [], usage: null, toolCallCount: 0,
+  };
+  if (!OPENAI_API_KEY || !costTracker.canProcess()) {
+    fallback.reason = 'unavailable';
+    return fallback;
+  }
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    fallback.reason = 'empty_query';
+    return fallback;
+  }
+  try {
+    const body = EvidenceAcquisition.buildWebSearchRequestBody(query, {
+      model:             options.model             || EEA_WEB_SEARCH_MODEL,
+      searchContextSize: options.searchContextSize  || EEA_WEB_SEARCH_CONTEXT_SIZE,
+      max_output_tokens: options.max_output_tokens,
+    });
+    const response = await axios.post(
+      OPENAI_API_URL,
+      body,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+      }
+    );
+    const { parsed, evidenceCandidates } = EvidenceAcquisition.evidenceCandidatesFromWebSearchResponse(
+      response?.data,
+      { caseId: options.caseId }
+    );
+    // EEA-2時点ではCost Trackerへの計上は行わない（後工程の責務。usage/tool call情報のみ保持して返す）。
+    return {
+      ok: true, reason: null, query: parsed.query || query,
+      evidenceCandidates: evidenceCandidates, sources: parsed.sources,
+      usage: parsed.usage, toolCallCount: parsed.toolCallCount,
+      parseError: parsed.parseError || null,
+    };
+  } catch (error) {
+    console.error('OpenAI web search request failed:', error.response?.data || error.message);
+    fallback.reason = 'error';
+    fallback.error = (error.response?.data?.error?.message) || error.message || 'unknown error';
+    return fallback;
   }
 }
 
@@ -3509,6 +3582,9 @@ module.exports = {
   buildStrategyCompanyContext,
   callOpenAI,
   OPENAI_MODEL,
+  // EEA-2: 既存実行経路へは未接続（server.js等からrequireしてもまだどこからも呼ばれない）。
+  callOpenAIWebSearch,
+  EEA_WEB_SEARCH_MODEL,
   LINE_AGENT_PROFILES,
   DISPATCHABLE_IDS,
   buildFallbackMembers,
