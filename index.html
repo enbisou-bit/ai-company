@@ -14551,14 +14551,95 @@ async function _eeaExecuteSearchPlan() {
   } catch (e) {
     data = { ok: false, error: (e && e.message) || 'network_error' };
   }
-  _eeaRenderResultArea(data);
+  // EEA-4: 取得できたEvidence CandidateをEvidence正本へ保存（承認済み検索フロー内・追加の二重承認は求めない）。
+  //   Search Plan生成だけの段階（=承認前）ではこの関数自体が呼ばれないため、正本へは何も書かれない。
+  var persistResult = null;
+  if (data && data.ok === true && Array.isArray(data.evidenceCandidates) && data.evidenceCandidates.length > 0) {
+    try { persistResult = _eeaPersistEvidenceCandidates(data.evidenceCandidates); }
+    catch (e) { persistResult = { savedCount: 0, skippedCount: 0, failedCount: 0, persisted: false, details: [{ ok: false, reason: 'exception', error: e && e.message }] }; }
+  }
+  _eeaRenderResultArea(data, persistResult);
   _eeaRunning = false;
   var btn2 = document.getElementById('eea-approve-btn');
   if (btn2) { btn2.disabled = false; btn2.textContent = '🔎 Web Evidence検索を実行'; }
 }
 
-// 検索結果表示（表示専用。Evidence正本／IADP本体への書き込みは行わない）。
-function _eeaRenderResultArea(data) {
+// ══════════════════════════════════════════════════════════════
+// EEA-4: Evidence Normalization & Persistence
+//   Web Search結果（Evidence Candidate）を既存 _intelCreateEvidence() 互換形式へ正規化し、
+//   既存 _intelAddEvidence() / _intelSaveContext() をそのまま再利用して正本へ追加する。
+//   新しいEvidence保存Engineは作らない。verificationStatusは常に'unverified'固定
+//  （入力候補に何が入っていても上書きしない＝Verified昇格はここでは絶対に行わない）。
+//   caseId不一致・重複（同一sourceUrl×query/category）・sourceUrl欠落は保存せずskip。
+//   例外時もfail-open（画面・既存IADP/Output Draftを止めない）。
+// ══════════════════════════════════════════════════════════════
+function _eeaPersistEvidenceCandidates(candidates) {
+  var result = { savedCount: 0, skippedCount: 0, failedCount: 0, persisted: false, details: [] };
+  try {
+    if (!Array.isArray(candidates) || candidates.length === 0) return result;
+    var curCaseId = (typeof _liCurrentCaseId === 'function') ? _liCurrentCaseId() : null;
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!curCaseId || !draft || String(draft.caseId || '') !== String(curCaseId)) {
+      result.details.push({ ok: false, reason: 'case_mismatch_or_no_draft' });
+      return result;
+    }
+
+    // 実Draftへ途中で書かない（deep copy→検証→最後に一括反映。既存adoptAffiliateForContentPlanningと同一方針）。
+    var baseCtx = _intelGetContext(draft);
+    var nextCtx = JSON.parse(JSON.stringify(baseCtx));
+    var maxBatch = (typeof EvidenceAcquisition !== 'undefined' && EvidenceAcquisition.MAX_EVIDENCE_PER_BATCH) ? EvidenceAcquisition.MAX_EVIDENCE_PER_BATCH : 5;
+    var limited = candidates.slice(0, maxBatch);
+    if (candidates.length > maxBatch) result.details.push({ ok: false, reason: 'batch_limited', total: candidates.length, limit: maxBatch });
+
+    limited.forEach(function (c) {
+      if (!c || !c.sourceUrl) { result.skippedCount++; result.details.push({ sourceUrl: c && c.sourceUrl, ok: false, reason: 'no_source_url' }); return; }
+      if (c.caseId != null && String(c.caseId) !== String(curCaseId)) { result.skippedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: 'candidate_case_mismatch' }); return; }
+      var dup = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.isDuplicateEvidence === 'function')
+        ? EvidenceAcquisition.isDuplicateEvidence(nextCtx.evidence, c) : false;
+      if (dup) { result.skippedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: 'duplicate' }); return; }
+
+      var sourceName = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.deriveSourceNameFromUrl === 'function')
+        ? EvidenceAcquisition.deriveSourceNameFromUrl(c.sourceUrl) : null;
+      var ev = _intelCreateEvidence({
+        evidenceType:       'web_retrieved',
+        sourceUrl:          c.sourceUrl,
+        sourceTitle:        c.sourceTitle || null,
+        sourceName:         sourceName,
+        sourceReference:    c.sourceUrl,
+        observedAt:         c.observedAt || new Date().toISOString(),
+        verificationStatus: 'unverified',           // EEA-4契約: 入力値に関わらず常にunverified固定（Verified昇格はしない）
+        createdBy:          c.createdBy || 'system',
+        sourceMethod:       'web_retrieved',
+        category:           c.category || null,
+        query:              c.query || null,
+        caseId:             curCaseId,
+        notes:              null,
+      });
+      var addRes = _intelAddEvidence(nextCtx, ev);
+      if (addRes && addRes.ok) { result.savedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: true }); }
+      else { result.failedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: (addRes && addRes.errors && addRes.errors.join(',')) || 'add_failed' }); }
+    });
+
+    if (result.savedCount > 0) {
+      if (!_intelContextCaseMatches(nextCtx, draft)) {
+        result.details.push({ ok: false, reason: 'final_case_mismatch' });
+        return result; // 保存直前の最終caseId不一致 → 反映しない（既存IADP/Output Draftは無傷のまま）
+      }
+      _intelAttachContext(draft, nextCtx);
+      var saveRes = _intelSaveContext(draft, nextCtx, 'eea-4-web-evidence');
+      result.persisted = !!(saveRes && saveRes.ok);
+      if (!result.persisted) result.details.push({ ok: false, reason: 'save_failed:' + (saveRes && saveRes.reason) });
+    }
+    return result;
+  } catch (e) {
+    // fail-open: 保存処理中の例外でも画面・既存Evidence/Output Draftを止めない
+    result.details.push({ ok: false, reason: 'exception', error: e && e.message });
+    return result;
+  }
+}
+
+// 検索結果表示（EEA-4: 正本への保存状況も併記。IADPカード本体は複雑化しない＝独立カード内のみ）。
+function _eeaRenderResultArea(data, persistResult) {
   try {
     var area = document.getElementById('eea-search-result-area');
     if (!area) return;
@@ -14579,10 +14660,23 @@ function _eeaRenderResultArea(data) {
       });
       h += '</ul>';
     }
-    h += '<div class="lfs-ai-note">この結果はEvidence正本（IADP判定）へはまだ反映されていません（後工程で対応予定）。</div>';
+    if (persistResult) {
+      var savedN = persistResult.savedCount || 0, skippedN = persistResult.skippedCount || 0, failedN = persistResult.failedCount || 0;
+      if (savedN > 0 && persistResult.persisted) {
+        h += '<div class="lfs-adopted" style="font-size:12.5px;">✅ Evidence正本へ保存済み（' + savedN + '件'
+          + (skippedN ? '・重複等でskip ' + skippedN + '件' : '') + (failedN ? '・失敗 ' + failedN + '件' : '') + '）</div>';
+      } else if (savedN > 0 && !persistResult.persisted) {
+        h += '<div class="lfs-warn">⚠ Evidence正本への保存に失敗しました（取得結果は上記のとおりです。未保存）</div>';
+      } else {
+        h += '<div class="lfs-none">未保存（新規追加対象なし・すべて重複／不正のためskip）</div>';
+      }
+    } else {
+      h += '<div class="lfs-none">未保存</div>';
+    }
+    h += '<div class="lfs-ai-note">保存してもverificationStatusは unverified のままです。IADP判定（Verified件数・Account Creation Ready）へはまだ反映されません。</div>';
     h += '</div>';
     area.innerHTML = h;
-  } catch (e) { console.warn('[EEA-3] result render error:', e && e.message); }
+  } catch (e) { console.warn('[EEA-3/4] result render error:', e && e.message); }
 }
 
 // チャット最下部へSummaryを追加する（appendChild・Cross-case guard・重複防止・fail-open）。
@@ -38196,6 +38290,10 @@ function _intelCreateEvidence(input) {
     verificationStatus:     input.verificationStatus != null ? _intelStr(input.verificationStatus) : null,
     createdBy:              input.createdBy != null ? _intelStr(input.createdBy) : null,
     sourceMethod:           input.sourceMethod != null ? _intelStr(input.sourceMethod) : null,
+    // EEA-4 Evidence Normalization & Persistence（追加のみ）: Search Plan由来の分類・検索語を保持する任意フィールド。
+    //   未指定時はnullのまま（旧Evidence・既存呼び出し元は無影響）。
+    category:               input.category != null ? _intelStr(input.category) : null,
+    query:                  input.query != null ? _intelStr(input.query) : null,
   };
   return _intelNormalizeEvidence(ev);
 }

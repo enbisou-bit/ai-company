@@ -178,6 +178,55 @@
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // EEA-4: Evidence Normalization & Persistence 補助（すべて純関数・fail-open）
+  //   実際の正本書き込み（_intelCreateEvidence / _intelAddEvidence / _intelSaveContext）は
+  //   index.html側（Evidence正本・Output Draftの実体を持つ場所）が行う。ここでは
+  //   「どのsourceNameを使うか」「重複か否か」の判定材料のみを提供する。
+  // ══════════════════════════════════════════════════════════════
+  var MAX_EVIDENCE_PER_BATCH = 5;   // 1回の承認・保存で正本へ追加するEvidence上限（既存Evidenceを押し出さない）
+
+  // sourceUrlからPublisher候補（正規化hostname／eTLD+1相当）を安全に導出する。
+  //   会社名等の推測は行わない。'www.'のみ除去し、それ以外は加工しない。解析失敗時はnull（推測しない）。
+  function deriveSourceNameFromUrl(url) {
+    try {
+      var u = str(url).trim();
+      if (!u) return null;
+      var parsed = new URL(u);
+      var host = parsed.hostname.toLowerCase();
+      if (host.indexOf('www.') === 0) host = host.slice(4);
+      return host || null;
+    } catch (e) {
+      return null; // 不正URL・URL未対応環境では推測せずnull
+    }
+  }
+
+  // 既存Evidence一覧に対し、候補が重複か判定する（caseId＋sourceUrl＋query/categoryの組み合わせ）。
+  //   sourceMethod:'web_retrieved' のEvidenceのみを比較対象とし、既存Affiliate Evaluation等
+  //  （user_input/calculated等）とは絶対に同一視しない。
+  function isDuplicateEvidence(existingList, candidate) {
+    try {
+      if (!Array.isArray(existingList) || !isPlainObject(candidate) || !candidate.sourceUrl) return false;
+      var url = str(candidate.sourceUrl).trim();
+      if (!url) return false;
+      var query = str(candidate.query || '').trim();
+      var category = str(candidate.category || '').trim();
+      for (var i = 0; i < existingList.length; i++) {
+        var e = existingList[i];
+        if (!e || e.sourceMethod !== 'web_retrieved') continue;   // 既存Affiliate Evaluation Evidence等は対象外
+        if (str(e.sourceUrl).trim() !== url) continue;
+        var eQuery = str(e.query || '').trim();
+        var eCategory = str(e.category || '').trim();
+        if (query) { if (eQuery === query) return true; else continue; }
+        if (category) { if (eCategory === category) return true; else continue; }
+        return true;   // query/categoryどちらも無くURLのみ一致 → 安全側で重複扱い
+      }
+      return false;
+    } catch (e) {
+      return false; // fail-open: 判定失敗時は「重複ではない」扱い（保存を止めない。実害は上位のEvidence上限が抑止）
+    }
+  }
+
   // ── 公開API① Web Search request bodyの構築（純粋関数・APIキーを含まない） ──
   //   query: 検索クエリ文字列
   //   options: { model（必須相当・呼び出し側が明示指定）, searchContextSize（既定'low'）, max_output_tokens }
@@ -308,5 +357,9 @@
     validateSearchQuery: validateSearchQuery,
     validateAndLimitSearches: validateAndLimitSearches,
     buildSearchPlan: buildSearchPlan,
+    // EEA-4
+    MAX_EVIDENCE_PER_BATCH: MAX_EVIDENCE_PER_BATCH,
+    deriveSourceNameFromUrl: deriveSourceNameFromUrl,
+    isDuplicateEvidence: isDuplicateEvidence,
   };
 });
