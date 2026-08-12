@@ -37909,9 +37909,15 @@ function _aicCurrentCaseId() {
 // ============================================================
 const INTELLIGENCE_CONTEXT_VERSION = '1';
 const INTEL_CHANNEL_SCOPE_DEFAULT = 'instagram';                 // 将来 tiktok / youtube_shorts を妨げない
-const INTEL_EVIDENCE_TYPES = ['public_fact','manual_observation','user_input','calculated','heuristic','learning_result','ai_interpretation'];
+const INTEL_EVIDENCE_TYPES = ['public_fact','manual_observation','user_input','calculated','heuristic','learning_result','ai_interpretation','web_retrieved'];
 const INTEL_DERIVED_EVIDENCE_TYPES = ['calculated','heuristic','ai_interpretation'];   // 派生候補（親Evidenceから生成され得る）
 const INTEL_RELIABILITY_VALUES = ['high','medium','low','unknown'];                     // 未指定は unknown（medium扱いにしない）
+// EEA-1 Evidence Schema Extension: External Evidence用の参照値一覧（識別のためのみ・EEA-1では検証/強制/Verified昇格は行わない）。
+//   sourceMethod: Evidenceの取得方法（manual=Affiliate Evaluation等の手入力、generated_hypothesis=AI仮説、web_retrieved=外部Web検索）。
+//   verificationStatus: 検証段階（unverified=未検証。verified/user_verifiedは将来のVerified昇格ロジック側が付与する）。
+//   どちらも _intelCreateEvidence() では未指定時 null のまま保持し、強制デフォルトは適用しない（既存Evidenceへの意味変更を避けるため）。
+const INTEL_SOURCE_METHOD_VALUES = ['manual','generated_hypothesis','web_retrieved'];
+const INTEL_VERIFICATION_STATUS_VALUES = ['unverified','verified','user_verified'];
 const INTEL_CONFIDENCE_LEVELS = ['High','Medium','Low','Insufficient'];
 // しきい値・下限は定数化（各所へ直書きしない）。将来Learning実績に応じて調整する前提の初期ヒューリスティック。
 const INTEL_CONFIDENCE_THRESHOLDS = { high: 75, medium: 55, low: 35 };
@@ -38047,6 +38053,14 @@ function _intelCreateEvidence(input) {
     usedBy:                 Array.isArray(input.usedBy) ? input.usedBy.map(String) : [],
     derivedFromEvidenceIds: Array.isArray(input.derivedFromEvidenceIds) ? input.derivedFromEvidenceIds.map(String) : [],
     caseId:                 input.caseId != null ? String(input.caseId) : '',
+    // EEA-1 Evidence Schema Extension（追加のみ・既存フィールドは無変更）:
+    //   External Evidence（Web検索等）を安全に保持するための任意フィールド。
+    //   未指定時は null のまま保持し、強制デフォルトは適用しない（旧Evidence・既存呼び出し元は無影響）。
+    sourceUrl:              input.sourceUrl != null ? _intelStr(input.sourceUrl) : null,
+    sourceTitle:            input.sourceTitle != null ? _intelStr(input.sourceTitle) : null,
+    verificationStatus:     input.verificationStatus != null ? _intelStr(input.verificationStatus) : null,
+    createdBy:              input.createdBy != null ? _intelStr(input.createdBy) : null,
+    sourceMethod:           input.sourceMethod != null ? _intelStr(input.sourceMethod) : null,
   };
   return _intelNormalizeEvidence(ev);
 }
@@ -38101,7 +38115,7 @@ function _intelValidateEvidence(ev, ctx) {
     });
     if (_intelHasCycle(ev, ctx)) errors.push('cycle detected in derivedFromEvidenceIds');
   }
-  if (_intelLooksLikePII(ev.sourceReference) || _intelLooksLikePII(ev.notes)) warnings.push('possible PII / URL-parameter — 保存しない方針。内容を確認してください');
+  if (_intelLooksLikePII(ev.sourceReference) || _intelLooksLikePII(ev.notes) || _intelLooksLikePII(ev.sourceUrl)) warnings.push('possible PII / URL-parameter — 保存しない方針。内容を確認してください');
   return { ok: errors.length === 0, errors: errors, warnings: warnings };
 }
 
