@@ -469,14 +469,40 @@
     if (Array.isArray(e.derivedFromEvidenceIds) && e.derivedFromEvidenceIds.length > 0) return true;
     return DERIVED_EVIDENCE_TYPES.indexOf(e.evidenceType) !== -1;
   }
+  // EEA-6: web_retrieved は evidenceType 単独では Fact/Derived どちらにも属さない別軸として扱う。
+  //   Web検索取得のみ（verificationStatus:'unverified'）では検証済みに数えない（＝Verified Evidence契約は無変更）。
+  //   verificationStatus が 'verified' または 'user_verified' の場合のみ検証済みとして数える
+  //  （'verified'への昇格判定ロジック自体はshared/evidenceAcquisition.jsのevaluateVerifiedPromotion()の責務。
+  //   本関数はEvidence.verificationStatusの値をそのまま読むのみで、ここでは昇格判定を行わない）。
   function isVerifiedEvidence(e) {
-    if (!e || isDerivedEvidence(e)) return false;
+    if (!e) return false;
+    if (e.evidenceType === 'web_retrieved') {
+      return e.verificationStatus === 'verified' || e.verificationStatus === 'user_verified';
+    }
+    if (isDerivedEvidence(e)) return false;
     return VERIFIED_EVIDENCE_TYPES.indexOf(e.evidenceType) !== -1;
   }
-  // 独立ソースキー（sourceName優先。無ければsourceReference。どちらも無ければ安全側で1つへ畳む）
+  // 独立ソースキー（sourceName優先。次にsourceUrlのhostname。どちらも無ければsourceReference。
+  //   すべて無ければ安全側で1つへ畳む）。
+  //   EEA-6追加: sourceUrlからのhostname fallbackは、sourceNameが空のEvidenceにのみ適用されるため、
+  //   既存Evidence（sourceNameが既に設定されている・またはsourceUrl自体を持たない）の判定結果は変化しない
+  //  （後方互換維持。旧EvidenceにsourceUrlが無くても _hostnameFromUrl は例外を投げずnullを返す）。
+  function _hostnameFromUrl(url) {
+    try {
+      var u = str(url).trim();
+      if (!u) return null;
+      var host = new URL(u).hostname.toLowerCase();
+      if (host.indexOf('www.') === 0) host = host.slice(4);
+      return host || null;
+    } catch (e) {
+      return null;
+    }
+  }
   function sourceKeyOf(e) {
     var n = str(e && e.sourceName).trim();
     if (n) return 'name:' + n;
+    var host = _hostnameFromUrl(e && e.sourceUrl);
+    if (host) return 'domain:' + host;
     var r = str(e && e.sourceReference).trim();
     if (r) return 'ref:' + r;
     return UNKNOWN_SOURCE_KEY;
@@ -549,9 +575,11 @@
           var sk = sourceKeyOf(e);
           if (!srcSet[sk]) { srcSet[sk] = 0; res.sources.push({ key: sk, name: str(e.sourceName) || str(e.sourceReference) || '(不明)', count: 0 }); }
           srcSet[sk]++;
-        } else {
+        } else if (e.evidenceType !== 'web_retrieved') {
           res.derivedCount++;
         }
+        // EEA-6: web_retrieved かつ未検証（unverified）は verifiedCount にも derivedCount にも算入しない
+        //  （totalCountには含まれる。「AI仮説・計算値と同列のderived」でも「検証済み」でもない第三の状態のため）。
 
         // 既存 _intelCountIndependentEvidence 互換の独立件数（参考値・判定には使わない）
         if (!isDerivedEvidence(e)) {

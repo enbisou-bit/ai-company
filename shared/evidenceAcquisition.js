@@ -227,6 +227,152 @@
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // EEA-6: Source Trust / Independent Source / Verified昇格（すべて純関数・fail-open）
+  //
+  //   目的: 「Webから取得できた」だけでVerifiedにしない。Trust Tier×claim種別×Independent Source数
+  //   の組み合わせでのみVerified昇格を許可する評価関数を提供する。この関数群は判定結果を返すのみで、
+  //   実EvidenceのverificationStatusを書き換える副作用は一切持たない（昇格の実適用は呼び出し側の責務）。
+  //
+  //   不明ドメインは絶対に「公式」と推測しない: Tier3（メーカー・サービス公式）／Tier6（業界専門媒体）は
+  //   ドメインパターンだけでは判定できないため、既定では検出しない（常にTier7へフォールバック）。
+  //   呼び出し側が案件固有の公式ドメインを把握している場合のみ options.officialDomains /
+  //   options.industryDomains で明示指定でき、その場合に限りTier3/6と判定する。
+  // ══════════════════════════════════════════════════════════════
+  var SOURCE_TRUST_TIERS = {
+    1: { label: '官公庁・公的機関',               reliability: 'high' },
+    2: { label: 'ASP公式',                         reliability: 'high' },
+    3: { label: 'メーカー・サービス公式',           reliability: 'high' },
+    4: { label: 'プラットフォーム公式',             reliability: 'high' },
+    5: { label: '調査会社・証券取引所・企業IR等',   reliability: 'medium' },
+    6: { label: '業界専門媒体',                     reliability: 'medium' },
+    7: { label: '一般Webメディア',                  reliability: 'low' },
+    8: { label: 'SNS投稿・掲示板・個人ブログ等',     reliability: 'low' },
+  };
+
+  // Tier1: 政府・公的機関ドメイン（.go.jp / .gov）
+  var TIER1_GOV_SUFFIXES = ['go.jp', 'gov'];
+  // Tier2: 主要ASP公式ドメイン（保守的な最小限のallowlist。未知のASPは含めない＝推測しない）
+  var TIER2_ASP_DOMAINS = ['a8.net', 'afi-b.com', 'accesstrade.net', 'valuecommerce.ne.jp', 'felmat.net', 'rentracks.jp', 'moshimo.com'];
+  // Tier4: 主要プラットフォームの公式コーポレート/ビジネス系サブドメインのみ（消費者向け本体ドメインは
+  //   誰でも投稿可能なためTier8扱い。about.instagram.com等の公式発表・ビジネス文書のみTier4）
+  var TIER4_PLATFORM_OFFICIAL_DOMAINS = ['about.fb.com', 'about.instagram.com', 'business.instagram.com', 'developers.facebook.com', 'openai.com', 'platform.openai.com', 'ai.google', 'blog.google', 'about.google'];
+  // Tier5: 証券取引所開示ドメイン（明示allowlist）。加えて.or.jp（公益法人・業界団体）は末尾一致で自動判定。
+  var TIER5_EXCHANGE_DOMAINS = ['jpx.co.jp'];
+  var TIER5_ORG_SUFFIX = 'or.jp';
+  // Tier8: 既知のSNS/掲示板/ブログプラットフォーム（UGC中心のため一般ドメイン本体はここに分類）
+  var TIER8_SNS_DOMAINS = ['reddit.com', 'twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'threads.net', 'tiktok.com', 'ameblo.jp', 'hatenablog.com', 'hatenadiary.jp', 'fc2.com', 'livedoor.jp', 'note.com'];
+
+  function _hostOf(url) {
+    try {
+      var u = str(url).trim();
+      if (!u) return null;
+      var host = new URL(u).hostname.toLowerCase();
+      if (host.indexOf('www.') === 0) host = host.slice(4);
+      return host || null;
+    } catch (e) { return null; }
+  }
+  function _hostEquals(host, domain) {
+    if (!host || !domain) return false;
+    domain = String(domain).toLowerCase();
+    return host === domain || host.slice(-(domain.length + 1)) === ('.' + domain);
+  }
+  function _hostEqualsAny(host, list) {
+    for (var i = 0; i < list.length; i++) { if (_hostEquals(host, list[i])) return true; }
+    return false;
+  }
+
+  // ── 公開API: sourceUrlからSource Trust Tierを判定する（純粋関数・ドメイン優先・fail-open） ──
+  //   options: { officialDomains: string[]（案件固有の公式ドメイン・呼び出し側が明示指定した場合のみTier3）,
+  //              industryDomains: string[]（業界専門媒体ドメイン・呼び出し側が明示指定した場合のみTier6） }
+  //   戻り値: { tier, label, reliability, host, matchedBy } — tier: null は判定不能（sourceUrl欠落・解析失敗）
+  function classifySourceTrust(sourceUrl, options) {
+    var opts = isPlainObject(options) ? options : {};
+    var host = _hostOf(sourceUrl);
+    if (!host) return { tier: null, label: null, reliability: 'unknown', host: null, matchedBy: 'no_url_or_parse_error' };
+
+    var tier = 7, matchedBy = 'default_fallback';   // 未知ドメインは既定でTier7（一般Web・low）＝推測で公式扱いしない
+    if (TIER1_GOV_SUFFIXES.some(function (s) { return _hostEquals(host, s); })) { tier = 1; matchedBy = 'gov_suffix'; }
+    else if (_hostEqualsAny(host, TIER2_ASP_DOMAINS)) { tier = 2; matchedBy = 'asp_allowlist'; }
+    else if (_hostEqualsAny(host, TIER4_PLATFORM_OFFICIAL_DOMAINS)) { tier = 4; matchedBy = 'platform_official_allowlist'; }
+    else if (_hostEqualsAny(host, TIER8_SNS_DOMAINS)) { tier = 8; matchedBy = 'sns_allowlist'; }
+    else if (_hostEqualsAny(host, TIER5_EXCHANGE_DOMAINS)) { tier = 5; matchedBy = 'exchange_allowlist'; }
+    else if (_hostEquals(host, TIER5_ORG_SUFFIX)) { tier = 5; matchedBy = 'or_jp_suffix'; }
+    else if (_hostEqualsAny(host, opts.officialDomains || [])) { tier = 3; matchedBy = 'caller_official_domain'; }
+    else if (_hostEqualsAny(host, opts.industryDomains || [])) { tier = 6; matchedBy = 'caller_industry_domain'; }
+
+    var meta = SOURCE_TRUST_TIERS[tier];
+    return { tier: tier, label: meta.label, reliability: meta.reliability, host: host, matchedBy: matchedBy };
+  }
+
+  // Publisher単位の独立ソースキー（sourceKeyOf()と同一優先順位: sourceName→sourceUrlのhostname→sourceReference）。
+  //   iadpIntelligenceContext.js の sourceKeyOf() と判定基準を揃えるための evidenceAcquisition 側の実装
+  //  （ファイル間の相互require依存を避けるため、あえてロジックを複製している。既存の自己完結モジュール方針と同じ）。
+  function _publisherKeyOf(e) {
+    var n = str(e && e.sourceName).trim();
+    if (n) return 'name:' + n;
+    var host = _hostOf(e && e.sourceUrl);
+    if (host) return 'domain:' + host;
+    var r = str(e && e.sourceReference).trim();
+    if (r) return 'ref:' + r;
+    return null;
+  }
+
+  // ── 公開API: claim種別に基づくVerified昇格可否の評価（純粋関数・副作用なし・判定結果を返すのみ） ──
+  //   claimType: 'law_regulation'（法律・規約） | 'asp_official'（ASP公式案件・制度情報） |
+  //              'market'（市場規模・トレンド） | 'competition'（競合状況）
+  //   candidateEvidence: 判定対象1件（{sourceUrl, sourceName, sourceReference, ...}）
+  //   relatedEvidenceList: 同一claim（呼び出し側が同一category/query等で事前に絞り込んだもの）の他Evidence群。
+  //     Independent Source集計にのみ使用する（market/competitionのみ参照。法律・ASP公式は単独判定のため無視）。
+  //   戻り値: { eligible, reason, tier, independentSourceCount } — eligible:trueでも、実際の
+  //     verificationStatus書き換えは呼び出し側の責務（本関数は判定するのみ・何も保存しない）。
+  function evaluateVerifiedPromotion(claimType, candidateEvidence, relatedEvidenceList) {
+    var result = { eligible: false, reason: null, tier: null, independentSourceCount: 0 };
+    try {
+      if (!isPlainObject(candidateEvidence) || !candidateEvidence.sourceUrl) { result.reason = 'no_source_url'; return result; }
+      var trust = classifySourceTrust(candidateEvidence.sourceUrl);
+      result.tier = trust.tier;
+      if (trust.tier === null) { result.reason = 'trust_unclassifiable'; return result; }
+      if (trust.tier === 8) { result.reason = 'tier8_forbidden'; return result; }          // SNS/掲示板/個人ブログは常に禁止
+
+      if (claimType === 'law_regulation') {
+        if (trust.tier === 1 || trust.tier === 4) { result.eligible = true; result.reason = 'tier1_or_4_official_single_source_ok'; }
+        else { result.reason = 'law_regulation_requires_tier1_or_4'; }
+        return result;
+      }
+      if (claimType === 'asp_official') {
+        if (trust.tier === 2) { result.eligible = true; result.reason = 'tier2_asp_official_single_source_ok'; }
+        else { result.reason = 'asp_official_requires_tier2'; }
+        return result;
+      }
+      if (claimType === 'market' || claimType === 'competition') {
+        if (trust.tier === 7) { result.reason = 'tier7_general_media_single_source_forbidden'; return result; }
+        if (trust.tier < 1 || trust.tier > 6) { result.reason = 'tier_out_of_range_for_market_or_competition'; return result; }
+        var keys = {};
+        var candKey = _publisherKeyOf(candidateEvidence);
+        if (candKey) keys[candKey] = true;
+        var related = Array.isArray(relatedEvidenceList) ? relatedEvidenceList : [];
+        for (var i = 0; i < related.length; i++) {
+          var re = related[i];
+          if (!re || !re.sourceUrl) continue;
+          var rt = classifySourceTrust(re.sourceUrl);
+          if (rt.tier === null || rt.tier < 1 || rt.tier > 6) continue;   // Tier7/8・判定不能のsourceは独立source数に含めない
+          var k = _publisherKeyOf(re);
+          if (k) keys[k] = true;
+        }
+        result.independentSourceCount = Object.keys(keys).length;
+        if (result.independentSourceCount >= 2) { result.eligible = true; result.reason = 'two_or_more_independent_sources_tier1to6'; }
+        else { result.reason = 'insufficient_independent_sources'; }
+        return result;
+      }
+      result.reason = 'unknown_or_unsupported_claim_type';   // 未定義のclaim種別はVerified禁止（安全側）
+      return result;
+    } catch (e) {
+      result.reason = 'exception:' + (e && e.message);
+      return result; // fail-open: 例外時もeligible:falseのまま（誤ってVerified側へ倒さない）
+    }
+  }
+
   // ── 公開API① Web Search request bodyの構築（純粋関数・APIキーを含まない） ──
   //   query: 検索クエリ文字列
   //   options: { model（必須相当・呼び出し側が明示指定）, searchContextSize（既定'low'）, max_output_tokens }
@@ -361,5 +507,9 @@
     MAX_EVIDENCE_PER_BATCH: MAX_EVIDENCE_PER_BATCH,
     deriveSourceNameFromUrl: deriveSourceNameFromUrl,
     isDuplicateEvidence: isDuplicateEvidence,
+    // EEA-6
+    SOURCE_TRUST_TIERS: SOURCE_TRUST_TIERS,
+    classifySourceTrust: classifySourceTrust,
+    evaluateVerifiedPromotion: evaluateVerifiedPromotion,
   };
 });

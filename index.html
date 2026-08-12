@@ -14600,6 +14600,10 @@ function _eeaPersistEvidenceCandidates(candidates) {
 
       var sourceName = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.deriveSourceNameFromUrl === 'function')
         ? EvidenceAcquisition.deriveSourceNameFromUrl(c.sourceUrl) : null;
+      // EEA-6: Trust Tierからreliabilityを算出して保存する（Verified昇格には使わない・あくまでSource信頼度の記録）。
+      //   verificationStatusは引き続き常に'unverified'固定（Trust Tierが高くても自動Verifiedにはしない）。
+      var trust = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.classifySourceTrust === 'function')
+        ? EvidenceAcquisition.classifySourceTrust(c.sourceUrl) : null;
       var ev = _intelCreateEvidence({
         evidenceType:       'web_retrieved',
         sourceUrl:          c.sourceUrl,
@@ -14608,6 +14612,7 @@ function _eeaPersistEvidenceCandidates(candidates) {
         sourceReference:    c.sourceUrl,
         observedAt:         c.observedAt || new Date().toISOString(),
         verificationStatus: 'unverified',           // EEA-4契約: 入力値に関わらず常にunverified固定（Verified昇格はしない）
+        reliability:        (trust && trust.reliability) || undefined,   // 未指定時は既存どおり'unknown'へ正規化される
         createdBy:          c.createdBy || 'system',
         sourceMethod:       'web_retrieved',
         category:           c.category || null,
