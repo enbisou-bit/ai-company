@@ -7523,6 +7523,8 @@
 <script src="shared/iadpIntelligenceContext.js"></script>
 <!-- Phase IG-2J-G: AI社員成果物の構造正規化（reply wrapper / json fence の除去・純関数） -->
 <script src="shared/agentResultNormalizer.js"></script>
+<!-- EEA-3: External Evidence Search Plan生成・query検証（純関数のみ・APIキー非依存。実HTTP通信はserver-only openaiClient.jsが担う） -->
+<script src="shared/evidenceAcquisition.js"></script>
 <script>
 // ── Supabase DB同期ヘルパー ────────────────────────────
 // タスクをサーバー（Supabase経由）に保存。失敗してもlocalStorage側は継続
@@ -14408,6 +14410,8 @@ function _lfsBuildSummaryHtml(mo) {
 
   h += '<div class="lfs-footer">';
   h += '<button class="lfs-detail-btn" onclick="_lfsScrollToDetails()">▲ 詳細を確認（IADP / Executive Report）</button>';
+  // EEA-3: Search Plan生成トリガー（0円・LLM不使用。Web Search自体はここでは実行されない）
+  h += '<button class="lfs-detail-btn" onclick="_eeaBuildAndShowPlan()">🔍 External Evidence Search Planを作成</button>';
   h += '</div>';
 
   h += '</div>';
@@ -14448,6 +14452,137 @@ function _chatScrollToBottom() {
     var chatEl = document.getElementById('chat-area');
     if (chatEl && typeof chatEl.scrollTo === 'function') chatEl.scrollTo({ top: chatEl.scrollHeight, behavior: 'smooth' });
   } catch (e) { /* スクロール失敗でもUIを止めない */ }
+}
+
+// ══════════════════════════════════════════════════════════════
+// EEA-3: External Evidence Search Plan + User Approval Gate（追加のみ・既存機能に影響なし）
+//
+//   最重要原則: Web Searchはユーザーが「🔎 Web Evidence検索を実行」ボタンを明示的に押した
+//   時にのみ発火する。Search Plan自体の生成（EvidenceAcquisition.buildSearchPlan）はLLM不使用の
+//   純粋なローカル計算のみで費用0円。以下のいずれからも自動発火しない:
+//     案件を開く／F5／IADP表示／LFS表示／Researcher通常実行／Auto Task開始／Leader再生成／
+//     「AI会社に修正させる」／案件切替
+//   （↑これらの既存関数はいずれも本ブロックの関数を一切呼んでいない＝コード上未接続）。
+//
+//   Search Plan・検索結果はメモリ上のみで保持し、DB／Output Draft／Evidence正本（
+//   intelligenceContext.evidence[]）へは一切書き込まない（EEA-4以降の責務として意図的に保留）。
+// ══════════════════════════════════════════════════════════════
+var _eeaCurrentPlan = null;   // 表示中のSearch Plan（caseId単位・メモリのみ・DB保存なし）
+var _eeaRunning = false;      // 二重実行防止
+
+// Search Planを生成して表示する（0円・LLM不使用・Web Search未実行）。
+function _eeaBuildAndShowPlan() {
+  try {
+    var pkg = (typeof _lastInstagramAccountDesignPackage !== 'undefined') ? _lastInstagramAccountDesignPackage : null;
+    if (!pkg || typeof EvidenceAcquisition === 'undefined') {
+      showSystemNotice('External Evidence: IADPデータが見つかりません。先にIADPを生成してください。', 'warn');
+      return;
+    }
+    var plan = EvidenceAcquisition.buildSearchPlan(pkg);
+    if (!plan || !Array.isArray(plan.searches) || plan.searches.length === 0) {
+      showSystemNotice('External Evidence: 現時点で追加検索が必要な項目はありません（採用ジャンル未確定、または既存Evidenceで充足しています）。');
+      return;
+    }
+    _eeaCurrentPlan = plan;
+    _eeaRenderPlanCard();
+  } catch (e) { console.warn('[EEA-3] plan build error (fail-open):', e && e.message); }
+}
+
+// Search Planカードをチャット最下部へ描画する（表示専用・IADP本体へは混入させない・独立カード）。
+function _eeaRenderPlanCard() {
+  try {
+    var plan = _eeaCurrentPlan;
+    var chatEl = document.getElementById('chat-area');
+    if (!plan || !chatEl) return;
+    var esc = escapeHtml;
+    var maxRun = Math.min(plan.searches.length, (typeof EvidenceAcquisition !== 'undefined' ? EvidenceAcquisition.MAX_QUERIES_PER_APPROVAL : 3));
+
+    var h = '<div class="lfs-card eea-plan-card" id="eea-search-plan-card">';
+    h += '<div class="lfs-title">🔍 External Evidence Search Plan（試験導入・承認制）</div>';
+    h += '<div class="lfs-verdict-sub">Web検索は有料です（$10 / 1,000回 ＋ トークン費用）。下のボタンを押すまで実行されません。</div>';
+    h += '<div class="lfs-block"><div class="lfs-block-title">検索計画（' + plan.searches.length + '件）</div><ul class="lfs-list">';
+    plan.searches.forEach(function (s) {
+      h += '<li><b>[' + esc(s.category) + ']</b> ' + esc(s.query) + '<br><span class="lfs-sub">理由: ' + esc(s.reason) + '</span></li>';
+    });
+    h += '</ul></div>';
+    h += '<div class="lfs-block"><div class="lfs-block-title">実行条件</div><div class="lfs-grid">';
+    h += '<div class="lfs-row"><span class="lfs-k">使用予定モデル</span><span class="lfs-v">gpt-5.6-terra</span></div>';
+    h += '<div class="lfs-row"><span class="lfs-k">検索範囲</span><span class="lfs-v">search_context_size: low</span></div>';
+    h += '<div class="lfs-row"><span class="lfs-k">実行予定回数</span><span class="lfs-v">' + maxRun + '回（上限' + (typeof EvidenceAcquisition !== 'undefined' ? EvidenceAcquisition.MAX_QUERIES_PER_APPROVAL : 3) + '回/承認）</span></div>';
+    h += '<div class="lfs-row"><span class="lfs-k">概算費用上限</span><span class="lfs-v">約$0.01×' + maxRun + '（tool call）＋少額のトークン費用</span></div>';
+    h += '</div></div>';
+    h += '<div class="lfs-rerun">';
+    h += '<button class="lfs-rerun-btn" id="eea-approve-btn" onclick="_eeaExecuteSearchPlan()">🔎 Web Evidence検索を実行</button>';
+    h += '<div class="lfs-ai-note">※ 実際のOpenAI APIを使用し課金が発生します。取得したEvidenceは unverified のままで、IADP判定へはまだ反映されません。</div>';
+    h += '</div>';
+    h += '<div id="eea-search-result-area"></div>';
+    h += '</div>';
+
+    var old = document.getElementById('eea-search-plan-card');
+    if (old) old.remove();
+    var wrap = document.createElement('div');
+    wrap.innerHTML = h;
+    if (wrap.firstChild) chatEl.appendChild(wrap.firstChild);
+    if (typeof chatEl.scrollTo === 'function') chatEl.scrollTo({ top: chatEl.scrollHeight, behavior: 'smooth' });
+  } catch (e) { console.warn('[EEA-3] plan card render error (fail-open):', e && e.message); }
+}
+
+// ユーザーが承認ボタンを押した時のみ実行される（自動発火経路なし）。
+async function _eeaExecuteSearchPlan() {
+  if (_eeaRunning) return;
+  if (typeof billingLock !== 'undefined' && billingLock) {
+    alert('🔒 課金ロック中のためExternal Evidence検索を実行できません。トップバーの「課金ロック」ボタンをOFFにしてから再実行してください。');
+    return;
+  }
+  var plan = _eeaCurrentPlan;
+  if (!plan || !Array.isArray(plan.searches) || plan.searches.length === 0) return;
+
+  _eeaRunning = true;
+  var btn = document.getElementById('eea-approve-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 検索中…'; }
+  var data;
+  try {
+    var resp = await fetch('/api/evidence/web-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId: plan.caseId, queries: plan.searches, billingLock: billingLock }),
+    });
+    data = await resp.json().catch(function () { return { ok: false, error: 'invalid_response' }; });
+  } catch (e) {
+    data = { ok: false, error: (e && e.message) || 'network_error' };
+  }
+  _eeaRenderResultArea(data);
+  _eeaRunning = false;
+  var btn2 = document.getElementById('eea-approve-btn');
+  if (btn2) { btn2.disabled = false; btn2.textContent = '🔎 Web Evidence検索を実行'; }
+}
+
+// 検索結果表示（表示専用。Evidence正本／IADP本体への書き込みは行わない）。
+function _eeaRenderResultArea(data) {
+  try {
+    var area = document.getElementById('eea-search-result-area');
+    if (!area) return;
+    var esc = escapeHtml;
+    if (!data || data.ok !== true) {
+      area.innerHTML = '<div class="lfs-warn">検索失敗: ' + esc((data && data.error) || '不明なエラー') + '</div>';
+      return;
+    }
+    var cands = Array.isArray(data.evidenceCandidates) ? data.evidenceCandidates : [];
+    var h = '<div class="lfs-block"><div class="lfs-block-title">取得結果（' + cands.length + '件・すべて unverified）</div>';
+    if (cands.length === 0) {
+      h += '<div class="lfs-none">Evidenceを取得できませんでした（0件）。</div>';
+    } else {
+      h += '<ul class="lfs-list">';
+      cands.forEach(function (c) {
+        h += '<li><b>[' + esc(c.category || '') + ']</b> ' + esc(c.sourceTitle || '(タイトルなし)')
+          + '<br><span class="lfs-sub">' + esc(c.sourceUrl) + ' ／ unverified ／ query: ' + esc(c.query || '') + '</span></li>';
+      });
+      h += '</ul>';
+    }
+    h += '<div class="lfs-ai-note">この結果はEvidence正本（IADP判定）へはまだ反映されていません（後工程で対応予定）。</div>';
+    h += '</div>';
+    area.innerHTML = h;
+  } catch (e) { console.warn('[EEA-3] result render error:', e && e.message); }
 }
 
 // チャット最下部へSummaryを追加する（appendChild・Cross-case guard・重複防止・fail-open）。

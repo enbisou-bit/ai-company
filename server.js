@@ -4,10 +4,11 @@ const crypto = require('crypto');
 const axios = require('axios');
 const path = require('path');
 const { costTracker, resetCostTracker } = require('./costTracker');
-const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP } = require('./openaiClient');
+const { generateReply, strategyMonitor, strategyConsolidate, leaderSummary, LINE_AGENT_PROFILES, buildCompanyContext, buildStrategyCompanyContext, AGENT_WORKFLOW_CONFIG, callOpenAI, runAutoTaskWorkflow, runCompanyBrain, ORGANIZATION_MAP, callOpenAIWebSearch } = require('./openaiClient'); // EEA-3: callOpenAIWebSearchを追加（既存callOpenAI等は無変更）
 const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('./conversationHistory');
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent, getClaudeModelForRole, CLAUDE_MODEL_POLICY, CLAUDE_MODEL_POLICY_VERSION } = require('./claudeClient'); // Phase47-2B
 const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus, buildClaudeQualityMonitor, recordClaudeQualityHistory, getClaudeQualityHistory, buildClaudeQualityTrend, buildClaudeQualityWarning } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D / Phase47-3 / Phase47-4
+const EvidenceAcquisition = require('./shared/evidenceAcquisition'); // EEA-3: query検証・上限制御（純関数のみ・APIキー非依存）
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -1400,6 +1401,54 @@ app.post('/api/output-drafts', async (req, res) => {
     const result = await getOutputDraftsDb().upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
     res.json({ ok: !result.error, error: result.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
+});
+// ─────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// EEA-3: External Evidence Web Search（ユーザー承認済みSearch Planのみ受理する最小endpoint）
+//   責務: queryのみ受領 → server側でbillingLock/月次Cost Limit/query検証・上限（最大3件）を確認
+//         → callOpenAIWebSearch()を呼ぶ → Evidence Candidateのみ返す。
+//   非責務: APIキーをレスポンスへ含めない・intelligenceContext.evidence[]への保存はしない
+//         （正本への書き込みは行わず、Evidence Candidateを返すのみ＝呼び出し側の将来工程の責務）。
+//   Verified昇格・Gate判定・DB保存は一切行わない（EEA-1/EEA-2の既存契約を継承するのみ）。
+// ══════════════════════════════════════════════════════════════
+// POST /api/evidence/web-search { caseId, queries: [{category, query, reason}], billingLock }
+//   billingLock は呼び出し元（ブラウザ）の現在値を明示送信する契約とする。false 以外は常に拒否する
+//   （billingLockはブラウザ側の状態でありserver側に実体を持たないため、明示assertionを必須にする）。
+app.post('/api/evidence/web-search', async (req, res) => {
+  const { caseId, queries, billingLock } = req.body || {};
+  if (!caseId) return res.status(400).json({ ok: false, error: 'caseId は必須です', evidenceCandidates: [] });
+  if (billingLock !== false) return res.status(403).json({ ok: false, error: 'billing_locked', evidenceCandidates: [] });
+  if (!costTracker.canProcess()) return res.status(403).json({ ok: false, error: 'cost_limit_stopped', evidenceCandidates: [] });
+
+  const limitResult = EvidenceAcquisition.validateAndLimitSearches(queries);
+  if (!limitResult.ok) {
+    return res.status(400).json({ ok: false, error: 'no_valid_queries', rejected: limitResult.rejected, evidenceCandidates: [] });
+  }
+
+  try {
+    const searches = [];
+    for (const item of limitResult.limited) {
+      const r = await callOpenAIWebSearch(item.query, { caseId, searchContextSize: 'low' });
+      searches.push({
+        category: item.category, query: item.query, reason: item.reason,
+        ok: r.ok, reasonCode: r.reason || null, toolCallCount: r.toolCallCount || 0,
+        evidenceCandidates: (r.evidenceCandidates || []).map((c) => Object.assign({}, c, { category: item.category, query: item.query })),
+      });
+    }
+    const evidenceCandidates = searches.reduce((acc, s) => acc.concat(s.evidenceCandidates), []);
+    res.json({
+      ok: true,
+      caseId,
+      truncated: limitResult.truncated,
+      rejected: limitResult.rejected,
+      searches: searches.map((s) => ({ category: s.category, query: s.query, reason: s.reason, ok: s.ok, reasonCode: s.reasonCode, sourceCount: s.evidenceCandidates.length })),
+      evidenceCandidates,
+      allSucceeded: searches.every((s) => s.ok),
+    });
+  } catch (e) {
+    res.json({ ok: false, error: e.message, evidenceCandidates: [] });
+  }
 });
 // ─────────────────────────────────────────────────
 
