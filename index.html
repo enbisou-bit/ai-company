@@ -14568,10 +14568,17 @@ async function _eeaExecuteSearchPlan() {
 // EEA-4: Evidence Normalization & Persistence
 //   Web Search結果（Evidence Candidate）を既存 _intelCreateEvidence() 互換形式へ正規化し、
 //   既存 _intelAddEvidence() / _intelSaveContext() をそのまま再利用して正本へ追加する。
-//   新しいEvidence保存Engineは作らない。verificationStatusは常に'unverified'固定
-//  （入力候補に何が入っていても上書きしない＝Verified昇格はここでは絶対に行わない）。
+//   新しいEvidence保存Engineは作らない。
 //   caseId不一致・重複（同一sourceUrl×query/category）・sourceUrl欠落は保存せずskip。
 //   例外時もfail-open（画面・既存IADP/Output Draftを止めない）。
+//
+// EEA-10B: Verified Promotion Application（2段階方式・EEA-10A設計）。
+//   Phase1（sourceName事前計算）→Phase2（batch全体＋既存正本を固定母集団としてPromotion結果を
+//   全candidate分先に確定）→Phase3（確定済みverificationStatusで保存。保存ループ内では再評価しない）
+//   の順で処理し、batch内candidateの処理順に依らず同じEvidence集合なら同じ結果になることを保証する。
+//   既存evaluateVerifiedPromotion()／resolveIadpEvidence()は無変更。既存Evidenceは読み取り参照のみ
+//  （書き換え・再評価は行わない）。monetizationは既存の unknown_or_unsupported_claim_type
+//   fail-openによりPromotion対象外＝常にunverified（安全側維持・mapping追加なし）。
 // ══════════════════════════════════════════════════════════════
 function _eeaPersistEvidenceCandidates(candidates) {
   var result = { savedCount: 0, skippedCount: 0, failedCount: 0, persisted: false, details: [] };
@@ -14590,7 +14597,6 @@ function _eeaPersistEvidenceCandidates(candidates) {
     var maxBatch = (typeof EvidenceAcquisition !== 'undefined' && EvidenceAcquisition.MAX_EVIDENCE_PER_BATCH) ? EvidenceAcquisition.MAX_EVIDENCE_PER_BATCH : 5;
 
     // EEA-7①: 単純な先頭N件ではなく「重複除外→Trust Tier優先の安定ソート→上限適用」で選定する。
-    //   verificationStatusには一切関与しない（選定されただけではVerifiedにならない・従来どおりunverified保存）。
     var selection = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.selectEvidenceCandidates === 'function')
       ? EvidenceAcquisition.selectEvidenceCandidates(candidates, nextCtx.evidence, maxBatch)
       : { selected: candidates.slice(0, maxBatch), skippedDuplicate: [], rejectedNoUrl: [], totalCandidates: candidates.length };
@@ -14601,7 +14607,56 @@ function _eeaPersistEvidenceCandidates(candidates) {
       result.details.push({ ok: false, reason: 'batch_limited', total: selection.totalCandidates, limit: maxBatch });
     }
 
-    limited.forEach(function (c) {
+    // EEA-10B Phase1: sourceNameを全candidate分先に計算（既存deriveSourceNameFromUrlのみ・新規推測処理なし）。
+    var enriched = limited.map(function (c) {
+      return {
+        c: c,
+        sourceName: (c && c.sourceUrl && typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.deriveSourceNameFromUrl === 'function')
+          ? EvidenceAcquisition.deriveSourceNameFromUrl(c.sourceUrl) : null,
+      };
+    });
+
+    // EEA-10B Phase2: batch全体＋既存正本Evidenceを「本Phase開始時点のnextCtx.evidence」という
+    //   固定母集団としてPromotion結果を全candidate分先に確定する。Phase3での保存追加はこの後に行うため、
+    //   Phase3の処理順・追加順を参照しない＝順序非依存が成立する。
+    var promotions = enriched.map(function (item, idx) {
+      var fallback = { verificationStatus: 'unverified', eligible: false, reason: null };
+      try {
+        var c = item.c;
+        if (!c || !c.sourceUrl) return fallback;
+        if (typeof EvidenceAcquisition === 'undefined' || typeof EvidenceAcquisition.evaluateVerifiedPromotion !== 'function') return fallback;
+        var category = c.category || null;
+        // ① 既存正本のうち同一evidenceType・同一category（読み取りのみ・書き換えない）
+        var existingRelated = (Array.isArray(nextCtx.evidence) ? nextCtx.evidence : []).filter(function (e) {
+          return e && e.evidenceType === 'web_retrieved' && e.category === category;
+        });
+        // ② 今回batch内の同一category・自分以外（配列indexで確実に除外。evaluateVerifiedPromotion()が
+        //    参照する最低限のfieldのみを渡す＝新規推測fieldを生成しない）
+        var batchRelated = enriched.filter(function (other, j) {
+          return j !== idx && other.c && other.c.category === category;
+        }).map(function (other) {
+          return {
+            sourceUrl: other.c.sourceUrl, sourceName: other.sourceName,
+            sourceReference: other.c.sourceUrl, category: other.c.category, evidenceType: 'web_retrieved',
+          };
+        });
+        var related = existingRelated.concat(batchRelated);
+        var candidateForEval = {
+          sourceUrl: c.sourceUrl, sourceName: item.sourceName,
+          sourceReference: c.sourceUrl, category: category, evidenceType: 'web_retrieved',
+        };
+        var promo = EvidenceAcquisition.evaluateVerifiedPromotion(category, candidateForEval, related);
+        return {
+          verificationStatus: (promo && promo.eligible) ? 'verified' : 'unverified',
+          eligible: !!(promo && promo.eligible), reason: (promo && promo.reason) || null,
+        };
+      } catch (e) {
+        return fallback; // fail-open: 評価失敗・情報不足はverifiedへ倒さずunverified維持
+      }
+    });
+
+    // EEA-10B Phase3: Phase2で確定済みのverificationStatusを使って保存する（ここでは再評価しない）。
+    limited.forEach(function (c, idx) {
       // 既存Duplicate Check（EEA-4契約）は変更せず維持（selectEvidenceCandidates後の保険的二重チェック）。
       if (!c || !c.sourceUrl) { result.skippedCount++; result.details.push({ sourceUrl: c && c.sourceUrl, ok: false, reason: 'no_source_url' }); return; }
       if (c.caseId != null && String(c.caseId) !== String(curCaseId)) { result.skippedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: 'candidate_case_mismatch' }); return; }
@@ -14609,12 +14664,11 @@ function _eeaPersistEvidenceCandidates(candidates) {
         ? EvidenceAcquisition.isDuplicateEvidence(nextCtx.evidence, c) : false;
       if (dup) { result.skippedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: 'duplicate' }); return; }
 
-      var sourceName = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.deriveSourceNameFromUrl === 'function')
-        ? EvidenceAcquisition.deriveSourceNameFromUrl(c.sourceUrl) : null;
-      // EEA-6: Trust Tierからreliabilityを算出して保存する（Verified昇格には使わない・あくまでSource信頼度の記録）。
-      //   verificationStatusは引き続き常に'unverified'固定（Trust Tierが高くても自動Verifiedにはしない）。
+      var sourceName = enriched[idx] ? enriched[idx].sourceName : null;   // Phase1で計算済みの値を再利用（再計算しない）
+      // EEA-6: Trust Tierからreliabilityを算出して保存する（あくまでSource信頼度の記録。Promotion可否はPhase2で確定済み）。
       var trust = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.classifySourceTrust === 'function')
         ? EvidenceAcquisition.classifySourceTrust(c.sourceUrl) : null;
+      var promo = promotions[idx] || { verificationStatus: 'unverified' };
       var ev = _intelCreateEvidence({
         evidenceType:       'web_retrieved',
         sourceUrl:          c.sourceUrl,
@@ -14622,7 +14676,7 @@ function _eeaPersistEvidenceCandidates(candidates) {
         sourceName:         sourceName,
         sourceReference:    c.sourceUrl,
         observedAt:         c.observedAt || new Date().toISOString(),
-        verificationStatus: 'unverified',           // EEA-4契約: 入力値に関わらず常にunverified固定（Verified昇格はしない）
+        verificationStatus: promo.verificationStatus,   // EEA-10B: Phase2で確定済み（'verified'または'unverified'。user_verifiedは未使用）
         reliability:        (trust && trust.reliability) || undefined,   // 未指定時は既存どおり'unknown'へ正規化される
         createdBy:          c.createdBy || 'system',
         sourceMethod:       'web_retrieved',
@@ -14632,7 +14686,7 @@ function _eeaPersistEvidenceCandidates(candidates) {
         notes:              null,
       });
       var addRes = _intelAddEvidence(nextCtx, ev);
-      if (addRes && addRes.ok) { result.savedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: true }); }
+      if (addRes && addRes.ok) { result.savedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: true, verificationStatus: promo.verificationStatus }); }
       else { result.failedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: (addRes && addRes.errors && addRes.errors.join(',')) || 'add_failed' }); }
     });
 
@@ -14689,7 +14743,21 @@ function _eeaRenderResultArea(data, persistResult) {
     } else {
       h += '<div class="lfs-none">未保存</div>';
     }
-    h += '<div class="lfs-ai-note">保存してもverificationStatusは unverified のままです。IADP判定（Verified件数・Account Creation Ready）へはまだ反映されません。</div>';
+    // EEA-10B: 保存されたEvidenceの実際のverificationStatus内訳を表示する（固定文言の廃止）。
+    //   persistResult.detailsはPhase3で ok:true の場合のみ verificationStatus を持つ（EEA-10B実装）。
+    var _eeaVerifiedN = 0, _eeaUnverifiedN = 0;
+    if (persistResult && Array.isArray(persistResult.details)) {
+      persistResult.details.forEach(function (d) {
+        if (!d || d.ok !== true) return;
+        if (d.verificationStatus === 'verified') _eeaVerifiedN++; else _eeaUnverifiedN++;
+      });
+    }
+    if (_eeaVerifiedN + _eeaUnverifiedN > 0) {
+      h += '<div class="lfs-ai-note">保存されたEvidence内訳：Verified ' + _eeaVerifiedN + '件／Unverified ' + _eeaUnverifiedN + '件'
+        + '（Verified Evidenceのみ IADP判定の検証済み件数・Account Creation Readyへ算入されます）</div>';
+    } else {
+      h += '<div class="lfs-ai-note">今回保存されたEvidenceはありません。</div>';
+    }
     h += '</div>';
 
     // EEA-7②: Category Coverage（可視化のみ・Gate/Ready判定には使用しない）
