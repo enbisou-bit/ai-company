@@ -13,7 +13,19 @@ const MODEL_PRICES = {
     input: 0.10,
     output: 0.40,
   },
+  // EEA-8: developers.openai.com/api/docs/pricing で2026-08-12時点に実測確認。
+  //   Short Context tier（EEA Web Searchはsearch_context_size='low'の短い単発質問のみのため該当）。
+  //   Long Context tierは本レートの2倍（未使用・EEAでは発生しない想定）。
+  'gpt-5.6-terra': {
+    input: 2.00,
+    cachedInput: 0.20,
+    output: 12.00,
+  },
 };
+// EEA-8: developers.openai.com/api/docs/pricing で2026-08-12時点に実測確認。
+//   web_searchツール（Responses API）＝ $10.00 / 1,000 calls。1 call = $0.01。
+//   正本はこの1定数のみ（複数箇所へハードコードしない）。
+const WEB_SEARCH_TOOL_COST_PER_CALL_USD = 0.01;
 // Phase47-1.6: 日付キー追加（日次・月次リセット用）
 // A-2-2: JST（Asia/Tokyo, UTC+9）基準へ変更。UTC基準だと日本時間09:00に当日料金が0リセットされる不具合を解消。
 //   Date.now()+9h した Date に toISOString()（UTC表記）を適用すると、JSTの壁時計の日付が得られる（外部ライブラリ不使用）。
@@ -165,7 +177,11 @@ function resetCostTracker() {
   return global.__costTrackerState;
 }
 
-function calculateOpenAICost(model = '', inputTokens = 0, outputTokens = 0) {
+// EEA-8: cachedTokens は既存呼び出し（3引数）に対して完全後方互換の追加引数（既定0）。
+//   pricing.cachedInput が定義されているモデル（gpt-5.6-terra等）でcachedTokens>0の時のみ
+//   input_tokens の一部をcached単価で按分計算する。cachedInput未定義モデル（既存gpt-4.1-mini/nano）は
+//   常に旧来通りinputTokens全量をpricing.inputで計算し、挙動は一切変わらない。
+function calculateOpenAICost(model = '', inputTokens = 0, outputTokens = 0, cachedTokens = 0) {
   const pricing = MODEL_PRICES[model] || null;
   if (!pricing) {
     return { usd: 0, jpy: 0 };
@@ -173,13 +189,58 @@ function calculateOpenAICost(model = '', inputTokens = 0, outputTokens = 0) {
 
   const normalizedInputTokens = Number(inputTokens) || 0;
   const normalizedOutputTokens = Number(outputTokens) || 0;
-  const inputUsd = (normalizedInputTokens / 1000000) * pricing.input;
+  const normalizedCachedTokens = Math.min(Number(cachedTokens) || 0, normalizedInputTokens);
+
+  let inputUsd;
+  if (pricing.cachedInput != null && normalizedCachedTokens > 0) {
+    const uncachedInputTokens = normalizedInputTokens - normalizedCachedTokens;
+    inputUsd = (uncachedInputTokens / 1000000) * pricing.input
+      + (normalizedCachedTokens / 1000000) * pricing.cachedInput;
+  } else {
+    inputUsd = (normalizedInputTokens / 1000000) * pricing.input;
+  }
   const outputUsd = (normalizedOutputTokens / 1000000) * pricing.output;
   const totalUsd = inputUsd + outputUsd;
 
   return {
     usd: Number(totalUsd.toFixed(6)),
     jpy: Number((totalUsd * USD_TO_JPY).toFixed(2)),
+  };
+}
+
+// EEA-8: Web Search tool call fee（正本定数はWEB_SEARCH_TOOL_COST_PER_CALL_USDの1箇所のみ）。
+function calculateWebSearchToolFee(toolCallCount = 0) {
+  const normalizedCount = Number(toolCallCount) || 0;
+  if (normalizedCount <= 0) {
+    return { usd: 0, jpy: 0 };
+  }
+  const usd = normalizedCount * WEB_SEARCH_TOOL_COST_PER_CALL_USD;
+  return {
+    usd: Number(usd.toFixed(6)),
+    jpy: Number((usd * USD_TO_JPY).toFixed(2)),
+  };
+}
+
+// EEA-8: Web Search 1回分の合計コスト = tool call fee + model token cost（二重計上しない単一集計）。
+//   usageが取得できない場合はinputTokens/outputTokens/cachedTokensを渡さない（既定0）ことで
+//   token cost = 0・tokenCostUnknown:true として明示する（token量を推測しない）。
+function calculateWebSearchCost({ model = '', toolCallCount = 0, inputTokens = null, outputTokens = null, cachedTokens = 0 } = {}) {
+  const hasUsage = inputTokens != null || outputTokens != null;
+  const tokenCost = hasUsage
+    ? calculateOpenAICost(model, inputTokens || 0, outputTokens || 0, cachedTokens || 0)
+    : { usd: 0, jpy: 0 };
+  const toolFee = calculateWebSearchToolFee(toolCallCount);
+  const totalUsd = Number((tokenCost.usd + toolFee.usd).toFixed(6));
+  const totalJpy = Number((tokenCost.jpy + toolFee.jpy).toFixed(2));
+
+  return {
+    tokenCostUsd: tokenCost.usd,
+    tokenCostJpy: tokenCost.jpy,
+    tokenCostUnknown: !hasUsage,
+    toolFeeUsd: toolFee.usd,
+    toolFeeJpy: toolFee.jpy,
+    totalUsd,
+    totalJpy,
   };
 }
 
@@ -211,6 +272,41 @@ function addOpenAIUsage(model = '', inputTokens = 0, outputTokens = 0, agent = '
 
   saveState(state);
   return costTracker.getSummary();
+}
+
+// EEA-8: Web Search（tool call fee + model token cost）を既存Cost Trackerへ計上。
+//   addOpenAIUsage()と同じstate（cost-logs.json正本）・同じmonthlyLimit/stopped判定へ合流する
+//   （新しいCost Tracker Engine・新しい月次上限管理・新しいcost-logsファイルは作らない）。
+//   既存addOpenAIUsage()は無変更（回帰防止のため本関数側のみ追加）。
+function addWebSearchUsage({ model = '', toolCallCount = 0, inputTokens = null, outputTokens = null, cachedTokens = 0, agent = 'aiDevelopment', type = 'web_search' } = {}) {
+  const state = ensureState();
+
+  if (state.stopped) {
+    return costTracker.getSummary();
+  }
+
+  const cost = calculateWebSearchCost({ model, toolCallCount, inputTokens, outputTokens, cachedTokens });
+  const normalizedAmount = Number(cost.totalJpy) || 0;
+  const normalizedAssignee = agent || 'aiDevelopment';
+  const normalizedType = type || 'web_search';
+
+  state.todayAmount   += normalizedAmount;
+  state.monthlyAmount += normalizedAmount;
+  state.totalAmount   = (state.totalAmount || 0) + normalizedAmount;
+  state.byAssignee[normalizedAssignee] = (state.byAssignee[normalizedAssignee] || 0) + normalizedAmount;
+  state.byType[normalizedType] = (state.byType[normalizedType] || 0) + normalizedAmount;
+  state.agentCosts[normalizedAssignee] = (state.agentCosts[normalizedAssignee] || 0) + normalizedAmount;
+  state.departmentCosts[normalizedAssignee] = (state.departmentCosts[normalizedAssignee] || 0) + normalizedAmount;
+  state.breakdown.byAssignee[normalizedAssignee] = (state.breakdown.byAssignee[normalizedAssignee] || 0) + normalizedAmount;
+  state.breakdown.byType[normalizedType] = (state.breakdown.byType[normalizedType] || 0) + normalizedAmount;
+  if (model) state.modelCosts[model] = (state.modelCosts[model] || 0) + normalizedAmount;
+
+  if (state.monthlyAmount >= state.monthlyLimit) {
+    state.stopped = true;
+  }
+
+  saveState(state);
+  return { summary: costTracker.getSummary(), cost };
 }
 
 const costTracker = {
@@ -352,4 +448,9 @@ module.exports = {
   USD_TO_JPY,
   calculateOpenAICost,
   addOpenAIUsage,
+  // EEA-8
+  WEB_SEARCH_TOOL_COST_PER_CALL_USD,
+  calculateWebSearchToolFee,
+  calculateWebSearchCost,
+  addWebSearchUsage,
 };

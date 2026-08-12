@@ -1,7 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
-const { costTracker, addOpenAIUsage, calculateOpenAICost, USD_TO_JPY } = require('./costTracker');
+const { costTracker, addOpenAIUsage, calculateOpenAICost, USD_TO_JPY, addWebSearchUsage } = require('./costTracker');
 // Phase IG-2J-G: AI社員成果物の構造正規化（純関数のみ・副作用なし・DB/API非依存）
 const { normalizeAgentResult } = require('./shared/agentResultNormalizer');
 // EEA-2: External Evidence Acquisition Web Search Adapter（純関数のみ・APIキー非依存・request/response変換専用）
@@ -1360,6 +1360,46 @@ async function persistOpenAICostEvent({ responseId, model, inputTokens, outputTo
 }
 
 // ══════════════════════════════════════════════════════════════
+// EEA-8: Web Search料金イベント Supabase 保存
+//   persistOpenAICostEvent()と同じ既存Cost Event schema（api_cost_events）を再利用。
+//   新規カラムは追加しない。tool call数は既存requestsカラムへ格納する
+//   （web_search系イベントに限り requests = 実際に発生したtool call数。text系のrequests=1とは意味が異なる）。
+//   amount_usd/amount_jpyはtool call fee + model token costの合算（二重計上防止）。
+// ══════════════════════════════════════════════════════════════
+async function persistOpenAIWebSearchCostEvent({ responseId, model, toolCallCount, inputTokens, outputTokens, cost, assignee }) {
+  try {
+    const { insertCostEvent, markCostStateStale } = require('./lib/costDb');
+    const event = {
+      usage_event_id: responseId ? String(responseId) : `openai:websearch:${crypto.randomUUID()}`,
+      usage_date: _jstUsageDate(),
+      provider: 'openai',
+      model,
+      assignee: assignee || 'aiDevelopment',
+      usage_type: 'web_search',
+      requests: Number(toolCallCount) || 0,
+      input_tokens: Number(inputTokens) || 0,
+      output_tokens: Number(outputTokens) || 0,
+      amount_jpy: cost.totalJpy,
+      amount_usd: cost.totalUsd,
+      currency: 'JPY',
+      exchange_rate: USD_TO_JPY,
+      exchange_rate_source: EXCHANGE_RATE_SOURCE,
+      exchange_rate_recorded_at: new Date().toISOString(),
+      exchange_rate_version: EXCHANGE_RATE_VERSION,
+    };
+    const res = await insertCostEvent(event);
+    if (res && res.ok) {
+      markCostStateStale();
+    } else {
+      const detail = (res && res.error) ? (res.error.code || res.error.message) : 'unknown';
+      console.error('[EEA-8] Web Search cost event persist failed:', detail);
+    }
+  } catch (err) {
+    console.error('[EEA-8] Web Search cost event persist exception:', (err && err.message) ? err.message : 'exception');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // OpenAI 共通呼び出し
 // ══════════════════════════════════════════════════════════════
 async function callOpenAI(systemPrompt, userMessage, history = [], options = {}) {
@@ -1459,12 +1499,42 @@ async function callOpenAIWebSearch(query, options = {}) {
       response?.data,
       { caseId: options.caseId }
     );
-    // EEA-2時点ではCost Trackerへの計上は行わない（後工程の責務。usage/tool call情報のみ保持して返す）。
+
+    // EEA-8: usageが取得できた場合のみ実token数を使用（推測しない）。usage欠落時はtool feeのみ確定計上。
+    const usage = parsed.usage;
+    const hasUsage = !!usage;
+    const inputTokens  = hasUsage ? (usage.input_tokens  ?? usage.inputTokens  ?? 0) : null;
+    const outputTokens = hasUsage ? (usage.output_tokens ?? usage.outputTokens ?? 0) : null;
+    const cachedTokens = hasUsage
+      ? (usage.input_tokens_details?.cached_tokens ?? usage.inputTokensDetails?.cachedTokens ?? 0)
+      : 0;
+    const model = options.model || EEA_WEB_SEARCH_MODEL;
+    const assignee = options.assignee || 'aiDevelopment';
+
+    // stopped競合（呼び出し直前canProcess()通過後、応答待ち中に他リクエストで上限到達した稀なケース）で
+    // addWebSearchUsage()がcost無しのgetSummary()のみを返すことがあるため、undefinedをcrashさせず0扱いにする。
+    const addResult = addWebSearchUsage({
+      model, toolCallCount: parsed.toolCallCount,
+      inputTokens, outputTokens, cachedTokens,
+      agent: assignee, type: 'web_search',
+    });
+    const cost = addResult && addResult.cost
+      ? addResult.cost
+      : { tokenCostUsd: 0, tokenCostJpy: 0, tokenCostUnknown: !hasUsage, toolFeeUsd: 0, toolFeeJpy: 0, totalUsd: 0, totalJpy: 0 };
+    // EEA-8: persistOpenAICostEvent()と同方式のdual-write。DB保存失敗してもAI応答は壊さない。
+    await persistOpenAIWebSearchCostEvent({
+      responseId: response?.data?.id, model,
+      toolCallCount: parsed.toolCallCount,
+      inputTokens: inputTokens || 0, outputTokens: outputTokens || 0,
+      cost, assignee,
+    });
+
     return {
       ok: true, reason: null, query: parsed.query || query,
       evidenceCandidates: evidenceCandidates, sources: parsed.sources,
       usage: parsed.usage, toolCallCount: parsed.toolCallCount,
       parseError: parsed.parseError || null,
+      cost,
     };
   } catch (error) {
     console.error('OpenAI web search request failed:', error.response?.data || error.message);
