@@ -6,6 +6,29 @@
 
 ---
 
+# Decision 100
+## IADP / LFS Navigation & Scroll Usability Improvement 正式採用（2026-08-12）
+
+**背景**：Decision099正式リリース後、IADP（Instagram Account Design Package）とLFS（Leader Final Summary）を同一案件チャット内で往復確認する運用が増え、IADPがチャット上部・LFSが最下部に離れて表示されるため、再評価・確認のたびに大きくスクロールする必要があった。加えて`#chat-area`の既定スクロールバーが細くマウスで掴みにくく、実機確認で「見た目を太くしても一部分しかドラッグできない」不具合が判明した。
+
+**決定（正式）**：純粋なUI操作性改善として以下を正式採用する。表示内容・IADP契約・LFS契約・Evidence判定・Quality Gate・Reviewer・Strategy・adoptionDecision・User Approval・Output Draft保存契約・Researcher・Analyst・DB・schema・APIはいずれも無変更（Code commit **0309086**・`index.html`のみ・+99/-11）。
+
+- **① IADP→LFS直接ジャンプ**：IADPカードへ「↓ Leader Final Summaryへ」を追加。クリック時に`document.getElementById('lfs-summary-display')`をその場で検索し`scrollIntoView`（固定DOM参照を持たず再描画後も安全）。
+- **② LFS→IADP直接ジャンプ**：Leader Final Summaryへ「↑ Instagram Account Design Packageへ」を追加。既存の`_lfsScrollToDetails()`（`#iadp-card-display`へ`scrollIntoView`する既存機能）をそのまま再利用し新規ロジックは追加していない。既存の「▲ 詳細を確認（IADP / Executive Report）」ボタンは無変更で維持。
+- **③ 上端／下端固定ジャンプ**：`#chat-area`の外側に固定ナビ`#chat-scroll-nav`（↑／↓の丸ボタン2つ）を追加。`_chatScrollToTop()`/`_chatScrollToBottom()`が`chatEl.scrollTo({top:0/scrollHeight, behavior:'smooth'})`を実行。入力欄・送信ボタンとは矩形計算で非重複を確認（PC・iPhone幅とも）。
+- **④ `#chat-area`スクロールバー操作性改善**：幅6px→14px、track/thumbのコントラスト強化、hover/active時の視認性向上、Windows Chromium/Edge既定の矢印ボタン（`::-webkit-scrollbar-button`）を明示的に非表示化。
+- **⑤ スクロールバー不具合の根本原因修正**：実機確認で「太く表示されても一部分しかドラッグできない」症状を確認し、`document.elementFromPoint()`によるピクセル単位のスイープ調査で原因を特定。**`id="knowledge-panel"`がコード内に2つ存在する既存の重複ID不具合**（📚ナレッジエンジン用と🧠顧客記憶パネル用、CSSも同一セレクタで2ブロック重複定義）が真因で、カスケードの後勝ちにより、ナレッジエンジン側の「閉」状態（`transform: translateX(100%)`による画面外退避）が顧客記憶パネル側の`right:12px; width:380px`に汚染され、画面外へ完全に退避できず右端に約12px幅の帯が常時残留。これが`#chat-area`のスクロールバー帯（幅約15px）の大半を覆い、`position:fixed; z-index:300; pointer-events:auto`によってマウス操作を奪っていた。**Edge/Chromiumのネイティブスクロールバー仕様が原因ではないことをこの実測で確認済み**（カスタムドラッグハンドルは不要と判断・未実装）。最小修正として、衝突していたIDの片方（顧客記憶パネル側）のみを`company-memory-panel`へ改名（CSS2箇所・HTML1箇所・JS1箇所）。ナレッジエンジン側は無変更。副次効果として、従来`getElementById('knowledge-panel')`がDOM順で常にナレッジエンジン側を返すため一度も正しく開閉できていなかった顧客記憶パネル（🧠会社知識数）が、今回初めて正しく開閉できるようになった。
+- **Cross-case安全性**：IADPなし案件ではIADP/LFSとも残留なし（0件）、他案件のカードへ誤ジャンプしない、STABILITY検証用案件へ戻ると各1件のみ正確に再生成されることを実測確認。ジャンプ関数はすべてクリック時にID検索する設計で固定DOM参照を持たない。
+- **実機確認**：ユーザーのWindows/Edge実機でIADP⇄LFSジャンプ・↑/↓端ジャンプ・スクロールバー中央ドラッグを含め全項目正常動作を確認済み（Complete）。Console Error 0・dev-check 200/200/200・`git diff --check` CLEAN・実AI実行0回・追加API費用0円。
+
+**Version/Phase**：Version1 Final Complete／Version1.1 Connected AI Company 開発中（変更なし）。Phase54 Complete維持・Phase55未着手（変更なし）。
+
+**Git**：Code commit **0309086**（`feat: improve IADP and LFS navigation usability`）。docs commit・Annotated Tag・Pushは本Decision記録後に別途実施する。
+
+**次工程**：External Evidence Acquisition（設計調査のみ完了・未実装）。現状、Researcherは外部Web検索能力を持たずLLM内部知識のみで市場・競合調査を行っており、`Researcher`の成果物は正式Evidence正本`outputDraft.fields.intelligenceContext.evidence[]`へ接続されていない（Evidence正本は既存のAffiliate Evaluation手入力経路からのみ生成される）。設計調査では薄いEvidence Acquisition Adapterを追加する構成を推奨案として提示済みだが、Web Evidence取得の実装そのものは今回未着手のまま。
+
+---
+
 # Decision 099
 ## Instagram Account Design Package Post-Release Stability / Operational Quality 正式採用（IADP Post-Release Hotfix + Hotfix-Quality + Stability統合・正式リリース）（2026-08-11）
 

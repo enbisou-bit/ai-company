@@ -4,6 +4,20 @@
 
 ---
 
+## IADP / LFS Navigation & Scroll Usability Improvement **正式リリース**（2026-08-12・Decision100）
+
+純粋なUI操作性改善。**index.htmlのみ**（Code commit **0309086**・+99/-11）。IADP契約・LFS契約・Evidence判定・Quality Gate・Reviewer・Strategy・adoptionDecision・User Approval・Output Draft保存契約・Researcher・Analyst・DB・schema・APIはすべて無変更。
+
+- **IADP→LFS直接ジャンプ**：IADPカードへ「↓ Leader Final Summaryへ」を追加。
+- **LFS→IADP直接ジャンプ**：Leader Final Summaryへ「↑ Instagram Account Design Packageへ」を追加（既存`_lfsScrollToDetails()`を再利用）。
+- **チャット上端／下端固定ジャンプ**：`#chat-scroll-nav`（↑/↓）を追加。
+- **`#chat-area`スクロールバー操作性改善**：幅6px→14px、track/thumbコントラスト強化、Windows既定矢印ボタン非表示化。
+- **スクロールバー不具合の根本原因修正**：実機確認で「一部分しかドラッグできない」症状が判明し、`document.elementFromPoint()`のピクセル単位スイープで原因を特定。既存の`id="knowledge-panel"`重複バグ（📚ナレッジエンジン用・🧠顧客記憶パネル用が同一ID）により、ナレッジエンジン側の「閉」状態が画面外へ完全退避できず、右端の帯が`#chat-area`のスクロールバー領域の大半を覆っていた。**Edge/Chromiumのネイティブスクロールバー仕様が原因でないことを実測確認済み**。衝突IDの片方（顧客記憶パネル側）のみ`company-memory-panel`へ改名する最小修正で解消。副次効果として、従来一度も正しく開閉できていなかった顧客記憶パネルが今回初めて正しく開閉できるようになった。
+- Cross-case安全性・ユーザーWindows/Edge実機確認とも完了。Console Error 0・dev-check 200/200/200・`git diff --check` CLEAN・実AI実行0回・追加API費用0円。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。次工程はExternal Evidence Acquisition（設計調査完了・未実装）。詳細は docs/04DECISIONS.md Decision100参照。
+
+---
+
 ## IADP Post-Release Hotfix / Hotfix-Quality / Stability Hotfix **正式リリース**（2026-08-11・Decision099）
 
 Decision098（IG-2J-A〜I）後の実運用確認で、IADP生成物に構造・品質面の不備が判明した。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/agentResultNormalizer.js**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。
