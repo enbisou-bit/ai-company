@@ -14588,10 +14588,21 @@ function _eeaPersistEvidenceCandidates(candidates) {
     var baseCtx = _intelGetContext(draft);
     var nextCtx = JSON.parse(JSON.stringify(baseCtx));
     var maxBatch = (typeof EvidenceAcquisition !== 'undefined' && EvidenceAcquisition.MAX_EVIDENCE_PER_BATCH) ? EvidenceAcquisition.MAX_EVIDENCE_PER_BATCH : 5;
-    var limited = candidates.slice(0, maxBatch);
-    if (candidates.length > maxBatch) result.details.push({ ok: false, reason: 'batch_limited', total: candidates.length, limit: maxBatch });
+
+    // EEA-7①: 単純な先頭N件ではなく「重複除外→Trust Tier優先の安定ソート→上限適用」で選定する。
+    //   verificationStatusには一切関与しない（選定されただけではVerifiedにならない・従来どおりunverified保存）。
+    var selection = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.selectEvidenceCandidates === 'function')
+      ? EvidenceAcquisition.selectEvidenceCandidates(candidates, nextCtx.evidence, maxBatch)
+      : { selected: candidates.slice(0, maxBatch), skippedDuplicate: [], rejectedNoUrl: [], totalCandidates: candidates.length };
+    var limited = selection.selected;
+    if (selection.skippedDuplicate.length > 0) result.details.push({ ok: false, reason: 'pre_filtered_duplicate', count: selection.skippedDuplicate.length });
+    if (selection.rejectedNoUrl.length > 0) result.details.push({ ok: false, reason: 'pre_filtered_no_source_url', count: selection.rejectedNoUrl.length });
+    if (selection.totalCandidates > limited.length + selection.skippedDuplicate.length + selection.rejectedNoUrl.length) {
+      result.details.push({ ok: false, reason: 'batch_limited', total: selection.totalCandidates, limit: maxBatch });
+    }
 
     limited.forEach(function (c) {
+      // 既存Duplicate Check（EEA-4契約）は変更せず維持（selectEvidenceCandidates後の保険的二重チェック）。
       if (!c || !c.sourceUrl) { result.skippedCount++; result.details.push({ sourceUrl: c && c.sourceUrl, ok: false, reason: 'no_source_url' }); return; }
       if (c.caseId != null && String(c.caseId) !== String(curCaseId)) { result.skippedCount++; result.details.push({ sourceUrl: c.sourceUrl, ok: false, reason: 'candidate_case_mismatch' }); return; }
       var dup = (typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.isDuplicateEvidence === 'function')
@@ -14680,6 +14691,27 @@ function _eeaRenderResultArea(data, persistResult) {
     }
     h += '<div class="lfs-ai-note">保存してもverificationStatusは unverified のままです。IADP判定（Verified件数・Account Creation Ready）へはまだ反映されません。</div>';
     h += '</div>';
+
+    // EEA-7②: Category Coverage（可視化のみ・Gate/Ready判定には使用しない）
+    try {
+      var draftForCoverage = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+      var ctxForCoverage = draftForCoverage && draftForCoverage.fields && draftForCoverage.fields.intelligenceContext;
+      if (ctxForCoverage && typeof EvidenceAcquisition !== 'undefined' && typeof EvidenceAcquisition.evaluateCategoryCoverage === 'function') {
+        var cov = EvidenceAcquisition.evaluateCategoryCoverage(ctxForCoverage.evidence);
+        var covLabels = { market: 'Market', competition: 'Competition', monetization: 'Monetization' };
+        h += '<div class="lfs-block"><div class="lfs-block-title">Evidence Coverage（可視化のみ・Ready判定には使用しません）</div><div class="lfs-grid">';
+        ['market', 'competition', 'monetization'].forEach(function (cat) {
+          var b = cov.categories[cat];
+          h += '<div class="lfs-row"><span class="lfs-k">' + covLabels[cat] + '</span><span class="lfs-v">'
+            + b.totalCount + '件（verified ' + b.verifiedCount + '／unverified ' + b.unverifiedCount + '／独立source ' + b.independentSourceCount + '）</span></div>';
+        });
+        h += '</div>';
+        h += '<div class="lfs-sub" style="margin-top:4px;">充足: ' + (cov.coveredCategories.map(function (c) { return covLabels[c]; }).join('・') || 'なし')
+          + ' ／ 不足: ' + (cov.missingCategories.map(function (c) { return covLabels[c]; }).join('・') || 'なし') + '</div>';
+        h += '</div>';
+      }
+    } catch (covErr) { /* Coverage表示失敗でも検索結果表示は止めない */ }
+
     area.innerHTML = h;
   } catch (e) { console.warn('[EEA-3/4] result render error:', e && e.message); }
 }

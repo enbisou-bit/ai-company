@@ -373,6 +373,112 @@
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // EEA-7①: Trust Tier優先Evidence Selection（純粋関数・fail-open）
+  //
+  //   目的: MAX_EVIDENCE_PER_BATCHを「先頭N件」ではなく「重複除外→Trust Tier優先の安定ソート→
+  //   上限適用」の順で選定する。新しいTrust判定Engineは作らず既存classifySourceTrust()を再利用する。
+  //   verificationStatusには一切関与しない（選定されたCandidateも従来どおり呼び出し側がunverifiedで
+  //   保存する。Tierが高い＝自動Verifiedではない）。
+  // ══════════════════════════════════════════════════════════════
+  var UNCLASSIFIABLE_TIER_SORT_RANK = 999;   // tier:null（判定不能）は最下位（Tier8よりも後ろ）へ
+
+  // 既存 isDuplicateEvidence() をそのまま再利用し、candidates配列内の重複（同一sourceUrl×query/category）も
+  //   既存Evidenceとの重複と同じ基準で検出する（新しい重複判定基準は作らない）。
+  //   順序: ①重複除外（既存Evidence＋バッチ内） → ②Trust Tier評価 → ③同Tier内は元順序を保持する安定ソート
+  //        → ④MAX_EVIDENCE_PER_BATCH（またはmaxCount）で上限適用。
+  //   この順序が既存Duplicate Check契約上安全な理由: isDuplicateEvidence()自体は変更しておらず、
+  //   呼び出すタイミングを「先頭N件に切り詰めた後」から「全候補に対して」へ早めただけであるため、
+  //   重複の定義（EEA-4契約）は一切変わらない。むしろ旧実装（先頭N件を切ってから重複除外）では
+  //   重複を除外した結果N件未満しか保存されないことがあったが、本関数はN件に達するまで次点候補を
+  //   繰り上げられるため、Duplicate Check契約を壊さずに選定精度のみ改善する。
+  function selectEvidenceCandidates(candidates, existingEvidenceList, maxCount) {
+    var result = { selected: [], skippedDuplicate: [], rejectedNoUrl: [], totalCandidates: 0 };
+    try {
+      var arr = Array.isArray(candidates) ? candidates : [];
+      result.totalCandidates = arr.length;
+      var existing = Array.isArray(existingEvidenceList) ? existingEvidenceList : [];
+      var max = (typeof maxCount === 'number' && maxCount > 0) ? maxCount : MAX_EVIDENCE_PER_BATCH;
+
+      // ① 重複除外（既存Evidence＋バッチ内の先行候補の両方を対象に、既存isDuplicateEvidence()で判定）
+      var dedupPool = existing.slice();
+      var deduped = [];
+      for (var i = 0; i < arr.length; i++) {
+        var c = arr[i];
+        if (!c || !c.sourceUrl) { result.rejectedNoUrl.push(c); continue; }
+        if (isDuplicateEvidence(dedupPool, c)) { result.skippedDuplicate.push(c); continue; }
+        deduped.push({ c: c, idx: deduped.length });
+        // 後続候補との重複判定にも使えるよう、擬似的にweb_retrieved形式でpoolへ積む（正本へは書き込まない）
+        dedupPool = dedupPool.concat([{ sourceMethod: 'web_retrieved', sourceUrl: c.sourceUrl, query: c.query, category: c.category }]);
+      }
+
+      // ② Trust Tier評価 → ③ 安定ソート（Tier昇順。同Tier内は元のバッチ内順序=idxを維持）
+      deduped.forEach(function (item) { item.tier = classifySourceTrust(item.c.sourceUrl).tier; });
+      deduped.sort(function (a, b) {
+        var ta = (a.tier === null || a.tier === undefined) ? UNCLASSIFIABLE_TIER_SORT_RANK : a.tier;
+        var tb = (b.tier === null || b.tier === undefined) ? UNCLASSIFIABLE_TIER_SORT_RANK : b.tier;
+        if (ta !== tb) return ta - tb;
+        return a.idx - b.idx;   // 同Tier内は安定（元の検索結果順）
+      });
+
+      // ④ 上限適用
+      result.selected = deduped.slice(0, max).map(function (item) { return item.c; });
+      return result;
+    } catch (e) {
+      return result; // fail-open: 選定失敗時は空配列（呼び出し側を止めない。保存0件になるだけで安全側）
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // EEA-7②: Category Coverage（純粋関数・fail-open）
+  //
+  //   Search Plan正式カテゴリ（market/competition/monetization）についてEvidenceの充足状況を可視化する。
+  //   Coverageは「存在するかどうか」の可視化のみであり、Account Creation Ready / Evidence sufficient /
+  //   Quality Gateへの昇格判断には一切使用しない（既存Gate閾値 MIN_VERIFIED_EVIDENCE /
+  //   MIN_INDEPENDENT_SOURCES は本関数からは一切参照・変更しない）。
+  //   評価対象は evidenceType:'web_retrieved' のEvidenceのみ（category/queryはEEA-4以降でのみ付与される
+  //   フィールドのため。既存Affiliate Evaluation Evidence等は対象外＝混同しない）。
+  // ══════════════════════════════════════════════════════════════
+  var CATEGORY_COVERAGE_CATEGORIES = ['market', 'competition', 'monetization'];
+
+  function evaluateCategoryCoverage(evidenceList) {
+    var result = { categories: {}, coveredCategories: [], missingCategories: [] };
+    try {
+      CATEGORY_COVERAGE_CATEGORIES.forEach(function (cat) {
+        result.categories[cat] = { totalCount: 0, verifiedCount: 0, unverifiedCount: 0, independentSourceCount: 0 };
+      });
+      var list = Array.isArray(evidenceList) ? evidenceList : [];
+      var srcKeysByCategory = { market: {}, competition: {}, monetization: {} };
+
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        if (!isPlainObject(e)) continue;
+        if (e.evidenceType !== 'web_retrieved') continue;   // Category CoverageはWeb Evidenceのみ対象
+        var cat = str(e.category);
+        if (CATEGORY_COVERAGE_CATEGORIES.indexOf(cat) === -1) continue;   // 未定義カテゴリは対象外
+        var bucket = result.categories[cat];
+        bucket.totalCount++;
+        // EEA-6契約を維持: verified/user_verifiedのみ検証済み。unverifiedは明示的にunverifiedCountへ
+        //  （勝手にverified扱いしない）。
+        if (e.verificationStatus === 'verified' || e.verificationStatus === 'user_verified') {
+          bucket.verifiedCount++;
+          var key = _publisherKeyOf(e);
+          if (key) srcKeysByCategory[cat][key] = true;
+        } else {
+          bucket.unverifiedCount++;
+        }
+      }
+      CATEGORY_COVERAGE_CATEGORIES.forEach(function (cat) {
+        result.categories[cat].independentSourceCount = Object.keys(srcKeysByCategory[cat]).length;
+        if (result.categories[cat].totalCount > 0) result.coveredCategories.push(cat);
+        else result.missingCategories.push(cat);
+      });
+      return result;
+    } catch (e) {
+      return result; // fail-open
+    }
+  }
+
   // ── 公開API① Web Search request bodyの構築（純粋関数・APIキーを含まない） ──
   //   query: 検索クエリ文字列
   //   options: { model（必須相当・呼び出し側が明示指定）, searchContextSize（既定'low'）, max_output_tokens }
@@ -511,5 +617,9 @@
     SOURCE_TRUST_TIERS: SOURCE_TRUST_TIERS,
     classifySourceTrust: classifySourceTrust,
     evaluateVerifiedPromotion: evaluateVerifiedPromotion,
+    // EEA-7
+    CATEGORY_COVERAGE_CATEGORIES: CATEGORY_COVERAGE_CATEGORIES,
+    selectEvidenceCandidates: selectEvidenceCandidates,
+    evaluateCategoryCoverage: evaluateCategoryCoverage,
   };
 });
