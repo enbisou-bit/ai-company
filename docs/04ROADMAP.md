@@ -8,6 +8,21 @@
 
 ---
 
+## External Evidence Acquisition（正式リリース・2026-08-13・Decision 101）
+
+> 追記日: 2026-08-13。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。新規DB table・schema変更なし。
+
+- **EEA-1〜EEA-12 正式Complete**：Evidence schema extension／External Web Search Adapter／Search Plan + User Approval Gate／Evidence Normalization + Persistence／実Web Search限定検証／Source Trust・Independent Source・Verified Promotion評価／Trust Tier優先Selection + Category Coverage／Web Search Cost Tracker接続／Completion Gap Review／Verified Promotion Application（設計＋実装）／Final Regression／Formal Release。
+- **User Approval型Web Search**：Search Plan機械生成（LLM不使用・$0円）→ユーザー明示承認→billingLock解除→実Web Search、の順を厳守。`MAX_QUERIES_PER_APPROVAL=3`／`MAX_EVIDENCE_PER_BATCH=5`。
+- **Verified Promotion（2段階方式）**：Trust Tier（8段階）×Independent Source（独立2 Publisher以上）×claimType条件を満たしたEvidenceのみ`verified`へ昇格。処理順非依存を合成テストで確認。monetizationはclaimType未対応のためunverified固定（安全側）。
+- **Cost Tracker二層構造を正式記録**：ローカルGate用state（`cost-logs.json`）とSupabase実績正本（`api_cost_events`）は独立。「Historical Cost Lost」は「**Local Cost Gate State Historical Values Lost**」へ表現訂正（Supabase側実費は無傷）。
+- **実測toolCallCount精算**：`tool_choice:'auto'`によりquery数と実tool call数は一致しない場合がある（実測：3クエリ→6 tool calls）。事前表示は上限目安・実行後精算を正本とする仕様を明記。
+- **EEA-11実機検証**：QA専用case`case-msoplrg6gdkr`でverified Evidence5件・独立Publisher3件・`resolveIadpEvidence()`が既存Gate無改修で`sufficient`へ到達・F5復元Complete。Account Creation Readinessは`conditional`（Evidence起因ではなくuserApproval pending）。
+- Console Error 0・合成テスト36件全PASS・実Web Search1回（承認済み3クエリのみ）・追加API実行0回。
+- **次工程 ＝ Instagram実運用またはPhase55判断**（ユーザー承認後に決定）。Tier3/Tier6案件固有allowlist・monetization claimType mapping・Category Coverage Gate化はEEA Complete後の改善候補。Auto Task完全自動化・Researcher直接Web Search統合はEEA外の将来機能として保留。
+
+---
+
 ## IADP / LFS Navigation & Scroll Usability Improvement（正式リリース・2026-08-12・Decision 100）
 
 > 追記日: 2026-08-12。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**。**index.htmlのみ**（Code commit `0309086`・+99/-11）。IADP/LFS契約・Evidence判定・Quality Gate・Reviewer・Strategy・adoptionDecision・User Approval・Output Draft保存契約・Researcher・Analyst・DB・schema・APIは無変更。

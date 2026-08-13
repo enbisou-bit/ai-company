@@ -4,6 +4,20 @@
 
 ---
 
+## External Evidence Acquisition（EEA）**正式リリース**（2026-08-13・Decision101）
+
+Instagram Account Design Package（IADP）のEvidence不足を、AI会社自身がWeb Search経由で解消できる基盤。**新規DB table・schema変更なし**（正本は既存`outputDraft.fields.intelligenceContext.evidence[]`のみ）。
+
+- **User Approval型Web Search**：Search Plan（LLM不使用・$0円・機械生成）を表示し、ユーザーが「🔎 Web Evidence検索を実行」を明示押下するまで実行しない。billingLockはサーバー側で明示assertion必須。
+- **Verified Promotion（2段階方式）**：取得したEvidence Candidateを、Trust Tier（8段階）×Independent Source（独立2 Publisher以上）×claimTypeの既存決定論的条件で評価し、条件を満たしたもののみ`verificationStatus:'verified'`へ昇格。処理順に依存しないことを合成テストで確認。market/competitionは対応、monetizationは現時点claimType未対応のため安全側でunverified固定。
+- **Cost Trackerの二層構造を正式記録**：ローカルGate用state（`cost-logs.json`）とSupabase実績正本（`api_cost_events`→`/api/cost`）は完全に独立。過去の「Historical Cost Lost」表現を「**Local Cost Gate State Historical Values Lost**」へ訂正（Supabase側実費履歴は無傷）。
+- **実測toolCallCount精算の仕様化**：`tool_choice:'auto'`によりSearch Planのquery数と実際のOpenAI `web_search_call`数が一致しない場合があることを実測（3クエリ→実測6 tool calls）。事前表示は上限目安、実行後精算（`api_cost_events`実測）を正本とする。
+- **実機検証（EEA-11）**：QA専用case`case-msoplrg6gdkr`で承認済み3クエリのみ実Web Searchを実施。政府ドメイン5件が全件verified・独立Publisher3件・`resolveIadpEvidence()`実測で既存Gate（`MIN_VERIFIED_EVIDENCE=3`／`MIN_INDEPENDENT_SOURCES=2`・無変更）が`status:'sufficient'`へ到達。F5復元Complete。Account Creation Readinessは`conditional`（Evidence関連は全てComplete・唯一の理由はEvidenceと無関係な`userApproval: pending`）。
+- Console Error 0・合成テスト計36件全PASS（EEA-8：19件／EEA-10B：17件）・実Web Search1回（3クエリ・承認済み）・追加API実行0回。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。Tier3/Tier6 allowlist・monetization mapping・Category Coverage Gate化は改善候補として保留。次工程はInstagram実運用またはPhase55判断（ユーザー承認後）。詳細は docs/04DECISIONS.md Decision101参照。
+
+---
+
 ## IADP / LFS Navigation & Scroll Usability Improvement **正式リリース**（2026-08-12・Decision100）
 
 純粋なUI操作性改善。**index.htmlのみ**（Code commit **0309086**・+99/-11）。IADP契約・LFS契約・Evidence判定・Quality Gate・Reviewer・Strategy・adoptionDecision・User Approval・Output Draft保存契約・Researcher・Analyst・DB・schema・APIはすべて無変更。
