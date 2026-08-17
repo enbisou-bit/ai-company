@@ -4,6 +4,22 @@
 
 ---
 
+## Deliverable Completion Architecture（STEP 6）**正式リリース**（2026-08-18・Decision102）
+
+「AIが処理を終えた」ことと「依頼が本当に完了した」ことを分離するCompletion判定軸を新規採用。**`index.html`のみ**（Code commit **364b65a**）。Quality Gate・Constitution・User Approval・Formal Truth（Case Context）はいずれも無変更・非干渉。
+
+- **Completion Core**：純関数`evaluateDeliverableCompletion()`（Contract v1.0.0・追加AI call 0）が`OUTPUT_PACKAGE_QUALITY_CHECKS`のrequired属性からoutputType別必須成果物の充足を判定し、`complete`／`incomplete`／`blocked`の3値を返す。`blocked`は必須成果物充足済み＋外部実行語＋User Approval pendingの組み合わせでのみ発火する安全側限定判定。
+- **Completion保存・復元**：新DB列・新テーブルなし。既存`package_quality`（JSONB）へ`completionAssessment`を同梱保存し、F5復元時にdraftトップレベルへ再展開。`FORMAL_CASE_FIELDS`（次Draftへcarry-forwardする案件正式fields契約）には含めない。
+- **Formal Truth Race Condition安全化**：案件切替直後にAuto Taskが開始するとOutput Draft復元完了前に走り`iadp`/`intelligenceContext`が新Draftへ引き継がれない実測済みの競合を、`scheduleOutputDraftRestore()`のPromise化と`atRunWorkflow()`側のawaitガードで解消（sleep/setTimeout不使用）。単一field（iadp）限定だったcarry-forwardを`FORMAL_CASE_FIELDS`契約全体（4項目）へ一般化。
+- **実AI E2E（`case-msoplrg6gdkr`・1 workflow）**：`estimateAutoTaskCalls()`事前見積りmax=5と実call数5（Claude3・OpenAI2）が一致・想定外カスケードなし・Web Search0回。新規Draft`out_1786976475516`でFormal Truth carry-forward・completionAssessment DB保存/F5復元一致・他7 case完全不変（Cross-case非混入）を実測。
+- **Completion UI**：Output Engineパネルへ最小表示（Complete/Incomplete/Blockedの短縮バッジのみ・contract全体は非表示）。`completionAssessment`が存在しない既存Draftは非表示（Complete扱い・推測表示のいずれもしない）。
+- **Output Type判定精度改善**：`detectOutputType()`の`instagram_post`キーワードへ`instagram`/`インスタ`裸トークンを追加し、carousel固有語を含まない一般的なInstagram投稿依頼が`instagram_carousel`へ誤判定される実バグを修正（13型代表テスト回帰なし・既存fallback`document`維持）。
+- **既知の未commit差分（今回対象外）**：working treeに存在した別系統差分「Leader Case Context Phase2」（`claudeClient.js`／`openaiClient.js`／`server.js`および`index.html`一部）はSTEP 6と機能的依存がないため今回のcommitから意図的に除外（別途ユーザー判断でリリース）。
+- node --test 81 PASS／6 FAIL（`server.test.js`のLeader固定返信文言ドリフトによるpre-existing failure・本リリースと無関係・未修正）。EEA既存合成テスト36件全PASS。inline script構文OK・`git diff --check` CLEAN・dev-check 200/200/200。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。次工程はInstagram実運用を優先（ユーザー承認後）。詳細は docs/04DECISIONS.md Decision102参照。
+
+---
+
 ## External Evidence Acquisition（EEA）**正式リリース**（2026-08-13・Decision101）
 
 Instagram Account Design Package（IADP）のEvidence不足を、AI会社自身がWeb Search経由で解消できる基盤。**新規DB table・schema変更なし**（正本は既存`outputDraft.fields.intelligenceContext.evidence[]`のみ）。

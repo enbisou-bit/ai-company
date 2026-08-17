@@ -8,6 +8,22 @@
 
 ---
 
+## Deliverable Completion Architecture（正式リリース・2026-08-18・Decision 102）
+
+> 追記日: 2026-08-18。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。新規DB table・schema変更なし。**index.htmlのみ**（Code commit `364b65a`）。
+
+- **Completion Core**：`evaluateDeliverableCompletion()`（Contract v1.0.0・追加AI call 0）がoutputType別required項目の充足から`complete`／`incomplete`／`blocked`を判定。Quality Gate・Constitution・User Approval・Formal Truthとは責務分離（重複判定・書き換えなし）。
+- **Completion保存・復元**：既存`package_quality`JSONBへ同梱保存・F5復元でdraftトップレベルへ再展開（新DB列なし）。`FORMAL_CASE_FIELDS`には含めない（次Draftへcarry-forwardしない）。
+- **Formal Truth Race Condition安全化**：案件切替直後のAuto Task開始でOutput Draft復元前にFormal Truthが引き継がれない実測済み競合を、`scheduleOutputDraftRestore()`のPromise化＋`atRunWorkflow()`側awaitガードで解消（sleep/setTimeout不使用）。carry-forwardを`FORMAL_CASE_FIELDS`契約全体（iadp／intelligenceContext／affiliateContext／approvedDecisionPackage）へ一般化。
+- **実AI E2E**：`case-msoplrg6gdkr`で1 workflow・実call5（見積りmax=5と一致）・Web Search0回・Cross-case非混入を実測確認。
+- **Completion UI**：Output EngineへComplete/Incomplete/Blockedの最小表示を追加。旧Draット（completionAssessment未生成）は非表示。
+- **Output Type判定精度改善**：`instagram_post`の一般的な投稿依頼が`instagram_carousel`へ誤判定される実バグを修正（13型回帰なし）。
+- Console Error 0・EEA既存合成テスト36件全PASS・node --test 81 PASS/6 FAIL（既知pre-existing・本リリースと無関係）・実AI追加費用は事前見積り内（5 call）。
+- **既知の未commit差分（今回対象外）**：「Leader Case Context Phase2」（Leader dispatch関連へのcaseId伝播）は本リリースと機能的依存がないため今回除外。別途ユーザー判断でリリース。
+- **次工程 ＝ Instagram実運用を優先**（ユーザー承認後）。iPhone実機確認（Output Engine・Completion UI表示・既存画面非崩壊・案件切替後の正常動作）待ち。
+
+---
+
 ## External Evidence Acquisition（正式リリース・2026-08-13・Decision 101）
 
 > 追記日: 2026-08-13。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。新規DB table・schema変更なし。
