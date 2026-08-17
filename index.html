@@ -10428,7 +10428,11 @@ function buildOutputDraftPayloadForServer(draft, caseId) {
     sourceText:     draft.sourceText || null,
     fields:         draft.fields || null,
     quality:        draft.quality || null,
-    packageQuality: draft.packageQuality || null,
+    // STEP 6 工程2: 新DB列を作らず、既存packageQuality（JSONB）へcompletionAssessmentを同梱して保存する。
+    //   completionAssessment自体はpackageQualityの意味を変更しない（別キーとして併存するのみ）。
+    packageQuality: draft.packageQuality
+      ? Object.assign({}, draft.packageQuality, { completionAssessment: draft.completionAssessment || null })
+      : (draft.completionAssessment ? { completionAssessment: draft.completionAssessment } : null),
     assignedRoles:  draft.assignedRoles || null,
     schemaVersion:  draft.schemaVersion || null,
     detection:      draft.detection || null,
@@ -10584,6 +10588,10 @@ function scheduleApprovalSync(reason) {
 // ══════════════════════════════════════════════════════════════
 let _outputDraftRestoreInFlight = false;   // 多重復元防止（GET用 _approvalSyncInFlight とは別物）
 let _outputDraftRestorePending = null;     // Phase54-2d fix2: in-flight中に来た最新要求（連続切替の最後を必ず実行）
+// STEP6工程2 FAIL対応: 現在進行中（または直近開始）の復元Promise。scheduleOutputDraftRestore()の
+//   既存fire-and-forget呼び出し元（switchCase等）は戻り値を使わないため無変更のまま動作する。
+//   Auto Task開始前など「復元完了を実際に待ちたい」呼び出し元だけがこの戻り値をawaitできる（新規の任意機能）。
+let _outputDraftRestoreInFlightPromise = null;
 
 // DB行(snake_case)を _lastOutputDraft 形(camelCase)へ変換。output_id はそのまま使用（新規採番しない）。
 function _outputDraftFromServerRow(row) {
@@ -10605,6 +10613,11 @@ function _outputDraftFromServerRow(row) {
     builtAt:        row.built_at || null,
   });
   if (d) d._restoredFromServer = true;   // 復元由来マーク（次回の安全な置換判定用・保存payloadには含めない）
+  // STEP 6 工程2: packageQuality（JSONB）に同梱保存されたcompletionAssessmentをトップレベルへ復元する
+  //   （生成直後の_lastOutputDraft.completionAssessmentと同じ形にそろえる・F5復元後も同一構造でアクセス可能にする）。
+  if (d && d.packageQuality && d.packageQuality.completionAssessment) {
+    d.completionAssessment = d.packageQuality.completionAssessment;
+  }
   return d;
 }
 
@@ -10669,13 +10682,14 @@ async function restoreOutputDraftFromServer(reqCaseId, reason) {
 // 起動/案件切替契機の一本化（多重実行防止・TDZ回避でマイクロタスクへ）。既存 scheduleApprovalSync と同契機で直前に呼ぶ。
 function scheduleOutputDraftRestore(reason) {
   var caseId = getCurrentApprovalCaseId();
-  if (!caseId) return;                                      // case未確定→何もしない（起動直後など）
+  if (!caseId) return null;                                 // case未確定→何もしない（起動直後など）
   if (_outputDraftRestoreInFlight) {
     _outputDraftRestorePending = { reason: reason };        // Phase54-2d fix2: 破棄せず最新要求を保持（完了後に必ず実行）
-    return;
+    return _outputDraftRestoreInFlightPromise;               // STEP6工程2 FAIL対応: 新規GETは発行せず、既存in-flightを返すだけ（挙動不変）
   }
   _outputDraftRestoreInFlight = true;
-  Promise.resolve().then(function () { restoreOutputDraftFromServer(caseId, reason); });
+  _outputDraftRestoreInFlightPromise = Promise.resolve().then(function () { return restoreOutputDraftFromServer(caseId, reason); });
+  return _outputDraftRestoreInFlightPromise;                 // 既存呼び出し元は戻り値を使わないため無影響（fire-and-forgetのまま）
 }
 
 // 起動時にlocalStorageから読み込み
@@ -12715,6 +12729,20 @@ const AT_AGENTS = [
   // { id: 'estimate',      label: '🧮 Estimate（見積）' },
   // { id: 'photo_analysis',label: '📷 現場写真解析' },
   // { id: 'image_gen',     label: '🖼️ 画像生成' },
+];
+
+// ══════════════════════════════════════════════════════════════
+// End-to-End Completion Stabilization STEP1: 案件単位で維持すべき正式fields契約
+//   Output Draftのfieldsには2種類ある：
+//     ①案件単位の正式情報（Formal Truth）— 出力タイプが変わっても維持すべきもの
+//     ②その成果物タイプ固有の本文（cta/caption/slides/sections等）— 新しい成果物では作り直すもの
+//   ①だけを明示的に列挙し、新Draft作成時にcarry-forwardする（②は引き継がない＝古い一時値を残さない）。
+//   新しい案件単位の正式fieldsを追加する場合はこの配列へ追記するだけでよい。
+const FORMAL_CASE_FIELDS = [
+  'iadp',                    // Instagram Account Design Package（採用ジャンル・Profile等の正本）
+  'intelligenceContext',     // Verified Evidence / Evidence Gate の正本
+  'affiliateContext',        // 採用商材（Affiliate Intelligence）の正本
+  'approvedDecisionPackage', // Approved Decision Package（Constitution第4条の正式契約）
 ];
 
 // タスク行カウンター（task row counter）
@@ -15628,12 +15656,33 @@ async function atRunWorkflow(options) {
   const _atRunCaseId = getCurrentApprovalCaseId() || null;
   _atLinkDispatchTasksToWorkflow(_atRunCaseId, _atCurrentWorkflowId, tasks.map(t => t.agentId), _atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId]);
 
-  // Phase IG-2E: 1 case 1 正本 — createOutputDraft()がfields:{}へ初期化する前に、現在案件へ
-  //   保存済みの承認済みIADPを退避する。今回の実行がIADP依頼か否かに関わらず退避しておくことで、
-  //   同一案件内で別種のAuto Taskを実行しても既存の正本IADPが消えないようにする（追加のみ）。
-  var _iadpFieldsCarryForward = (_lastOutputDraft && _lastOutputDraft.caseId === _atRunCaseId
-      && _lastOutputDraft.fields && _lastOutputDraft.fields.iadp)
-    ? _lastOutputDraft.fields.iadp : null;
+  // STEP6工程2 FAIL対応: Case Restore Race Condition safety-net。
+  //   switchCase()はDraft復元（restoreOutputDraftFromServer）の完了を待たずに戻るfire-and-forget設計のため、
+  //   案件切替直後にAuto Taskを開始すると、_lastOutputDraftが前案件（または未復元）のまま
+  //   下のFORMAL_CASE_FIELDS carry-forwardの対象外になり、iadp/intelligenceContext等のFormal Truthが
+  //   新Draftへ引き継がれない場合があった（実測で確認）。
+  //   固定時間のsleep/setTimeoutではなく、実際に進行中/新規の復元Promiseをawaitして解決する。
+  //   _lastOutputDraft.caseIdが既に一致していれば即座に素通り（既存の正常経路は無遅延のまま）。
+  //   サーバー側にDraftが存在しない新規caseの場合はrestoreがnullを返すだけで、ここでは一切ブロックしない
+  //   （carry-forward自体が「既存caseIdと一致した場合のみ」動作する既存の安全設計に委ねる）。
+  if (_atRunCaseId && (!_lastOutputDraft || _lastOutputDraft.caseId !== _atRunCaseId)) {
+    try {
+      var _atRestoreWait = scheduleOutputDraftRestore('preWorkflowGuard');
+      if (_atRestoreWait && typeof _atRestoreWait.then === 'function') { await _atRestoreWait; }
+    } catch (_atRestoreErr) { /* fail-open: 復元待機に失敗してもWorkflow自体は止めない */ }
+  }
+
+  // Phase IG-2E → End-to-End Completion Stabilization STEP1: 1 case 1 正本。
+  //   createOutputDraft()がfields:{}へ初期化する前に、現在案件の「案件単位で維持すべき正式fields」を退避する。
+  //   従来はiadpのみを退避していたためintelligenceContext（Verified Evidence正本）等が
+  //   別種Auto Task実行のたびに新Draftから欠落していた。対象は下のFORMAL_CASE_FIELDS契約に限定する
+  //   （fieldsを無条件全コピーはしない＝旧成果物本文・一時値は引き継がない）。
+  var _formalFieldsCarryForward = {};
+  if (_lastOutputDraft && _lastOutputDraft.caseId === _atRunCaseId && _lastOutputDraft.fields) {
+    FORMAL_CASE_FIELDS.forEach(function (k) {
+      if (_lastOutputDraft.fields[k]) _formalFieldsCarryForward[k] = _lastOutputDraft.fields[k];
+    });
+  }
 
   // Phase IG-2B: Instagram Account Intelligence 専用判定・専用実行構成。
   //   既存タスク構成（DOM由来）を上書きするのは判定が一致した場合のみ。
@@ -15730,10 +15779,13 @@ async function atRunWorkflow(options) {
   _lastOutputDetection = detectOutputType(userMessage);
   // 社員向上B B-1: 検出値を正式値へ正規化してからDraft生成（二重判定はしない・冪等）
   _lastOutputDraft     = createOutputDraft(normalizeOutputType(_lastOutputDetection.type), userMessage);
-  // Phase IG-2E: 退避しておいた承認済みIADPを新Draftへ引き継ぐ（このAuto Task実行がIADPでなくても消えないようにする）
-  if (_iadpFieldsCarryForward && _lastOutputDraft) {
+  // STEP1: 退避しておいた案件単位の正式fieldsを新Draftへ引き継ぐ
+  //   （このAuto Task実行が別種の依頼でもFormal Truthが消えないようにする）。
+  if (_lastOutputDraft) {
     if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
-    _lastOutputDraft.fields.iadp = _iadpFieldsCarryForward;
+    Object.keys(_formalFieldsCarryForward).forEach(function (k) {
+      _lastOutputDraft.fields[k] = _formalFieldsCarryForward[k];
+    });
   }
   // Phase45-7: Knowledge取得・選定（失敗してもWorkflowを止めない）
   // Phase46-1: fetch状態・件数を追跡
@@ -29687,95 +29739,102 @@ const OUTPUT_PACKAGE_QUALITY_TYPE_MAP = {
 // fieldKeys が空配列の項目は、現在の成果物テンプレート（OUTPUT_TYPE_DEFINITIONS.outputFields）に対応フィールドが
 // 存在しないため常に「未検出」として扱う。
 // Phase48-2でOUTPUT_TYPE_DEFINITIONSへ実フィールドを追加したため、多くの項目がfieldKeysを持つよう更新済み。
+// STEP 6 工程1: required属性（Deliverable Completion判定専用・既存score計算では未参照）。
+//   required:true = このカテゴリの成果物として成立するために本当に必要な項目（欠けるとIncomplete）。
+//   required:false = あれば完成度は上がるが、無くてもCompletionは妨げない（品質はQuality Gateの責務）。
+//   既存のkey/label/fieldKeys・score算出ロジック・packageQuality.statusの意味は一切変更しない（追加属性のみ）。
+//   注意: instagram_post/instagram_carouselは同一'instagram'カテゴリを共有するため、
+//   required判定もカテゴリ単位（型ごとの個別必須リストではない）。caption/ctaはどちらの型でも
+//   成立に必要な最小項目として選定した。
 const OUTPUT_PACKAGE_QUALITY_CHECKS = {
   instagram: [
-    { key: 'hook',            label: 'フック（Hook）',     fieldKeys: ['slides'] },
-    { key: 'slideTitles',     label: 'スライドタイトル',   fieldKeys: ['slides'] },
-    { key: 'slideBody',       label: 'スライド本文',       fieldKeys: ['slides'] },
-    { key: 'cta',             label: 'CTA',                fieldKeys: ['cta'] },
-    { key: 'caption',         label: 'キャプション',       fieldKeys: ['caption'] },
-    { key: 'hashtags',        label: 'ハッシュタグ',       fieldKeys: ['hashtags'] },
-    { key: 'imagePrompts',    label: '画像生成プロンプト', fieldKeys: ['imagePrompts', 'imagePrompt'] },
-    { key: 'targetAudience',  label: 'ターゲット層',       fieldKeys: ['targetAudience'] },
-    { key: 'benefit',         label: 'ベネフィット',       fieldKeys: ['benefit'] },
-    { key: 'saveSharePrompt', label: '保存・シェア誘導',   fieldKeys: ['saveSharePrompt'] },
+    { key: 'hook',            label: 'フック（Hook）',     fieldKeys: ['slides'], required: false },
+    { key: 'slideTitles',     label: 'スライドタイトル',   fieldKeys: ['slides'], required: false },
+    { key: 'slideBody',       label: 'スライド本文',       fieldKeys: ['slides'], required: false },
+    { key: 'cta',             label: 'CTA',                fieldKeys: ['cta'], required: true },
+    { key: 'caption',         label: 'キャプション',       fieldKeys: ['caption'], required: true },
+    { key: 'hashtags',        label: 'ハッシュタグ',       fieldKeys: ['hashtags'], required: false },
+    { key: 'imagePrompts',    label: '画像生成プロンプト', fieldKeys: ['imagePrompts', 'imagePrompt'], required: false },
+    { key: 'targetAudience',  label: 'ターゲット層',       fieldKeys: ['targetAudience'], required: false },
+    { key: 'benefit',         label: 'ベネフィット',       fieldKeys: ['benefit'], required: false },
+    { key: 'saveSharePrompt', label: '保存・シェア誘導',   fieldKeys: ['saveSharePrompt'], required: false },
   ],
   video: [
-    { key: 'hook',          label: 'フック（Hook）',     fieldKeys: ['script'] },
-    { key: 'sceneList',     label: 'シーン構成',         fieldKeys: ['script'] },
-    { key: 'narration',     label: 'ナレーション',       fieldKeys: ['script'] },
-    { key: 'visualPrompts', label: '映像生成プロンプト', fieldKeys: ['visualPrompts', 'videoPrompt', 'prompt'] },
-    { key: 'motionPrompts', label: 'モーション指示',     fieldKeys: ['motionPrompts', 'videoPrompt', 'prompt'] },
-    { key: 'caption',       label: 'キャプション',       fieldKeys: ['captions', 'description'] },
-    { key: 'cta',           label: 'CTA',                fieldKeys: ['cta'] },
-    { key: 'duration',      label: '尺（Duration）',     fieldKeys: ['duration'] },
-    { key: 'musicMood',     label: '音楽・雰囲気指示',   fieldKeys: ['musicMood'] },
-    { key: 'ending',        label: 'エンディング',       fieldKeys: ['ending'] },
+    { key: 'hook',          label: 'フック（Hook）',     fieldKeys: ['script'], required: false },
+    { key: 'sceneList',     label: 'シーン構成',         fieldKeys: ['script'], required: true },
+    { key: 'narration',     label: 'ナレーション',       fieldKeys: ['script'], required: false },
+    { key: 'visualPrompts', label: '映像生成プロンプト', fieldKeys: ['visualPrompts', 'videoPrompt', 'prompt'], required: false },
+    { key: 'motionPrompts', label: 'モーション指示',     fieldKeys: ['motionPrompts', 'videoPrompt', 'prompt'], required: false },
+    { key: 'caption',       label: 'キャプション',       fieldKeys: ['captions', 'description'], required: false },
+    { key: 'cta',           label: 'CTA',                fieldKeys: ['cta'], required: true },
+    { key: 'duration',      label: '尺（Duration）',     fieldKeys: ['duration'], required: false },
+    { key: 'musicMood',     label: '音楽・雰囲気指示',   fieldKeys: ['musicMood'], required: false },
+    { key: 'ending',        label: 'エンディング',       fieldKeys: ['ending'], required: false },
   ],
   flyer: [
-    { key: 'headline',          label: 'ヘッドライン',     fieldKeys: ['catchcopy'] },
-    { key: 'subheadline',       label: 'サブヘッドライン', fieldKeys: ['subheadline'] },
-    { key: 'offer',             label: 'オファー',         fieldKeys: ['offer'] },
-    { key: 'proof',             label: '実績・信頼要素',   fieldKeys: ['proof', 'body'] },
-    { key: 'area',              label: '対応エリア',       fieldKeys: ['area'] },
-    { key: 'cta',               label: 'CTA',              fieldKeys: ['cta'] },
-    { key: 'layoutInstruction', label: 'レイアウト指示',   fieldKeys: ['layoutInstruction', 'designNotes'] },
-    { key: 'imageInstruction',  label: '画像指示',         fieldKeys: ['imageInstruction', 'designNotes'] },
-    { key: 'contact',           label: '連絡先',           fieldKeys: ['contact'] },
+    { key: 'headline',          label: 'ヘッドライン',     fieldKeys: ['catchcopy'], required: true },
+    { key: 'subheadline',       label: 'サブヘッドライン', fieldKeys: ['subheadline'], required: false },
+    { key: 'offer',             label: 'オファー',         fieldKeys: ['offer'], required: false },
+    { key: 'proof',             label: '実績・信頼要素',   fieldKeys: ['proof', 'body'], required: false },
+    { key: 'area',              label: '対応エリア',       fieldKeys: ['area'], required: false },
+    { key: 'cta',               label: 'CTA',              fieldKeys: ['cta'], required: true },
+    { key: 'layoutInstruction', label: 'レイアウト指示',   fieldKeys: ['layoutInstruction', 'designNotes'], required: false },
+    { key: 'imageInstruction',  label: '画像指示',         fieldKeys: ['imageInstruction', 'designNotes'], required: false },
+    { key: 'contact',           label: '連絡先',           fieldKeys: ['contact'], required: false },
   ],
   lp: [
-    { key: 'firstView',     label: 'ファーストビュー', fieldKeys: ['firstView', 'headline'] },
-    { key: 'problem',       label: '課題提起',         fieldKeys: ['problem', 'sections'] },
-    { key: 'solution',      label: '解決策',           fieldKeys: ['solution', 'sections'] },
-    { key: 'benefits',      label: 'ベネフィット',     fieldKeys: ['benefits', 'sections'] },
-    { key: 'proof',         label: '実績・信頼要素',   fieldKeys: ['proof', 'sections'] },
-    { key: 'flow',          label: 'ご利用の流れ',     fieldKeys: ['flow', 'sections'] },
-    { key: 'faq',           label: 'FAQ',              fieldKeys: ['faq', 'sections'] },
-    { key: 'cta',           label: 'CTA',              fieldKeys: ['cta'] },
-    { key: 'htmlStructure', label: 'HTML構造',         fieldKeys: ['htmlStructure', 'html'] },
+    { key: 'firstView',     label: 'ファーストビュー', fieldKeys: ['firstView', 'headline'], required: true },
+    { key: 'problem',       label: '課題提起',         fieldKeys: ['problem', 'sections'], required: false },
+    { key: 'solution',      label: '解決策',           fieldKeys: ['solution', 'sections'], required: false },
+    { key: 'benefits',      label: 'ベネフィット',     fieldKeys: ['benefits', 'sections'], required: false },
+    { key: 'proof',         label: '実績・信頼要素',   fieldKeys: ['proof', 'sections'], required: false },
+    { key: 'flow',          label: 'ご利用の流れ',     fieldKeys: ['flow', 'sections'], required: false },
+    { key: 'faq',           label: 'FAQ',              fieldKeys: ['faq', 'sections'], required: false },
+    { key: 'cta',           label: 'CTA',              fieldKeys: ['cta'], required: true },
+    { key: 'htmlStructure', label: 'HTML構造',         fieldKeys: ['htmlStructure', 'html'], required: false },
   ],
   pdf: [
-    { key: 'title',             label: 'タイトル',       fieldKeys: ['title'] },
-    { key: 'summary',           label: 'サマリー',       fieldKeys: ['summary'] },
-    { key: 'sections',          label: '構成セクション', fieldKeys: ['sections'] },
-    { key: 'visualInstruction', label: 'ビジュアル指示', fieldKeys: ['visualInstruction'] },
-    { key: 'proof',             label: '実績・根拠',     fieldKeys: ['proof', 'sections'] },
-    { key: 'cta',               label: 'CTA',            fieldKeys: ['cta'] },
-    { key: 'nextAction',        label: '次のアクション', fieldKeys: ['nextAction'] },
+    { key: 'title',             label: 'タイトル',       fieldKeys: ['title'], required: true },
+    { key: 'summary',           label: 'サマリー',       fieldKeys: ['summary'], required: false },
+    { key: 'sections',          label: '構成セクション', fieldKeys: ['sections'], required: true },
+    { key: 'visualInstruction', label: 'ビジュアル指示', fieldKeys: ['visualInstruction'], required: false },
+    { key: 'proof',             label: '実績・根拠',     fieldKeys: ['proof', 'sections'], required: false },
+    { key: 'cta',               label: 'CTA',            fieldKeys: ['cta'], required: false },
+    { key: 'nextAction',        label: '次のアクション', fieldKeys: ['nextAction'], required: false },
   ],
   html: [
-    { key: 'structure',         label: '構造',                 fieldKeys: ['htmlStructure', 'html'] },
-    { key: 'sections',          label: 'セクション',           fieldKeys: ['sections'] },
-    { key: 'cta',               label: 'CTA',                  fieldKeys: ['cta'] },
-    { key: 'responsiveNote',    label: 'レスポンシブ対応メモ', fieldKeys: ['responsiveNote'] },
-    { key: 'copyBlocks',        label: 'コピーブロック',       fieldKeys: ['copy'] },
-    { key: 'visualInstruction', label: 'ビジュアル指示',       fieldKeys: ['visualInstruction'] },
+    { key: 'structure',         label: '構造',                 fieldKeys: ['htmlStructure', 'html'], required: true },
+    { key: 'sections',          label: 'セクション',           fieldKeys: ['sections'], required: false },
+    { key: 'cta',               label: 'CTA',                  fieldKeys: ['cta'], required: false },
+    { key: 'responsiveNote',    label: 'レスポンシブ対応メモ', fieldKeys: ['responsiveNote'], required: false },
+    { key: 'copyBlocks',        label: 'コピーブロック',       fieldKeys: ['copy'], required: false },
+    { key: 'visualInstruction', label: 'ビジュアル指示',       fieldKeys: ['visualInstruction'], required: false },
   ],
   // Phase48-2: image_prompt専用カテゴリ（従来はgeneric共有）
   image_prompt: [
-    { key: 'subject',         label: '被写体',                 fieldKeys: ['subject'] },
-    { key: 'style',           label: 'スタイル',               fieldKeys: ['style'] },
-    { key: 'composition',     label: '構図',                   fieldKeys: ['composition'] },
-    { key: 'lighting',        label: 'ライティング',           fieldKeys: ['lighting'] },
-    { key: 'background',      label: '背景',                   fieldKeys: ['background'] },
-    { key: 'negativePrompt',  label: 'ネガティブプロンプト',   fieldKeys: ['negativePrompt'] },
-    { key: 'usage',           label: '用途',                   fieldKeys: ['usage'] },
+    { key: 'subject',         label: '被写体',                 fieldKeys: ['subject'], required: true },
+    { key: 'style',           label: 'スタイル',               fieldKeys: ['style'], required: false },
+    { key: 'composition',     label: '構図',                   fieldKeys: ['composition'], required: false },
+    { key: 'lighting',        label: 'ライティング',           fieldKeys: ['lighting'], required: false },
+    { key: 'background',      label: '背景',                   fieldKeys: ['background'], required: false },
+    { key: 'negativePrompt',  label: 'ネガティブプロンプト',   fieldKeys: ['negativePrompt'], required: false },
+    { key: 'usage',           label: '用途',                   fieldKeys: ['usage'], required: false },
   ],
   // Phase48-2: video_prompt専用カテゴリ（従来はvideoカテゴリ共有）
   video_prompt: [
-    { key: 'scene',          label: 'シーン',                 fieldKeys: ['scene'] },
-    { key: 'cameraMotion',   label: 'カメラワーク',           fieldKeys: ['cameraMotion'] },
-    { key: 'subjectMotion',  label: '被写体の動き',           fieldKeys: ['subjectMotion'] },
-    { key: 'duration',       label: '尺（Duration）',         fieldKeys: ['duration'] },
-    { key: 'style',          label: 'スタイル',               fieldKeys: ['style'] },
-    { key: 'ending',         label: 'エンディング',           fieldKeys: ['ending'] },
-    { key: 'negativePrompt', label: 'ネガティブプロンプト',   fieldKeys: ['negativePrompt'] },
+    { key: 'scene',          label: 'シーン',                 fieldKeys: ['scene'], required: true },
+    { key: 'cameraMotion',   label: 'カメラワーク',           fieldKeys: ['cameraMotion'], required: false },
+    { key: 'subjectMotion',  label: '被写体の動き',           fieldKeys: ['subjectMotion'], required: false },
+    { key: 'duration',       label: '尺（Duration）',         fieldKeys: ['duration'], required: false },
+    { key: 'style',          label: 'スタイル',               fieldKeys: ['style'], required: false },
+    { key: 'ending',         label: 'エンディング',           fieldKeys: ['ending'], required: false },
+    { key: 'negativePrompt', label: 'ネガティブプロンプト',   fieldKeys: ['negativePrompt'], required: false },
   ],
   generic: [
-    { key: 'title',      label: 'タイトル',       fieldKeys: ['title'] },
-    { key: 'summary',    label: 'サマリー',       fieldKeys: ['summary', 'body'] },
-    { key: 'cta',        label: 'CTA',            fieldKeys: ['cta'] },
-    { key: 'nextAction', label: '次のアクション', fieldKeys: [] },
+    { key: 'title',      label: 'タイトル',       fieldKeys: ['title'], required: true },
+    { key: 'summary',    label: 'サマリー',       fieldKeys: ['summary', 'body'], required: true },
+    { key: 'cta',        label: 'CTA',            fieldKeys: ['cta'], required: false },
+    { key: 'nextAction', label: '次のアクション', fieldKeys: [], required: false },
   ],
 };
 
@@ -29833,6 +29892,102 @@ const OUTPUT_PACKAGE_QUALITY_RECOMMENDATIONS = {
   cameraMotion: 'カメラワークの指示を検討してください',
   subjectMotion: '被写体の動きの指示を検討してください',
 };
+
+// ══════════════════════════════════════════════════════════════
+// STEP 6 工程1: Deliverable Completion Core（純関数・DB取得/API呼び出しなし）
+// 目的: 「AIが返答した」ではなく「依頼に必要な成果物がそろったか」を機械判定する。
+// 責務境界（重複判定しない）:
+//   ・出来が良いか         → 既存 Quality Gate / packageQuality.status の責務（ここでは再判定しない）
+//   ・正式情報を正しく使ったか → 既存 Formal Truth Priority（Case Context）の責務
+//   ・会社原則に違反しないか  → 既存 Constitution Validator の責務
+//   ・本人承認が要るか      → 既存 User Approval（読み取り専用。ここから変更しない）
+//   ・依頼に必要な成果物がそろったか → 本関数の責務（これだけを判定する）
+// 既存 evaluateOutputPackageQuality() が算出した completedItems/missingItems を再利用するのみで、
+// フィールド判定ロジック自体（_outputPackageHasField・fieldKeys・score計算）は一切変更しない。
+// ══════════════════════════════════════════════════════════════
+const COMPLETION_CONTRACT_VERSION = '1.0.0';
+
+// Blocked候補の判定に使う語（安全側・限定的）。「作って」「設計して」等の制作依頼だけではBlockedにしない。
+// 「公開して」「投稿して」等、会社の外側での実行を明確に伴う語がある場合のみBlocked候補とする。
+const COMPLETION_EXTERNAL_ACTION_KEYWORDS = [
+  '公開して', '投稿して', '開設して', '申請して', '登録して', '送信して', '発注して', '発信して',
+];
+
+// draft: { type, sourceText, fields, packageQuality } 形式のOutput Draft（またはそれに準ずるオブジェクト）。
+// context: { userApproval } — 外部条件の判定材料（呼び出し元が既存値をそのまま渡す。本関数はDB等を読まない）。
+function evaluateDeliverableCompletion(draft, context) {
+  var ctx = (context && typeof context === 'object') ? context : {};
+  var d = draft || null;
+  var result = {
+    version: COMPLETION_CONTRACT_VERSION,
+    executed: false,
+    status: 'incomplete',
+    outputType: null,
+    requestText: '',
+    requiredDeliverables: [],
+    deliveredDeliverables: [],
+    missingDeliverables: [],
+    blockingReasons: [],
+    userActionRequired: false,
+    reason: '',
+  };
+  if (!d || !d.type) {
+    result.reason = '成果物ドラフトが未生成のため判定できません';
+    return result;
+  }
+
+  var category = OUTPUT_PACKAGE_QUALITY_TYPE_MAP[d.type] || 'generic';
+  var checks   = OUTPUT_PACKAGE_QUALITY_CHECKS[category] || OUTPUT_PACKAGE_QUALITY_CHECKS.generic;
+  var requiredChecks = checks.filter(function (c) { return c.required === true; });
+
+  result.executed    = true;
+  result.outputType  = d.type;
+  result.requestText = d.sourceText || '';
+  result.requiredDeliverables = requiredChecks.map(function (c) { return { key: c.key, label: c.label }; });
+
+  // 既存packageQualityのcompletedItemsを優先利用（二重計算しない）。無ければfieldsを直接照合（fail-open）。
+  var completedKeys = {};
+  var pq = d.packageQuality || null;
+  if (pq && Array.isArray(pq.completedItems)) {
+    pq.completedItems.forEach(function (it) { completedKeys[it.key] = true; });
+  } else {
+    var fields = d.fields || {};
+    checks.forEach(function (c) {
+      var present = c.fieldKeys.some(function (fk) { return _outputPackageHasField(fields, fk); });
+      if (present) completedKeys[c.key] = true;
+    });
+  }
+
+  var missing   = requiredChecks.filter(function (c) { return !completedKeys[c.key]; });
+  var delivered = requiredChecks.filter(function (c) { return completedKeys[c.key]; });
+  result.deliveredDeliverables = delivered.map(function (c) { return { key: c.key, label: c.label }; });
+  result.missingDeliverables   = missing.map(function (c) { return { key: c.key, label: c.label }; });
+
+  if (missing.length > 0) {
+    result.status = 'incomplete';
+    result.reason = '必須成果物が' + missing.length + '件不足しています（'
+      + missing.map(function (m) { return m.label; }).join('・') + '）';
+    return result;
+  }
+
+  // 必須成果物はすべて揃っている。依頼文に外部実行を伴う語があり、かつUser Approvalがpendingの場合のみBlocked候補とする。
+  // 過剰な意味解析はしない（キーワード一致のみ・工程1では限定的）。
+  var text = String(result.requestText || '');
+  var needsExternalAction = COMPLETION_EXTERNAL_ACTION_KEYWORDS.some(function (kw) { return text.indexOf(kw) !== -1; });
+  var approvalPending = ctx.userApproval === 'pending';
+
+  if (needsExternalAction && approvalPending) {
+    result.status = 'blocked';
+    result.blockingReasons.push('user_approval_pending');
+    result.userActionRequired = true;
+    result.reason = '成果物は揃っていますが、依頼内容が外部実行を伴い、User Approvalがpendingのため会社側だけでは完了できません';
+    return result;
+  }
+
+  result.status = 'complete';
+  result.reason = '必須成果物がすべて揃っています';
+  return result;
+}
 
 function _outputPackageHasField(fields, key) {
   if (!fields) return false;
@@ -30383,6 +30538,21 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
     try { _lastOutputDraft.packageQuality = evaluateOutputPackageCompleteness(_lastOutputDraft); } catch (_pqe) {}
   }
 
+  // STEP 6 工程2: Deliverable Completion判定をpackageQuality確定直後に接続する（独立軸として追加のみ）。
+  //   既存 draft.status / packageQuality / Quality Gate / User Approval の意味・値は一切変更しない。
+  //   User Approvalは既存の読み取り専用ヘルパー _iadpEffectiveApprovalStatus() で参照するだけで、
+  //   ここから承認状態を書き換えることはない。fields.iadpが無い成果物（IADP対象外）ではuserApproval判定材料
+  //   自体を渡さない＝Blocked判定は発生しない（外部実行キーワードとの組み合わせでのみ発火するため無害）。
+  //   失敗してもOutput Draft生成自体は止めない（fail-open）。completionAssessmentはFORMAL_CASE_FIELDSに
+  //   含めない＝次のDraftへcarry-forwardしない（成果物ごとに再評価すべき情報のため）。
+  try {
+    var _compIadp = fields && fields.iadp;
+    var _compUserApproval = (_compIadp && _compIadp.package)
+      ? _iadpEffectiveApprovalStatus(_compIadp.package, _lastOutputDraft.caseId, _compIadp.approval)
+      : undefined;
+    _lastOutputDraft.completionAssessment = evaluateDeliverableCompletion(_lastOutputDraft, { userApproval: _compUserApproval });
+  } catch (_cae) { /* fail-open: Completion判定失敗はOutput Draft生成を止めない */ }
+
   // Phase46-4: Compare Logに記録
   recordKnowledgeCompareEntry(_lastOutputDraft);
 
@@ -30523,7 +30693,13 @@ function getOutputRoleAssignments(type) {
 
 const OUTPUT_TYPE_KEYWORDS = {
   [OUTPUT_TYPES.INSTAGRAM_CAROUSEL]: ['instagram', 'インスタ', 'カルーセル', 'スライド', '10枚', '投稿画像', 'リール'],
-  [OUTPUT_TYPES.INSTAGRAM_POST]:     ['instagram投稿', 'インスタ投稿', '投稿文', 'キャプション'],
+  // STEP6工程3-C: instagram/インスタ単体トークンをcarouselだけでなくpostにも追加。
+  //   従来は「Instagramの投稿を作って」のような、カルーセル固有語（カルーセル/スライド/10枚/投稿画像/リール）を
+  //   含まない一般的な投稿依頼が、bare instagram/インスタしか一致しないためcarousel側へ誤判定されていた
+  //   （carousel側のみがbareトークンを持っていたため）。post側にも同トークンを追加することで、
+  //   carousel固有語が無い場合はpost（語数が少ない分スコアが高くなる）が優先されるようにする。
+  //   carousel固有語がある依頼は従来通りcarouselが勝つ（スコア式・既存13型を変更しない）。
+  [OUTPUT_TYPES.INSTAGRAM_POST]:     ['instagram投稿', 'インスタ投稿', '投稿文', 'キャプション', 'instagram', 'インスタ'],
   [OUTPUT_TYPES.TIKTOK_VIDEO]:       ['tiktok', 'ティックトック', 'ショート動画', '動画案', '動画台本'],
   [OUTPUT_TYPES.YOUTUBE_SHORTS]:     ['youtube', 'ユーチューブ', 'shorts', 'ショート'],
   [OUTPUT_TYPES.LP]:                 ['lp', 'ランディングページ', '販売ページ', 'セールスページ'],
@@ -31200,6 +31376,43 @@ function buildOutputPackageQualityHtml() {
     + (missingHtml   ? '<div class="oe-quality-sub">Missing Items</div><div class="oe-quality-metrics">' + missingHtml + '</div>' : '')
     + (recommendHtml ? '<div class="oe-quality-sub">Recommendations</div><ul class="oe-quality-list">' + recommendHtml + '</ul>' : '')
     + (nextHtml      ? '<div class="oe-quality-sub">Next Actions</div><ul class="oe-quality-list">' + nextHtml + '</ul>' : '')
+    + '</div>';
+}
+
+// STEP6工程3-A: Completion（依頼完了）状態の最小UI表示。
+//   draft.status / packageQuality（Quality Gate相当） / User Approval / Account Creation Readiness とは
+//   独立した別軸として表示する（Completionだけを理由にこれらの値を書き換えない・本関数も読み取り専用）。
+//   completionAssessmentが存在しない既存Draft（工程2以前に生成されたDraft）ではエラーにせず、
+//   Complete扱いにも推測表示にもせず、何も表示しない（安全側フォールバック）。
+//   詳細な内部判定理由（reason／requestText等）やcontract全体は通常UIへ表示しない（内部データ（_lastOutputDraft）には保持済み）。
+function buildCompletionStatusHtml() {
+  if (!_lastOutputDraft) return '';
+  var ca = _lastOutputDraft.completionAssessment
+    || (_lastOutputDraft.packageQuality && _lastOutputDraft.packageQuality.completionAssessment)
+    || null;
+  if (!ca || !ca.executed) return '';
+
+  var esc = escapeHtml;
+  var meta = {
+    complete:   { label: 'Complete',   color: '#5ddb8e' },
+    incomplete: { label: 'Incomplete', color: '#f0b840' },
+    blocked:    { label: 'Blocked',    color: '#e06060' },
+  }[ca.status] || { label: ca.status, color: 'rgba(255,255,255,0.5)' };
+
+  var subLineHtml = '';
+  if (ca.status === 'incomplete' && (ca.missingDeliverables || []).length > 0) {
+    subLineHtml = '<div class="oe-status-sub">不足：' + esc(ca.missingDeliverables.map(function (m) { return m.label; }).join('・')) + '</div>';
+  } else if (ca.status === 'blocked') {
+    var needLabel = ca.userActionRequired ? 'ユーザー承認' : '外部条件の解消';
+    subLineHtml = '<div class="oe-status-sub">必要：' + esc(needLabel) + '</div>';
+  }
+
+  return '<div class="oe-quality-section">'
+    + '<div class="oe-quality-title">📦 成果物 Completion</div>'
+    + '<div class="oe-quality-overall">'
+    +   '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">成果物：' + meta.label + '</span>'
+    + '</div>'
+    + subLineHtml
     + '</div>';
 }
 
@@ -41232,6 +41445,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
+    + _oeSafe(buildCompletionStatusHtml,         'CompletionStatus')
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
     + _oeSafe(buildAIGatewayHtml,                'AIGateway')
