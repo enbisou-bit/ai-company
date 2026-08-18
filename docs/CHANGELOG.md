@@ -4,6 +4,21 @@
 
 ---
 
+## IADP Structured Output **正式リリース**（2026-08-18・Decision103）
+
+実運用予定のInstagram案件`case-msr9yckye65y`でIADP生成がValidation FAILした根本原因（自由記述の指示遵守のみに依存する構造的脆弱性）を解消。**`openaiClient.js`／`index.html`（最小限）／`iadpStructuredOutput.test.js`のみ**（Code commit **8a9d417**）。`shared/instagramAccountDesign.js`（Validator/Normalizer）は無変更。
+
+- **API側スキーマ強制**：OpenAI Responses APIの`text.format:{type:'json_schema',strict:true}`をIADP Leader Final呼び出し1箇所のみに追加。他の全`callOpenAI()`呼び出しは無影響。
+- **Schemaの範囲**：Validatorが実際に検証・消費するフィールドのみを対象とし、Validatorより強い制約は追加しない。`normalize()`が常に上書きする値（version/packageId/caseId/approval等）はモデルへ要求しない。
+- **後方互換**：既存`<IADP_JSON>`タグ抽出は無変更。タグなし直接JSON（Structured Output応答）を受理する最小adapterを追加のみ。
+- **Formal Truth安全契約を完全維持**：推測補完・自動水増し・validation緩和はいずれも行わず、`shared/instagramAccountDesign.js`は1行も変更していない。
+- **実AI E2E**：1 workflow・8 callでResponses APIがSchemaを受理し、`validateAccountDesignPackage()`が`valid:true`。candidateComparison3件・adoptedCandidateId整合・finalProfileトップレベル正配置（前回FAILの直接原因が再発しないことを確認）。Cross-case混入なし。
+- **既知の重要事項**：working treeに存在した別系統差分「Leader Case Context Phase2」（`buildLeaderCaseContext()`含む）は今回除外。本番環境には現時点で`buildLeaderCaseContext()`が存在しない。
+- 合成テスト13件・EEA既存36件・Completion既存テスト全PASS。node --test 既知6 FAILは無関係のpre-existing failureで未修正。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。次工程はEvidence充足（EEA経路・ユーザー承認後）。詳細は docs/04DECISIONS.md Decision103参照。
+
+---
+
 ## Deliverable Completion Architecture（STEP 6）**正式リリース**（2026-08-18・Decision102）
 
 「AIが処理を終えた」ことと「依頼が本当に完了した」ことを分離するCompletion判定軸を新規採用。**`index.html`のみ**（Code commit **364b65a**）。Quality Gate・Constitution・User Approval・Formal Truth（Case Context）はいずれも無変更・非干渉。

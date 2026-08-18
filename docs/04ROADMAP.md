@@ -8,6 +8,20 @@
 
 ---
 
+## IADP Structured Output（正式リリース・2026-08-18・Decision 103）
+
+> 追記日: 2026-08-18。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。**`openaiClient.js`／`index.html`（最小限）／`iadpStructuredOutput.test.js`のみ**（Code commit `8a9d417`）。
+
+- **API側スキーマ強制**：OpenAI Responses API `text.format:{type:'json_schema',strict:true}`をIADP Leader Final呼び出し1箇所のみへ追加。他の全`callOpenAI()`呼び出しは無影響。
+- **根本原因**：IADP Leader Finalが自由記述のみに依存し、Promptは正式schemaを正確に要求していたにもかかわらず、`finalProfile`のトップレベル配置と`candidateComparison`/`adoptionDecision`の出力を実生成で逸脱していた（実測確認・過去の正常生成実例も存在）。
+- **Formal Truth安全契約を完全維持**：`shared/instagramAccountDesign.js`（Validator/Normalizer）は無変更。推測補完・自動水増し・validation緩和なし。
+- **実AI E2E**：1 workflow・8 callでSchema受理・`validateAccountDesignPackage()`が`valid:true`。Cross-case混入なし。
+- **既知の重要事項**：別系統差分「Leader Case Context Phase2」（`buildLeaderCaseContext()`含む）は今回除外。本番環境には現時点でこの関数が存在しない。
+- Console Error 0・合成テスト13件・EEA既存36件全PASS。
+- **次工程 ＝ Evidence充足（EEA経路・ユーザー承認後）**。IADP自体は正式生成・保存済み。
+
+---
+
 ## Deliverable Completion Architecture（正式リリース・2026-08-18・Decision 102）
 
 > 追記日: 2026-08-18。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。新規DB table・schema変更なし。**index.htmlのみ**（Code commit `364b65a`）。
