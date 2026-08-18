@@ -1416,6 +1416,19 @@ async function callOpenAI(systemPrompt, userMessage, history = [], options = {})
       temperature: 0.7,
     };
     if (options.max_output_tokens) body.max_output_tokens = options.max_output_tokens;
+    // Structured Outputs（Responses API text.format:{type:'json_schema',strict:true}）。
+    //   options.structuredOutput = { name, schema } を渡した呼び出しのみ有効化する任意経路。
+    //   未指定時は従来どおりの自由記述のまま（他のcallOpenAI()呼び出しへは一切影響しない）。
+    if (options.structuredOutput && options.structuredOutput.schema) {
+      body.text = {
+        format: {
+          type: 'json_schema',
+          name: options.structuredOutput.name || 'structured_output',
+          schema: options.structuredOutput.schema,
+          strict: true,
+        },
+      };
+    }
     const response = await axios.post(
       OPENAI_API_URL,
       body,
@@ -2398,6 +2411,227 @@ const ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT = [
   '  ]を書かないこと）。1つのオブジェクトを書き終えるまで次のキーへ進まないでください。',
 ].join('\n');
 
+// ══════════════════════════════════════════════════════════════
+// IADP Structured Output Schema（OpenAI Responses API text.format:{type:'json_schema',strict:true}用）
+// 目的: ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT が自由記述で要求している構造を、
+//   API側の制約付きデコードで機械的に保証する（自由記述のみへの依存をなくす）。
+// 設計原則:
+//   ・shared/instagramAccountDesign.js の normalizeAccountDesignPackage() / validateAccountDesignPackage()
+//     が実際に消費・検証するフィールドのみを対象とする（Validatorより強い意味制約を追加しない）。
+//   ・normalize()側で常に上書き・自動生成される値（version・packageId・caseId・approval・
+//     decisionMadeBy・evaluationAxes・minCandidates）はモデルへ要求しない（要求しても無視されるため）。
+//   ・strict:true の制約上、宣言した全プロパティは required・additionalProperties:false が必須。
+//     「概念上optional」な項目は type:[X,"null"] のnullable unionで表現する。
+//   ・fieldStatus はキーが動的な辞書（パス文字列→状態）だが、strict modeはpatternProperties/
+//     additionalProperties:trueを許可しないため、{path,status}の配列として受け取り、
+//     extractIadpJsonFromLeaderText() 側の最小adapterで既存の辞書形へ変換する
+//     （shared/instagramAccountDesign.js の normalizeFieldStatusMap() は無変更のまま）。
+const IADP_FIELD_STATUS_ENUM = ['generated_hypothesis', 'evidence_supported', 'external_confirmation_required', 'user_confirmed'];
+const IADP_EVALUATION_AXES = [
+  'marketPotential', 'profitability', 'instagramFit', 'competitionDifficulty',
+  'differentiationPotential', 'noFaceNoVoiceFit', 'continuity', 'multiProductFit',
+  'longTermBrandAsset', 'aiOperationFit',
+];
+
+function _iadpStrArr() { return { type: 'array', items: { type: 'string' } }; }
+function _iadpStrObj(propNames) {
+  var properties = {};
+  propNames.forEach(function (n) { properties[n] = { type: 'string' }; });
+  return { type: 'object', properties: properties, required: propNames.slice(), additionalProperties: false };
+}
+function _iadpMixedObj(stringProps, arrayProps) {
+  var properties = {};
+  stringProps.forEach(function (n) { properties[n] = { type: 'string' }; });
+  arrayProps.forEach(function (n) { properties[n] = _iadpStrArr(); });
+  return { type: 'object', properties: properties, required: stringProps.concat(arrayProps), additionalProperties: false };
+}
+
+const IADP_SCORES_SCHEMA = (function () {
+  var properties = {};
+  IADP_EVALUATION_AXES.forEach(function (axis) { properties[axis] = { type: 'number', minimum: 0, maximum: 100 }; });
+  return { type: 'object', properties: properties, required: IADP_EVALUATION_AXES.slice(), additionalProperties: false };
+})();
+
+const IADP_CANDIDATE_REF_SCHEMA = _iadpStrObj(['candidateId', 'reason']);
+
+const IADP_COMPARISON_CANDIDATE_SCHEMA = {
+  type: 'object',
+  properties: {
+    candidateId: { type: 'string', minLength: 1 },
+    genreId: { type: 'string' },
+    scores: IADP_SCORES_SCHEMA,
+    totalScore: { type: 'number', minimum: 0, maximum: 100 },
+    decision: { type: 'string', enum: ['adopt', 'hold', 'reject'] },
+    adoptionReason: { type: 'string' },
+    mainRisks: _iadpStrArr(),
+    evidenceStatus: { type: 'string', enum: IADP_FIELD_STATUS_ENUM },
+  },
+  required: ['candidateId', 'genreId', 'scores', 'totalScore', 'decision', 'adoptionReason', 'mainRisks', 'evidenceStatus'],
+  additionalProperties: false,
+};
+
+const IADP_MARKET_CANDIDATE_SCHEMA = (function () {
+  var s = _iadpStrObj(['genreId', 'genreName', 'marketSizeEstimate', 'trendDirection', 'seasonality', 'notes']);
+  s.properties.evidenceStatus = { type: 'string', enum: IADP_FIELD_STATUS_ENUM };
+  s.required.push('evidenceStatus');
+  return s;
+})();
+
+const IADP_COMPETITOR_ENTRY_SCHEMA = (function () {
+  var s = _iadpMixedObj(
+    ['genreId', 'competitionVolume', 'differentiationOpportunity', 'noFaceNoVoiceFit', 'continuity'],
+    ['strongCompetitorCharacteristics', 'postFormats', 'appealPatterns', 'monetizationFunnels', 'reproducibleSuccessFactors']
+  );
+  s.properties.evidenceStatus = { type: 'string', enum: IADP_FIELD_STATUS_ENUM };
+  s.required.push('evidenceStatus');
+  return s;
+})();
+
+const IADP_FIELD_STATUS_ENTRY_SCHEMA = {
+  type: 'object',
+  properties: {
+    path: { type: 'string' },
+    status: { type: 'string', enum: IADP_FIELD_STATUS_ENUM },
+  },
+  required: ['path', 'status'],
+  additionalProperties: false,
+};
+
+// finalProfile 8セクション・59項目（shared/instagramAccountDesign.js の FINAL_PROFILE_SCHEMA と1:1対応）
+const IADP_FINAL_PROFILE_SCHEMA = {
+  type: 'object',
+  properties: {
+    brand: _iadpMixedObj(
+      ['brandName', 'brandConcept', 'brandStory', 'worldview', 'differentiation', 'brandTone', 'colorPolicy'],
+      ['prohibitedExpressions']
+    ),
+    target: _iadpMixedObj(
+      ['persona', 'ageRange'],
+      ['mainPainPoints', 'desires', 'purchaseMotivations', 'searchIntent', 'trustBarriers']
+    ),
+    account: _iadpMixedObj(
+      ['accountName', 'bio', 'iconPolicy', 'iconPrompt', 'pinnedPostPolicy', 'profileLinkPolicy'],
+      ['usernameCandidates', 'highlightPolicy']
+    ),
+    contentStrategy: (function () {
+      var s = _iadpMixedObj(
+        ['mainGenre', 'postFrequency', 'postTimePolicy', 'carouselPolicy', 'reelPolicy', 'storyPolicy', 'trustBuildingPolicy', 'noFaceNoVoicePolicy'],
+        ['contentPillars', 'postCategories']
+      );
+      s.properties.postRatio = { type: 'object', properties: {}, required: [], additionalProperties: false };
+      s.required.push('postRatio');
+      return s;
+    })(),
+    monetization: _iadpMixedObj(
+      ['productSelectionPolicy', 'ctaPolicy', 'funnelPolicy', 'salesBalancePolicy'],
+      ['aspCandidates', 'productGenres', 'prohibitedSalesApproach']
+    ),
+    kpi: {
+      type: 'object',
+      properties: {
+        initialKpis: _iadpStrArr(),
+        saveRateTarget: { type: ['number', 'null'] },
+        profileVisitTarget: { type: ['number', 'null'] },
+        followRateTarget: { type: ['number', 'null'] },
+        ctrTarget: { type: ['number', 'null'] },
+        cvrTarget: { type: ['number', 'null'] },
+        monthlyRevenueTarget: { type: ['number', 'null'] },
+        reviewCycle: { type: 'string' },
+        improvementConditions: _iadpStrArr(),
+      },
+      required: ['initialKpis', 'saveRateTarget', 'profileVisitTarget', 'followRateTarget', 'ctrTarget', 'cvrTarget', 'monthlyRevenueTarget', 'reviewCycle', 'improvementConditions'],
+      additionalProperties: false,
+    },
+    risk: _iadpMixedObj(
+      ['competitionRisk', 'regulationRisk', 'credibilityRisk', 'continuityRisk', 'monetizationRisk', 'marketShrinkRisk', 'platformAlgorithmRisk'],
+      ['avoidanceActions']
+    ),
+    execution: _iadpMixedObj(
+      ['first30DaysOperatingPolicy'],
+      ['accountCreationChecklist', 'aspRegistrationChecklist', 'requiredExternalChecks']
+    ),
+  },
+  required: ['brand', 'target', 'account', 'contentStrategy', 'monetization', 'kpi', 'risk', 'execution'],
+  additionalProperties: false,
+};
+
+// トップレベル契約: normalize()が常に上書き・自動生成する version/packageId/caseId/approval/
+//   decisionMadeBy/evaluationAxes/minCandidates はモデルへ要求しない（要求しても無視されるため）。
+const IADP_STRUCTURED_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    intelligence: {
+      type: 'object',
+      properties: {
+        marketResearch: {
+          type: 'object',
+          properties: {
+            candidates: { type: 'array', minItems: 3, items: IADP_MARKET_CANDIDATE_SCHEMA },
+            selectionCriteria: { type: 'string' },
+          },
+          required: ['candidates', 'selectionCriteria'],
+          additionalProperties: false,
+        },
+        competitorResearch: {
+          type: 'object',
+          properties: { byGenre: { type: 'array', items: IADP_COMPETITOR_ENTRY_SCHEMA } },
+          required: ['byGenre'],
+          additionalProperties: false,
+        },
+        aspProductResearch: {
+          type: 'object',
+          properties: {
+            autoGenerated: (function () {
+              var s = _iadpMixedObj(
+                ['selectionCriteria', 'compensationStructureDirection', 'continuityPolicy', 'accountFitNotes'],
+                ['recommendedAspCandidates', 'recommendedProductGenres']
+              );
+              s.properties.evidenceStatus = { type: 'string', enum: IADP_FIELD_STATUS_ENUM };
+              s.required.push('evidenceStatus');
+              return s;
+            })(),
+            externalConfirmationRequired: {
+              type: 'object',
+              properties: { confirmationChecklist: _iadpStrArr() },
+              required: ['confirmationChecklist'],
+              additionalProperties: false,
+            },
+          },
+          required: ['autoGenerated', 'externalConfirmationRequired'],
+          additionalProperties: false,
+        },
+        // Validatorが必須とする最小3件の設計案比較（marketResearch.candidatesとは別責務・自動変換しない）
+        candidateComparison: {
+          type: 'object',
+          properties: { candidates: { type: 'array', minItems: 3, items: IADP_COMPARISON_CANDIDATE_SCHEMA } },
+          required: ['candidates'],
+          additionalProperties: false,
+        },
+        // Validatorが必須とする採用決定（adoptedCandidateIdの実在確認はValidatorが引き続き担当）
+        adoptionDecision: {
+          type: 'object',
+          properties: {
+            adoptedCandidateId: { type: 'string', minLength: 1 },
+            decisionRationale: { type: 'string', minLength: 1 },
+            rejectedCandidates: { type: 'array', items: IADP_CANDIDATE_REF_SCHEMA },
+            heldCandidates: { type: 'array', items: IADP_CANDIDATE_REF_SCHEMA },
+          },
+          required: ['adoptedCandidateId', 'decisionRationale', 'rejectedCandidates', 'heldCandidates'],
+          additionalProperties: false,
+        },
+      },
+      required: ['marketResearch', 'competitorResearch', 'aspProductResearch', 'candidateComparison', 'adoptionDecision'],
+      additionalProperties: false,
+    },
+    // 今回のFAILの直接原因（finalProfileがトップレベルから外れ内容が消失した）を、
+    // トップレベル必須プロパティとしてAPI側で強制することで再発させない。
+    finalProfile: IADP_FINAL_PROFILE_SCHEMA,
+    fieldStatus: { type: 'array', items: IADP_FIELD_STATUS_ENTRY_SCHEMA },
+  },
+  required: ['intelligence', 'finalProfile', 'fieldStatus'],
+  additionalProperties: false,
+};
+
 async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult, knowledgeResult, agentCaller, accountIntelligenceMode = false, existingIntelligenceContext = null }) {
   const startMs = Date.now();
 
@@ -2663,7 +2897,16 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     //   不足するため、accountIntelligenceMode時のみ8192へ拡張する（通常Leader Finalは4096のまま無変更）
     var _iadpPromptToUse = _iadpMode ? ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT : LEADER_FINAL_PROMPT;
     var _iadpMaxOutputTokens = _iadpMode ? 8192 : 4096;
-    text = await callOpenAI(_iadpPromptToUse, question, [], { max_output_tokens: _iadpMaxOutputTokens }) || '';
+    // IADP Structured Output: accountIntelligenceMode時のみAPI側スキーマ強制を有効化する。
+    //   通常Leader Final（_iadpMode=false）は従来どおり自由記述のまま無変更。
+    //   プロンプト本文（タグ・サンプルJSON等の指示）は意図的に無変更のまま残す。strict modeの
+    //   制約付きデコードが出力そのものをschema準拠のJSONへ強制するため、旧来のタグ関連の記述は
+    //   単に無害化される（モデルがその通りに書こうとしても出力チャネル自体がJSON以外を許可しない）。
+    var _iadpCallOptions = { max_output_tokens: _iadpMaxOutputTokens };
+    if (_iadpMode) {
+      _iadpCallOptions.structuredOutput = { name: 'instagram_account_design_package', schema: IADP_STRUCTURED_OUTPUT_SCHEMA };
+    }
+    text = await callOpenAI(_iadpPromptToUse, question, [], _iadpCallOptions) || '';
     provider = 'openai';
     model    = OPENAI_MODEL;
     fallback = false;
@@ -3652,6 +3895,8 @@ module.exports = {
   buildStrategyCompanyContext,
   callOpenAI,
   OPENAI_MODEL,
+  // STEP: IADP Structured Output（合成テスト用に公開・既存exportは無変更のまま追加のみ）
+  IADP_STRUCTURED_OUTPUT_SCHEMA,
   // EEA-2: 既存実行経路へは未接続（server.js等からrequireしてもまだどこからも呼ばれない）。
   callOpenAIWebSearch,
   EEA_WEB_SEARCH_MODEL,

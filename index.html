@@ -15038,7 +15038,29 @@ function extractIadpJsonFromLeaderText(text) {
   try {
     var t = String(text || '');
     var openIdx = t.indexOf(OPEN);
-    if (openIdx === -1) return { found: false, json: null, raw: null };
+    if (openIdx === -1) {
+      // STEP: IADP Structured Output対応（最小adapter・タグ形式との後方互換は完全維持）。
+      //   text.format:{type:'json_schema',strict:true}が有効な場合、API側の制約付きデコードにより
+      //   応答全体がタグなしの生JSONのみになる（自由記述と共存できないため）。タグが1つも見つからない
+      //   場合に限り、応答全体を直接JSONとしてパースを試みる。既存のタグ抽出ロジックは一切変更しない。
+      //   fieldStatusはSchema上{path,status}[]で受け取るため、normalizeFieldStatusMap()が期待する
+      //   既存の辞書形（パス文字列キー→状態値）へこの場でのみ変換する（IADP Core本体は無変更）。
+      var _iadpDirect = t.trim();
+      if (_iadpDirect.charAt(0) === '{') {
+        try {
+          var _iadpDirectParsed = JSON.parse(_iadpDirect);
+          if (_iadpDirectParsed && typeof _iadpDirectParsed === 'object' && Array.isArray(_iadpDirectParsed.fieldStatus)) {
+            var _iadpFsMap = {};
+            _iadpDirectParsed.fieldStatus.forEach(function (entry) {
+              if (entry && typeof entry.path === 'string' && entry.path) _iadpFsMap[entry.path] = entry.status;
+            });
+            _iadpDirectParsed.fieldStatus = _iadpFsMap;
+          }
+          return { found: true, json: _iadpDirectParsed, raw: _iadpDirect, recovery: null };
+        } catch (_iadpDirectErr) { /* fail-open: 直接parseに失敗した場合は従来どおり not-found を返す */ }
+      }
+      return { found: false, json: null, raw: null };
+    }
     var closeIdx = t.indexOf(CLOSE, openIdx + OPEN.length);
     if (closeIdx === -1) return { found: false, json: null, raw: null };
     var inner = t.slice(openIdx + OPEN.length, closeIdx).trim();
