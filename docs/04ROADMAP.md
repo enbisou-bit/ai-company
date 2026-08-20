@@ -8,14 +8,16 @@
 
 ---
 
-## External Execution Completion Contract（設計正式化・未実装・2026-08-21・Decision 107）
+## External Execution Completion Contract ＋ EER-1/EER-2実装（正式リリース・2026-08-21・Decision 107）
 
 > 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
 
-対象案件`case-msr9yckye65y`はシステム上Ready到達後、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みだが、これを保持するFormal Truthが現在の設計に存在しないことを確認。正式Contract「External Execution Record（EER）」を設計し、`FORMAL_CASE_FIELDS`へ独立キー`externalExecution`を追加する方針（IADP配下案は不採用）で正式合意した。Approved≠Executed・Ready≠Executed・AI推測による昇格禁止を正式原則とする。初期source=`user_confirmation`のみ・初期status=`executed`のみ（`verified`は将来Decision）・caseId必須／packageId任意・carry-forward対象・Cross-case禁止。初期executionType3種＝`instagram_account_created`／`asp_registered`／`asp_media_registered`。DB/API/新規Engineはいずれも不要。
+対象案件`case-msr9yckye65y`はシステム上Ready到達後、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みだが、これを保持するFormal Truthが現在の設計に存在しないことを確認。正式Contract「External Execution Record（EER）」を設計し、`FORMAL_CASE_FIELDS`へ独立キー`externalExecution`を追加（IADP配下案は不採用）した上でEER-1/EER-2を実装した。Approved≠Executed・Ready≠Executed・AI推測による昇格禁止を正式原則とする。初期source=`user_confirmation`のみ・初期status=`executed`のみ（`verified`は将来Decision）・caseId必須／packageId任意・carry-forward対象・Cross-case禁止。初期executionType3種＝`instagram_account_created`／`asp_registered`／`asp_media_registered`。DB/API/新規Engineはいずれも不要。
 
-- **今回の範囲**：**docs正式化のみ。コード・DB・API・UI実装は一切なし。**
-- **次工程**：External Execution Record実装工程（`FORMAL_CASE_FIELDS`への`externalExecution`追加・保存/復元配線・UIボタン実装）。まだ実装開始しない。実装指示は次のユーザー承認後に作成する。実装後、`case-msr9yckye65y`の現実側の実行事実を正式記録する。
+- **EER-1 Core**：`validateExternalExecutionRecord()`／`_eerAppendRecord()`。合成テスト51/51 PASS。Code commit **504b991**。
+- **EER-2 User Confirmation UI**：Leader Final Summary内へ登録状況表示・「実行完了として登録」ボタン。localhost実機検証（テスト案件`case-msoplrg6gdkr`）で登録→復元→Cross-case確認→原状復帰済み。Code commit **58e9451**。
+- **今回の範囲**：EER-1/EER-2コード実装・localhost検証まで完了。実案件`case-msr9yckye65y`へのEER登録は0件。
+- **次工程**：本Decision107の正式リリース（docs commit・Annotated Tag・main push・tag push・Render反映・本番確認）。実案件`case-msr9yckye65y`への3件の正式登録はEER-4（別工程・ユーザー承認後）。
 
 ---
 

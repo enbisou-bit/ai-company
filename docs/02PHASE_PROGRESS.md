@@ -43,7 +43,7 @@
 
 ---
 
-## External Execution Completion Contract（設計正式化・未実装・2026-08-21・Decision107）
+## External Execution Completion Contract ＋ EER-1/EER-2実装（正式リリース・2026-08-21・Decision107）
 
 - **背景**：Decision106後、対象案件`case-msr9yckye65y`はシステム上User Approval=Approved／Account Creation Readiness=Readyまで到達し、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みであることが判明。読み取り専用調査で、これを保持するFormal Truthが現在の設計に存在しないことを確認した（User Approval／Ready／Deliverable Completion／Evidence／IADP／Output Draftのいずれも責務外）。
 - **Contract**：正式名称「External Execution Record（EER）」。現実世界・外部サービス上で実際に完了した行為をFormal Truthとして記録する契約。内部判断・承認・準備完了状態とは分離。
@@ -52,8 +52,10 @@
 - **Cross-case・carry-forward**：caseId必須でCross-case混入禁止。carry-forward対象（package単位でリセットされるapprovalとは異なり、現実の事実は覆らないためcase単位で永続）。復元は既存`restoreOutputDraftFromServer()`／Formal Case Fields復元契約を利用する方針。
 - **DB/API/Engine**：新規DB table・column・API・Engine いずれも不要。既存`output_drafts.fields` JSONBと既存Output Draft保存APIを利用する方針（実装工程開始時に再確認）。
 - **現実側の初期Formal Truth候補**：`case-msr9yckye65y`についてユーザーが明示済みの事実（Instagram Account Created=Complete／Account Name「ナチュラルエッセンス」／Username `naturalessence.jp`／A8.net Registered=Complete／A8.net Media Registered=Complete／健康・美容カテゴリ）を記録。**今回はDBへ保存しない**（実装完了後の別工程）。
-- **今回の範囲**：**docs正式化のみ。コード・DB・API・UIはいずれも変更・実装していない。** Version1 Final Complete／Version1.1開発中は変更なし・Phase54 Complete維持・Phase55未着手（変更なし）。
-- **次工程**：External Execution Record実装工程（`FORMAL_CASE_FIELDS`への`externalExecution`追加・保存/復元配線・UIボタン実装）。まだ実装開始しない。実装指示は次のユーザー承認後に作成する。
+- **EER-1 Core正式実装**：`FORMAL_CASE_FIELDS`へ`externalExecution`を追加。純関数`validateExternalExecutionRecord()`（executionType/status/source/actor/caseId/executedAt/packageIdを検証・入力非破壊・推測補完なし）と`_eerAppendRecord()`（重複防止・Cross-case guard・既存`pushOutputDraftToServer()`経由保存）を実装。既存carry-forwardループ・`restoreOutputDraftFromServer()`のfieldsワイルドカード復元にそのまま乗るため専用配線コードは不要だった。合成テスト`externalExecutionRecord.eer1.test.js`：**51/51 PASS**。変更ファイル：`index.html`（+61行）／テスト新規。Code commit **504b991**。
+- **EER-2 User Confirmation UI正式実装**：Leader Final Summary（`_lfsBuildSummaryHtml()`）内、ユーザー承認ブロック直後へEER状態表示（未登録／✅ Executed）と「実行完了として登録」ボタンを追加。登録はボタンクリック起点のみ・`_eerAppendRecord()`必須経由・AI自動登録経路なし。localhost実機検証（既存専用テスト案件`case-msoplrg6gdkr`）でボタンクリック→POST 200→永続化→フルリロード後復元一致→別案件切替でCross-case混入なしを実測し、検証後は原状復帰（`fields.externalExecution`削除・`fields.iadp`無傷）。対象実案件`case-msr9yckye65y`は表示確認のみでボタン未クリック（3種とも未登録のまま）。変更ファイル：`index.html`（+72行）。Code commit **58e9451**。
+- **今回の範囲**：EER-1/EER-2ともコード実装・localhost検証まで完了。実案件`case-msr9yckye65y`へのEER登録は0件。Version1 Final Complete／Version1.1開発中は変更なし・Phase54 Complete維持・Phase55未着手（変更なし）。
+- **次工程**：docs release commit・Annotated Tag・main push・tag push・Render反映・本番PC確認（本Decision107追記後に実施）。実案件`case-msr9yckye65y`への3件のExternal Execution Record正式登録はEER-4（別工程・ユーザー承認後）。
 
 ---
 

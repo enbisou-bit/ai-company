@@ -4,6 +4,16 @@
 
 ---
 
+## External Execution Completion Contract ＋ EER-1/EER-2 **正式リリース**（2026-08-21・Decision107）
+
+- **Contract**：正式Contract「External Execution Record（EER）」を設計正式化。現実世界・外部サービス上で実際に完了した行為をFormal Truthとして記録する契約。`FORMAL_CASE_FIELDS`へ独立キー`externalExecution`を追加（IADP配下案は不採用）。Approved≠Executed・Ready≠Executed・Deliverable Complete≠External Execution Complete・Evidence Verified≠Execution Verifiedを正式原則として採用。AI推測からの自動生成は禁止（source=`user_confirmation`のみ）。
+- **EER-1 Core**：純関数`validateExternalExecutionRecord()`（executionType/status/source/actor/caseId/executedAt/packageIdを検証・入力非破壊・推測補完なし）と`_eerAppendRecord()`（重複防止・Cross-case guard・既存`pushOutputDraftToServer()`経由保存）を実装。既存`FORMAL_CASE_FIELDS`carry-forwardループ・`restoreOutputDraftFromServer()`のfieldsワイルドカード復元へ無改修で接続。合成テスト`externalExecutionRecord.eer1.test.js`：**51/51 PASS**。Code commit **504b991**。
+- **EER-2 User Confirmation UI**：Leader Final Summary内、ユーザー承認ブロック直後へEER登録状況（未登録／✅ Executed）と「実行完了として登録」ボタンを追加。登録の起点はユーザーのボタン操作のみで、Ready/Approved/IADP Complete等の内部状態からの自動登録は一切ない。localhost実機検証（既存専用テスト案件`case-msoplrg6gdkr`）でボタンクリック→POST 200→サーバー永続化→フルリロード後復元一致→別案件切替でCross-case混入なしを実測し、検証後は原状復帰。Code commit **58e9451**。
+- **実案件登録**：対象案件`case-msr9yckye65y`は現実にはInstagram Account Created／A8.net Registered／A8.net Media Registeredの3件とも完了済みだが、今回のリリースでは正式登録0件（別工程EER-4でユーザー本人が本番UIから登録）。
+- **既存回帰**：`iadpQualityContractRouting.test.js`（86/86）／`iadpStructuredOutput.test.js`／`costTracker.eea8.test.js`／`evidencePromotion.eea10b.test.js`全PASS。IADP・User Approval・Quality Gate・Deliverable Completionいずれも無回帰。Leader Case Context Phase2は引き続き本番未commit。OpenAI API 0・Claude API 0・Web Search 0・DB変更なし（テスト専用案件への一時検証データは検証後に削除済み）。
+
+---
+
 ## Phase IG-QC-B1/B2 candidateOnly Quality Routing Fix / Production Re-evaluation **正式リリース**（2026-08-20・Decision106）
 
 - **Phase IG-QC-B1（candidateOnly routing fix）**：`buildOutputDraftFromLeaderFinal({candidateOnly:true})`ブランチが Phase IG-QC routing 前に early return していたため、Quality Gate 候補評価で IADP へ Instagram 10 項目 Contract が誤適用されていた根本原因を修正。通常経路と完全同一の IADP Quality routing contract を candidateOnly ブランチへ追加（非 IADP・guard 失敗は`evaluateOutputPackageCompleteness()`へ fallback・後方互換維持）。`iadpQualityContractRouting.test.js`に Cases CO-A〜CO-I を追加し全 **86/86 PASS**。Code commit **0c076dd**。
