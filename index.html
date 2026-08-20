@@ -13985,6 +13985,72 @@ function _iadpApproveDesign() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// Phase EER-2（Decision107）: External Execution Record（EER）User Confirmation UI
+//   Leader Final Summary内へ、現在caseの各executionType登録状態（未登録/Executed）を表示し、
+//   未登録の場合のみ「実行完了として登録」ボタンを出す。登録の起点はユーザーのボタン操作のみで、
+//   Ready/Approved/IADP Complete等の内部状態からAIが自動登録することは一切ない（Decision107）。
+//   保存は必ず_eerAppendRecord()（Phase EER-1・validation・Cross-case guard・重複防止つき）を経由する。
+// ══════════════════════════════════════════════════════════════
+const EXTERNAL_EXECUTION_TYPE_LABELS = {
+  instagram_account_created: 'Instagramアカウント作成',
+  asp_registered: 'ASP登録（A8.net等）',
+  asp_media_registered: 'ASPメディア登録',
+};
+
+// 現在Draftのfields.externalExecutionから、現在caseの登録状態を種別ごとに集計する（表示専用・状態変更なし）。
+function _eerBuildStatusList(caseId) {
+  var list = (_lastOutputDraft && _lastOutputDraft.caseId === caseId && _lastOutputDraft.fields
+    && Array.isArray(_lastOutputDraft.fields.externalExecution)) ? _lastOutputDraft.fields.externalExecution : [];
+  return EXTERNAL_EXECUTION_TYPES.map(function (t) {
+    var rec = list.find(function (r) { return r && r.caseId === caseId && r.executionType === t && r.status === 'executed'; });
+    return { executionType: t, label: EXTERNAL_EXECUTION_TYPE_LABELS[t] || t, executed: !!rec, executedAt: rec ? rec.executedAt : null };
+  });
+}
+
+// EERブロックHTML構築（表示専用・状態変更なし）。未登録executionTypeのみ登録ボタンを出す。
+function _eerBuildBlockHtml(caseId) {
+  var esc = escapeHtml;
+  var items = _eerBuildStatusList(caseId);
+  var h = '<div class="lfs-block lfs-approval" id="eer-block-display"><div class="lfs-block-title">現実世界の実行状況（External Execution）</div>';
+  items.forEach(function (it) {
+    h += '<div class="lfs-row"><span class="lfs-k">' + esc(it.label) + '</span><span class="lfs-v ' + (it.executed ? 'iadp-status-complete' : 'iadp-status-insufficient') + '">'
+      + (it.executed ? '✅ Executed' : '未登録') + '</span></div>';
+    if (it.executed && it.executedAt) {
+      h += '<div class="lfs-sub" style="text-align:right;">' + esc(String(it.executedAt).slice(0, 16).replace('T', ' ')) + '</div>';
+    }
+    if (!it.executed) {
+      h += '<button class="lfs-approve-btn" style="margin-top:4px;" onclick="_eerRegisterExecution(\'' + it.executionType + '\')">実行完了として登録</button>';
+    }
+  });
+  h += '<div class="lfs-ai-note">※ ここでの登録はユーザー自身の申告のみを正式事実とします。AI会社が自動で登録することはありません。</div>';
+  h += '</div>';
+  return h;
+}
+
+// ボタン起点のみ。source/actor/statusは固定値、executedAtはここで一度だけ生成する（AI推測からの登録は行わない）。
+function _eerRegisterExecution(executionType) {
+  try {
+    var caseId = (typeof getCurrentApprovalCaseId === 'function') ? getCurrentApprovalCaseId() : null;
+    if (!caseId) return;
+    var pkg = _lastInstagramAccountDesignPackage;
+    var packageId = (pkg && pkg.caseId === caseId) ? (pkg.packageId || null) : null;
+    var record = {
+      executionType: executionType,
+      status: 'executed',
+      caseId: caseId,
+      source: 'user_confirmation',
+      actor: 'user',
+      executedAt: new Date().toISOString(),
+    };
+    if (packageId) record.packageId = packageId;
+    var res = _eerAppendRecord(record);
+    // 成功時のみ再描画（F5不要）。失敗（duplicate/mismatch等）時はボタンを残したままにする（無音失敗にしない）。
+    if (res && res.ok && currentMember && typeof reRenderChatArea === 'function') reRenderChatArea(currentMember);
+    else if (!res || !res.ok) console.warn('[EER] register not applied:', res && res.reason);
+  } catch (_eerUiErr) { console.warn('[EER] register error (fail-open):', _eerUiErr.message); }
+}
+
+// ══════════════════════════════════════════════════════════════
 // Phase IG-2H: Leader Integration（_liCollectIntegration）完了直後にIADP側を再評価・再描画する。
 //   既存Workflowの順序（IADP生成 → Leader Integration → Quality Gate → Executive Decision → Output Draft）は
 //   一切変更せず、Quality Gateが確定した「後から」IADP assessmentを再評価する方式を採用する
@@ -14496,6 +14562,12 @@ function _lfsBuildSummaryHtml(mo) {
     h += '<button class="lfs-approve-btn" id="lfs-approve-btn" onclick="_iadpApproveDesign()">この設計を承認</button>';
   }
   h += '</div>';
+
+  // Phase EER-2（Decision107）: External Execution Record 登録状況・登録ボタン
+  //   承認ブロックの直後（実運用フローの次段階）へ配置。表示・登録ともcaseId一致時のみ（Cross-case guard済み）。
+  if (mo.caseId && typeof _eerBuildBlockHtml === 'function') {
+    h += _eerBuildBlockHtml(mo.caseId);
+  }
 
   h += '<div class="lfs-footer">';
   h += '<button class="lfs-detail-btn" onclick="_lfsScrollToDetails()">▲ 詳細を確認（IADP / Executive Report）</button>';
