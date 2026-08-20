@@ -12743,7 +12743,68 @@ const FORMAL_CASE_FIELDS = [
   'intelligenceContext',     // Verified Evidence / Evidence Gate の正本
   'affiliateContext',        // 採用商材（Affiliate Intelligence）の正本
   'approvedDecisionPackage', // Approved Decision Package（Constitution第4条の正式契約）
+  'externalExecution',       // Phase EER-1（Decision107）: External Execution Record（現実世界で外部行為が完了した事実）の正本
 ];
+
+// ══════════════════════════════════════════════════════════════
+// Phase EER-1（Decision107）: External Execution Record（EER）Core
+//   現実世界・外部サービス上で実際に完了した行為（Instagramアカウント作成・ASP登録等）を
+//   Formal Truthとして記録するための最小Core。User Approval（進行許可）・
+//   Account Creation Readiness（内部準備完了判定・非永続）とは責務分離する（Approved≠Executed・Ready≠Executed）。
+//   AI推測（Ready/Approved/IADP Complete等の内部状態）からの自動生成は一切禁止し、
+//   ユーザー明示報告（source:'user_confirmation'）のみをFormal Truth化の根拠とする。
+//   今回はCore（validation・保存・復元・carry-forward・Cross-case保護）のみ。UI・実データ登録は次工程。
+// ══════════════════════════════════════════════════════════════
+const EXTERNAL_EXECUTION_TYPES = [
+  'instagram_account_created',
+  'asp_registered',
+  'asp_media_registered',
+];
+
+// 純関数：Record最小validationのみを行う。入力recordを書き換えない・欠落値を推測補完しない。
+function validateExternalExecutionRecord(record, expectedCaseId) {
+  var result = { valid: false, reason: null };
+  if (!record || typeof record !== 'object') { result.reason = 'record_missing'; return result; }
+  if (EXTERNAL_EXECUTION_TYPES.indexOf(record.executionType) === -1) { result.reason = 'unknown_execution_type'; return result; }
+  if (record.status !== 'executed') { result.reason = 'invalid_status'; return result; } // Decision107: 初期status=executedのみ（verified等は不採用）
+  if (record.source !== 'user_confirmation') { result.reason = 'invalid_source'; return result; } // Decision107: AI由来sourceは不採用
+  if (record.actor !== 'user') { result.reason = 'invalid_actor'; return result; }
+  if (typeof record.caseId !== 'string' || !record.caseId) { result.reason = 'caseId_missing'; return result; }
+  if (expectedCaseId && record.caseId !== expectedCaseId) { result.reason = 'caseId_mismatch'; return result; } // Cross-case guard
+  if (typeof record.executedAt !== 'string' || !record.executedAt || isNaN(Date.parse(record.executedAt))) { result.reason = 'invalid_executedAt'; return result; }
+  if (record.packageId !== undefined && record.packageId !== null && typeof record.packageId !== 'string') { result.reason = 'invalid_packageId'; return result; } // packageIdはoptional
+  result.valid = true;
+  return result;
+}
+
+// Core: 現在案件のOutput DraftへEER Recordを追記保存する（validation・Cross-case guard・重複防止つき）。
+//   AI自動生成は行わない＝呼び出し元は必ずユーザー明示操作由来のRecordを渡すこと（UI接続は次工程・今回は未配線）。
+function _eerAppendRecord(record) {
+  try {
+    var curCaseId = (typeof getCurrentApprovalCaseId === 'function') ? getCurrentApprovalCaseId() : null;
+    var v = validateExternalExecutionRecord(record, curCaseId);
+    if (!v.valid) return { ok: false, reason: v.reason };
+    if (!_lastOutputDraft || _lastOutputDraft.caseId !== curCaseId) return { ok: false, reason: 'draft_case_mismatch' };
+    if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
+    var list = Array.isArray(_lastOutputDraft.fields.externalExecution) ? _lastOutputDraft.fields.externalExecution : [];
+    var dup = list.some(function (r) { return r && r.caseId === record.caseId && r.executionType === record.executionType; });
+    if (dup) return { ok: false, reason: 'duplicate' }; // 既存Recordのexecutedatを上書きしない（Audit Trail維持）
+    var toSave = {
+      executionType: record.executionType,
+      status: record.status,
+      caseId: record.caseId,
+      source: record.source,
+      actor: record.actor,
+      executedAt: record.executedAt,
+    };
+    if (record.packageId !== undefined && record.packageId !== null) toSave.packageId = record.packageId;
+    _lastOutputDraft.fields.externalExecution = list.concat([toSave]);
+    pushOutputDraftToServer(_lastOutputDraft);
+    return { ok: true, record: toSave };
+  } catch (_eerErr) {
+    return { ok: false, reason: 'exception', message: _eerErr.message };
+  }
+}
 
 // タスク行カウンター（task row counter）
 let _atTaskCounter = 0;
