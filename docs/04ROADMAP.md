@@ -1,4 +1,4 @@
-# ENBISOU AI COMPANY Roadmap
+﻿# ENBISOU AI COMPANY Roadmap
 
 > 作成日: 2026-07-02（Phase48-3.1） / 更新日: 2026-07-04（Version1 Roadmap方針変更・Instagram収益化支援優先化・Decision 039）
 > 現在Version: v1.00-phase49-6 Complete（Creative Engineファミリー完結）
@@ -8,6 +8,19 @@
 
 ---
 
+## Phase IG-QC / B-7F Quality Gate Package Routing Fix（正式リリース・2026-08-20・Decision 105）
+
+> 追記日: 2026-08-20。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**。**`index.html`（2 hunk）／`iadpQualityContractRouting.test.js`（新規）のみ**（Code commit `547ddac`）。
+
+**Instagram実運用中**のQuality Contract / Quality Gate Wiring Fix正式完了。案件`case-msr9yckye65y`のOutput Draft（IADP `iadp_1787060839814_izhakb`）のQuality評価が誤接続されていた根本原因と、全Path A Output TypeのQuality Gate配線バグを解消した。
+
+- **Phase IG-QC（IADP Quality Contract Routing Fix）**：IADPを含むOutput DraftがInstagram投稿用`instagram` Quality Contract（hook/slideTitles/hashtags等10項目）へ誤接続されていたため`score:20/status:insufficient`・Quality Gate常時Failedになっていた。正式IADP（`fields.iadp.quality`存在・`validation.valid===true`・`packageId`存在）は`evaluateInstagramAccountDesignQuality()`の事前算出済み結果を`packageQuality`へrouting。非IADP・guard失敗は既存`evaluateOutputPackageCompleteness()`へfall-through（後方互換維持）。
+- **Phase B-7F補完（全Path A Quality Gate配線）**：`buildOutputDraftFromLeaderFinal()`のreturn値に`packageQuality`が含まれていなかったため全Path A Output Typeで`evaluateQualityGate(undefined)`が実行され`sourceStatus=null`（Quality Gate表示不能）だった。return値に`packageQuality`を追加し全Output TypeでQuality Gateへ実評価値を正式接続。IADP限定Hotfixではなく全Path Aの共通配線バグ修正。
+- **Executive Decision**：`qualityGate:null`の既存責務は変更なし。Quality Gate結果はExecutive Decisionの判断ロジックに影響しない（表示専用影響のみ）。User Approval・Evidence・DB・API契約は変更なし。
+- **回帰検証**：`iadpQualityContractRouting.test.js` **48/48 PASS**。非課金回帰全PASS。Leader Case Context Phase2混入なし。
+- **次工程**：対象案件`case-msr9yckye65y`のIADP専用Quality/packageQuality/Quality Gate/Account Creation Readinessを本番で再確認後、次工程を判断する（まだUser Approvalへは進まない）。
+
+---
 ## IADP Structured Output（正式リリース・2026-08-18・Decision 103）
 
 > 追記日: 2026-08-18。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**（Phase55へは移行しない）。**`openaiClient.js`／`index.html`（最小限）／`iadpStructuredOutput.test.js`のみ**（Code commit `8a9d417`）。
@@ -117,7 +130,7 @@ Phase IG-2H   Reviewer／Strategy／Quality Gate 接続 ─── 正式Complete
 Phase IG-2I   docs正式化・Tag・Push・Render・本番確認 ─ 正式Complete（2026-08-09・Decision097）
               PC本番確認 完了／iPhone実機確認 完了（縦画面Complete・横画面はKnown Issue継続）
   ↓
-【次工程】     Instagram実運用 ─────────────────────── 未着手（ユーザー承認後）
+【次工程】     Instagram実運用 ─────────────────────── 進行中（Quality Contract/QG Wiring Fix完了・本番QA中）
               アカウント作成 → プロフィール設定 → ASP登録 → 商品調査
               → 投稿企画 → 初回投稿 → KPI取得 → Learning実測
   ↓

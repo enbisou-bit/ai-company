@@ -1,9 +1,20 @@
-# CHANGELOG — ENBISOU AI COMPANY
+﻿# CHANGELOG — ENBISOU AI COMPANY
 
 > 本番反映済みの主要変更履歴（新しい順）。詳細は docs/02PHASE_PROGRESS.md を参照。
 
 ---
 
+## Phase IG-QC / B-7F Quality Gate Package Routing Fix **正式リリース**（2026-08-20・Decision105）
+
+IADPを含むOutput DraftがInstagram投稿用`instagram` Quality Contract（hook/slideTitles/hashtags等10項目）へ誤接続されていた根本原因（Phase IG-QC）と、全Path A Output Typeで`buildOutputDraftFromLeaderFinal()`のreturn値から`packageQuality`が欠落し`evaluateQualityGate(undefined)`が実行されていた配線バグ（Phase B-7F補完）を修正した。**`index.html`（2 hunk）／`iadpQualityContractRouting.test.js`（新規・正式回帰テスト48件）のみ**（Code commit **547ddac**）。
+
+- **Phase IG-QC（IADP Quality Contract誤接続修正）**：正式IADP（`fields.iadp.quality`存在・`validation.valid===true`・`packageId`存在）が存在する場合は`evaluateInstagramAccountDesignQuality()`の事前算出済み結果を`packageQuality`へrouting。誤評価（`score:20/instagram/insufficient`）を解消。非IADP・guard失敗は既存`evaluateOutputPackageCompleteness()`へfall-through（後方互換維持）。
+- **Phase B-7F補完（全Path A Quality Gate配線修正）**：`buildOutputDraftFromLeaderFinal()`return値へ`packageQuality`を追加し全Path A Output TypeでQuality Gateへ実評価値を正式接続。これはIADP限定Hotfixではなく全Path A共通の既存配線バグ修正。
+- **非干渉**：既存Quality Contract（instagram/document等）の算出内容は変更なし。Executive Decision（`qualityGate: null`責務）・User Approval・Evidence・Formal Truth・DB・API契約は変更なし。UIのQuality Gate表示（`🟢 Passed`/`🟡 Not Passed`）が実評価値に基づいて機能するようになる（`sourceStatus=null`時は非表示・既存安全側動作維持）。
+- **回帰検証**：`iadpQualityContractRouting.test.js` 48/48 PASS・`iadpStructuredOutput.test.js` 13/13 PASS・`costTracker.eea8.test.js` 19/19 PASS・`evidencePromotion.eea10b.test.js` 17/17 PASS。inline JS構文OK・`git diff --check` CLEAN。Leader Case Context Phase2混入なし。OpenAI API call 0・Claude API call 0・Web Search 0・DB変更なし。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。次工程は対象案件`case-msr9yckye65y`のIADP専用Quality/packageQuality/Quality Gate/Account Creation Readinessを本番で再確認。詳細は docs/04DECISIONS.md Decision105参照。
+
+---
 ## Claude Pricing Correction **正式リリース**（2026-08-20・Decision104）
 
 Claude Cost Log調査の過程で、`claudeCostTracker.js`／`claudeClient.js`に重複定義された`CLAUDE_PRICE_PER_1K`のうち、claude-opus-4-8が公式単価の**3.000倍**（$15/$75 per 1M、正しくは$5/$25）、claude-haiku-4-5が公式単価の**0.800倍**（$0.80/$4 per 1M、正しくは$1/$5）という単価誤りを特定・修正した。**`claudeCostTracker.js`／`claudeClient.js`の`CLAUDE_PRICE_PER_1K`（Opus/Haiku値のみ）**。claude-sonnet-4-6は公式単価と一致しており無変更。
