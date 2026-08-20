@@ -8,6 +8,17 @@
 
 ---
 
+## External Execution Completion Contract（設計正式化・未実装・2026-08-21・Decision 107）
+
+> 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
+
+対象案件`case-msr9yckye65y`はシステム上Ready到達後、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みだが、これを保持するFormal Truthが現在の設計に存在しないことを確認。正式Contract「External Execution Record（EER）」を設計し、`FORMAL_CASE_FIELDS`へ独立キー`externalExecution`を追加する方針（IADP配下案は不採用）で正式合意した。Approved≠Executed・Ready≠Executed・AI推測による昇格禁止を正式原則とする。初期source=`user_confirmation`のみ・初期status=`executed`のみ（`verified`は将来Decision）・caseId必須／packageId任意・carry-forward対象・Cross-case禁止。初期executionType3種＝`instagram_account_created`／`asp_registered`／`asp_media_registered`。DB/API/新規Engineはいずれも不要。
+
+- **今回の範囲**：**docs正式化のみ。コード・DB・API・UI実装は一切なし。**
+- **次工程**：External Execution Record実装工程（`FORMAL_CASE_FIELDS`への`externalExecution`追加・保存/復元配線・UIボタン実装）。まだ実装開始しない。実装指示は次のユーザー承認後に作成する。実装後、`case-msr9yckye65y`の現実側の実行事実を正式記録する。
+
+---
+
 ## Phase IG-QC-B1/B2 candidateOnly Quality Routing Fix / Production Re-evaluation（正式リリース・2026-08-20・Decision 106）
 
 > 追記日: 2026-08-20。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。

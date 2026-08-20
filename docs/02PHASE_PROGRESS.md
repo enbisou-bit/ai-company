@@ -43,6 +43,20 @@
 
 ---
 
+## External Execution Completion Contract（設計正式化・未実装・2026-08-21・Decision107）
+
+- **背景**：Decision106後、対象案件`case-msr9yckye65y`はシステム上User Approval=Approved／Account Creation Readiness=Readyまで到達し、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みであることが判明。読み取り専用調査で、これを保持するFormal Truthが現在の設計に存在しないことを確認した（User Approval／Ready／Deliverable Completion／Evidence／IADP／Output Draftのいずれも責務外）。
+- **Contract**：正式名称「External Execution Record（EER）」。現実世界・外部サービス上で実際に完了した行為をFormal Truthとして記録する契約。内部判断・承認・準備完了状態とは分離。
+- **責務分離原則**：Approved≠Executed（User Approvalは進行承認の事実）・Ready≠Executed（Readinessは非永続の内部判定）・Deliverable Complete≠External Execution Complete（Decision102とは別責務）・Evidence Verified≠Execution Verified（情報の信頼性と行為の完了確認は別軸）。IADP配下（`fields.iadp.externalExecution`）案は不採用とし、`FORMAL_CASE_FIELDS`への独立キー`externalExecution`追加方針を正式採用。
+- **初期契約**：1 Record=1 executionTypeの複数Recordコレクション。最小fieldは`executionType`/`status`/`caseId`/`packageId`/`source`/`actor`/`executedAt`（caseId必須・packageId任意）。初期status=`executed`のみ（`verified`は外部確認経路が存在しないため将来Decisionへ保留）。初期source=`user_confirmation`のみ（AI推測による昇格は原則禁止＝AI inference cannot create External Execution Formal Truth）。初期executionType3種：`instagram_account_created`／`asp_registered`／`asp_media_registered`（ASP登録とメディア登録は別イベント）。
+- **Cross-case・carry-forward**：caseId必須でCross-case混入禁止。carry-forward対象（package単位でリセットされるapprovalとは異なり、現実の事実は覆らないためcase単位で永続）。復元は既存`restoreOutputDraftFromServer()`／Formal Case Fields復元契約を利用する方針。
+- **DB/API/Engine**：新規DB table・column・API・Engine いずれも不要。既存`output_drafts.fields` JSONBと既存Output Draft保存APIを利用する方針（実装工程開始時に再確認）。
+- **現実側の初期Formal Truth候補**：`case-msr9yckye65y`についてユーザーが明示済みの事実（Instagram Account Created=Complete／Account Name「ナチュラルエッセンス」／Username `naturalessence.jp`／A8.net Registered=Complete／A8.net Media Registered=Complete／健康・美容カテゴリ）を記録。**今回はDBへ保存しない**（実装完了後の別工程）。
+- **今回の範囲**：**docs正式化のみ。コード・DB・API・UIはいずれも変更・実装していない。** Version1 Final Complete／Version1.1開発中は変更なし・Phase54 Complete維持・Phase55未着手（変更なし）。
+- **次工程**：External Execution Record実装工程（`FORMAL_CASE_FIELDS`への`externalExecution`追加・保存/復元配線・UIボタン実装）。まだ実装開始しない。実装指示は次のユーザー承認後に作成する。
+
+---
+
 ## Phase IG-QC-B1/B2 candidateOnly Quality Routing Fix / Production Re-evaluation（正式リリース・2026-08-20・Decision106）
 
 - **Phase IG-QC-B1（candidateOnly routing fix）**：`buildOutputDraftFromLeaderFinal({candidateOnly:true})`ブランチが Phase IG-QC routing（Decision105）前に early return していたため、Quality Gate 候補評価で正式 IADP へ Instagram 10 項目 Contract（`evaluateOutputPackageCompleteness()`）が誤適用されていた根本原因を修正。candidateOnly ブランチへ通常経路と完全同一の IADP routing contract を inline 追加（`validation.valid===true`・`packageId`存在・`quality`算出済み・`status`文字列・`score`数値の全 5 条件）。非 IADP・guard 失敗は`evaluateOutputPackageCompleteness()`へ fallback し後方互換を維持。`iadpQualityContractRouting.test.js`に candidateOnly Cases CO-A〜CO-I を追加し全 **86/86 PASS**。Code commit **0c076dd**。
