@@ -30557,7 +30557,34 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
       noCompletedResults: true,
     };
   } else {
-    try { _lastOutputDraft.packageQuality = evaluateOutputPackageCompleteness(_lastOutputDraft); } catch (_pqe) {}
+    try {
+      // Phase IG-QC: IADP案件はinstagram投稿制作向けQuality Contractの誤適用を防ぎ、
+      //   fields.iadp.quality（evaluateInstagramAccountDesignQuality()の事前算出済み結果）を正本とする。
+      //   statusは'complete'|'almost_ready'|'needs_work'|'insufficient'でevaluateQualityGateと完全互換。
+      //   非IADP・IADP未評価・guard失敗は既存evaluateOutputPackageCompleteness()（後方互換・無変更）を使用する。
+      var _iadpF = _lastOutputDraft.fields && _lastOutputDraft.fields.iadp;
+      var _iadpQ = _iadpF && _iadpF.quality;           // evaluateInstagramAccountDesignQuality()の算出済み結果
+      var _iadpPkgId = _iadpF && _iadpF.package && _iadpF.package.packageId;
+      var _iadpIsValid = _iadpF && _iadpF.validation && _iadpF.validation.valid === true;
+      if (_iadpQ && _iadpPkgId && _iadpIsValid && typeof _iadpQ.status === 'string' && typeof _iadpQ.score === 'number') {
+        _lastOutputDraft.packageQuality = {
+          version: OUTPUT_PACKAGE_QUALITY_VERSION,
+          outputType: _lastOutputDraft.type,
+          category: 'iadp',
+          score: _iadpQ.score,
+          status: _iadpQ.status,
+          missingItems: Array.isArray(_iadpQ.missingRequiredFields)
+            ? _iadpQ.missingRequiredFields.map(function(f) { return { key: f, label: f, hasSchemaField: true }; })
+            : [],
+          completedItems: [],
+          recommendations: Array.isArray(_iadpQ.warnings) ? _iadpQ.warnings : [],
+          nextActions: ['IADP品質評価結果をIADPカードで確認してください'],
+          iadpEvaluated: true,
+        };
+      } else {
+        _lastOutputDraft.packageQuality = evaluateOutputPackageCompleteness(_lastOutputDraft);
+      }
+    } catch (_pqe) {}
   }
 
   // STEP 6 工程2: Deliverable Completion判定をpackageQuality確定直後に接続する（独立軸として追加のみ）。
@@ -30593,7 +30620,7 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
   // Phase54-2c: 完成Draftをサーバへ保存（fire-and-forget・非ブロック・保存のみ／復元はPhase54-2d）。失敗してもWorkflowを止めない。
   try { pushOutputDraftToServer(_lastOutputDraft); } catch(_ods) {}
 
-  return { ok: true, type: type, updatedFields: updatedFields, status: _lastOutputDraft.status };
+  return { ok: true, type: type, updatedFields: updatedFields, status: _lastOutputDraft.status, packageQuality: _lastOutputDraft.packageQuality };
 }
 
 // ══════════════════════════════════════════════════
