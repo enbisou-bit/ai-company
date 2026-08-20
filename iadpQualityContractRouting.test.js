@@ -91,6 +91,39 @@ function computePackageQuality(lastOutputDraft, noCompletedResults) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// 2b. Phase IG-QC-B1: 修正後candidateOnly経路（index.html lines 30520-30529と等価）
+// ──────────────────────────────────────────────────────────────
+function computeCandidatePackageQuality(draft) {
+  var _cqCandidatePackageQuality = null;
+  try {
+    var _cqIadpF = draft.fields && draft.fields.iadp;
+    var _cqIadpQ = _cqIadpF && _cqIadpF.quality;
+    var _cqIadpPkgId = _cqIadpF && _cqIadpF.package && _cqIadpF.package.packageId;
+    var _cqIadpIsValid = _cqIadpF && _cqIadpF.validation && _cqIadpF.validation.valid === true;
+    if (_cqIadpQ && _cqIadpPkgId && _cqIadpIsValid
+        && typeof _cqIadpQ.status === 'string' && typeof _cqIadpQ.score === 'number') {
+      _cqCandidatePackageQuality = {
+        version: OUTPUT_PACKAGE_QUALITY_VERSION,
+        outputType: draft.type,
+        category: 'iadp',
+        score: _cqIadpQ.score,
+        status: _cqIadpQ.status,
+        missingItems: Array.isArray(_cqIadpQ.missingRequiredFields)
+          ? _cqIadpQ.missingRequiredFields.map(function(f) { return { key: f, label: f, hasSchemaField: true }; })
+          : [],
+        completedItems: [],
+        recommendations: Array.isArray(_cqIadpQ.warnings) ? _cqIadpQ.warnings : [],
+        nextActions: ['IADP品質評価結果をIADPカードで確認してください'],
+        iadpEvaluated: true,
+      };
+    } else {
+      _cqCandidatePackageQuality = evaluateOutputPackageCompleteness(draft);
+    }
+  } catch (_cqErr) { _cqCandidatePackageQuality = null; }
+  return _cqCandidatePackageQuality;
+}
+
+// ──────────────────────────────────────────────────────────────
 // 3. Test runner
 // ──────────────────────────────────────────────────────────────
 let _passed = 0, _failed = 0;
@@ -322,13 +355,191 @@ caseHeader('Case H: iadp_1787060839814_izhakb 修正前後の挙動差分確認'
   assert(!newPq.missingItems.some(m => m.key === 'hook'), '[比較] 新: hookは欠損リストに含まれない');
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase IG-QC-B1: candidateOnly経路修正テスト Cases A-I
+// ══════════════════════════════════════════════════════════════
+
+// candidateOnly Case A: 正式IADP + complete → category=iadp, QG passed
+caseHeader('candidateOnly Case A: IADP complete → category=iadp, QG passed');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: {
+      iadp: {
+        package:    { packageId: 'iadp_co_test_A', caseId: 'case-co-A' },
+        validation: { valid: true },
+        quality:    { status: 'complete', score: 100, missingRequiredFields: [], warnings: [] },
+      },
+    },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  const qg = evaluateQualityGate(pq);
+  assert(pq.category === 'iadp',       '[CO-A] category=iadp');
+  assert(pq.score    === 100,          '[CO-A] score=100 (IADPスコア)');
+  assert(pq.status   === 'complete',   '[CO-A] status=complete');
+  assert(pq.iadpEvaluated === true,    '[CO-A] iadpEvaluated=true');
+  assert(qg.passed   === true,         '[CO-A] Quality Gate → passed');
+  assert(qg.status   === 'passed',     '[CO-A] qualityGate.status=passed');
+  assert(qg.sourceStatus === 'complete','[CO-A] sourceStatus=complete');
+}
+
+// candidateOnly Case B: 正式IADP + almost_ready → QG passed
+caseHeader('candidateOnly Case B: IADP almost_ready → QG passed');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: {
+      iadp: {
+        package:    { packageId: 'iadp_co_test_B' },
+        validation: { valid: true },
+        quality:    { status: 'almost_ready', score: 91, missingRequiredFields: ['noFaceNoVoicePolicy'], warnings: [] },
+      },
+    },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  const qg = evaluateQualityGate(pq);
+  assert(pq.category === 'iadp',            '[CO-B] category=iadp');
+  assert(pq.status   === 'almost_ready',    '[CO-B] status=almost_ready');
+  assert(qg.passed   === true,              '[CO-B] Quality Gate → passed');
+  assert(qg.sourceStatus === 'almost_ready','[CO-B] sourceStatus=almost_ready');
+}
+
+// candidateOnly Case C: IADP needs_work → QG failed, sourceStatus=needs_work
+caseHeader('candidateOnly Case C: IADP needs_work → QG failed, sourceStatus=needs_work');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: {
+      iadp: {
+        package:    { packageId: 'iadp_co_test_C' },
+        validation: { valid: true },
+        quality:    { status: 'needs_work', score: 65, missingRequiredFields: ['kpi1', 'kpi2'], warnings: ['KPI未設定'] },
+      },
+    },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  const qg = evaluateQualityGate(pq);
+  assert(pq.category === 'iadp',           '[CO-C] category=iadp');
+  assert(pq.status   === 'needs_work',     '[CO-C] status=needs_work');
+  assert(qg.passed   === false,            '[CO-C] Quality Gate → failed');
+  assert(qg.sourceStatus === 'needs_work', '[CO-C] sourceStatus=needs_work (not null)');
+}
+
+// candidateOnly Case D: invalid IADP (validation.valid=false) → fail-safe fallback
+caseHeader('candidateOnly Case D: invalid IADP → fail-safe fallback to evaluateOutputPackageCompleteness');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: {
+      iadp: {
+        package:    { packageId: 'iadp_co_test_D' },
+        validation: { valid: false, errors: ['missing required field'] },
+        quality:    { status: 'almost_ready', score: 90, missingRequiredFields: [], warnings: [] },
+      },
+    },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  assert(pq.category !== 'iadp',   '[CO-D] category≠iadp (fallback)');
+  assert(!pq.iadpEvaluated,        '[CO-D] iadpEvaluated not set');
+  assert(pq.category === 'instagram','[CO-D] category=instagram (evaluateOutputPackageCompleteness stub)');
+}
+
+// candidateOnly Case E: IADPなし 通常instagram_post → 従来Contract
+caseHeader('candidateOnly Case E: IADPなし instagram_post → 従来Contract');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: { caption: 'テストキャプション', cta: 'CTA' },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  assert(!pq.iadpEvaluated,         '[CO-E] iadpEvaluated not set');
+  assert(pq.category === 'instagram','[CO-E] category=instagram (従来Contract)');
+  assert(pq.score    === 20,         '[CO-E] score=20 (10項目チェック結果)');
+}
+
+// candidateOnly Case F: instagram_carousel → 従来Contract
+caseHeader('candidateOnly Case F: instagram_carousel → 従来Contract');
+{
+  const draft = {
+    type: 'instagram_carousel',
+    fields: { slides: ['slide1', 'slide2'] },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  assert(!pq.iadpEvaluated, '[CO-F] iadpEvaluated not set (非IADP)');
+}
+
+// candidateOnly Case G: document → 従来Contract
+caseHeader('candidateOnly Case G: document → 従来Contract');
+{
+  const draft = {
+    type: 'document',
+    fields: { title: 'テスト文書', body: '本文テキスト' },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  assert(!pq.iadpEvaluated, '[CO-G] iadpEvaluated not set (document非IADP)');
+}
+
+// candidateOnly Case H: 通常non-candidate経路が完全維持されることを確認
+caseHeader('candidateOnly Case H: non-candidate経路（computePackageQuality）は変更なし');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: {
+      iadp: {
+        package:    { packageId: 'iadp_co_test_H' },
+        validation: { valid: true },
+        quality:    { status: 'complete', score: 98, missingRequiredFields: [], warnings: [] },
+      },
+    },
+  };
+  const pqNormal = computePackageQuality(draft, false);
+  const pqCandidate = computeCandidatePackageQuality(draft);
+  // 両経路がIADP routingを通り、同一のcategory/status/scoreを返すことを確認
+  assert(pqNormal.category    === 'iadp',     '[CO-H] normal: category=iadp');
+  assert(pqCandidate.category === 'iadp',     '[CO-H] candidate: category=iadp');
+  assert(pqNormal.status      === 'complete', '[CO-H] normal: status=complete');
+  assert(pqCandidate.status   === 'complete', '[CO-H] candidate: status=complete');
+  assert(pqNormal.score       === 98,         '[CO-H] normal: score=98');
+  assert(pqCandidate.score    === 98,         '[CO-H] candidate: score=98');
+  assert(pqNormal.iadpEvaluated === true,     '[CO-H] normal: iadpEvaluated=true');
+  assert(pqCandidate.iadpEvaluated === true,  '[CO-H] candidate: iadpEvaluated=true');
+}
+
+// candidateOnly Case I: 対象case相当fixture (score=100, status=complete)
+caseHeader('candidateOnly Case I: 対象case相当 iadp_1787060839814_izhakb, score=100, complete → QG passed');
+{
+  const draft = {
+    type: 'instagram_post',
+    fields: {
+      iadp: {
+        package:    { packageId: 'iadp_1787060839814_izhakb', caseId: 'case-msr9yckye65y' },
+        validation: { valid: true, errors: [], warnings: [] },
+        quality: {
+          status: 'complete', score: 100, passed: true,
+          missingRequiredFields: [],
+          warnings: [],
+        },
+      },
+    },
+  };
+  const pq = computeCandidatePackageQuality(draft);
+  const qg = evaluateQualityGate(pq);
+  assert(pq.category === 'iadp',        '[CO-I] category=iadp');
+  assert(pq.score    === 100,           '[CO-I] score=100 (IADP正式評価値)');
+  assert(pq.status   === 'complete',    '[CO-I] status=complete');
+  assert(pq.iadpEvaluated === true,     '[CO-I] iadpEvaluated=true');
+  assert(qg.passed   === true,          '[CO-I] Quality Gate → passed ✅');
+  assert(qg.status   === 'passed',      '[CO-I] qualityGate.status=passed');
+  assert(qg.sourceStatus === 'complete','[CO-I] sourceStatus=complete (not null/insufficient)');
+}
+
 // ──────────────────────────────────────────────────────────────
 // 結果サマリー
 // ──────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(60));
 console.log(`結果: ${_passed} passed / ${_failed} failed`);
 if (_failed === 0) {
-  console.log('🟢 All Cases A-H passed');
+  console.log('🟢 All Cases A-H (normal path) + CO-A〜CO-I (candidateOnly) passed');
 } else {
   console.log('🔴 Some cases failed');
   process.exit(1);

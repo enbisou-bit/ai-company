@@ -30512,7 +30512,34 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
   //   （draftはtargetDraft経由の独立したcandidate Draftであり、_lastOutputDraftではない）。
   if (opts && opts.candidateOnly === true) {
     var _cqCandidatePackageQuality = null;
-    try { _cqCandidatePackageQuality = evaluateOutputPackageCompleteness(draft); } catch (_cqErr) { _cqCandidatePackageQuality = null; }
+    try {
+      // Phase IG-QC-B1: candidateOnly経路にも正式IADP routingを適用する。
+      //   通常経路（Phase IG-QC, lines 30566-30593）と同一条件・同一mappingを使用し契約driftを防ぐ。
+      //   非IADP・guard失敗時は従来どおりevaluateOutputPackageCompleteness()へfallback（後方互換）。
+      var _cqIadpF = draft.fields && draft.fields.iadp;
+      var _cqIadpQ = _cqIadpF && _cqIadpF.quality;
+      var _cqIadpPkgId = _cqIadpF && _cqIadpF.package && _cqIadpF.package.packageId;
+      var _cqIadpIsValid = _cqIadpF && _cqIadpF.validation && _cqIadpF.validation.valid === true;
+      if (_cqIadpQ && _cqIadpPkgId && _cqIadpIsValid
+          && typeof _cqIadpQ.status === 'string' && typeof _cqIadpQ.score === 'number') {
+        _cqCandidatePackageQuality = {
+          version: OUTPUT_PACKAGE_QUALITY_VERSION,
+          outputType: draft.type,
+          category: 'iadp',
+          score: _cqIadpQ.score,
+          status: _cqIadpQ.status,
+          missingItems: Array.isArray(_cqIadpQ.missingRequiredFields)
+            ? _cqIadpQ.missingRequiredFields.map(function(f) { return { key: f, label: f, hasSchemaField: true }; })
+            : [],
+          completedItems: [],
+          recommendations: Array.isArray(_cqIadpQ.warnings) ? _cqIadpQ.warnings : [],
+          nextActions: ['IADP品質評価結果をIADPカードで確認してください'],
+          iadpEvaluated: true,
+        };
+      } else {
+        _cqCandidatePackageQuality = evaluateOutputPackageCompleteness(draft);
+      }
+    } catch (_cqErr) { _cqCandidatePackageQuality = null; }
     return { ok: true, type: type, updatedFields: updatedFields, candidateOnly: true, packageQuality: _cqCandidatePackageQuality };
   }
 
