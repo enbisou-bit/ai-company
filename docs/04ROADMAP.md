@@ -8,7 +8,7 @@
 
 ---
 
-## External Execution Completion Contract ＋ EER-1/EER-2実装（正式リリース・2026-08-21・Decision 107）
+## External Execution Completion Contract ＋ EER-1/EER-2/EER-3/EER-4（正式リリース・本番実運用完了・2026-08-21・Decision 107）
 
 > 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
 
@@ -16,8 +16,10 @@
 
 - **EER-1 Core**：`validateExternalExecutionRecord()`／`_eerAppendRecord()`。合成テスト51/51 PASS。Code commit **504b991**。
 - **EER-2 User Confirmation UI**：Leader Final Summary内へ登録状況表示・「実行完了として登録」ボタン。localhost実機検証（テスト案件`case-msoplrg6gdkr`）で登録→復元→Cross-case確認→原状復帰済み。Code commit **58e9451**。
-- **今回の範囲**：EER-1/EER-2コード実装・localhost検証まで完了。実案件`case-msr9yckye65y`へのEER登録は0件。
-- **次工程**：本Decision107の正式リリース（docs commit・Annotated Tag・main push・tag push・Render反映・本番確認）。実案件`case-msr9yckye65y`への3件の正式登録はEER-4（別工程・ユーザー承認後）。
+- **EER-3 正式リリース**：docs commit **ed14959**・Tag **v1.01-external-execution-record**・main push・tag push・Render反映済み。
+- **EER-4 本番実運用完了**：ユーザー本人が本番UIから対象実案件`case-msr9yckye65y`へ3件（instagram_account_created／asp_registered／asp_media_registered）を正式登録。Contract完全準拠・重複なし・IADP無回帰・F5復元済み。Claude Codeからの登録は0件（読み取り確認のみ）。
+- **今回の範囲**：EER-1〜EER-4完了。実案件データ変更はユーザー本人の本番UI操作による3件登録のみ。
+- **次工程**：EER登録3件を踏まえたAccount Creation Readiness最終確認、またはInstagram実運用側（別チャット）の進行。
 
 ---
 

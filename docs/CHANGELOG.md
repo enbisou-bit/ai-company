@@ -4,13 +4,14 @@
 
 ---
 
-## External Execution Completion Contract ＋ EER-1/EER-2 **正式リリース**（2026-08-21・Decision107）
+## External Execution Completion Contract ＋ EER-1/EER-2/EER-3/EER-4 **正式リリース・本番実運用完了**（2026-08-21・Decision107）
 
 - **Contract**：正式Contract「External Execution Record（EER）」を設計正式化。現実世界・外部サービス上で実際に完了した行為をFormal Truthとして記録する契約。`FORMAL_CASE_FIELDS`へ独立キー`externalExecution`を追加（IADP配下案は不採用）。Approved≠Executed・Ready≠Executed・Deliverable Complete≠External Execution Complete・Evidence Verified≠Execution Verifiedを正式原則として採用。AI推測からの自動生成は禁止（source=`user_confirmation`のみ）。
 - **EER-1 Core**：純関数`validateExternalExecutionRecord()`（executionType/status/source/actor/caseId/executedAt/packageIdを検証・入力非破壊・推測補完なし）と`_eerAppendRecord()`（重複防止・Cross-case guard・既存`pushOutputDraftToServer()`経由保存）を実装。既存`FORMAL_CASE_FIELDS`carry-forwardループ・`restoreOutputDraftFromServer()`のfieldsワイルドカード復元へ無改修で接続。合成テスト`externalExecutionRecord.eer1.test.js`：**51/51 PASS**。Code commit **504b991**。
 - **EER-2 User Confirmation UI**：Leader Final Summary内、ユーザー承認ブロック直後へEER登録状況（未登録／✅ Executed）と「実行完了として登録」ボタンを追加。登録の起点はユーザーのボタン操作のみで、Ready/Approved/IADP Complete等の内部状態からの自動登録は一切ない。localhost実機検証（既存専用テスト案件`case-msoplrg6gdkr`）でボタンクリック→POST 200→サーバー永続化→フルリロード後復元一致→別案件切替でCross-case混入なしを実測し、検証後は原状復帰。Code commit **58e9451**。
-- **実案件登録**：対象案件`case-msr9yckye65y`は現実にはInstagram Account Created／A8.net Registered／A8.net Media Registeredの3件とも完了済みだが、今回のリリースでは正式登録0件（別工程EER-4でユーザー本人が本番UIから登録）。
-- **既存回帰**：`iadpQualityContractRouting.test.js`（86/86）／`iadpStructuredOutput.test.js`／`costTracker.eea8.test.js`／`evidencePromotion.eea10b.test.js`全PASS。IADP・User Approval・Quality Gate・Deliverable Completionいずれも無回帰。Leader Case Context Phase2は引き続き本番未commit。OpenAI API 0・Claude API 0・Web Search 0・DB変更なし（テスト専用案件への一時検証データは検証後に削除済み）。
+- **EER-3 正式リリース**：docs release commit **ed14959**・Annotated Tag **v1.01-external-execution-record**・main push・tag push・Render反映済み。
+- **EER-4 本番実運用完了**：ユーザー本人が本番UIから対象実案件`case-msr9yckye65y`へ3件（`instagram_account_created`／`asp_registered`／`asp_media_registered`）を正式登録。いずれも`status:executed`／`source:user_confirmation`／`actor:user`でContract完全準拠・重複なし。Claude Codeからの登録・変更・削除は0件（読み取り専用API確認のみ）。登録後もIADP Quality=100/Complete・Quality Gate=Passed・Evidence=Sufficient・User Approval=Approvedは無回帰、ユーザー本人がF5フルリロード後の復元も本番PC画面で確認済み。
+- **既存回帰**：`iadpQualityContractRouting.test.js`（86/86）／`externalExecutionRecord.eer1.test.js`（51/51）／`iadpStructuredOutput.test.js`／`costTracker.eea8.test.js`／`evidencePromotion.eea10b.test.js`全PASS。IADP・User Approval・Quality Gate・Deliverable Completionいずれも無回帰。Leader Case Context Phase2は引き続き本番未commit。OpenAI API 0・Claude API 0・Web Search 0・DB変更0（EER-4はユーザー本人の本番UI操作のみ・テスト専用案件への一時検証データは検証後に削除済み）。
 
 ---
 

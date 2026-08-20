@@ -43,7 +43,7 @@
 
 ---
 
-## External Execution Completion Contract ＋ EER-1/EER-2実装（正式リリース・2026-08-21・Decision107）
+## External Execution Completion Contract ＋ EER-1/EER-2/EER-3/EER-4（正式リリース・本番実運用完了・2026-08-21・Decision107）
 
 - **背景**：Decision106後、対象案件`case-msr9yckye65y`はシステム上User Approval=Approved／Account Creation Readiness=Readyまで到達し、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みであることが判明。読み取り専用調査で、これを保持するFormal Truthが現在の設計に存在しないことを確認した（User Approval／Ready／Deliverable Completion／Evidence／IADP／Output Draftのいずれも責務外）。
 - **Contract**：正式名称「External Execution Record（EER）」。現実世界・外部サービス上で実際に完了した行為をFormal Truthとして記録する契約。内部判断・承認・準備完了状態とは分離。
@@ -54,8 +54,10 @@
 - **現実側の初期Formal Truth候補**：`case-msr9yckye65y`についてユーザーが明示済みの事実（Instagram Account Created=Complete／Account Name「ナチュラルエッセンス」／Username `naturalessence.jp`／A8.net Registered=Complete／A8.net Media Registered=Complete／健康・美容カテゴリ）を記録。**今回はDBへ保存しない**（実装完了後の別工程）。
 - **EER-1 Core正式実装**：`FORMAL_CASE_FIELDS`へ`externalExecution`を追加。純関数`validateExternalExecutionRecord()`（executionType/status/source/actor/caseId/executedAt/packageIdを検証・入力非破壊・推測補完なし）と`_eerAppendRecord()`（重複防止・Cross-case guard・既存`pushOutputDraftToServer()`経由保存）を実装。既存carry-forwardループ・`restoreOutputDraftFromServer()`のfieldsワイルドカード復元にそのまま乗るため専用配線コードは不要だった。合成テスト`externalExecutionRecord.eer1.test.js`：**51/51 PASS**。変更ファイル：`index.html`（+61行）／テスト新規。Code commit **504b991**。
 - **EER-2 User Confirmation UI正式実装**：Leader Final Summary（`_lfsBuildSummaryHtml()`）内、ユーザー承認ブロック直後へEER状態表示（未登録／✅ Executed）と「実行完了として登録」ボタンを追加。登録はボタンクリック起点のみ・`_eerAppendRecord()`必須経由・AI自動登録経路なし。localhost実機検証（既存専用テスト案件`case-msoplrg6gdkr`）でボタンクリック→POST 200→永続化→フルリロード後復元一致→別案件切替でCross-case混入なしを実測し、検証後は原状復帰（`fields.externalExecution`削除・`fields.iadp`無傷）。対象実案件`case-msr9yckye65y`は表示確認のみでボタン未クリック（3種とも未登録のまま）。変更ファイル：`index.html`（+72行）。Code commit **58e9451**。
-- **今回の範囲**：EER-1/EER-2ともコード実装・localhost検証まで完了。実案件`case-msr9yckye65y`へのEER登録は0件。Version1 Final Complete／Version1.1開発中は変更なし・Phase54 Complete維持・Phase55未着手（変更なし）。
-- **次工程**：docs release commit・Annotated Tag・main push・tag push・Render反映・本番PC確認（本Decision107追記後に実施）。実案件`case-msr9yckye65y`への3件のExternal Execution Record正式登録はEER-4（別工程・ユーザー承認後）。
+- **EER-3 正式リリース**：docs release commit **ed14959**・Annotated Tag **v1.01-external-execution-record**・main push・tag push・Render反映。本番読み取り専用確認（API経由）でIADP Quality=100/Complete・Quality Gate=Passed・Evidence=Sufficient（5件）・User Approval=Approved（`fields.iadp.approval.status`）が無回帰であることを確認。本番UIは合言葉ログイン必須のためEER表示ブロック自体の目視確認はAPI確認で代替、Console Error 0。
+- **EER-4 本番実運用完了**：ユーザー本人が本番UIから対象実案件`case-msr9yckye65y`へ3件のExternal Execution Recordを正式登録（`instagram_account_created`＝executedAt`2026-08-20T22:21:40.695Z`／`asp_registered`＝`2026-08-20T22:21:44.992Z`／`asp_media_registered`＝`2026-08-20T22:21:49.726Z`）。いずれも`status:executed`／`source:user_confirmation`／`actor:user`／`packageId:iadp_1787060839814_izhakb`でContract完全準拠・重複なし。Claude Code側はAPI経由の読み取り専用確認のみを実施し、登録・変更・削除は一切行っていない。登録後もIADP Quality=100/Complete・Quality Gate=Passed・Evidence=Sufficient・Reviewer=Passed・Strategy=Accepted・User Approval=Approved（approvedAt不変）は無回帰。ユーザー自身がF5フルリロード後も3件とも✅ Executedで復元されることを本番PC画面で確認済み。既存回帰テスト`externalExecutionRecord.eer1.test.js`（51/51）・`iadpQualityContractRouting.test.js`（86/86）再実行し全PASS。
+- **今回の範囲**：EER-1〜EER-4を通じて、実案件データ変更はユーザー本人の本番UI操作による3件のEER登録のみ。Claude Codeからの登録・変更・削除は0件。Version1 Final Complete／Version1.1開発中は変更なし・Phase54 Complete維持・Phase55未着手（変更なし）。
+- **次工程**：EER登録3件を踏まえたAccount Creation Readiness最終確認、またはInstagram実運用側（別チャット）の進行。EER追加実装（`verified`状態・他executionType追加等）はユーザー承認後に別途判断。
 
 ---
 
