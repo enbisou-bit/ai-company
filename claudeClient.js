@@ -48,8 +48,8 @@ const CLAUDE_FALLBACK_MODEL = CLAUDE_LOWEST_COST_MODEL;
 // Claude料金概算（1000トークン単価 USD）
 const CLAUDE_PRICE_PER_1K = {
   'claude-sonnet-4-6': { input: 0.003,  output: 0.015 },
-  'claude-opus-4-8':   { input: 0.015,  output: 0.075 },
-  'claude-haiku-4-5':  { input: 0.0008, output: 0.004 }, // Phase47-2B: 最安モデル価格追加
+  'claude-opus-4-8':   { input: 0.005,  output: 0.025 },
+  'claude-haiku-4-5':  { input: 0.001,  output: 0.005 }, // Phase47-2B: 最安モデル価格追加
 };
 
 // In-memory 利用量トラッキング（再起動でリセット）

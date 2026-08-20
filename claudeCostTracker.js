@@ -10,8 +10,8 @@ const CLAUDE_QUALITY_HISTORY_STORAGE_PATH = path.join(__dirname, 'claude-quality
 
 const CLAUDE_PRICE_PER_1K = {
   'claude-sonnet-4-6': { input: 0.003,  output: 0.015  },
-  'claude-opus-4-8':   { input: 0.015,  output: 0.075  },
-  'claude-haiku-4-5':  { input: 0.0008, output: 0.004  },
+  'claude-opus-4-8':   { input: 0.005,  output: 0.025  },
+  'claude-haiku-4-5':  { input: 0.001,  output: 0.005  },
 };
 
 // A-2-2: JST（Asia/Tokyo, UTC+9）基準へ変更。costTracker.js と同一方式（外部ライブラリ不使用）。
