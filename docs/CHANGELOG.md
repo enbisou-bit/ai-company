@@ -4,6 +4,18 @@
 
 ---
 
+## Claude Pricing Correction **正式リリース**（2026-08-20・Decision104）
+
+Claude Cost Log調査の過程で、`claudeCostTracker.js`／`claudeClient.js`に重複定義された`CLAUDE_PRICE_PER_1K`のうち、claude-opus-4-8が公式単価の**3.000倍**（$15/$75 per 1M、正しくは$5/$25）、claude-haiku-4-5が公式単価の**0.800倍**（$0.80/$4 per 1M、正しくは$1/$5）という単価誤りを特定・修正した。**`claudeCostTracker.js`／`claudeClient.js`の`CLAUDE_PRICE_PER_1K`（Opus/Haiku値のみ）**。claude-sonnet-4-6は公式単価と一致しており無変更。
+
+- **原因**：単価定数の入力誤り（計算式・重複計上防止・JPY換算・Cost Gateにはいずれも問題なし）。Claude側にはOpenAI側`costTracker.js`のようなCost Gate（`canProcess()`/`stopped`）がそもそも存在しないため、AI call拒否・budget超過停止等の機能面への影響はなし（表示・報告上の金額のみに影響）。
+- **検証**：非課金fixtureテスト（Opus/Haiku/Sonnet各input/output・計6件）全PASS。2026年8月Supabase実績（`api_cost_events`正本）を公式単価で再計算した合計$4.051303が、Anthropic公式実績$3.93と残差$0.12（約3%）まで一致することを実測確認。
+- **過去ログ**：Supabase `api_cost_events`・`claude-cost-logs.json`の過去記録はAudit Trailとして保持し、遡及修正はしない。修正後の新規Claude API呼び出しからのみ訂正後単価を使用。
+- **非干渉**：OpenAI側`costTracker.js`・Web Search料金・IADP・EEA・Completion・Formal Truth・User Approval・working tree上の別系統差分「Leader Case Context Phase2」（`claudeClient.js`に混在していた`caseContext`関連の未commit差分）はいずれも無変更・非対象。DB Migration・DB書き込みなし。既存test既知6 FAILは無関係のpre-existing failureで新規FAILは0件。
+- **Version1 Final Complete／Version1.1 Connected AI Company 開発中・Phase54 Complete維持・Phase55未着手**（すべて変更なし）。詳細は docs/04DECISIONS.md Decision104参照。
+
+---
+
 ## IADP Structured Output **正式リリース**（2026-08-18・Decision103）
 
 実運用予定のInstagram案件`case-msr9yckye65y`でIADP生成がValidation FAILした根本原因（自由記述の指示遵守のみに依存する構造的脆弱性）を解消。**`openaiClient.js`／`index.html`（最小限）／`iadpStructuredOutput.test.js`のみ**（Code commit **8a9d417**）。`shared/instagramAccountDesign.js`（Validator/Normalizer）は無変更。
