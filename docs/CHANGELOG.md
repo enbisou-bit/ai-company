@@ -4,6 +4,14 @@
 
 ---
 
+## Phase IG-QC-B1/B2 candidateOnly Quality Routing Fix / Production Re-evaluation **正式リリース**（2026-08-20・Decision106）
+
+- **Phase IG-QC-B1（candidateOnly routing fix）**：`buildOutputDraftFromLeaderFinal({candidateOnly:true})`ブランチが Phase IG-QC routing 前に early return していたため、Quality Gate 候補評価で IADP へ Instagram 10 項目 Contract が誤適用されていた根本原因を修正。通常経路と完全同一の IADP Quality routing contract を candidateOnly ブランチへ追加（非 IADP・guard 失敗は`evaluateOutputPackageCompleteness()`へ fallback・後方互換維持）。`iadpQualityContractRouting.test.js`に Cases CO-A〜CO-I を追加し全 **86/86 PASS**。Code commit **0c076dd**。
+- **Phase IG-QC-B2（Production Re-evaluation）**：本番 `out_1787060723866`（`case-msr9yckye65y`・IADP `iadp_1787060839814_izhakb`）の旧 snapshot（instagram/20/insufficient・QG failed）を既存`evaluateQualityGate()`関数で非課金再評価・`package_quality`と`assessmentContext.qualityGate`のみ限定保存。保存後実測：category=iadp / score=100 / status=complete / QG passed=true。Evidence・IADP 本体・User Approval・他 case は変更なし。
+- **B3 正式リリース**：docs commit・Annotated Tag **v1.01-iadp-quality-routing-complete**・main push・Render 反映・PC本番確認済み。OpenAI API 0・Claude API 0・Web Search 0。Leader Case Context Phase2 引き続き本番未 commit。
+
+---
+
 ## Phase IG-QC / B-7F Quality Gate Package Routing Fix **正式リリース**（2026-08-20・Decision105）
 
 IADPを含むOutput DraftがInstagram投稿用`instagram` Quality Contract（hook/slideTitles/hashtags等10項目）へ誤接続されていた根本原因（Phase IG-QC）と、全Path A Output Typeで`buildOutputDraftFromLeaderFinal()`のreturn値から`packageQuality`が欠落し`evaluateQualityGate(undefined)`が実行されていた配線バグ（Phase B-7F補完）を修正した。**`index.html`（2 hunk）／`iadpQualityContractRouting.test.js`（新規・正式回帰テスト48件）のみ**（Code commit **547ddac**）。

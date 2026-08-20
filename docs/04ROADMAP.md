@@ -8,6 +8,18 @@
 
 ---
 
+## Phase IG-QC-B1/B2 candidateOnly Quality Routing Fix / Production Re-evaluation（正式リリース・2026-08-20・Decision 106）
+
+> 追記日: 2026-08-20。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
+
+Phase IG-QC-B1 ─ `buildOutputDraftFromLeaderFinal({candidateOnly:true})`ブランチへ通常経路と完全同一の IADP Quality routing を追加。86/86 PASS。Code commit **0c076dd**。
+Phase IG-QC-B2 ─ 本番 `out_1787060723866` の旧 snapshot（instagram/20/insufficient）を既存`evaluateQualityGate()`で非課金再評価・限定保存。category=iadp / score=100 / complete / QG passed。
+B3 ─ docs commit・Annotated Tag **v1.01-iadp-quality-routing-complete**・main push・Render 反映・PC本番確認済み。OpenAI API 0・Claude API 0・B2 DB 変更は対象 Output Draft のみ。
+
+- **次工程**：本番で Account Creation Readiness の正しい評価（conditional 相当）を確認する。User Approval はまだ変更しない。Instagram アカウント作成へはまだ進まない。
+
+---
+
 ## Phase IG-QC / B-7F Quality Gate Package Routing Fix（正式リリース・2026-08-20・Decision 105）
 
 > 追記日: 2026-08-20。**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）。**Phase54 Complete維持・Phase55未着手**。**`index.html`（2 hunk）／`iadpQualityContractRouting.test.js`（新規）のみ**（Code commit `547ddac`）。

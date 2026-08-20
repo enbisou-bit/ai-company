@@ -43,6 +43,14 @@
 
 ---
 
+## Phase IG-QC-B1/B2 candidateOnly Quality Routing Fix / Production Re-evaluation（正式リリース・2026-08-20・Decision106）
+
+- **Phase IG-QC-B1（candidateOnly routing fix）**：`buildOutputDraftFromLeaderFinal({candidateOnly:true})`ブランチが Phase IG-QC routing（Decision105）前に early return していたため、Quality Gate 候補評価で正式 IADP へ Instagram 10 項目 Contract（`evaluateOutputPackageCompleteness()`）が誤適用されていた根本原因を修正。candidateOnly ブランチへ通常経路と完全同一の IADP routing contract を inline 追加（`validation.valid===true`・`packageId`存在・`quality`算出済み・`status`文字列・`score`数値の全 5 条件）。非 IADP・guard 失敗は`evaluateOutputPackageCompleteness()`へ fallback し後方互換を維持。`iadpQualityContractRouting.test.js`に candidateOnly Cases CO-A〜CO-I を追加し全 **86/86 PASS**。Code commit **0c076dd**。
+- **Phase IG-QC-B2（Production Re-evaluation）**：本番 Output Draft `out_1787060723866`（`case-msr9yckye65y`・IADP `iadp_1787060839814_izhakb`）の旧 snapshot（package_quality: instagram/20/insufficient・assessmentContext.qualityGate: failed/false）を、既存保存済み IADP Quality（score:100, status:complete, missingRequiredFields:[]）とブラウザグローバル関数`evaluateQualityGate()`を使用して非課金再評価。`package_quality`・`assessmentContext.qualityGate`の 2 フィールドのみ限定保存（manual JSON 書き換えなし）。保存後実測：category=iadp / score=100 / complete / iadpEvaluated=true / QG passed=true / sourceStatus=complete。バックアップ確認・Guard 全 pass・F5 復元確認・Cross-case（他 7 件 Draft 未作成）確認済み。Evidence（5 件）・IADP 本体・User Approval・Leader Final は変更なし。
+- **Phase IG-QC-B3（正式リリース）**：docs commit・Annotated Tag **v1.01-iadp-quality-routing-complete**・main push・tag push・Render 反映・PC本番確認済み。OpenAI API 0・Claude API 0・Web Search 0。B2 DB 変更は対象 Output Draft のみ。Leader Case Context Phase2 引き続き本番未 commit。
+
+---
+
 ## Phase IG-2J-A〜I Instagram Account Design Self-Completion / AI Action Rerun（正式リリース・2026-08-10・Decision098）
 
 > 記録日: 2026-08-10。**Phase54 Complete維持・Phase55未着手**。**index.html／openaiClient.js／shared/instagramAccountDesign.js／shared/instagramAccountDesignQuality.js／shared/iadpIntelligenceContext.js（新規）／shared/agentResultNormalizer.js（新規）**。**server.js／DB／supabase/schema.sql／API契約は無変更・新規API/新規DBカラム/新Engineなし**。
