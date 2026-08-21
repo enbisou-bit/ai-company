@@ -41488,6 +41488,248 @@ function copyAffiliateIntelligenceField(fieldKey) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Decision108: ASP Product Fact Record（APFR）Step B ─ Manual Input UI
+//   Step A Core（validateApfrRecord()／_apfrAppendRecord()等）をそのまま利用し、UI独自の
+//   Validatorやfact昇格ロジックは実装しない。classificationは自由入力させず、
+//   provenance（確認元）＋User Verification明示チェックからのみ安全に確定する。
+//   A8実画面／広告主LP確認＋チェックの場合のみclassification='fact'。それ以外は常に非fact。
+//   削除・直接編集UIは実装しない（Formal Truth／Audit性維持・Step A duplicate policyのまま）。
+// ══════════════════════════════════════════════════════════════
+const APFR_FIELD_META = {
+  aspName:                          { label: 'ASP名',                 type: 'string',  group: '識別' },
+  programId:                        { label: 'Program ID',            type: 'string',  group: '識別' },
+  productName:                      { label: '商品名',                type: 'string',  group: '識別' },
+  productCategory:                  { label: '商品カテゴリ',          type: 'string',  group: '識別' },
+  partnershipStatus:                { label: '提携状態',              type: 'string',  group: 'ASP状態' },
+  landingUrl:                       { label: '商品リンクURL',         type: 'string',  group: 'ASP状態' },
+  productLinkAvailable:             { label: '商品リンク利用可否',    type: 'boolean', group: 'ASP状態' },
+  payout:                           { label: '報酬額',                type: 'string',  group: '成果' },
+  epc:                              { label: 'EPC',                   type: 'number',  group: '成果' },
+  approvalRate:                     { label: '確定率(%)',             type: 'number',  group: '成果' },
+  cookieWindowDays:                 { label: '再訪問期間(日)',        type: 'number',  group: '成果' },
+  approvalEstimateDays:             { label: '成果確定目安(日)',      type: 'number',  group: '成果' },
+  reviewRequired:                   { label: '審査有無',              type: 'boolean', group: '技術' },
+  mobileOptimized:                  { label: 'スマホ最適化',          type: 'boolean', group: '技術' },
+  itpSupported:                     { label: 'ITP対応',               type: 'boolean', group: '技術' },
+  linkManagerSupported:             { label: 'リンクマネージャー対応', type: 'boolean', group: '技術' },
+  listingPolicy:                    { label: 'リスティング可否',      type: 'string',  group: '技術' },
+  listingNgWords:                   { label: 'リスティングNGワード',  type: 'array',   group: 'Compliance' },
+  regulatoryCategory:                { label: '規制カテゴリ',          type: 'string',  group: 'Compliance' },
+  complianceRestrictions:           { label: 'コンプライアンス制約',  type: 'array',   group: 'Compliance' },
+  advertisingDisclosureRequirements:{ label: '広告表示義務',          type: 'array',   group: 'Compliance' },
+};
+const APFR_FIELD_ORDER = ['aspName','programId','productName','productCategory',
+  'partnershipStatus','landingUrl','productLinkAvailable',
+  'payout','epc','approvalRate','cookieWindowDays','approvalEstimateDays',
+  'reviewRequired','mobileOptimized','itpSupported','linkManagerSupported','listingPolicy',
+  'listingNgWords','regulatoryCategory','complianceRestrictions','advertisingDisclosureRequirements'];
+const APFR_CLASSIFICATION_LABELS = { fact: '✅ 確認済み', prediction: '🔮 予測', inference: '🧮 推論', unknown: '❔ 未確認' };
+const APFR_CLASSIFICATION_CSS = { fact: 'iadp-status-complete', prediction: 'iadp-status-needs_work', inference: 'iadp-status-needs_work', unknown: 'iadp-status-insufficient' };
+
+// 現在案件に一致する採用済み商品（intelligenceContext.product）を返す。無ければnull（副作用なし・再計算しない）。
+//   表示スコープの一致判定は同一Affiliate Intelligence Core内の他アクセサ（_aicCurrentSavedAsp等）と揃える。
+function _apfrCurrentAdoptedProduct() {
+  try {
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!draft || !draft.fields || !draft.fields.intelligenceContext) return null;
+    var product = draft.fields.intelligenceContext.product;
+    if (!product || typeof product !== 'object' || !product.productIdentifier) return null;
+    var cur = (typeof _aicCurrentCaseId === 'function') ? _aicCurrentCaseId() : null;
+    if (!cur || String(draft.caseId || '') !== String(cur) || String(product.caseId || '') !== String(cur)) return null;
+    return product;
+  } catch (e) { return null; }
+}
+
+// field選択肢（グループ化<optgroup>）のHTML生成。
+function _apfrBuildFieldOptionsHtml() {
+  var esc = escapeHtml;
+  var groups = {};
+  APFR_FIELD_ORDER.forEach(function (f) {
+    var m = APFR_FIELD_META[f];
+    if (!groups[m.group]) groups[m.group] = [];
+    groups[m.group].push(f);
+  });
+  var html = '';
+  Object.keys(groups).forEach(function (g) {
+    html += '<optgroup label="' + esc(g) + '">';
+    groups[g].forEach(function (f) {
+      html += '<option value="' + esc(f) + '">' + esc(APFR_FIELD_META[f].label) + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
+
+// 登録済みFact一覧（表示専用・状態変更なし）。内部メタデータ全てではなく簡潔表示に絞る。
+function _apfrBuildFactsListHtml(product) {
+  var esc = escapeHtml;
+  var facts = _apfrFactsOf(product);
+  if (facts.length === 0) return '<div class="oe-aic-note">まだ登録されていません。</div>';
+  var provLabel = { a8_screen_user_verified: 'A8.net実画面', advertiser_lp_user_verified: '広告主公式LP',
+    manual_user_input: '手入力', web_retrieved: 'Web取得', generated_hypothesis: 'AI仮説', ai_interpretation: 'AI解釈', calculated: '計算値' };
+  return facts.map(function (f) {
+    var label = (APFR_FIELD_META[f.field] && APFR_FIELD_META[f.field].label) || f.field;
+    var valTxt = Array.isArray(f.value) ? f.value.join(' / ') : String(f.value);
+    var clsTxt = APFR_CLASSIFICATION_LABELS[f.classification] || f.classification;
+    var clsCss = APFR_CLASSIFICATION_CSS[f.classification] || '';
+    var when = f.recordedAt ? String(f.recordedAt).slice(0, 16).replace('T', ' ') : '';
+    return '<div class="oe-aic-note" style="border-top:1px solid rgba(255,255,255,0.06);padding-top:4px;margin-top:4px;">'
+      + '<span class="' + clsCss + '" style="font-weight:600;">' + esc(clsTxt) + '</span> '
+      + '<strong>' + esc(label) + '</strong>：' + esc(valTxt)
+      + '<span style="opacity:.55;"> （' + esc(provLabel[f.sourceMethod] || f.sourceMethod) + (when ? '・' + esc(when) : '') + '）</span>'
+      + '</div>';
+  }).join('');
+}
+
+// APFR入力パネル（既存Fact表示＋1件ずつ登録フォーム）。採用済み商品が存在しない場合は非表示。
+function _apfrBuildPanelHtml() {
+  var esc = escapeHtml;
+  var product = _apfrCurrentAdoptedProduct();
+  if (!product) return '';
+  var msgHtml = (_apfrUiMsg && _apfrUiMsg.productIdentifier === product.productIdentifier && _apfrUiMsg.text)
+    ? '<div class="oe-aic-' + (_apfrUiMsg.ok ? 'note' : 'warning') + '">' + (_apfrUiMsg.ok ? '✅ ' : '⚠ ') + esc(_apfrUiMsg.text) + '</div>' : '';
+  return '<div class="oe-aic-section" id="apfr-panel">'
+    + '<div class="oe-aic-title">📋 実商品情報（確認済みFact） <span style="font-weight:400;opacity:.5;">APFR ／ ' + esc(product.productName || product.productIdentifier) + '</span></div>'
+    + '<div class="oe-aic-note">A8.netや広告主公式ページで実際に確認した商品情報を登録します。予測値やAIの推測はここに含めません。</div>'
+    + '<div class="oe-aic-label">登録済み情報</div>'
+    + _apfrBuildFactsListHtml(product)
+    + '<div class="oe-aic-label">情報を1件登録</div>'
+    + '<div class="oe-aic-input-grid">'
+    +   '<select id="apfr-input-field" class="oe-aic-input" onchange="_apfrOnFormChange()">' + _apfrBuildFieldOptionsHtml() + '</select>'
+    +   '<input type="text" id="apfr-input-value-text" class="oe-aic-input" placeholder="値">'
+    +   '<select id="apfr-input-value-bool" class="oe-aic-input" style="display:none;"><option value="true">true</option><option value="false">false</option></select>'
+    +   '<select id="apfr-input-provenance" class="oe-aic-input" onchange="_apfrOnFormChange()">'
+    +     '<option value="a8_screen">A8.net実画面で確認</option>'
+    +     '<option value="advertiser_lp">広告主公式LPで確認</option>'
+    +     '<option value="manual">その他手入力</option>'
+    +   '</select>'
+    +   '<input type="text" id="apfr-input-sourceReference" class="oe-aic-input" placeholder="確認元メモ（任意）">'
+    + '</div>'
+    + '<div class="oe-aic-note" id="apfr-verify-row">'
+    +   '<label><input type="checkbox" id="apfr-input-verified" onchange="_apfrOnFormChange()"> 私はこの値をA8.net実画面または広告主公式LPで自分で確認しました</label>'
+    + '</div>'
+    + '<div class="oe-aic-btnrow">'
+    +   '<button class="oe-aic-btn" id="apfr-register-btn" onclick="_apfrRegisterFromUi()">確認済みFactとして登録</button>'
+    + '</div>'
+    + '<div id="apfr-register-msg">' + msgHtml + '</div>'
+    + '</div>';
+}
+
+// provenance/verifiedチェック変化時: manual選択時はチェック行を隠す・A8/LP選択時はチェック未了なら登録ボタンをdisabledにする。
+//   value入力欄はfield種別（number/boolean/array/string）に応じてtext/select表示を切り替える（意味の変換はしない・表示のみ）。
+function _apfrOnFormChange() {
+  try {
+    var fieldSel = document.getElementById('apfr-input-field');
+    var provSel = document.getElementById('apfr-input-provenance');
+    var verifiedChk = document.getElementById('apfr-input-verified');
+    var verifyRow = document.getElementById('apfr-verify-row');
+    var valText = document.getElementById('apfr-input-value-text');
+    var valBool = document.getElementById('apfr-input-value-bool');
+    var btn = document.getElementById('apfr-register-btn');
+    if (!fieldSel || !provSel || !verifiedChk || !btn) return;
+
+    var meta = APFR_FIELD_META[fieldSel.value];
+    var isBool = !!(meta && meta.type === 'boolean');
+    if (valText && valBool) {
+      valText.style.display = isBool ? 'none' : '';
+      valBool.style.display = isBool ? '' : 'none';
+    }
+
+    var needsVerification = (provSel.value === 'a8_screen' || provSel.value === 'advertiser_lp');
+    if (verifyRow) verifyRow.style.display = needsVerification ? '' : 'none';
+    if (!needsVerification) verifiedChk.checked = false;   // manual選択時はFact条件を満たせないため強制解除（表示上の誤認防止）
+
+    var blocked = needsVerification && !verifiedChk.checked;
+    btn.disabled = blocked;
+    btn.style.opacity = blocked ? '.4' : '';
+    btn.style.cursor = blocked ? 'not-allowed' : 'pointer';
+    btn.title = blocked ? '確認済みFactとして登録するには、上のチェックが必要です' : '';
+  } catch (e) { /* fail-open: UI更新失敗でも入力自体は継続可能 */ }
+}
+
+// UI入力を型に応じて構文的にnormalizeするだけの純関数（意味の解釈・推測補完は行わない）。不正な数値はnullを返す。
+function _apfrNormalizeUiValue(fieldKey, rawText, rawBool) {
+  var meta = APFR_FIELD_META[fieldKey];
+  var type = meta ? meta.type : 'string';
+  if (type === 'boolean') return (rawBool === 'true');
+  if (type === 'number') {
+    var n = parseFloat(rawText);
+    return isNaN(n) ? null : n;
+  }
+  if (type === 'array') {
+    return String(rawText || '').split(/[\n,、]/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+  }
+  return String(rawText || '').trim();
+}
+
+var _apfrUiMsg = null; // { productIdentifier, ok, text }（表示専用・状態変更なし）
+
+// 登録ボタン起点のみ。classificationは自由入力させず、provenance＋User Verificationからのみ確定する。
+//   必ずStep A Core（validateApfrRecord()／_apfrAppendRecord()）を経由し、UI独自の判定は行わない。
+function _apfrRegisterFromUi() {
+  try {
+    var product = _apfrCurrentAdoptedProduct();
+    if (!product) return;
+    var fieldSel = document.getElementById('apfr-input-field');
+    var valText = document.getElementById('apfr-input-value-text');
+    var valBool = document.getElementById('apfr-input-value-bool');
+    var provSel = document.getElementById('apfr-input-provenance');
+    var verifiedChk = document.getElementById('apfr-input-verified');
+    var refInput = document.getElementById('apfr-input-sourceReference');
+    if (!fieldSel || !provSel || !verifiedChk) return;
+
+    var fieldKey = fieldSel.value;
+    var meta = APFR_FIELD_META[fieldKey];
+    var rawText = valText ? valText.value : '';
+    var rawBool = valBool ? valBool.value : 'true';
+    var value = _apfrNormalizeUiValue(fieldKey, rawText, rawBool);
+    if (value === null || (typeof value === 'string' && value === '') || (Array.isArray(value) && value.length === 0)) {
+      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: false, text: '値を入力してください（' + (meta ? meta.label : fieldKey) + '）。' };
+      if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel();
+      return;
+    }
+
+    // provenance＋User Verification明示チェックからのみclassificationを確定する（UIでの自由入力は不可）。
+    var provenance = provSel.value;
+    var sourceMethod = (provenance === 'a8_screen') ? 'a8_screen_user_verified'
+      : (provenance === 'advertiser_lp') ? 'advertiser_lp_user_verified' : 'manual_user_input';
+    var verified = !!verifiedChk.checked && (provenance === 'a8_screen' || provenance === 'advertiser_lp');
+    var nowIso = new Date().toISOString();
+
+    var record = {
+      caseId: product.caseId,
+      productIdentifier: product.productIdentifier,
+      aspName: product.aspName || null,
+      field: fieldKey,
+      value: value,
+      classification: verified ? 'fact' : 'unknown',
+      sourceMethod: sourceMethod,
+      sourceReference: (refInput && refInput.value) ? refInput.value.trim() : null,
+      verificationStatus: verified ? 'user_verified' : 'unverified',
+      verifiedBy: verified ? 'user' : null,
+      verifiedAt: verified ? nowIso : null,
+      recordedAt: nowIso,
+    };
+
+    var res = _apfrAppendRecord(record);
+    if (res && res.ok) {
+      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: true, text: (meta ? meta.label : fieldKey) + 'を登録しました。' };
+      if (refInput) refInput.value = '';
+      if (valText) valText.value = '';
+      if (verifiedChk) verifiedChk.checked = false;
+    } else {
+      var reasonMsg = (res && res.reason === 'duplicate_record') ? '同じ情報はすでに登録されています。'
+        : (res && res.reason === 'duplicate_factId') ? '同じ情報はすでに登録されています。'
+        : (res && res.reason === 'no_adopted_product') ? '採用済みの商品がありません。'
+        : (res && res.reason === 'draft_case_mismatch') ? '案件の状態が変わりました。再度お試しください。'
+        : '登録に失敗しました。入力内容を確認してください。';
+      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: false, text: reasonMsg };
+    }
+    if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel();
+  } catch (e) { console.warn('[APFR] register error (fail-open):', e.message); }
+}
+
 // Phase53: Affiliate Intelligence Core HTML生成
 // _lastOutputDraftに依存しない会社レベルの案件判断ツール（常時表示）。
 function buildAffiliateIntelligenceCoreHtml() {
@@ -41619,6 +41861,7 @@ function buildAffiliateIntelligenceCoreHtml() {
     + _intelBuildContextSummaryHtml()
     + _aicBuildRevenueHtml(ranked)
     + _aicBuildAspHtml(ranked)
+    + (typeof _apfrBuildPanelHtml === 'function' ? _apfrBuildPanelHtml() : '')
     + _aicBuildContentHtml(ranked)
     + _aicBuildCompetitionHtml(ranked)
     + _aicBuildMarketHtml(ranked)
