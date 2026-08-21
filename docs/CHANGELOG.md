@@ -4,6 +4,16 @@
 
 ---
 
+## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI **正式リリース**（2026-08-21・Decision108）
+
+- **Contract**：正式Contract「ASP Product Fact Record（APFR）」を設計正式化。A8.net等ASP・広告主LPで確認された商品単位の事実を、出典・検証状態・分類付きでcase-scoped Product Formal Truthとして保持する契約。EER（Decision107・行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`は`fact`/`prediction`/`inference`/`unknown`の4値。**AI自身の判断による`fact`昇格を禁止**——`sourceMethod`が`a8_screen_user_verified`/`advertiser_lp_user_verified`かつ`verificationStatus:user_verified`かつ`verifiedBy:user`の場合のみFact昇格可、`manual_user_input`単独では不可。
+- **Step A Core**：`_intelBlankProduct()`へ`facts:[]`追加。純関数`validateApfrRecord()`（必須field検証・Fact昇格条件・入力非破壊・推測補完なし）と`_apfrAppendRecord()`（caseId/productIdentifier guard・重複防止・履歴保持・既存`pushOutputDraftToServer()`経由保存）を実装。`product.facts`は既存`intelligenceContext`（既存`FORMAL_CASE_FIELDS`の1つ）内にあるため専用carry-forward配線は不要だった。合成テスト`apfrCore.test.js`：**49/49 PASS**。Code commit **3113e53**。
+- **Step B Manual Input UI**：Affiliate Intelligence Coreパネル内、ASP Intelligence表示の直後へAPFR入力パネルを追加。classificationは自由入力させず、provenance（A8実画面／広告主LP／その他手入力）選択＋User Verification明示チェックの組み合わせからのみ内部で確定。A8/LP選択時に未チェックだと登録ボタンをdisabledにし安全に停止。必ずStep A Coreを経由し独自Validatorは実装していない。削除・直接編集UIは実装しない。localhost実機検証（専用テスト案件`case-msoplrg6gdkr`）でA8/広告主LP/manual各provenance・ボタンdisabled/enabled切替・重複登録防止・履歴保持・F5復元・別案件（本番実案件含む）でのCross-case非混入を実測、検証後は原状復帰済み。合成テスト`apfrManualInputUi.test.js`：**35/35 PASS**。Code commit **1e8de4f**。
+- **実商品登録**：実案件`case-msr9yckye65y`へのAPFR登録は0件（プラファスト未登録。同案件には採用済み商品自体が存在しないためAPFRパネルもまだ出現しない＝正常）。
+- **既存回帰**：`externalExecutionRecord.eer1.test.js`（51/51）／`iadpQualityContractRouting.test.js`（86/86）／`iadpStructuredOutput.test.js`／`evidencePromotion.eea10b.test.js`全PASS。IADP・User Approval・Quality Gate・EER・Product/ASP Intelligence scoreいずれも無回帰。dev-check 200/200/200。Leader Case Context Phase2は引き続き本番未commit。OpenAI API 0・Claude API 0・Web Search 0・DB schema変更0。
+
+---
+
 ## External Execution Completion Contract ＋ EER-1/EER-2/EER-3/EER-4 **正式リリース・本番実運用完了**（2026-08-21・Decision107）
 
 - **Contract**：正式Contract「External Execution Record（EER）」を設計正式化。現実世界・外部サービス上で実際に完了した行為をFormal Truthとして記録する契約。`FORMAL_CASE_FIELDS`へ独立キー`externalExecution`を追加（IADP配下案は不採用）。Approved≠Executed・Ready≠Executed・Deliverable Complete≠External Execution Complete・Evidence Verified≠Execution Verifiedを正式原則として採用。AI推測からの自動生成は禁止（source=`user_confirmation`のみ）。

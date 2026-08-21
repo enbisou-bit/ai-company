@@ -43,14 +43,16 @@
 
 ---
 
-## ASP Product Fact Record（APFR）─ Product Formal Truth Contract（設計正式化・未実装・2026-08-21・Decision108）
+## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21・Decision108）
 
 - **背景**：Instagram実運用側（別チャット）でA8.net実商品「肝斑シミ用美白ジェル プラファスト」の提携が完了し、Program ID・報酬額・EPC・確定率・Cookie期間・提携状態・商品リンク・法令/ASP制約等の実値が取得された。既存Evidence Contractの読み取り調査（判定B）で、Affiliate Evaluation手動入力経路は`sourceMethod`/`verificationStatus`が常に`null`・`reliability`が固定`unknown`であり、「A8実画面確認」と「一般的な手入力」を区別できないこと、Program ID・提携状態・商品リンクURL・法令/ASP制約を保持するfield自体が存在しないことを確認した。
 - **Contract**：正式名称「ASP Product Fact Record（APFR）」。EER（行為のFormal Truth）とは責務分離し、APFRは「現実世界の商品事実」のFormal Truthを保持する契約。`classification`は`fact`/`prediction`/`inference`/`unknown`の4値。**AI自身の判断による`fact`昇格を禁止**——`sourceMethod`が`a8_screen_user_verified`/`advertiser_lp_user_verified`かつ`verificationStatus:user_verified`の場合のみFact昇格可、`manual_user_input`単独では不可。
 - **保存方針**：`output_drafts.fields.intelligenceContext.product.facts`（既存JSONB・1 Record=1 field）。新規DB table/column/API/Migrationいずれも不要。既存`intelligenceContext.evidence[]`/`product.inputs{}`/`asp`/`affiliateContext`・Product/ASP Intelligenceのscore式・Quality Gate等の既存判定は一切変更しない。
 - **重要原則**：APFR Complete≠全Quality/Hold/EEA問題Complete（Evidence不足でもQuality Gate Passedとなりうる経路等はAPFR後の別工程で再評価）。
-- **今回の範囲**：**docs正式化のみ。コード・DB・API・UI実装は一切なし。** 実案件（`case-msr9yckye65y`）へのAPFR登録・プラファスト評価・投稿生成はいずれも実施していない（実案件登録0件）。
-- **次工程**：APFR Step A（Core：Fact Record schema・`validateApfrRecord()`・保存/復元・Cross-case guard・テスト）。ユーザー承認後に着手（自動開始しない）。
+- **Step A Core正式実装**：`_intelBlankProduct()`へ`facts:[]`追加。`validateApfrRecord()`（必須field・Fact昇格条件・入力非破壊）と`_apfrAppendRecord()`（caseId/productIdentifier guard・重複防止・履歴保持）を実装。`intelligenceContext`の既存carry-forwardにそのまま乗るため専用配線不要。合成テスト`apfrCore.test.js`：**49/49 PASS**。Code commit **3113e53**。
+- **Step B Manual Input UI正式実装**：Affiliate Intelligence Core内、ASP Intelligence直後へAPFR入力パネルを追加。classificationは自由入力させず、provenance（A8実画面／広告主LP／その他手入力）＋User Verification明示チェックからのみ内部確定。A8/LP選択時は未チェックだと登録ボタンdisabled。必ずStep A Coreを経由し独自Validatorは実装しない。localhost実機検証（専用テスト案件）で13項目確認・検証後原状復帰済み。合成テスト`apfrManualInputUi.test.js`：**35/35 PASS**。Code commit **1e8de4f**。
+- **正式リリース**：docs release commit・Annotated Tag・main push・tag push・Render反映済み。実案件（`case-msr9yckye65y`）へのAPFR登録・プラファスト評価・投稿生成はいずれも実施していない（実案件登録0件・プラファスト未登録）。
+- **次工程**：プラファストAffiliate Evaluation登録・商品採用工程（ユーザー本人の本番UI操作）。その後、A8実画面／広告主LPで確認したFactをAPFR UIから登録する。自動開始しない。
 
 ---
 

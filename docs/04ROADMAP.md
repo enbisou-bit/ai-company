@@ -8,14 +8,16 @@
 
 ---
 
-## ASP Product Fact Record（APFR）─ Product Formal Truth Contract（設計正式化・未実装・2026-08-21・Decision 108）
+## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21・Decision 108）
 
 > 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
 
-A8.net実商品「プラファスト」提携完了を背景に、正式Contract「ASP Product Fact Record（APFR）」を設計正式化した。EER（行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`＝`fact`/`prediction`/`inference`/`unknown`の4値を正式採用し、AI自身の判断による`fact`昇格を禁止。保存先は`intelligenceContext.product.facts`（既存JSONB）。既存Evidence/EEA/Product Intelligence/ASP Intelligence/Quality Gateはいずれも変更せず、APFR Complete≠全Quality/Hold/EEA問題Completeを明記。
+A8.net実商品「プラファスト」提携完了を背景に、正式Contract「ASP Product Fact Record（APFR）」を設計正式化した上でStep A Core・Step B Manual Input UIを実装・正式リリースした。EER（行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`＝`fact`/`prediction`/`inference`/`unknown`の4値を正式採用し、AI自身の判断による`fact`昇格を禁止。保存先は`intelligenceContext.product.facts`（既存JSONB）。既存Evidence/EEA/Product Intelligence/ASP Intelligence/Quality Gateはいずれも変更せず、APFR Complete≠全Quality/Hold/EEA問題Completeを明記。
 
-- **今回の範囲**：**docs正式化のみ。コード・DB・API・UI実装は一切なし。実案件APFR登録0件。**
-- **次工程**：APFR Step A（Core）→ Step B（Manual Input UI）→ Step C（ASP/Product Intelligence接続）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手。
+- **Step A Core**：`validateApfrRecord()`／`_apfrAppendRecord()`。合成テスト49/49 PASS。Code commit **3113e53**。
+- **Step B Manual Input UI**：Affiliate Intelligence Core内へAPFR入力パネル。provenance＋User Verificationからのみfact確定。合成テスト35/35 PASS。localhost実機検証済み。Code commit **1e8de4f**。
+- **正式リリース**：docs commit・Annotated Tag・main push・tag push・Render反映済み。実案件APFR登録0件・プラファスト未登録。
+- **次工程**：プラファストAffiliate Evaluation登録・商品採用工程（ユーザー本人操作）。その後Step C（ASP/Product Intelligence接続）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手。
 
 ---
 
