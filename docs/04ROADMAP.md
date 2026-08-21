@@ -8,6 +8,17 @@
 
 ---
 
+## ASP Product Fact Record（APFR）─ Product Formal Truth Contract（設計正式化・未実装・2026-08-21・Decision 108）
+
+> 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
+
+A8.net実商品「プラファスト」提携完了を背景に、正式Contract「ASP Product Fact Record（APFR）」を設計正式化した。EER（行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`＝`fact`/`prediction`/`inference`/`unknown`の4値を正式採用し、AI自身の判断による`fact`昇格を禁止。保存先は`intelligenceContext.product.facts`（既存JSONB）。既存Evidence/EEA/Product Intelligence/ASP Intelligence/Quality Gateはいずれも変更せず、APFR Complete≠全Quality/Hold/EEA問題Completeを明記。
+
+- **今回の範囲**：**docs正式化のみ。コード・DB・API・UI実装は一切なし。実案件APFR登録0件。**
+- **次工程**：APFR Step A（Core）→ Step B（Manual Input UI）→ Step C（ASP/Product Intelligence接続）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手。
+
+---
+
 ## External Execution Completion Contract ＋ EER-1/EER-2/EER-3/EER-4（正式リリース・本番実運用完了・2026-08-21・Decision 107）
 
 > 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。

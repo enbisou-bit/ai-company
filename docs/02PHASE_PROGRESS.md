@@ -43,6 +43,17 @@
 
 ---
 
+## ASP Product Fact Record（APFR）─ Product Formal Truth Contract（設計正式化・未実装・2026-08-21・Decision108）
+
+- **背景**：Instagram実運用側（別チャット）でA8.net実商品「肝斑シミ用美白ジェル プラファスト」の提携が完了し、Program ID・報酬額・EPC・確定率・Cookie期間・提携状態・商品リンク・法令/ASP制約等の実値が取得された。既存Evidence Contractの読み取り調査（判定B）で、Affiliate Evaluation手動入力経路は`sourceMethod`/`verificationStatus`が常に`null`・`reliability`が固定`unknown`であり、「A8実画面確認」と「一般的な手入力」を区別できないこと、Program ID・提携状態・商品リンクURL・法令/ASP制約を保持するfield自体が存在しないことを確認した。
+- **Contract**：正式名称「ASP Product Fact Record（APFR）」。EER（行為のFormal Truth）とは責務分離し、APFRは「現実世界の商品事実」のFormal Truthを保持する契約。`classification`は`fact`/`prediction`/`inference`/`unknown`の4値。**AI自身の判断による`fact`昇格を禁止**——`sourceMethod`が`a8_screen_user_verified`/`advertiser_lp_user_verified`かつ`verificationStatus:user_verified`の場合のみFact昇格可、`manual_user_input`単独では不可。
+- **保存方針**：`output_drafts.fields.intelligenceContext.product.facts`（既存JSONB・1 Record=1 field）。新規DB table/column/API/Migrationいずれも不要。既存`intelligenceContext.evidence[]`/`product.inputs{}`/`asp`/`affiliateContext`・Product/ASP Intelligenceのscore式・Quality Gate等の既存判定は一切変更しない。
+- **重要原則**：APFR Complete≠全Quality/Hold/EEA問題Complete（Evidence不足でもQuality Gate Passedとなりうる経路等はAPFR後の別工程で再評価）。
+- **今回の範囲**：**docs正式化のみ。コード・DB・API・UI実装は一切なし。** 実案件（`case-msr9yckye65y`）へのAPFR登録・プラファスト評価・投稿生成はいずれも実施していない（実案件登録0件）。
+- **次工程**：APFR Step A（Core：Fact Record schema・`validateApfrRecord()`・保存/復元・Cross-case guard・テスト）。ユーザー承認後に着手（自動開始しない）。
+
+---
+
 ## External Execution Completion Contract ＋ EER-1/EER-2/EER-3/EER-4（正式リリース・本番実運用完了・2026-08-21・Decision107）
 
 - **背景**：Decision106後、対象案件`case-msr9yckye65y`はシステム上User Approval=Approved／Account Creation Readiness=Readyまで到達し、ユーザーが現実世界でInstagramアカウント作成・A8.net登録・A8.netメディア登録まで実行済みであることが判明。読み取り専用調査で、これを保持するFormal Truthが現在の設計に存在しないことを確認した（User Approval／Ready／Deliverable Completion／Evidence／IADP／Output Draftのいずれも責務外）。
