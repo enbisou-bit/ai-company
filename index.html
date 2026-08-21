@@ -39095,7 +39095,139 @@ function _intelBlankProduct(caseId, channelScope) {
     evaluationId: null,
     rank: null,
     updatedAt: '',
+    facts: [],                         // Decision108（APFR）: ASP Product Fact Record群（本工程Step Aで追加）
   };
+}
+
+// ══════════════════════════════════════════════════════════════
+// Decision108: ASP Product Fact Record（APFR）Step A ─ Core
+//   ASP・広告主LP等で確認された商品単位の事実を、出典・検証状態・分類付きで
+//   case-scoped Product Formal Truthとして保持する。1 Record = 1 field。
+//   EER（Decision107・行為のFormal Truth）とは責務分離（APFR＝商品事実のFormal Truth）。
+//   AI自身の判断によるclassification='fact'への昇格は禁止（sourceMethodが
+//   a8_screen_user_verified/advertiser_lp_user_verifiedかつverificationStatus='user_verified'
+//   かつverifiedBy='user'の場合のみFact昇格可）。保存先は既存
+//   intelligenceContext.product.facts（JSONB）。新規DB/API/UIは今回追加しない。
+// ══════════════════════════════════════════════════════════════
+const APFR_CLASSIFICATION_VALUES = ['fact', 'prediction', 'inference', 'unknown'];
+// 既存 intelligenceContext.evidence[].sourceMethod とは意味範囲が異なるため独立enumとする（既存enumへ値追加しない）。
+const APFR_SOURCE_METHOD_VALUES = [
+  'a8_screen_user_verified', 'advertiser_lp_user_verified', 'manual_user_input',
+  'web_retrieved', 'generated_hypothesis', 'ai_interpretation', 'calculated',
+];
+// classification='fact'を許可するsourceMethod（A8画面確認／広告主LP確認のみ）。
+const APFR_FACT_ALLOWED_SOURCE_METHODS = ['a8_screen_user_verified', 'advertiser_lp_user_verified'];
+// verificationStatusは既存 INTEL_VERIFICATION_STATUS_VALUES を再利用するが、
+//   APFRが正式受理するのは 'unverified' / 'user_verified' の2値のみ（'verified'は将来のsystem/API確認用・Step Aでは未使用）。
+const APFR_VERIFICATION_STATUS_VALUES = ['unverified', 'user_verified'];
+
+// factId生成: 既存 _intelNewEvidenceId()（'ev-'接頭辞）と同型のパターン。'apf_'接頭辞。
+function _apfrNewFactId() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') return 'apf_' + crypto.randomUUID();
+  } catch (e) { /* fallback */ }
+  return 'apf_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+}
+
+// 値がJSON安全（function/undefined/Symbolを含まずround-trip可能）か判定する純関数。
+function _apfrIsJsonSafeValue(value) {
+  if (value === undefined) return false;
+  if (typeof value === 'function' || typeof value === 'symbol') return false;
+  try {
+    var s = JSON.stringify(value);
+    return s !== undefined;
+  } catch (e) { return false; }
+}
+
+// 純関数：Fact Record最小validationのみを行う。入力recordを書き換えない・欠落値を推測補完しない。
+//   expectedCaseId/expectedProductIdentifier省略時はcaseId/productIdentifierの一致チェックをスキップする。
+function validateApfrRecord(record, expectedCaseId, expectedProductIdentifier) {
+  var errors = [];
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return { valid: false, errors: ['record_missing_or_invalid'] };
+  }
+
+  if (typeof record.factId !== 'string' || !record.factId) errors.push('factId_missing');
+  if (typeof record.caseId !== 'string' || !record.caseId) errors.push('caseId_missing');
+  else if (expectedCaseId && record.caseId !== expectedCaseId) errors.push('caseId_mismatch');
+  if (typeof record.productIdentifier !== 'string' || !record.productIdentifier) errors.push('productIdentifier_missing');
+  else if (expectedProductIdentifier && record.productIdentifier !== expectedProductIdentifier) errors.push('productIdentifier_mismatch');
+  if (typeof record.field !== 'string' || !record.field) errors.push('field_missing');
+  if (APFR_CLASSIFICATION_VALUES.indexOf(record.classification) === -1) errors.push('invalid_classification');
+  if (APFR_SOURCE_METHOD_VALUES.indexOf(record.sourceMethod) === -1) errors.push('invalid_sourceMethod');
+  if (APFR_VERIFICATION_STATUS_VALUES.indexOf(record.verificationStatus) === -1) errors.push('invalid_verificationStatus');
+  if (typeof record.recordedAt !== 'string' || !record.recordedAt || isNaN(Date.parse(record.recordedAt))) errors.push('invalid_recordedAt');
+
+  if (!_apfrIsJsonSafeValue(record.value)) {
+    errors.push(record.value === undefined ? 'value_missing' : 'value_not_json_safe');
+  }
+
+  // 任意field（存在する場合のみ型検証。欠落は許容＝推測補完しない）
+  if (record.aspName != null && typeof record.aspName !== 'string') errors.push('invalid_aspName');
+  if (record.sourceReference != null && typeof record.sourceReference !== 'string') errors.push('invalid_sourceReference');
+  if (record.reliability != null && INTEL_RELIABILITY_VALUES.indexOf(record.reliability) === -1) errors.push('invalid_reliability');
+
+  // Fact昇格Contract（Decision108最重要安全契約）: AI由来sourceMethodではfactへ昇格不可。
+  if (record.classification === 'fact') {
+    if (APFR_FACT_ALLOWED_SOURCE_METHODS.indexOf(record.sourceMethod) === -1) errors.push('fact_requires_verified_source_method');
+    if (record.verificationStatus !== 'user_verified') errors.push('fact_requires_user_verified_status');
+    if (record.verifiedBy !== 'user') errors.push('fact_requires_verifiedBy_user');
+    if (typeof record.verifiedAt !== 'string' || !record.verifiedAt || isNaN(Date.parse(record.verifiedAt))) errors.push('fact_requires_valid_verifiedAt');
+  } else {
+    // non-fact: verifiedBy/verifiedAtはFact用の必須条件を強制しない（存在する場合のみ型検証）。
+    if (record.verifiedBy != null && record.verifiedBy !== 'user') errors.push('invalid_verifiedBy');
+    if (record.verifiedAt != null && (typeof record.verifiedAt !== 'string' || isNaN(Date.parse(record.verifiedAt)))) errors.push('invalid_verifiedAt');
+  }
+
+  return { valid: errors.length === 0, errors: errors };
+}
+
+// 旧Draft（factsキー未存在）を安全に読む（副作用なし・書き換えない）。
+function _apfrFactsOf(product) {
+  return (product && Array.isArray(product.facts)) ? product.facts : [];
+}
+
+// duplicate判定用の内容一致比較（factId・verificationStatus・verifiedBy・verifiedAt・reliability・recordedAtは比較対象外）。
+function _apfrRecordsEqual(a, b) {
+  if (!a || !b) return false;
+  if (a.caseId !== b.caseId) return false;
+  if (a.productIdentifier !== b.productIdentifier) return false;
+  if ((a.aspName || null) !== (b.aspName || null)) return false;
+  if (a.field !== b.field) return false;
+  if (a.classification !== b.classification) return false;
+  if (a.sourceMethod !== b.sourceMethod) return false;
+  if ((a.sourceReference || null) !== (b.sourceReference || null)) return false;
+  try { if (JSON.stringify(a.value) !== JSON.stringify(b.value)) return false; } catch (e) { return false; }
+  return true;
+}
+
+// Core: 現在案件・現在採用商品へAPFR Recordを追記保存する（validation・caseId/productIdentifier guard・重複防止つき）。
+//   UI責務は持たせない。呼び出し元は必ずユーザー明示操作由来のRecordを渡すこと（UI接続はStep B・今回は未配線）。
+//   factIdが未指定の場合のみここで新規発行する（入力recordそのものは書き換えず、複製toSaveへ設定）。
+function _apfrAppendRecord(record) {
+  try {
+    var curCaseId = (typeof getCurrentApprovalCaseId === 'function') ? getCurrentApprovalCaseId() : null;
+    if (!_lastOutputDraft || _lastOutputDraft.caseId !== curCaseId) return { ok: false, reason: 'draft_case_mismatch' };
+    var ic = _lastOutputDraft.fields && _lastOutputDraft.fields.intelligenceContext;
+    var product = ic && ic.product;
+    if (!product || !product.productIdentifier) return { ok: false, reason: 'no_adopted_product' };
+
+    var toSave = Object.assign({}, record);
+    if (!toSave.factId) toSave.factId = _apfrNewFactId();
+
+    var v = validateApfrRecord(toSave, curCaseId, product.productIdentifier);
+    if (!v.valid) return { ok: false, reason: 'invalid', errors: v.errors };
+
+    var facts = _apfrFactsOf(product);
+    if (facts.some(function (r) { return r && r.factId === toSave.factId; })) return { ok: false, reason: 'duplicate_factId' };
+    if (facts.some(function (r) { return _apfrRecordsEqual(r, toSave); })) return { ok: false, reason: 'duplicate_record' };
+
+    product.facts = facts.concat([toSave]);
+    pushOutputDraftToServer(_lastOutputDraft);
+    return { ok: true, record: toSave };
+  } catch (e) {
+    return { ok: false, reason: 'exception', message: e.message };
+  }
 }
 
 // product用Evidenceの安定キー（冪等突合用）: 同一 caseId×productIdentifier×field で常に1件。
