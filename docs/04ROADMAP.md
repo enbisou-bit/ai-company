@@ -8,9 +8,9 @@
 
 ---
 
-## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21）／プラファスト本番実運用検証Complete（2026-08-22・Decision 108）
+## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21）／プラファスト本番実運用検証Complete（2026-08-22）／Phase 0 再Adopt時Fact消失防止＋Phase 1 Current Fact Resolver（2026-08-22・Decision 108）
 
-> 追記日: 2026-08-22（本番実運用検証Complete）／2026-08-21（Step A/B 正式リリース）。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
+> 追記日: 2026-08-22（Phase 0／Phase 1 Contract正式化）／2026-08-22（本番実運用検証Complete）／2026-08-21（Step A/B 正式リリース）。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
 
 A8.net実商品「プラファスト」提携完了を背景に、正式Contract「ASP Product Fact Record（APFR）」を設計正式化した上でStep A Core・Step B Manual Input UIを実装・正式リリースした。EER（行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`＝`fact`/`prediction`/`inference`/`unknown`の4値を正式採用し、AI自身の判断による`fact`昇格を禁止。保存先は`intelligenceContext.product.facts`（既存JSONB）。既存Evidence/EEA/Product Intelligence/ASP Intelligence/Quality Gateはいずれも変更せず、APFR Complete≠全Quality/Hold/EEA問題Completeを明記。
 
@@ -19,7 +19,10 @@ A8.net実商品「プラファスト」提携完了を背景に、正式Contract
 - **正式リリース（2026-08-21）**：docs commit **f6caf23**・Annotated Tag **v1.01-apfr-core-manual-input**・main push・tag push・Render反映済み。この時点で実案件APFR登録0件・プラファスト未登録。
 - **本番実運用検証Complete（2026-08-22）**：ユーザー本人が本番UIでプラファストのAffiliate Evaluation登録・商品採用を実施後、対象`case-msr9yckye65y`／`["プラファスト","a8.net"]`へ**全21フィールドを1件ずつ登録＝21/21 Complete**。Fact総**22レコード**（`listingNgWords`訂正履歴1件含む・最新正Fact`["商品名","法人名"]`・**最新有効Fact基準で判定**）。**Contract違反0件**・**Cross-case混入0件**・Persistence確認済み。**AI推測Fact昇格0件・`manual_user_input`単独Fact昇格0件**。無回帰：IADP 100/complete・Quality Gate Passed・Reviewer Passed・Strategy Accepted・User Approval Approved・EER 3件executed・Evidence 9件。Claude Codeは読み取り専用確認のみ・Fact登録0件。**docs更新のみ・Code/DB/API/Fact変更0・Tag/Push/Render未実施**。
 - **残課題（Completeとは分離）**：①同一fieldへの複数Fact存在時の最新採用ルール未明文（**Step Cの前提**）②ITP「7days」保存field不在③boolean日本語表示④`listingPolicy`表記統一⑤フィールド選択UI（巨大select・スクロール・検索性）⑥APFR直接ジャンプ導線⑦入力省力化⑧EEA問題（Decision101）⑨Quality Gate／Hold制御問題。**APFR実運用Complete≠EEA問題Complete／≠Quality Gate・Hold問題Complete**。
-- **次工程**：①残課題1の設計判断（Step C前提）②残課題2の仕様判断③残課題3〜7のUI改善④Step C（ASP/Product Intelligence接続）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手・自動開始しない。
+- **Phase 0 再Adopt時Fact消失防止（Code commit `d69ff60`）**：商品再Adopt時に`product`が丸ごと置換され登録済みFactが全消失する潜在リスクを`_apfrCarryOverFacts()`で解消。**同一caseId かつ 同一productIdentifier のみcarry-over**（Cross-case/Cross-product は0）・deep clone・入力非破壊・配列順と訂正履歴を維持。合成テスト40/40 PASS。APFR Contract変更なし。
+- **Phase 1 Current Fact Resolver（Code commit `46c51ef`）**：read-only純関数`_apfrResolveCurrentFact()`／`_apfrResolveCurrentFacts()`を追加し、**Current Fact Resolver／Correction／Ambiguity（fail-closed）／Legacy Fallback／Step C開始条件**を正式化。解決順序は①明示訂正chain（`supersedesFactId`）優先→②明示関係が皆無の場合のみ`recordedAt`最大→③一意決定不能は`ambiguous`。**明示chainと独立legacyの並存・timestamp collisionはいずれもambiguous**（恣意的tie-breaker／sourceMethod優先は不採用）。**既存22 Factはmigration不要**・本番相当fixtureで**resolved 21 / none 0 / ambiguous 0**。合成テスト70/70 PASS・既存回帰全PASS・dev-check 200/200/200。**UI未接続・Step C未接続・DB書き込み0**。
+- **Step C開始条件（確定）**：Step CはResolverをFormal Truthの唯一の読み取り口とし、`resolved`のみ利用可・`ambiguous`は利用禁止（fail-closed）。**`facts`配列を直接走査して独自に最新判断する方式は禁止**。
+- **次工程**：①Correction UI（`supersedesFactId`付与操作）の実装要否判断②残課題2（ITP日数field）の仕様判断③残課題3〜7のUI改善④Step C（ASP/Product Intelligence接続・Resolver経由のみ）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手・自動開始しない。
 
 ---
 
