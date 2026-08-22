@@ -39213,6 +39213,16 @@ function _apfrCarryOverFacts(prevProduct, nextProduct) {
 }
 
 // duplicate判定用の内容一致比較（factId・verificationStatus・verifiedBy・verifiedAt・reliability・recordedAtは比較対象外）。
+//   CUI-0（Decision108・Correction Contract整合）: supersedesFactId を identity の一部として比較する。
+//   これがないと A(value=1) → B(value=2, supersedes A) → C(value=1, supersedes B) という
+//   「元の値への正式な差し戻し訂正」が、AとCの内容一致により duplicate_record で誤拒否される。
+//   ・supersedesFactId が異なる（＝訂正関係が異なる）Recordは別Recordとして扱う。
+//   ・supersedesFactId まで完全一致する Correction Record の二重登録は従来どおり拒否する。
+//   ・訂正関係を持たない通常Record同士の判定は一切変わらない（従来挙動を完全維持）。
+//   正規化は既存の aspName / sourceReference と同じ `|| null` イディオムに揃え、
+//   undefined・null・''・property未存在をすべて「訂正関係なし」として同一に扱う（独自normalizeは導入しない）。
+//   なお orphan / self reference / cross-field / cross-case / cross-product / branched / circular の
+//   chain異常検出は本関数の責務ではなく、_apfrResolveCurrentFact() 側が ambiguous（fail-closed）で扱う。
 function _apfrRecordsEqual(a, b) {
   if (!a || !b) return false;
   if (a.caseId !== b.caseId) return false;
@@ -39222,6 +39232,7 @@ function _apfrRecordsEqual(a, b) {
   if (a.classification !== b.classification) return false;
   if (a.sourceMethod !== b.sourceMethod) return false;
   if ((a.sourceReference || null) !== (b.sourceReference || null)) return false;
+  if ((a.supersedesFactId || null) !== (b.supersedesFactId || null)) return false;
   try { if (JSON.stringify(a.value) !== JSON.stringify(b.value)) return false; } catch (e) { return false; }
   return true;
 }
