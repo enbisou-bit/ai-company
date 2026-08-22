@@ -39187,6 +39187,31 @@ function _apfrFactsOf(product) {
   return (product && Array.isArray(product.facts)) ? product.facts : [];
 }
 
+// Decision108（APFR）Phase 0: 商品再Adopt時のFact消失防止。
+//   商品採用処理は _intelSyncProductFromAffiliate() → _intelBlankProduct()（facts:[]）で新product構造を生成し
+//   ctx.product へ丸ごと代入するため、同一商品を再採用すると登録済みAPFR Factが失われる。
+//   本純関数は「同一caseId かつ 同一productIdentifier」の場合に限り旧product.factsをcarry-overする。
+//   ・別case／別商品では持ち越さない（Cross-case / Cross-product guard・安全側で空配列を返す）。
+//   ・productIdentifierは _intelProductIdentifier() が常に文字列を返す既存仕様に合わせ、
+//     _apfrRecordsEqual()／validateApfrRecord() と同じ厳密文字列一致で比較する（独自normalizeはしない）。
+//   ・入力（prevProduct / nextProduct）は書き換えない。返り値は常にdeep cloneした新配列
+//     （既存Record objectを共有しない＝以後の追記が旧Draft側へ波及しない）。
+//   ・Fact schema／validation／duplicate policy／classificationは一切変更しない（並べ替え・filter・補完もしない）。
+function _apfrCarryOverFacts(prevProduct, nextProduct) {
+  try {
+    if (!prevProduct || !nextProduct) return [];
+    if (typeof prevProduct.caseId !== 'string' || typeof nextProduct.caseId !== 'string') return [];
+    if (!prevProduct.caseId || prevProduct.caseId !== nextProduct.caseId) return [];
+    if (typeof prevProduct.productIdentifier !== 'string' || typeof nextProduct.productIdentifier !== 'string') return [];
+    if (!prevProduct.productIdentifier || prevProduct.productIdentifier !== nextProduct.productIdentifier) return [];
+    var facts = _apfrFactsOf(prevProduct);
+    if (facts.length === 0) return [];
+    return JSON.parse(JSON.stringify(facts));   // deep clone（順序・訂正履歴をそのまま保持・入力非破壊）
+  } catch (e) {
+    return [];                                  // fail-safe: 失敗時は従来動作（facts:[]）へ退避し虚偽Factを作らない
+  }
+}
+
 // duplicate判定用の内容一致比較（factId・verificationStatus・verifiedBy・verifiedAt・reliability・recordedAtは比較対象外）。
 function _apfrRecordsEqual(a, b) {
   if (!a || !b) return false;
@@ -40430,6 +40455,11 @@ function adoptAffiliateForContentPlanning(evalId) {
     if (src.productIdentifier != null && String(src.productIdentifier) !== '') product.productIdentifier = String(src.productIdentifier);
     product.caseId = String(src.caseId);
     product.updatedAt = new Date().toISOString();
+    // Decision108（APFR）Phase 0: 同一case・同一productIdentifierの再Adopt時のみ、既存APFR Factを新productへ引き継ぐ。
+    //   nextIntelligenceContext は実Draftからのdeep copy（上の JSON.parse(JSON.stringify(baseCtx)) ）であり、
+    //   この時点の .product は「旧product」。caseId/productIdentifier確定後・置換直前に評価する必要がある。
+    //   別case／別商品では空配列となり従来どおり facts は引き継がれない。
+    product.facts = _apfrCarryOverFacts(nextIntelligenceContext.product, product);
     nextIntelligenceContext.product = product;                      // ★戻り値を ctx.product へ明示代入（自動代入されないため）
     // 工程4-4: Revenue も同一 intelligenceContext へ両書き（同一ctxのproductから同期・財務Evidenceを共有参照・新規Evidence/新規POSTなし）。
     nextIntelligenceContext.revenue = _intelSyncRevenueFromProduct(nextIntelligenceContext, product);
