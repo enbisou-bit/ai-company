@@ -8,16 +8,18 @@
 
 ---
 
-## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21・Decision 108）
+## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21）／プラファスト本番実運用検証Complete（2026-08-22・Decision 108）
 
-> 追記日: 2026-08-21。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
+> 追記日: 2026-08-22（本番実運用検証Complete）／2026-08-21（Step A/B 正式リリース）。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
 
 A8.net実商品「プラファスト」提携完了を背景に、正式Contract「ASP Product Fact Record（APFR）」を設計正式化した上でStep A Core・Step B Manual Input UIを実装・正式リリースした。EER（行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`＝`fact`/`prediction`/`inference`/`unknown`の4値を正式採用し、AI自身の判断による`fact`昇格を禁止。保存先は`intelligenceContext.product.facts`（既存JSONB）。既存Evidence/EEA/Product Intelligence/ASP Intelligence/Quality Gateはいずれも変更せず、APFR Complete≠全Quality/Hold/EEA問題Completeを明記。
 
 - **Step A Core**：`validateApfrRecord()`／`_apfrAppendRecord()`。合成テスト49/49 PASS。Code commit **3113e53**。
 - **Step B Manual Input UI**：Affiliate Intelligence Core内へAPFR入力パネル。provenance＋User Verificationからのみfact確定。合成テスト35/35 PASS。localhost実機検証済み。Code commit **1e8de4f**。
-- **正式リリース**：docs commit・Annotated Tag・main push・tag push・Render反映済み。実案件APFR登録0件・プラファスト未登録。
-- **次工程**：プラファストAffiliate Evaluation登録・商品採用工程（ユーザー本人操作）。その後Step C（ASP/Product Intelligence接続）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手。
+- **正式リリース（2026-08-21）**：docs commit **f6caf23**・Annotated Tag **v1.01-apfr-core-manual-input**・main push・tag push・Render反映済み。この時点で実案件APFR登録0件・プラファスト未登録。
+- **本番実運用検証Complete（2026-08-22）**：ユーザー本人が本番UIでプラファストのAffiliate Evaluation登録・商品採用を実施後、対象`case-msr9yckye65y`／`["プラファスト","a8.net"]`へ**全21フィールドを1件ずつ登録＝21/21 Complete**。Fact総**22レコード**（`listingNgWords`訂正履歴1件含む・最新正Fact`["商品名","法人名"]`・**最新有効Fact基準で判定**）。**Contract違反0件**・**Cross-case混入0件**・Persistence確認済み。**AI推測Fact昇格0件・`manual_user_input`単独Fact昇格0件**。無回帰：IADP 100/complete・Quality Gate Passed・Reviewer Passed・Strategy Accepted・User Approval Approved・EER 3件executed・Evidence 9件。Claude Codeは読み取り専用確認のみ・Fact登録0件。**docs更新のみ・Code/DB/API/Fact変更0・Tag/Push/Render未実施**。
+- **残課題（Completeとは分離）**：①同一fieldへの複数Fact存在時の最新採用ルール未明文（**Step Cの前提**）②ITP「7days」保存field不在③boolean日本語表示④`listingPolicy`表記統一⑤フィールド選択UI（巨大select・スクロール・検索性）⑥APFR直接ジャンプ導線⑦入力省力化⑧EEA問題（Decision101）⑨Quality Gate／Hold制御問題。**APFR実運用Complete≠EEA問題Complete／≠Quality Gate・Hold問題Complete**。
+- **次工程**：①残課題1の設計判断（Step C前提）②残課題2の仕様判断③残課題3〜7のUI改善④Step C（ASP/Product Intelligence接続）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手・自動開始しない。
 
 ---
 
