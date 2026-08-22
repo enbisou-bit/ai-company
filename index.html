@@ -39255,6 +39255,143 @@ function _apfrAppendRecord(record) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Decision108（APFR）Phase 1 ─ Current Fact Resolver
+//   同一case・同一productIdentifier・同一fieldに複数Factが存在する場合に、
+//   「現在の正式Fact」を安全かつ一意に解決するread-only純関数群。
+//   APFRは追記専用（訂正しても旧Factを削除・変更しない）ため、読み取り側で正本を決める責務が必要になる。
+//
+//   解決規則（Decision108 Phase 1・設計案D）:
+//     1. 明示的訂正chain（新Fact.supersedesFactId → 旧Fact.factId）を最優先で解釈する。
+//     2. 明示的訂正関係を持つFactが1件も無い場合に限り、recordedAt最新をcurrentとする（既存Factの後方互換）。
+//     3. 安全に一意決定できない場合はambiguousとし、currentFactをnullにする（fail-closed）。
+//     4. 過去Factは削除・変更しない（append-only維持）。Resolverはread-onlyで副作用を持たない。
+//
+//   禁止事項（安全契約）:
+//     ・sourceMethodの優先順位でcurrentを決めない（A8実画面とAdvertiser LPに優劣をつけない）。
+//     ・recordedAt同値時にfactId辞書順・配列順・value内容などの恣意的tie-breakerを使わない → ambiguous。
+//     ・Resolverがclassificationを昇格させない（Fact昇格はvalidateApfrRecord()のContractのみが決める）。
+// ══════════════════════════════════════════════════════════════
+
+// supersedesFactIdの形式のみを判定する（参照先の存在確認は呼び出し側）。未指定（null/undefined）は正常＝訂正関係なし。
+function _apfrHasSupersedes(fact) {
+  return !!(fact && typeof fact.supersedesFactId === 'string' && fact.supersedesFactId !== '');
+}
+
+// 指定fieldの候補母集団を返す。case境界・product境界・field境界・validationをすべて満たすRecordのみ。
+//   副作用なし（元配列を並べ替えない・書き換えない）。
+function _apfrCandidateFacts(product, field) {
+  var facts = _apfrFactsOf(product);
+  if (!facts.length) return [];
+  var caseId = product.caseId;
+  var pid = product.productIdentifier;
+  return facts.filter(function (f) {
+    if (!f || typeof f !== 'object') return false;
+    if (f.field !== field) return false;
+    if (f.caseId !== caseId) return false;                    // Cross-case guard
+    if (f.productIdentifier !== pid) return false;            // Cross-product guard
+    return validateApfrRecord(f, caseId, pid).valid === true;  // invalid Recordは母集団から除外
+  });
+}
+
+// 指定fieldの現在値Factを一意に解決する（read-only・入力非破壊）。
+//   戻り値: { status:'resolved'|'none'|'ambiguous', currentFact, candidates, reason }
+function _apfrResolveCurrentFact(product, field) {
+  var EMPTY = { status: 'none', currentFact: null, candidates: [], reason: '' };
+  try {
+    if (!product || typeof product !== 'object' || Array.isArray(product)) {
+      return { status: 'ambiguous', currentFact: null, candidates: [], reason: 'invalid_product' };
+    }
+    if (typeof product.caseId !== 'string' || !product.caseId ||
+        typeof product.productIdentifier !== 'string' || !product.productIdentifier) {
+      return { status: 'ambiguous', currentFact: null, candidates: [], reason: 'invalid_product_scope' };
+    }
+    if (typeof field !== 'string' || !field) {
+      return { status: 'ambiguous', currentFact: null, candidates: [], reason: 'invalid_field' };
+    }
+
+    var pool = _apfrCandidateFacts(product, field);
+    if (pool.length === 0) return Object.assign({}, EMPTY, { reason: 'no_fact' });
+
+    var allFacts = _apfrFactsOf(product);
+    var byId = {};
+    pool.forEach(function (f) { byId[f.factId] = f; });
+
+    // ── 訂正chainの整合性検証（異常はすべてfail-closed）──
+    var chained = pool.filter(_apfrHasSupersedes);
+    var supersededIds = {};   // 「他Factに訂正された」factIdの集合
+    for (var i = 0; i < chained.length; i++) {
+      var f = chained[i];
+      var target = f.supersedesFactId;
+      if (target === f.factId) {
+        return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'self_reference' };
+      }
+      if (!byId[target]) {
+        // 母集団に存在しない参照。全Fact中に居ればcross-field/case/product参照、居なければorphan。
+        var outside = allFacts.filter(function (x) { return x && x.factId === target; })[0];
+        if (outside) {
+          if (outside.field !== field) return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'cross_field_reference' };
+          if (outside.caseId !== product.caseId) return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'cross_case_reference' };
+          if (outside.productIdentifier !== product.productIdentifier) return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'cross_product_reference' };
+          return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'invalid_target_reference' };
+        }
+        return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'orphan_reference' };
+      }
+      if (supersededIds[target]) {
+        // 同一Factを複数Factが同時にsupersede＝訂正意図が分岐しており一意決定不能。
+        return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'branched_chain' };
+      }
+      supersededIds[target] = true;
+    }
+
+    // ── live（誰からも訂正されていないFact）を算出 ──
+    var live = pool.filter(function (x) { return !supersededIds[x.factId]; });
+
+    if (live.length === 0) {
+      // 全Factが誰かに訂正されている＝循環（A→B→A等）。
+      return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'circular_chain' };
+    }
+
+    if (live.length === 1) {
+      return { status: 'resolved', currentFact: live[0], candidates: pool,
+               reason: chained.length > 0 ? 'explicit_chain' : 'single_fact' };
+    }
+
+    // liveが複数。明示chainが1件でも存在する場合、chain終端と無関係legacyの混在は訂正意図を判断できない。
+    if (chained.length > 0) {
+      return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'multiple_chain_terminals' };
+    }
+
+    // ── legacy fallback: 明示的訂正関係が皆無の場合のみ recordedAt最新を採用（既存Factの後方互換）──
+    var maxTs = -Infinity;
+    live.forEach(function (x) { var t = Date.parse(x.recordedAt); if (t > maxTs) maxTs = t; });
+    var newest = live.filter(function (x) { return Date.parse(x.recordedAt) === maxTs; });
+    if (newest.length !== 1) {
+      // 恣意的tie-breaker（factId辞書順・配列順・sourceMethod・value）は使わない。
+      return { status: 'ambiguous', currentFact: null, candidates: pool, reason: 'recordedAt_collision' };
+    }
+    return { status: 'resolved', currentFact: newest[0], candidates: pool, reason: 'latest_recordedAt' };
+  } catch (e) {
+    return { status: 'ambiguous', currentFact: null, candidates: [], reason: 'exception' };
+  }
+}
+
+// APFR_FIELD_ORDER全fieldへ_apfrResolveCurrentFact()を適用する（read-only・入力非破壊）。
+//   ambiguousなfieldはresolvedへ入れない（Step C等の利用側はresolvedのみを使用すること）。
+function _apfrResolveCurrentFacts(product) {
+  var out = { resolved: {}, none: [], ambiguous: [], resolvedCount: 0, noneCount: 0, ambiguousCount: 0 };
+  try {
+    var order = (typeof APFR_FIELD_ORDER !== 'undefined' && Array.isArray(APFR_FIELD_ORDER)) ? APFR_FIELD_ORDER : [];
+    order.forEach(function (field) {
+      var r = _apfrResolveCurrentFact(product, field);
+      if (r.status === 'resolved') { out.resolved[field] = r.currentFact; out.resolvedCount++; }
+      else if (r.status === 'none') { out.none.push(field); out.noneCount++; }
+      else { out.ambiguous.push({ field: field, reason: r.reason, candidates: r.candidates }); out.ambiguousCount++; }
+    });
+  } catch (e) { /* fail-open: 集計失敗でも呼び出し側は resolved のみを使う */ }
+  return out;
+}
+
 // product用Evidenceの安定キー（冪等突合用）: 同一 caseId×productIdentifier×field で常に1件。
 function _intelProductEvidenceRef(kind, productIdentifier, field) {
   return 'product-' + kind + ':' + (productIdentifier || '(no-id)') + ':' + field;
