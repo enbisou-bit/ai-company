@@ -41746,7 +41746,8 @@ function _apfrCurrentAdoptedProduct() {
 }
 
 // field選択肢（グループ化<optgroup>）のHTML生成。
-function _apfrBuildFieldOptionsHtml() {
+//   CUI-2: selectedField指定時はその選択肢へ selected を付ける（訂正モードで対象fieldを初期描画から固定するため）。
+function _apfrBuildFieldOptionsHtml(selectedField) {
   var esc = escapeHtml;
   var groups = {};
   APFR_FIELD_ORDER.forEach(function (f) {
@@ -41758,7 +41759,7 @@ function _apfrBuildFieldOptionsHtml() {
   Object.keys(groups).forEach(function (g) {
     html += '<optgroup label="' + esc(g) + '">';
     groups[g].forEach(function (f) {
-      html += '<option value="' + esc(f) + '">' + esc(APFR_FIELD_META[f].label) + '</option>';
+      html += '<option value="' + esc(f) + '"' + (f === selectedField ? ' selected' : '') + '>' + esc(APFR_FIELD_META[f].label) + '</option>';
     });
     html += '</optgroup>';
   });
@@ -41805,10 +41806,16 @@ function _apfrBuildCurrentFactsHtml(product) {
     var clsTxt = APFR_CLASSIFICATION_LABELS[f.classification] || f.classification;
     var clsCss = APFR_CLASSIFICATION_CSS[f.classification] || '';
     var when = f.verifiedAt ? String(f.verifiedAt).slice(0, 16).replace('T', ' ') : '';
+    // CUI-2: 訂正ボタンは resolved かつ currentFact.factId が存在する場合のみ表示する。
+    //   none／ambiguousには出さない（ambiguousは候補から1件を選ぶ操作自体を作らない＝fail-closed）。
+    var correctBtn = (f.factId)
+      ? ' <button class="oe-aic-btn" style="padding:1px 8px;font-size:.85em;margin-left:6px;" onclick="_apfrStartCorrection(\'' + esc(field) + '\',\'' + esc(f.factId) + '\')">訂正</button>'
+      : '';
     return base
       + '<span class="' + clsCss + '" style="font-weight:600;">' + esc(clsTxt) + '</span> '
       + '<strong>' + esc(label) + '</strong>：' + esc(_apfrFormatFactValue(field, f.value))
       + '<span style="opacity:.55;"> （' + esc(APFR_PROVENANCE_LABELS[f.sourceMethod] || f.sourceMethod) + (when ? '・' + esc(when) : '') + '）</span>'
+      + correctBtn
       + '</div>';
   }).join('');
 
@@ -41855,6 +41862,27 @@ function _apfrBuildHistoryHtml(product) {
     + rows + '</details>';
 }
 
+// CUI-2: 入力フォームの見出し（通常登録／訂正モード）。訂正モードでは対象fieldと現在値、
+//   および「訂正をやめる」を表示する。現在値はCorrection Targetのコピーではなく**描画時のResolver結果**から取得する。
+function _apfrBuildCorrectionHeaderHtml(product) {
+  var esc = escapeHtml;
+  var t = _apfrCorrectionTargetFor(product);
+  if (!t) return '<div class="oe-aic-label">情報を1件登録</div>';
+
+  var r = _apfrResolveCurrentFact(product, t.field);
+  // 描画時点でcurrentが変化していた場合は訂正モードを見せない（fail-closed・stale表示防止）。
+  if (!r || r.status !== 'resolved' || !r.currentFact || r.currentFact.factId !== t.currentFactId) {
+    return '<div class="oe-aic-label">情報を1件登録</div>'
+      + '<div class="oe-aic-warning">⚠ 現在の情報が変更されたため、訂正モードを終了しました。現在値を確認してもう一度訂正してください。</div>';
+  }
+  var label = (APFR_FIELD_META[t.field] && APFR_FIELD_META[t.field].label) || t.field;
+  var curTxt = _apfrFormatFactValue(t.field, r.currentFact.value);
+  return '<div class="oe-aic-label">' + esc(label) + 'を訂正</div>'
+    + '<div class="oe-aic-note">現在の値：<strong>' + esc(curTxt) + '</strong>'
+    + '<span style="opacity:.55;"> （この値を訂正します。新しい値はA8.net実画面または広告主公式LPで確認してから入力してください）</span></div>'
+    + '<div class="oe-aic-btnrow"><button class="oe-aic-btn" style="padding:1px 8px;font-size:.85em;" onclick="_apfrCancelCorrection()">訂正をやめる</button></div>';
+}
+
 // APFR入力パネル（既存Fact表示＋1件ずつ登録フォーム）。採用済み商品が存在しない場合は非表示。
 function _apfrBuildPanelHtml() {
   var esc = escapeHtml;
@@ -41862,15 +41890,22 @@ function _apfrBuildPanelHtml() {
   if (!product) return '';
   var msgHtml = (_apfrUiMsg && _apfrUiMsg.productIdentifier === product.productIdentifier && _apfrUiMsg.text)
     ? '<div class="oe-aic-' + (_apfrUiMsg.ok ? 'note' : 'warning') + '">' + (_apfrUiMsg.ok ? '✅ ' : '⚠ ') + esc(_apfrUiMsg.text) + '</div>' : '';
+  // CUI-2: 訂正モードなら対象fieldを初期描画から固定する（selected＋disabled）。currentが変化していれば固定しない。
+  var _ct = _apfrCorrectionTargetFor(product);
+  var _ctField = null;
+  if (_ct) {
+    var _ctr = _apfrResolveCurrentFact(product, _ct.field);
+    if (_ctr && _ctr.status === 'resolved' && _ctr.currentFact && _ctr.currentFact.factId === _ct.currentFactId) _ctField = _ct.field;
+  }
   return '<div class="oe-aic-section" id="apfr-panel">'
     + '<div class="oe-aic-title">📋 実商品情報（確認済みFact） <span style="font-weight:400;opacity:.5;">APFR ／ ' + esc(product.productName || product.productIdentifier) + '</span></div>'
     + '<div class="oe-aic-note">A8.netや広告主公式ページで実際に確認した商品情報を登録します。予測値やAIの推測はここに含めません。</div>'
     + '<div class="oe-aic-label">現在の情報</div>'
     + _apfrBuildCurrentFactsHtml(product)
     + _apfrBuildHistoryHtml(product)
-    + '<div class="oe-aic-label">情報を1件登録</div>'
+    + _apfrBuildCorrectionHeaderHtml(product)
     + '<div class="oe-aic-input-grid">'
-    +   '<select id="apfr-input-field" class="oe-aic-input" onchange="_apfrOnFormChange()">' + _apfrBuildFieldOptionsHtml() + '</select>'
+    +   '<select id="apfr-input-field" class="oe-aic-input" onchange="_apfrOnFormChange()"' + (_ctField ? ' disabled' : '') + '>' + _apfrBuildFieldOptionsHtml(_ctField) + '</select>'
     +   '<input type="text" id="apfr-input-value-text" class="oe-aic-input" placeholder="値">'
     +   '<select id="apfr-input-value-bool" class="oe-aic-input" style="display:none;"><option value="true">true</option><option value="false">false</option></select>'
     +   '<select id="apfr-input-provenance" class="oe-aic-input" onchange="_apfrOnFormChange()">'
@@ -41902,6 +41937,16 @@ function _apfrOnFormChange() {
     var valBool = document.getElementById('apfr-input-value-bool');
     var btn = document.getElementById('apfr-register-btn');
     if (!fieldSel || !provSel || !verifiedChk || !btn) return;
+
+    // CUI-2: 訂正モードでは対象fieldを固定する（UI固定＋submit時の一致検証の二重防御）。
+    //   通常登録モードの挙動は一切変更しない。
+    var _ct = _apfrCorrectionTargetFor(_apfrCurrentAdoptedProduct());
+    if (_ct && APFR_FIELD_META[_ct.field]) {
+      if (fieldSel.value !== _ct.field) fieldSel.value = _ct.field;
+      fieldSel.disabled = true;
+    } else {
+      fieldSel.disabled = false;
+    }
 
     var meta = APFR_FIELD_META[fieldSel.value];
     var isBool = !!(meta && meta.type === 'boolean');
@@ -41945,6 +41990,97 @@ function _apfrNormalizeUiValue(fieldKey, rawText, rawBool) {
 
 var _apfrUiMsg = null; // { productIdentifier, ok, text }（表示専用・状態変更なし）
 
+// ══════════════════════════════════════════════════════════════
+// Decision108（APFR）CUI-2 ─ Correction UI Core
+//   resolved な現在値Factに対して、ユーザー操作で「訂正」を開始し、
+//   新Factへ supersedesFactId を自動付与して append-only 登録するための一時UI state群。
+//   ・Current Fact判定は常に _apfrResolveCurrentFact()/_apfrResolveCurrentFacts() のみが行う（Phase 1 Contract）。
+//     CUI-2側で配列末尾・recordedAt・sourceMethod・value・factId順から独自にcurrentを決めることは禁止。
+//   ・旧Factは編集・削除・mutationしない。新Correction Factを追記するだけ（append-only維持）。
+//   ・Fact昇格条件（provenance＋User Verification）は通常登録と同一。Correctionだから緩和はしない。
+//   ・duplicate判定はCUI-0のCorrection-aware Duplicate Policyをそのまま使う（CUI-2独自判定は持たない）。
+// ══════════════════════════════════════════════════════════════
+
+// 訂正操作中の一時state。{ caseId, productIdentifier, field, currentFactId } のみを保持し、
+//   Fact本体（value/sourceMethod/verificationStatus/classification等）はコピーしない
+//   （Formal Truthの複製を作らない・表示値は描画時にResolverから都度取得する）。
+var _apfrCorrectionTarget = null;
+
+// Correction Targetが現在のcase/productに対して有効かを判定する（表示・submit共通の入口・副作用なし）。
+//   既存 _apfrUiMsg と同じく「明示リセットに依存せず、使用時にscope一致を検証する」方式を採る。
+function _apfrCorrectionTargetFor(product) {
+  try {
+    var t = _apfrCorrectionTarget;
+    if (!t || !product) return null;
+    if (String(t.caseId || '') !== String(product.caseId || '')) return null;             // Cross-case guard
+    if (String(t.productIdentifier || '') !== String(product.productIdentifier || '')) return null; // Cross-product guard
+    if (typeof t.field !== 'string' || !t.field) return null;
+    if (typeof t.currentFactId !== 'string' || !t.currentFactId) return null;
+    return t;
+  } catch (e) { return null; }
+}
+
+// 「訂正」ボタン起点。ボタンから渡されたfactIdだけを信用せず、開始時にもResolver結果と照合する。
+//   照合に失敗した場合はCorrection Targetを作成せず安全に停止する（fail-closed）。
+function _apfrStartCorrection(field, factId) {
+  try {
+    var product = _apfrCurrentAdoptedProduct();
+    if (!product) return;
+    var r = _apfrResolveCurrentFact(product, field);
+    if (!r || r.status !== 'resolved' || !r.currentFact || r.currentFact.factId !== factId) {
+      // 押下時点で既にcurrentが変わっている／ambiguous化している等 → Targetを作らない。
+      _apfrCorrectionTarget = null;
+      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: false,
+        text: '現在の情報が変更されたため、訂正を開始できません。現在値を確認してからもう一度お試しください。' };
+      if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel();
+      return;
+    }
+    _apfrCorrectionTarget = {
+      caseId: product.caseId,
+      productIdentifier: product.productIdentifier,
+      field: field,
+      currentFactId: r.currentFact.factId,
+    };
+    _apfrUiMsg = null;
+    if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel();
+  } catch (e) { console.warn('[APFR] start correction error (fail-open):', e.message); }
+}
+
+// 訂正をやめて通常登録モードへ戻す。Target残存により次の通常登録へ誤ってsupersedesFactIdが付くことを防ぐ。
+function _apfrCancelCorrection() {
+  try {
+    _apfrCorrectionTarget = null;
+    _apfrUiMsg = null;
+    if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel();
+  } catch (e) { console.warn('[APFR] cancel correction error (fail-open):', e.message); }
+}
+
+// submit直前の安全検証（read-only・副作用なし）。
+//   戻り値: { mode:'normal' }                         … Correction Targetなし＝通常登録
+//           { mode:'correction', supersedesFactId }   … 訂正として登録してよい
+//           { mode:'stale', reason }                  … Targetが無効＝登録禁止・Target破棄が必要
+//   Resolverを再実行し、Target作成後にcurrent Factが変化（別Fact追加・ambiguous化・none化）していないかを確認する。
+//   これがないと古いTargetから別Factをsupersedeし、chainが分岐（branched_chain）してambiguous化する危険がある。
+function _apfrValidateCorrectionTarget(product, fieldKey) {
+  try {
+    if (!_apfrCorrectionTarget) return { mode: 'normal' };
+    var t = _apfrCorrectionTargetFor(product);
+    if (!t) return { mode: 'stale', reason: 'scope_mismatch' };          // case/product変更
+    if (t.field !== fieldKey) return { mode: 'stale', reason: 'field_mismatch' };  // cross-field防止（UI固定との二重防御）
+    var r = _apfrResolveCurrentFact(product, fieldKey);
+    if (!r || r.status !== 'resolved' || !r.currentFact) {
+      return { mode: 'stale', reason: (r && r.status) ? r.status : 'unresolved' };  // ambiguous化／none化
+    }
+    if (r.currentFact.factId !== t.currentFactId) {
+      return { mode: 'stale', reason: 'current_fact_changed' };          // 別Factがcurrentになった
+    }
+    return { mode: 'correction', supersedesFactId: t.currentFactId };
+  } catch (e) {
+    return { mode: 'stale', reason: 'exception' };                       // 判定不能は安全側（登録しない）
+  }
+}
+
+
 // 登録ボタン起点のみ。classificationは自由入力させず、provenance＋User Verificationからのみ確定する。
 //   必ずStep A Core（validateApfrRecord()／_apfrAppendRecord()）を経由し、UI独自の判定は行わない。
 function _apfrRegisterFromUi() {
@@ -41970,6 +42106,18 @@ function _apfrRegisterFromUi() {
       return;
     }
 
+    // CUI-2: Correction Targetがある場合はsubmit直前に再検証する（read-only）。
+    //   scope不一致・field不一致・current Fact変化・ambiguous化/none化はいずれも登録禁止（fail-closed）。
+    //   古いTargetから別のcurrent Factをsupersedeしてchainを分岐させないための安全機構。
+    var corr = _apfrValidateCorrectionTarget(product, fieldKey);
+    if (corr.mode === 'stale') {
+      _apfrCorrectionTarget = null;                       // stale時はTargetを破棄する（duplicate等の通常失敗とは区別）
+      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: false,
+        text: '現在の情報が変更されたため、訂正を中止しました。現在値を確認してもう一度訂正してください。' };
+      if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel();
+      return;                                             // append 0
+    }
+
     // provenance＋User Verification明示チェックからのみclassificationを確定する（UIでの自由入力は不可）。
     var provenance = provSel.value;
     var sourceMethod = (provenance === 'a8_screen') ? 'a8_screen_user_verified'
@@ -41992,9 +42140,16 @@ function _apfrRegisterFromUi() {
       recordedAt: nowIso,
     };
 
+    // CUI-2: supersedesFactIdは**submit直前再検証を通過したTarget.currentFactId からのみ**設定する。
+    //   DOM値・ボタン引数・ユーザー入力から直接設定しない。
+    if (corr.mode === 'correction') record.supersedesFactId = corr.supersedesFactId;
+
     var res = _apfrAppendRecord(record);
     if (res && res.ok) {
-      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: true, text: (meta ? meta.label : fieldKey) + 'を登録しました。' };
+      var _wasCorrection = (corr.mode === 'correction');
+      if (_wasCorrection) _apfrCorrectionTarget = null;    // 成功時はTarget破棄（次の通常登録へ持ち越さない）
+      _apfrUiMsg = { productIdentifier: product.productIdentifier, ok: true,
+        text: (meta ? meta.label : fieldKey) + (_wasCorrection ? 'を訂正しました。' : 'を登録しました。') };
       if (refInput) refInput.value = '';
       if (valText) valText.value = '';
       if (verifiedChk) verifiedChk.checked = false;
