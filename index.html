@@ -41702,6 +41702,32 @@ const APFR_FIELD_ORDER = ['aspName','programId','productName','productCategory',
   'payout','epc','approvalRate','cookieWindowDays','approvalEstimateDays',
   'reviewRequired','mobileOptimized','itpSupported','linkManagerSupported','listingPolicy',
   'listingNgWords','regulatoryCategory','complianceRestrictions','advertisingDisclosureRequirements'];
+// CUI-1: boolean値のユーザー向け日本語表示ラベル（field固有）。**表示専用**であり保存値は boolean のまま変更しない。
+//   未定義fieldは既定の「あり／なし」を使う（新fieldが増えても表示が壊れない）。
+const APFR_BOOLEAN_LABELS = {
+  productLinkAvailable: { true: '利用可', false: '利用不可' },
+  reviewRequired:       { true: 'あり',   false: 'なし' },
+  mobileOptimized:      { true: '対応',   false: '非対応' },
+  itpSupported:         { true: '対応',   false: '非対応' },
+  linkManagerSupported: { true: '対応',   false: '非対応' },
+};
+const APFR_BOOLEAN_LABELS_DEFAULT = { true: 'あり', false: 'なし' };
+
+function _apfrBooleanLabels(field) {
+  return APFR_BOOLEAN_LABELS[field] || APFR_BOOLEAN_LABELS_DEFAULT;
+}
+
+// CUI-1: Fact値の表示用フォーマッタ（純関数・表示専用）。
+//   保存値（DB／Fact object／facts配列）は一切変更しない。値の意味変換・normalize（例: 一部ok→一部OK）は行わない。
+function _apfrFormatFactValue(field, value) {
+  if (Array.isArray(value)) return value.join(' / ');
+  if (typeof value === 'boolean') {
+    var L = _apfrBooleanLabels(field);
+    return value ? L['true'] : L['false'];
+  }
+  return String(value);
+}
+
 const APFR_CLASSIFICATION_LABELS = { fact: '✅ 確認済み', prediction: '🔮 予測', inference: '🧮 推論', unknown: '❔ 未確認' };
 const APFR_CLASSIFICATION_CSS = { fact: 'iadp-status-complete', prediction: 'iadp-status-needs_work', inference: 'iadp-status-needs_work', unknown: 'iadp-status-insufficient' };
 
@@ -41739,25 +41765,94 @@ function _apfrBuildFieldOptionsHtml() {
   return html;
 }
 
-// 登録済みFact一覧（表示専用・状態変更なし）。内部メタデータ全てではなく簡潔表示に絞る。
-function _apfrBuildFactsListHtml(product) {
+// provenance表示ラベル（表示専用）。
+const APFR_PROVENANCE_LABELS = { a8_screen_user_verified: 'A8.net実画面', advertiser_lp_user_verified: '広告主公式LP',
+  manual_user_input: '手入力', web_retrieved: 'Web取得', generated_hypothesis: 'AI仮説', ai_interpretation: 'AI解釈', calculated: '計算値' };
+
+// CUI-1: 現在値一覧（表示専用・状態変更なし）。
+//   **現在値の判定は必ず _apfrResolveCurrentFacts() の結果のみを使用する**。
+//   facts配列を直接走査して「配列末尾」「recordedAt最新」「sourceMethod」等からUI独自にcurrentを決めることは禁止（Phase 1 Contract）。
+//   ambiguousは currentFact を表示せず理由のみ示す（fail-closedをUIでも維持・候補の代表表示もしない）。
+function _apfrBuildCurrentFactsHtml(product) {
+  var esc = escapeHtml;
+  var res = _apfrResolveCurrentFacts(product);
+  var ambiguousByField = {};
+  (res.ambiguous || []).forEach(function (a) { ambiguousByField[a.field] = a; });
+  var noneSet = {};
+  (res.none || []).forEach(function (f) { noneSet[f] = true; });
+
+  var rows = APFR_FIELD_ORDER.map(function (field) {
+    var label = (APFR_FIELD_META[field] && APFR_FIELD_META[field].label) || field;
+    var base = '<div class="oe-aic-note" style="border-top:1px solid rgba(255,255,255,0.06);padding-top:4px;margin-top:4px;">';
+
+    var amb = ambiguousByField[field];
+    if (amb) {
+      // fail-closed: currentFactは表示しない。候補のどれかを代表として出すこともしない。
+      return base
+        + '<span class="oe-aic-status-insufficient" style="font-weight:600;">⚠ 確定不可</span> '
+        + '<strong>' + esc(label) + '</strong>：現在値を確定できません'
+        + '<span style="opacity:.55;"> （理由: ' + esc(amb.reason || 'unknown') + '・候補' + ((amb.candidates || []).length) + '件は履歴で確認できます）</span>'
+        + '</div>';
+    }
+    if (noneSet[field]) {
+      return base
+        + '<span style="opacity:.45;font-weight:600;">○ 未登録</span> '
+        + '<strong style="opacity:.7;">' + esc(label) + '</strong>'
+        + '</div>';
+    }
+    var f = res.resolved[field];
+    if (!f) return '';   // 想定外（resolved/none/ambiguousのいずれにも該当しない）は表示しない
+    var clsTxt = APFR_CLASSIFICATION_LABELS[f.classification] || f.classification;
+    var clsCss = APFR_CLASSIFICATION_CSS[f.classification] || '';
+    var when = f.verifiedAt ? String(f.verifiedAt).slice(0, 16).replace('T', ' ') : '';
+    return base
+      + '<span class="' + clsCss + '" style="font-weight:600;">' + esc(clsTxt) + '</span> '
+      + '<strong>' + esc(label) + '</strong>：' + esc(_apfrFormatFactValue(field, f.value))
+      + '<span style="opacity:.55;"> （' + esc(APFR_PROVENANCE_LABELS[f.sourceMethod] || f.sourceMethod) + (when ? '・' + esc(when) : '') + '）</span>'
+      + '</div>';
+  }).join('');
+
+  var summary = '<div class="oe-aic-note" style="opacity:.6;">確認済み ' + res.resolvedCount + ' 件／未登録 ' + res.noneCount + ' 件'
+    + (res.ambiguousCount ? '／<span class="oe-aic-status-insufficient">確定不可 ' + res.ambiguousCount + ' 件</span>' : '') + '</div>';
+  return summary + rows;
+}
+
+// CUI-1: 履歴（既定は折りたたみ）。append-onlyのまま全Factを保持表示する。
+//   「現在値」「過去の記録」の区別は Resolver 結果から**動的に導出**するのみで、
+//   旧Factへ status:'superseded' 等を書き込むことは一切しない（表示専用）。
+//   現在値一覧は21行で固定のため、Factが増えても通常画面は履歴件数に比例して長くならない。
+function _apfrBuildHistoryHtml(product) {
   var esc = escapeHtml;
   var facts = _apfrFactsOf(product);
   if (facts.length === 0) return '<div class="oe-aic-note">まだ登録されていません。</div>';
-  var provLabel = { a8_screen_user_verified: 'A8.net実画面', advertiser_lp_user_verified: '広告主公式LP',
-    manual_user_input: '手入力', web_retrieved: 'Web取得', generated_hypothesis: 'AI仮説', ai_interpretation: 'AI解釈', calculated: '計算値' };
-  return facts.map(function (f) {
+
+  var res = _apfrResolveCurrentFacts(product);
+  var currentIds = {};
+  Object.keys(res.resolved || {}).forEach(function (k) {
+    var cf = res.resolved[k];
+    if (cf && cf.factId) currentIds[cf.factId] = true;
+  });
+
+  var rows = facts.map(function (f) {
     var label = (APFR_FIELD_META[f.field] && APFR_FIELD_META[f.field].label) || f.field;
-    var valTxt = Array.isArray(f.value) ? f.value.join(' / ') : String(f.value);
     var clsTxt = APFR_CLASSIFICATION_LABELS[f.classification] || f.classification;
     var clsCss = APFR_CLASSIFICATION_CSS[f.classification] || '';
     var when = f.recordedAt ? String(f.recordedAt).slice(0, 16).replace('T', ' ') : '';
-    return '<div class="oe-aic-note" style="border-top:1px solid rgba(255,255,255,0.06);padding-top:4px;margin-top:4px;">'
-      + '<span class="' + clsCss + '" style="font-weight:600;">' + esc(clsTxt) + '</span> '
-      + '<strong>' + esc(label) + '</strong>：' + esc(valTxt)
-      + '<span style="opacity:.55;"> （' + esc(provLabel[f.sourceMethod] || f.sourceMethod) + (when ? '・' + esc(when) : '') + '）</span>'
+    var isCurrent = !!currentIds[f.factId];
+    var mark = isCurrent
+      ? '<span class="oe-aic-status-complete" style="font-weight:600;">現在値</span> '
+      : '<span style="opacity:.45;">過去の記録（現在は使用されていません）</span> ';
+    return '<div class="oe-aic-note" style="border-top:1px solid rgba(255,255,255,0.06);padding-top:4px;margin-top:4px;' + (isCurrent ? '' : 'opacity:.65;') + '">'
+      + mark
+      + '<span class="' + clsCss + '">' + esc(clsTxt) + '</span> '
+      + '<strong>' + esc(label) + '</strong>：' + esc(_apfrFormatFactValue(f.field, f.value))
+      + '<span style="opacity:.55;"> （' + esc(APFR_PROVENANCE_LABELS[f.sourceMethod] || f.sourceMethod) + (when ? '・' + esc(when) : '') + '）</span>'
       + '</div>';
   }).join('');
+
+  return '<details class="oe-aic-note"><summary style="cursor:pointer;">▼ 履歴を見る（' + facts.length + '件）</summary>'
+    + '<div class="oe-aic-note" style="opacity:.6;">訂正しても過去の記録は削除されません（追記のみ）。</div>'
+    + rows + '</details>';
 }
 
 // APFR入力パネル（既存Fact表示＋1件ずつ登録フォーム）。採用済み商品が存在しない場合は非表示。
@@ -41770,8 +41865,9 @@ function _apfrBuildPanelHtml() {
   return '<div class="oe-aic-section" id="apfr-panel">'
     + '<div class="oe-aic-title">📋 実商品情報（確認済みFact） <span style="font-weight:400;opacity:.5;">APFR ／ ' + esc(product.productName || product.productIdentifier) + '</span></div>'
     + '<div class="oe-aic-note">A8.netや広告主公式ページで実際に確認した商品情報を登録します。予測値やAIの推測はここに含めません。</div>'
-    + '<div class="oe-aic-label">登録済み情報</div>'
-    + _apfrBuildFactsListHtml(product)
+    + '<div class="oe-aic-label">現在の情報</div>'
+    + _apfrBuildCurrentFactsHtml(product)
+    + _apfrBuildHistoryHtml(product)
     + '<div class="oe-aic-label">情報を1件登録</div>'
     + '<div class="oe-aic-input-grid">'
     +   '<select id="apfr-input-field" class="oe-aic-input" onchange="_apfrOnFormChange()">' + _apfrBuildFieldOptionsHtml() + '</select>'
@@ -41812,6 +41908,12 @@ function _apfrOnFormChange() {
     if (valText && valBool) {
       valText.style.display = isBool ? 'none' : '';
       valBool.style.display = isBool ? '' : 'none';
+      // CUI-1: boolean選択肢のラベルのみfield固有の日本語へ切り替える（option value は 'true'/'false' のまま不変＝保存値に影響しない）。
+      if (isBool && valBool.options && valBool.options.length === 2) {
+        var bl = _apfrBooleanLabels(fieldSel.value);
+        valBool.options[0].text = bl['true'];
+        valBool.options[1].text = bl['false'];
+      }
     }
 
     var needsVerification = (provSel.value === 'a8_screen' || provSel.value === 'advertiser_lp');
