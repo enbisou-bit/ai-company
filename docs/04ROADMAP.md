@@ -8,9 +8,9 @@
 
 ---
 
-## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21）／プラファスト本番実運用検証Complete（2026-08-22）／Phase 0 再Adopt時Fact消失防止＋Phase 1 Current Fact Resolver＋CUI-0 Correction-aware Duplicate Policy（2026-08-22・Decision 108）
+## ASP Product Fact Record（APFR）─ Step A Core／Step B Manual Input UI（正式リリース・2026-08-21）／プラファスト本番実運用検証Complete（2026-08-22）／Phase 0 再Adopt時Fact消失防止＋Phase 1 Current Fact Resolver＋CUI-0 Correction-aware Duplicate Policy（2026-08-22）／CUI-1 Current Fact / History UI（2026-08-23・Decision 108）
 
-> 追記日: 2026-08-22（CUI-0 Correction-aware Duplicate Policy）／2026-08-22（Phase 0／Phase 1 Contract正式化）／2026-08-22（本番実運用検証Complete）／2026-08-21（Step A/B 正式リリース）。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
+> 追記日: 2026-08-23（CUI-1 Current Fact / History UI）／2026-08-22（CUI-0 Correction-aware Duplicate Policy）／2026-08-22（Phase 0／Phase 1 Contract正式化）／2026-08-22（本番実運用検証Complete）／2026-08-21（Step A/B 正式リリース）。**Version1 Final Complete／Version1.1 Connected AI Company 開発中**（Version 変更なし）。**Phase54 Complete 維持・Phase55 未着手**。
 
 A8.net実商品「プラファスト」提携完了を背景に、正式Contract「ASP Product Fact Record（APFR）」を設計正式化した上でStep A Core・Step B Manual Input UIを実装・正式リリースした。EER（行為のFormal Truth）とは責務分離（EER=行為／APFR=商品事実）。`classification`＝`fact`/`prediction`/`inference`/`unknown`の4値を正式採用し、AI自身の判断による`fact`昇格を禁止。保存先は`intelligenceContext.product.facts`（既存JSONB）。既存Evidence/EEA/Product Intelligence/ASP Intelligence/Quality Gateはいずれも変更せず、APFR Complete≠全Quality/Hold/EEA問題Completeを明記。
 
@@ -23,8 +23,9 @@ A8.net実商品「プラファスト」提携完了を背景に、正式Contract
 - **Phase 1 Current Fact Resolver（Code commit `46c51ef`）**：read-only純関数`_apfrResolveCurrentFact()`／`_apfrResolveCurrentFacts()`を追加し、**Current Fact Resolver／Correction／Ambiguity（fail-closed）／Legacy Fallback／Step C開始条件**を正式化。解決順序は①明示訂正chain（`supersedesFactId`）優先→②明示関係が皆無の場合のみ`recordedAt`最大→③一意決定不能は`ambiguous`。**明示chainと独立legacyの並存・timestamp collisionはいずれもambiguous**（恣意的tie-breaker／sourceMethod優先は不採用）。**既存22 Factはmigration不要**・本番相当fixtureで**resolved 21 / none 0 / ambiguous 0**。合成テスト70/70 PASS・既存回帰全PASS・dev-check 200/200/200。**UI未接続・Step C未接続・DB書き込み0**。
 - **Step C開始条件（確定）**：Step CはResolverをFormal Truthの唯一の読み取り口とし、`resolved`のみ利用可・`ambiguous`は利用禁止（fail-closed）。**`facts`配列を直接走査して独自に最新判断する方式は禁止**。
 - **CUI-0 Correction-aware Duplicate Policy（Code commit `9ad76f8`）**：`A(1)`→`B(2, supersedes A)`→`C(1, supersedes B)`という**「元の値への正式な差し戻し訂正」が`duplicate_record`で誤拒否**されていた問題を解消。**`supersedesFactId`をduplicate identityへ追加**（8→9項目）。**全9項目一致の完全同一Correction Recordは従来どおり拒否＝duplicate防止は弱めない**。未設定は`|| null`方式で property未存在／undefined／null／'' を「訂正関係なし」として同一扱いし、**通常Recordのduplicate判定は不変**。**chain異常判定はduplicate関数の責務外**でResolverが`ambiguous`＋fail-closed処理する責務境界を明記。**append-only不変**（`A→B→C`は3件保持）。CUI-0専用テスト**65/65 PASS**・既存回帰全PASS・新規FAIL 0・dev-check 200/200/200・main push済み・Render自動Deploy反映確認済み・**CUI-0用Tag未作成**。DB/API/Fact変更0。
-- **現在地の内訳**：Correction Contract＝**Complete**／Current Fact Resolver＝**Complete**／Correction-aware Duplicate Policy＝**Complete**／**Correction UI＝未実装**。
-- **次工程**：①**CUI-1**（現在値一覧＋履歴折りたたみ＋boolean日本語表示）②**CUI-2**（Correction UI Core＝訂正操作＋`supersedesFactId`自動付与）③残課題2（ITP日数field）の仕様判断④残課題3〜7のUI改善⑤Step C（ASP/Product Intelligence接続・Resolver経由のみ）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手・自動開始しない。
+- **CUI-1 Current Fact / History UI（Code commit `1cf3b2e`）**：全件フラット表示により本番`listingNgWords`で旧`["法人名"]`と訂正`["商品名","法人名"]`のどちらが現在値か画面上で判断できなかった問題を解消。**Phase 1 Resolverを初めてUIへ表示専用接続**し、現在値一覧は**`_apfrResolveCurrentFacts()`の結果のみ使用**（UI独自のcurrent判定を禁止・静的検証をテスト化）。`resolved`のみ表示／`none`は「○ 未登録」／**`ambiguous`はcurrentFactも候補代表も表示せず**理由のみ（fail-closed維持）。**「現在値一覧＋折りたたみHistory（既定閉）」へ分離**し、Historyは全Fact保持・区別は**Resolver結果から動的導出のみ**（旧Factへ`superseded`等を保存しない）。通常表示21行固定で**Factが増えても画面が比例して伸びない**。**boolean日本語表示を同時実装**（保存値`boolean`・`option value`とも不変）。`listingPolicy`は**normalizeせず保存値のまま表示**。CUI-1専用テスト**78/78 PASS**・既存回帰全PASS・新規FAIL 0・dev-check 200/200/200・localhost実機Console Error 0・main push済み・Render自動Deploy反映確認済み・**Tag未作成**。DB/API/Fact変更0。
+- **現在地の内訳**：Correction Contract＝**Complete**／Current Fact Resolver＝**Complete**／Correction-aware Duplicate Policy（CUI-0）＝**Complete**／Current Fact・History UI（CUI-1）＝**Complete**／**Correction UI Core（CUI-2）＝未実装**。
+- **次工程**：①**CUI-2**（Correction UI Core＝訂正操作＋`supersedesFactId`自動付与）②**CUI-3**（「訂正済み」バッジ・旧値参考表示）③**CUI-4**（APFR直接ジャンプ）④残課題2（ITP日数field）の仕様判断⑤残課題4〜7のUI改善⑥Step C（ASP/Product Intelligence接続・Resolver経由のみ）→ Step D（Compliance Contract）→ Step E（Content Planning/Writer接続）。いずれもユーザー承認後に着手・自動開始しない。
 
 ---
 
