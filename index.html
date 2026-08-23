@@ -15866,6 +15866,22 @@ async function atRunWorkflow(options) {
     _iadpExistingIntelligenceContext = null;
   }
 
+  // APFR Step C-1A: Compliance Context Foundation。
+  //   IADP intent判定（_iadpRequested）に依存せず、通常のWorkflow（Instagram投稿文生成等）でも常時算出する
+  //   （_iadpExistingIntelligenceContextとは完全に独立した変数）。
+  //   scope判定は既存APFR CUIの _apfrCurrentAdoptedProduct() と同じ三重guard（caseId一致・product存在・
+  //   intelligenceContext存在）を、Workflow開始時に捕捉した _atRunCaseId で行う（IADPブロックと同一パターン）。
+  //   Resolver経由のresolvedのみを使用（product.facts直接走査は禁止）。取得できない場合は空オブジェクト。
+  //   C-1Aでは値をprompt文言へ注入しない（配線のみ・C-1Bで別途実施）。
+  var _complianceContext = {};
+  try {
+    if (_lastOutputDraft && _lastOutputDraft.caseId === _atRunCaseId
+        && _lastOutputDraft.fields && _lastOutputDraft.fields.intelligenceContext
+        && _lastOutputDraft.fields.intelligenceContext.product) {
+      _complianceContext = _apfrBuildComplianceContext(_lastOutputDraft.fields.intelligenceContext.product);
+    }
+  } catch (_complianceErr) { _complianceContext = {}; } // fail-open: 取得失敗時は空オブジェクトのまま
+
   // 実行開始時にフラグリセット（成否を atAutoStartWorkflow が参照する）
   _atLastRunSuccess = false;
 
@@ -15976,7 +15992,7 @@ async function atRunWorkflow(options) {
     const res  = await fetch('/api/auto-task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext(), accountIntelligenceMode: _iadpRequested, existingIntelligenceContext: _iadpExistingIntelligenceContext }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用。Phase IG-2B: 任意項目2つを追加送信（既定はfalse/null=既存動作と同一）
+      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext(), accountIntelligenceMode: _iadpRequested, existingIntelligenceContext: _iadpExistingIntelligenceContext, complianceContext: _complianceContext }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用。Phase IG-2B: 任意項目2つを追加送信（既定はfalse/null=既存動作と同一）。APFR Step C-1A: complianceContextを追加送信（既定は{}=既存動作と同一・prompt注入はまだ行わない）
     });
     const data = await res.json();
 
@@ -39400,6 +39416,28 @@ function _apfrResolveCurrentFacts(product) {
       else { out.ambiguous.push({ field: field, reason: r.reason, candidates: r.candidates }); out.ambiguousCount++; }
     });
   } catch (e) { /* fail-open: 集計失敗でも呼び出し側は resolved のみを使う */ }
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1A: Compliance Context Foundation（read-only consumer）
+//   Compliance Formal Truth（4field）を _apfrResolveCurrentFacts() 経由のみで取得する。
+//   本関数はC-1Aの配線用途のみ。prompt文言への実注入はC-1Bで別途行う（本関数自体は不変のまま）。
+//   ・resolvedのみ採用。none/ambiguousは対象fieldに含めない（fail-closed維持・candidate代表選択もしない）。
+//   ・listingPolicyは対象外（表記統一が未解決のためC-1Aでは含めない）。
+//   ・product.facts の直接走査は禁止（_apfrResolveCurrentFacts()のみ使用）。
+//   ・Product/Fact mutation 0。戻り値を別ledgerへ複製保存しない（呼び出し側の責務）。
+// ══════════════════════════════════════════════════════════════
+const APFR_COMPLIANCE_CONTEXT_FIELDS = ['listingNgWords', 'advertisingDisclosureRequirements', 'complianceRestrictions', 'regulatoryCategory'];
+function _apfrBuildComplianceContext(product) {
+  var out = {};
+  try {
+    var res = _apfrResolveCurrentFacts(product);
+    APFR_COMPLIANCE_CONTEXT_FIELDS.forEach(function (field) {
+      var f = res.resolved[field];
+      if (f) out[field] = f.value;
+    });
+  } catch (e) { /* fail-open: 取得失敗時は空オブジェクト（Formal Truthなしとして扱う） */ }
   return out;
 }
 

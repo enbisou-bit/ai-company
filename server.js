@@ -809,7 +809,8 @@ app.post('/api/strategy-monitor', express.json(), async (req, res) => {
 app.post('/api/auto-task', express.json(), async (req, res) => {
   // Phase54-3b-2: caseId は任意（未指定でも従来動作＝NULL横断履歴）
   // Phase IG-2B: accountIntelligenceMode / existingIntelligenceContext は任意項目（省略時は既存動作と完全同一）
-  const { userMessage, tasks, autonomousConsult = false, workflowId = null, caseId = null, knowledgeContext = '', accountIntelligenceMode = false, existingIntelligenceContext = null } = req.body || {};
+  // APFR Step C-1A: complianceContext は任意項目（省略時は既存動作と完全同一・受動パススルーのみ）
+  const { userMessage, tasks, autonomousConsult = false, workflowId = null, caseId = null, knowledgeContext = '', accountIntelligenceMode = false, existingIntelligenceContext = null, complianceContext = null } = req.body || {};
 
   // 入力バリデーション（input validation）
   if (!userMessage || !Array.isArray(tasks) || tasks.length === 0) {
@@ -839,6 +840,7 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
 
     const { workflowTasks, taskHistory, brainResult, leaderFinalResult } = await runAutoTaskWorkflow({
       userMessage, tasks, autonomousConsult, workflowId: _wfId, agentCaller: workflowAgentCaller,
+      complianceContext, // APFR Step C-1A: 受動パススルーのみ（Resolver再実装・facts参照・value加工は一切行わない）
       accountIntelligenceMode, existingIntelligenceContext, // Phase IG-2B: 任意項目のパススルーのみ（省略時は既存動作と同一）
       onProgress: (state) => {
         global.__workflowProgress[_wfId] = { ...state, updatedAt: Date.now() };

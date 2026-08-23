@@ -3112,7 +3112,9 @@ async function runCompanyBrain(userMessage, agentCaller, knowledgeData) {
   };
 }
 
-async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null, accountIntelligenceMode = false, existingIntelligenceContext = null }) {
+async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null, accountIntelligenceMode = false, existingIntelligenceContext = null, complianceContext = null }) {
+  // APFR Step C-1A: complianceContext は受け取れる状態まで（引数受領のみ）。
+  //   buildSystemPrompt()等のprompt文字列生成へはC-1Aでは一切使用しない（未使用のまま・C-1Bで別途接続）。
   // Phase39: ワークフロー全体の相談回数カウンター（最大 maxConsultations 回）
   let _consultCount = 0;
   // tasks に provider / enabled / collaborators / status / result / タイムスタンプ を付与
