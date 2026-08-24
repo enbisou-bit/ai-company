@@ -31604,6 +31604,51 @@ function buildOutputPackageQualityHtml() {
     + '</div>';
 }
 
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-1: Deterministic Compliance Check 表示（読み取り専用・非ブロッキング）
+//   Output Package Quality（Phase48-1・packageQuality）とは完全に独立したパネル。
+//   packageQualityのscore・statusへは一切加減点しない（無変更）。
+//   Compliance Contextの取得は既存C-1A helperの再利用のみ（新しいAPFR読み取りロジックは作らない）。
+//   現在採用商品のscope判定は既存 _apfrCurrentAdoptedProduct() をそのまま利用
+//   （Cross-case／Cross-product混入防止は同関数の既存guardに委ねる）。
+// ══════════════════════════════════════════════════════════════
+function buildComplianceGateHtml() {
+  if (!_lastOutputDraft) return '';
+  if (typeof _apfrCurrentAdoptedProduct !== 'function' || typeof _apfrBuildComplianceContext !== 'function' || typeof evaluateComplianceGate !== 'function') return '';
+
+  var esc = escapeHtml;
+  var product = _apfrCurrentAdoptedProduct();
+  var complianceContext = product ? _apfrBuildComplianceContext(product) : {};
+  var result = evaluateComplianceGate(_lastOutputDraft, complianceContext);
+
+  var statusMeta = {
+    clear:       { label: 'CLEAR',       color: '#5ddb8e' },
+    violation:   { label: 'VIOLATION',   color: '#e06060' },
+    not_checked: { label: 'NOT CHECKED', color: 'rgba(255,255,255,0.35)' },
+  };
+  var meta = statusMeta[result.status] || statusMeta.not_checked;
+
+  var violationsHtml = (result.violations || []).map(function (v) {
+    return '<div class="oe-quality-sub" style="margin-top:2px;">' + esc(v.field) + '：' + esc(v.ngWord) + '</div>';
+  }).join('');
+
+  var summaryText = (result.status === 'violation')
+    ? '禁止語違反：' + result.violations.length + '件'
+    : (result.status === 'clear')
+      ? '禁止語違反：0件'
+      : 'listingNgWordsが未登録、またはFactが未確定のため検査していません';
+
+  return '<div class="oe-quality-section">'
+    + '<div class="oe-quality-title">🚫 Compliance Check <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Step C-1C-1・listingNgWordsのみ</span></div>'
+    + '<div class="oe-quality-overall">'
+    +   '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">' + meta.label + '</span>'
+    + '</div>'
+    + '<div class="oe-status-sub">' + esc(summaryText) + '</div>'
+    + violationsHtml
+    + '<div class="oe-quality-sub" style="margin-top:6px;opacity:.55;">※現在は確認表示のみです。User Approval・READY・Quality Gate・Executive Decisionは自動停止しません。</div>'
+    + '</div>';
+}
+
 // STEP6工程3-A: Completion（依頼完了）状態の最小UI表示。
 //   draft.status / packageQuality（Quality Gate相当） / User Approval / Account Creation Readiness とは
 //   独立した別軸として表示する（Completionだけを理由にこれらの値を書き換えない・本関数も読み取り専用）。
@@ -39441,6 +39486,81 @@ function _apfrBuildComplianceContext(product) {
   return out;
 }
 
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-1: Deterministic Compliance Check（read-only consumer・非ブロッキング）
+//   対象は listingNgWords のみ。advertisingDisclosureRequirements／complianceRestrictions／
+//   regulatoryCategory／listingPolicy は自然言語・意味的判断を要するため機械Gate化しない
+//   （調査・設計の結論。Reviewerの責務のまま）。
+//   本関数はComplianceContext（C-1Aが構築したresolvedのみのオブジェクト）だけをconsumerとして
+//   利用し、product.facts／_apfrResolveCurrentFact()／_apfrResolveCurrentFacts()を一切呼ばない
+//   （Resolver責務はC-1Aまで・本関数はさらにその先の受動的consumer）。
+//   User Approval・READY遷移・packageQuality・evaluateQualityGate()・Executive Decision Engine・
+//   IADP canApprove のいずれも変更・参照しない（純粋な情報表示用の判定のみ・非ブロッキング）。
+//   判定結果は保存しない（runtime計算のみ・呼び出しのたびに再計算）。
+// ══════════════════════════════════════════════════════════════
+
+// NG word・出力値の共通正規化（NFKC＋lowercase＋trim）。空文字は呼び出し側で除外する。
+function _apfrComplianceGateNormalize(s) {
+  var t = String(s);
+  try { if (typeof t.normalize === 'function') t = t.normalize('NFKC'); } catch (e) { /* normalize未対応環境はそのまま */ }
+  return t.toLowerCase().trim();
+}
+
+function evaluateComplianceGate(outputDraft, complianceContext) {
+  var EMPTY_NOT_CHECKED = { executed: false, checked: false, status: 'not_checked', violations: [] };
+  try {
+    if (!outputDraft || typeof outputDraft !== 'object') return EMPTY_NOT_CHECKED;
+    var fields = outputDraft.fields;
+    if (!fields || typeof fields !== 'object') return EMPTY_NOT_CHECKED;
+    if (!complianceContext || typeof complianceContext !== 'object') return EMPTY_NOT_CHECKED;
+
+    var rawNgWords = complianceContext.listingNgWords;
+    if (!Array.isArray(rawNgWords) || rawNgWords.length === 0) return EMPTY_NOT_CHECKED;
+
+    // 禁止語の前処理: String化 → trim → NFKC → lowercase → 空文字除外（空NGwordの誤爆全件hit事故防止）。
+    var ngWords = [];
+    rawNgWords.forEach(function (w) {
+      var normalized = _apfrComplianceGateNormalize(w);
+      if (normalized !== '') ngWords.push({ raw: String(w), normalized: normalized });
+    });
+    if (ngWords.length === 0) return EMPTY_NOT_CHECKED;
+
+    var violations = [];
+    var seen = {}; // field+ngWord単位の重複排除キー
+    Object.keys(fields).forEach(function (fieldKey) {
+      var value = fields[fieldKey];
+      var texts = [];
+      if (typeof value === 'string') {
+        texts.push(value);
+      } else if (Array.isArray(value)) {
+        value.forEach(function (v) { if (v !== null && v !== undefined) texts.push(String(v)); });
+      } else {
+        return; // string/array以外（object等）は対象外・deep recursionしない
+      }
+      texts.forEach(function (text) {
+        var normalizedText = _apfrComplianceGateNormalize(text);
+        if (normalizedText === '') return;
+        ngWords.forEach(function (ng) {
+          if (normalizedText.indexOf(ng.normalized) === -1) return;
+          var dedupeKey = fieldKey + '::' + ng.raw;
+          if (seen[dedupeKey]) return;
+          seen[dedupeKey] = true;
+          violations.push({ field: fieldKey, ngWord: ng.raw });
+        });
+      });
+    });
+
+    return {
+      executed: true,
+      checked: true,
+      status: violations.length > 0 ? 'violation' : 'clear',
+      violations: violations,
+    };
+  } catch (e) {
+    return EMPTY_NOT_CHECKED; // fail-open: 判定失敗時は「検査していない」として扱う（誤ってclearを返さない）
+  }
+}
+
 // product用Evidenceの安定キー（冪等突合用）: 同一 caseId×productIdentifier×field で常に1件。
 function _intelProductEvidenceRef(kind, productIdentifier, field) {
   return 'product-' + kind + ':' + (productIdentifier || '(no-id)') + ':' + field;
@@ -42502,6 +42622,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
+    + _oeSafe(buildComplianceGateHtml,           'ComplianceGate')
     + _oeSafe(buildCompletionStatusHtml,         'CompletionStatus')
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
