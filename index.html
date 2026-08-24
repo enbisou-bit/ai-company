@@ -31649,6 +31649,51 @@ function buildComplianceGateHtml() {
     + '</div>';
 }
 
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-2-1: Formal Truth Numeric Consistency 表示（読み取り専用・非ブロッキング）
+//   Output Package Quality（Phase48-1）・Compliance Check（C-1C-1）とは完全に独立したパネル。
+//   score・ranking・recommendation・Leader判断・User Approval・READY・Quality Gate・Compliance Gateへは
+//   一切加減点・書き換えを行わない（表示のみ）。
+//   Compliance Contextの取得は既存C-1A/C-1C-1と同じ _apfrCurrentAdoptedProduct() を再利用。
+// ══════════════════════════════════════════════════════════════
+function buildFormalTruthConsistencyHtml() {
+  if (!_lastOutputDraft) return '';
+  if (typeof _apfrCurrentAdoptedProduct !== 'function' || typeof _apfrEvaluateNumericConsistency !== 'function') return '';
+
+  var esc = escapeHtml;
+  var product = _apfrCurrentAdoptedProduct();
+  if (!product) return '';
+  var result = _apfrEvaluateNumericConsistency(product);
+  if (!result.executed) return '';
+
+  var statusMeta = {
+    match:        { label: '一致',     color: '#5ddb8e' },
+    mismatch:     { label: '不一致',   color: '#e06060' },
+    uncomparable: { label: '比較不可', color: 'rgba(255,200,80,0.85)' },
+    not_checked:  { label: '未確認',   color: 'rgba(255,255,255,0.35)' },
+  };
+
+  var rowsHtml = (result.results || []).map(function (r) {
+    var meta = (typeof APFR_FIELD_META !== 'undefined') ? APFR_FIELD_META[r.field] : null;
+    var label = (meta && meta.label) || r.field;
+    var sMeta = statusMeta[r.status] || statusMeta.not_checked;
+    var showDetail = (r.status === 'match' || r.status === 'mismatch' || r.status === 'uncomparable');
+    var detail = showDetail
+      ? ('Formal Truth：' + esc(String(r.formalValue)) + ' ／ 現在のIntelligence値：' + esc(r.intelligenceValue === null ? '（未入力）' : String(r.intelligenceValue)))
+      : '';
+    return '<div class="oe-quality-sub" style="margin-top:4px;">'
+      + esc(label) + '：<span style="color:' + sMeta.color + ';font-weight:600;">' + sMeta.label + '</span>'
+      + (detail ? '<div style="opacity:.6;font-size:9.5px;">' + detail + '</div>' : '')
+      + '</div>';
+  }).join('');
+
+  return '<div class="oe-quality-section">'
+    + '<div class="oe-quality-title">🔢 Formal Truth 数値整合確認 <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Step C-2-1</span></div>'
+    + rowsHtml
+    + '<div class="oe-quality-sub" style="margin-top:6px;opacity:.55;">※現在は整合確認のみです。scoreへ自動反映しません。</div>'
+    + '</div>';
+}
+
 // STEP6工程3-A: Completion（依頼完了）状態の最小UI表示。
 //   draft.status / packageQuality（Quality Gate相当） / User Approval / Account Creation Readiness とは
 //   独立した別軸として表示する（Completionだけを理由にこれらの値を書き換えない・本関数も読み取り専用）。
@@ -39561,6 +39606,58 @@ function evaluateComplianceGate(outputDraft, complianceContext) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-2-1: Formal Truth Numeric Consistency Check（読み取り専用・非ブロッキング）
+//   Product Intelligenceのscore計算が現在使用している数値入力（product.inputs）と、
+//   APFR Formal Truth（_apfrResolveCurrentFact()経由のcurrent Fact）の数値整合をread-onlyで確認するのみ。
+//   product.facts直接走査・recordedAt比較・配列末尾判定・独自Correction chain判定はいずれも行わない
+//   （Resolverの唯一の読み取り口Contractを継承・再実装しない）。
+//   _aicIntegratedScore() / score / ranking / recommendation / User Approval / READY /
+//   evaluateQualityGate() / evaluateComplianceGate() のいずれも変更・参照しない（純粋な情報表示用の判定のみ）。
+//   判定結果は保存しない（runtime計算のみ・呼び出しのたびに再計算）。
+//   payoutはAPFR_FIELD_META上 type:'string'（自由記述Formal Truth。例:「初回4000円・2回目以降2000円」）のため、
+//   parseFloat・正規表現抽出・円記号除去等の数値変換は一切行わず常に'uncomparable'とする
+//   （既存Contractに存在しない変換規則を新規に作らない）。
+// ══════════════════════════════════════════════════════════════
+const APFR_NUMERIC_CONSISTENCY_FIELDS = ['payout', 'epc', 'approvalRate'];
+
+function _apfrEvaluateNumericConsistency(product) {
+  var EMPTY = { executed: false, checked: false, results: [] };
+  try {
+    if (!product || typeof product !== 'object') return EMPTY;
+    if (typeof _apfrResolveCurrentFact !== 'function') return EMPTY;
+    var inputs = (product.inputs && typeof product.inputs === 'object') ? product.inputs : {};
+
+    var results = APFR_NUMERIC_CONSISTENCY_FIELDS.map(function (field) {
+      var iv = inputs[field];
+      var intelligenceValue = (typeof iv === 'number' && !isNaN(iv)) ? iv : null;
+      var base = { field: field, status: 'not_checked', formalValue: null, intelligenceValue: intelligenceValue };
+      try {
+        var resolved = _apfrResolveCurrentFact(product, field);
+        if (!resolved || resolved.status !== 'resolved' || !resolved.currentFact) return base; // none/ambiguousはいずれもnot_checked（代表値を選ばない）
+
+        base.formalValue = resolved.currentFact.value;
+
+        var meta = (typeof APFR_FIELD_META !== 'undefined') ? APFR_FIELD_META[field] : null;
+        if (!meta || meta.type !== 'number' || typeof base.formalValue !== 'number' || isNaN(base.formalValue)) {
+          base.status = 'uncomparable'; // payout（string型Formal Truth）等、既存Contract上安全に数値比較できない
+          return base;
+        }
+        if (intelligenceValue === null) { base.status = 'not_checked'; return base; } // Intelligence側未入力ではmatch/mismatch判定しない
+
+        base.status = (base.formalValue === intelligenceValue) ? 'match' : 'mismatch'; // 厳密数値一致のみ・rounding許容やscale変換は行わない
+        return base;
+      } catch (e) {
+        return base; // fail-open: 個別field例外はnot_checkedのまま
+      }
+    });
+
+    return { executed: true, checked: true, results: results };
+  } catch (e) {
+    return EMPTY; // fail-open
+  }
+}
+
 // product用Evidenceの安定キー（冪等突合用）: 同一 caseId×productIdentifier×field で常に1件。
 function _intelProductEvidenceRef(kind, productIdentifier, field) {
   return 'product-' + kind + ':' + (productIdentifier || '(no-id)') + ':' + field;
@@ -42623,6 +42720,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
     + _oeSafe(buildComplianceGateHtml,           'ComplianceGate')
+    + _oeSafe(buildFormalTruthConsistencyHtml,   'FormalTruthConsistency')
     + _oeSafe(buildCompletionStatusHtml,         'CompletionStatus')
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')
