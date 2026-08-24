@@ -358,7 +358,11 @@ caseHeader('10. 配線（wiring）: atRunWorkflow / server.js / openaiClient.js 
   assert(openaiSrc.indexOf('complianceContext = null }) {') !== -1, '10-7. runAutoTaskWorkflow()のシグネチャにcomplianceContextが追加されている');
 }
 
-caseHeader('11. Prompt不変: complianceContextがbuildSystemPrompt()の文字列生成へ一切使われていない（C-1A時点）');
+caseHeader('11. Prompt接続契約（C-1B以降）: complianceContextはhelper経由でのみ・Product facts直接走査0・Resolver再実装0');
+// 【契約の変遷】C-1A完了時点では「buildSystemPrompt()へ一切注入しない」ことを保証する時限的な
+//   アサーションだったが、C-1Bで意図的にWriter/Reviewerへの正式prompt注入を実装したため、
+//   「注入しないこと」の検証はC-1B以降の実態と矛盾する。本節はC-1B以降も引き続き有効な、
+//   より狭い契約（helper経由のみ・facts直接走査0・Resolver非再実装）へ更新する。
 {
   const openaiPath = path.join(__dirname, 'openaiClient.js');
   const src = fs.readFileSync(openaiPath, 'utf8');
@@ -375,9 +379,24 @@ caseHeader('11. Prompt不変: complianceContextがbuildSystemPrompt()の文字�
       return Math.min(a, b);
     })();
     const body = src.slice(fnStart, nextFn !== -1 ? nextFn : fnStart + 20000);
-    assert(body.indexOf('complianceContext') === -1, '11-2. buildSystemPrompt()本体にcomplianceContextの参照が0件');
+    assert(body.indexOf('complianceContext') !== -1, '11-2. buildSystemPrompt()本体がcomplianceContextを扱っている（C-1Bで正式接続。C-1A時点の「参照0件」契約から更新）');
+    assert(body.indexOf('buildCompliancePromptBlock(') !== -1, '11-2b. complianceContextの利用はbuildCompliancePromptBlock()helper経由のみ（本体に直接ロジックを書いていない）');
+    assert(body.indexOf('.facts') === -1, '11-2c. buildSystemPrompt()本体はproduct.facts等を直接走査していない');
+    assert(body.indexOf('_apfrResolveCurrentFact') === -1, '11-2d. buildSystemPrompt()本体はResolverを再実装していない（Resolverはindex.html側の専任・C-1Bはread-only consumer）');
   }
-  // runAutoTaskWorkflow内でcomplianceContextを受け取っているが、buildSystemPrompt呼び出しの引数には渡していないこと
+  // buildCompliancePromptBlock() 自体もfacts直接走査・Resolver再実装をしていないことを確認（二重防御）。
+  //   agent制限（writer/reviewer限定）の実際の挙動検証はapfrComplianceInjection.test.jsが担当する
+  //   （本ファイルはC-1A Foundationのstatic構造検証に専念し、重複した実行時テストは持たない）。
+  const helperStart = src.indexOf('function buildCompliancePromptBlock(');
+  assert(helperStart !== -1, '11-2e. buildCompliancePromptBlock() が実在する');
+  if (helperStart !== -1) {
+    const helperEnd = src.indexOf('\n}\n', helperStart);
+    const helperBody = src.slice(helperStart, helperEnd !== -1 ? helperEnd : helperStart + 3000);
+    assert(helperBody.indexOf("agent !== 'writer' && agent !== 'reviewer'") !== -1, '11-2f. writer/reviewer以外を除外するagent guardが存在する');
+    assert(helperBody.indexOf('_apfrResolveCurrentFacts(') === -1 && helperBody.indexOf('_apfrResolveCurrentFact(') === -1, '11-2g. helper内でResolverを再実装していない（受け取った値を整形するのみ）');
+    assert(helperBody.indexOf('.facts') === -1, '11-2h. helper内でfacts配列を直接参照していない');
+  }
+  // runAutoTaskWorkflow内でcomplianceContextを受け取り、C-1Bでbuild SystemPrompt呼び出しへ正式に渡していること
   const rfStart = src.indexOf('async function runAutoTaskWorkflow(');
   assert(rfStart !== -1, '11-3. runAutoTaskWorkflow() が実在する');
   if (rfStart !== -1) {
@@ -387,7 +406,11 @@ caseHeader('11. Prompt不変: complianceContextがbuildSystemPrompt()の文字�
     const callSites = body.match(/buildSystemPrompt\([^)]*\)/g) || [];
     assert(callSites.length > 0, '11-4. buildSystemPrompt()呼び出し箇所が検出できる');
     const injected = callSites.filter(function (c) { return c.indexOf('complianceContext') !== -1; });
-    assert(injected.length === 0, '11-5. buildSystemPrompt()呼び出し引数のいずれにもcomplianceContextが渡されていない');
+    assert(injected.length > 0, '11-5. buildSystemPrompt()呼び出しへcomplianceContextが渡されている（C-1Bで正式接続。C-1A時点の「渡さない」契約から更新）');
+    const stillHasAccountIntelligenceMode = injected.some(function (c) { return c.indexOf('accountIntelligenceMode') !== -1; });
+    const stillHasIntelligenceContextAvailable = injected.some(function (c) { return c.indexOf('intelligenceContextAvailable') !== -1; });
+    assert(stillHasAccountIntelligenceMode, '11-5b. 既存accountIntelligenceModeは引き続きoptionsに含まれている（無回帰）');
+    assert(stillHasIntelligenceContextAvailable, '11-5c. 既存intelligenceContextAvailableは引き続きoptionsに含まれている（無回帰）');
   }
 }
 
