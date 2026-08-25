@@ -9,6 +9,11 @@ const { loadHistory, addMessage, getLastAssignee, setLastAssignee } = require('.
 const { CLAUDE_AGENTS, callClaudeAI, CLAUDE_MODEL_MAP, generateClaudeReply, claudeUsage, testClaudeAgent, getClaudeModelForRole, CLAUDE_MODEL_POLICY, CLAUDE_MODEL_POLICY_VERSION } = require('./claudeClient'); // Phase47-2B
 const { getSummary: getClaudeCostSummary, getClaudeCostAnalysis, buildClaudeModelQualityCompare, buildClaudeModelAdoptionStatus, buildClaudeQualityMonitor, recordClaudeQualityHistory, getClaudeQualityHistory, buildClaudeQualityTrend, buildClaudeQualityWarning } = require('./claudeCostTracker'); // Phase47-1.6 / Phase47-2A / Phase47-2C / Phase47-2D / Phase47-3 / Phase47-4
 const EvidenceAcquisition = require('./shared/evidenceAcquisition'); // EEA-3: query検証・上限制御（純関数のみ・APIキー非依存）
+// Leader Case Context（Instagram実運用 Blocking Issue対応）: 同一caseの保存済みIADP/Evidence/Gate正本を
+//   Leaderへ機械判定済み値として渡すために、既存の純関数モジュールをserver側でも再利用する（新規判定ロジックなし）。
+const IadpIntelligenceContext = require('./shared/iadpIntelligenceContext');
+const InstagramAccountDesign = require('./shared/instagramAccountDesign');
+const InstagramAccountDesignQuality = require('./shared/instagramAccountDesignQuality');
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -655,14 +660,219 @@ app.patch('/api/tasks/:id', express.json(), async (req, res) => {
 // ─────────────────────────────────────────────────
 
 // ── Web UI チャット API ───────────────────────────
+// ══════════════════════════════════════════════════════════════
+// Leader Case Context（Instagram実運用 Blocking Issue対応・最小接続）
+//
+//   目的: 通常Leaderチャット（/api/chat）が同一caseの保存済みIADP/Evidence/Gate正本を
+//   一切参照できず、LeaderがEvidence/Quality Gate/採用ジャンル等を自然言語で自由生成してしまう
+//   問題を解消する。新しい判定ロジックは作らず、既存の resolveIadpEvidence() /
+//   assessInstagramAccountDesignPackage() / resolveAdoptedCandidate() をそのまま再利用する
+//   （3モジュールともUMD形式でNode require可能なことを実測確認済み）。
+//
+//   Cross-case guard: caseIdが一致しないデータは一切使わない（既存Gate自身が拒否する設計を踏襲。
+//   本関数側で追加のfallback・最新案件からの補完・Global値の流用は一切行わない）。
+//   fail-open: 取得・構築のいずれかで失敗した場合はnullを返す。呼び出し側は通常チャットを継続する。
+//
+//   注意（既知の限定事項）: Quality Gate/Assessmentの一部（_leaderIntegration.qualityGate相当）は
+//   ブラウザセッション中のみ存在するライブ値であり、サーバー側では再現できない。本関数は
+//   永続化済みの fields.iadp.assessmentContext（F5復元時にクライアントが使うのと同一の正本）
+//   からのみ読み取る＝F5復元後と同じ粒度の値を返す（ライブセッションより新しい場合がある点は限界として明記）。
+// ══════════════════════════════════════════════════════════════
+// index.htmlの _iadpEffectiveApprovalStatus() と同一ロジック（ブラウザ専用ファイルのためserver側で複製。
+//   小さく安定した純関数であり、Quality Gate等の判定ロジックの複製ではない）。
+function _leaderCaseEffectiveApprovalStatus(pkg, caseId, approval) {
+  try {
+    if (!approval || approval.status !== 'approved') return 'pending';
+    const pkgId = pkg && pkg.packageId;
+    if (!pkgId || approval.packageId !== pkgId) return 'pending';
+    if (caseId && approval.caseId && approval.caseId !== caseId) return 'pending';
+    if (approval.adoptedCandidateId) {
+      const curAdoptedId = (pkg && pkg.intelligence && pkg.intelligence.adoptionDecision
+        && pkg.intelligence.adoptionDecision.adoptedCandidateId) || null;
+      if (curAdoptedId && curAdoptedId !== approval.adoptedCandidateId) return 'pending';
+    }
+    return 'approved';
+  } catch (e) { return 'pending'; }
+}
+
+async function buildLeaderCaseContext(caseId) {
+  if (!caseId) return null;
+  try {
+    const result = await getOutputDraftsDb().getOutputDraft({ caseId });
+    const draft = result && result.draft;
+    if (!draft || !draft.fields || !draft.fields.iadp || !draft.fields.iadp.package) return null; // IADP未生成 → Case Contextなし
+
+    const fields = draft.fields;
+    const iadp = fields.iadp;
+    const pkg = iadp.package;
+    const intel = pkg.intelligence || {};
+    const adoption = intel.adoptionDecision || {};
+    const adoptedCandidateId = adoption.adoptedCandidateId || null;
+
+    // IADP採用案（既存SSOT: intelligence.adoptionDecision.adoptedCandidateId）。
+    //   採用ジャンル名の解決は EEA-3 buildSearchPlan() と同一の解決順（candidateComparison→marketResearch）。
+    let adoptedGenre = null;
+    if (adoptedCandidateId) {
+      const ccCands = (intel.candidateComparison && Array.isArray(intel.candidateComparison.candidates)) ? intel.candidateComparison.candidates : [];
+      const adoptedCC = ccCands.find((c) => c && c.candidateId === adoptedCandidateId) || null;
+      const genreId = adoptedCC ? adoptedCC.genreId : null;
+      const mrCands = (intel.marketResearch && Array.isArray(intel.marketResearch.candidates)) ? intel.marketResearch.candidates : [];
+      const mrEntry = genreId ? (mrCands.find((m) => m && m.genreId === genreId) || null) : null;
+      adoptedGenre = (mrEntry && mrEntry.genreName) || genreId || null;
+    }
+
+    const finalProfile = pkg.finalProfile || {};
+    const account = finalProfile.account || {};
+    const brand = finalProfile.brand || {};
+    const target = finalProfile.target || {};
+
+    // Evidence Gate（既存 resolveIadpEvidence() をそのまま使用。LLMに再判定させない）
+    let evidence = { status: null, verifiedCount: null, independentSourceCount: null, totalCount: null };
+    try {
+      const resolved = IadpIntelligenceContext.resolveIadpEvidence(fields.intelligenceContext, { caseId });
+      if (resolved && resolved.available) {
+        evidence = {
+          status: resolved.status,
+          verifiedCount: resolved.verifiedCount,
+          independentSourceCount: resolved.independentSourceCount,
+          totalCount: resolved.totalCount,
+        };
+      }
+    } catch (e) { /* fail-open: evidence は既定値のまま */ }
+
+    // Quality Gate / Assessment（既存 assessInstagramAccountDesignPackage() をそのまま使用）。
+    //   ctxは index.html _iadpBuildAssessmentContext() と同一形状（qualityGateのみ永続snapshotから読む。上記注意参照）。
+    let qualityGate = { executed: false, passed: null, status: null, sourceStatus: null };
+    let assessment = {
+      structureValidation: null, contentQuality: null, reviewerStatus: null,
+      strategyStatus: null, accountCreationReadiness: null, userApproval: null,
+    };
+    try {
+      const assessmentSnapshot = iadp.assessmentContext || null;
+      let persistedQualityGate = null;
+      if (assessmentSnapshot && assessmentSnapshot.qualityGate) {
+        const pkgMatch = !pkg.packageId || !assessmentSnapshot.packageId || assessmentSnapshot.packageId === pkg.packageId;
+        const caseMatch = !caseId || !assessmentSnapshot.caseId || assessmentSnapshot.caseId === caseId;
+        if (pkgMatch && caseMatch) persistedQualityGate = assessmentSnapshot.qualityGate;
+      }
+      const genContext = iadp.generationContext || null;
+      const ctx = {
+        structureValid: !!(iadp.validation && iadp.validation.valid),
+        adoptionResolution: InstagramAccountDesign.resolveAdoptedCandidate(pkg),
+        evidenceResolution: (fields.intelligenceContext
+          ? IadpIntelligenceContext.resolveIadpEvidence(fields.intelligenceContext, { caseId }) : null),
+        leaderFinal: (genContext && genContext.leaderFinal) || null,
+        memberSummary: (genContext && genContext.memberSummary) || null,
+        userApproval: _leaderCaseEffectiveApprovalStatus(pkg, caseId, iadp.approval || null),
+        reviewerAssessment: (genContext && genContext.reviewerAssessment)
+          || (assessmentSnapshot && assessmentSnapshot.reviewerAssessment) || null,
+        strategyAssessment: (genContext && genContext.strategyAssessment)
+          || (assessmentSnapshot && assessmentSnapshot.strategyAssessment) || null,
+        qualityGate: persistedQualityGate,
+      };
+      const a = InstagramAccountDesignQuality.assessInstagramAccountDesignPackage(pkg, ctx);
+      if (a) {
+        qualityGate = {
+          executed: !!a.qualityGateStatus,
+          passed: a.qualityGateStatus === 'passed',
+          status: a.qualityGateStatus || null,
+          sourceStatus: a.qualityGateSourceStatus || null,
+        };
+        assessment = {
+          structureValidation: a.structureValidation || null,
+          contentQuality: a.contentQuality || null,
+          reviewerStatus: a.reviewerStatus || null,
+          strategyStatus: a.strategyStatus || null,
+          accountCreationReadiness: a.accountCreationReadiness || null,
+          userApproval: a.userApproval || null,
+        };
+      }
+    } catch (e) { /* fail-open: assessment/qualityGate は既定値のまま */ }
+
+    return {
+      caseId,
+      iadp: {
+        packageId: pkg.packageId || null,
+        adoptedCandidateId,
+        adoptedGenre,
+        accountName: account.accountName || null,
+        username: Array.isArray(account.usernameCandidates) ? (account.usernameCandidates[0] || null) : null,
+        bio: account.bio || null,
+        brandConcept: brand.brandConcept || null,
+        target: target.persona || null,
+      },
+      evidence,
+      qualityGate,
+      assessment,
+    };
+  } catch (e) {
+    console.error('[LeaderCaseContext] build failed (fail-open):', e.message);
+    return null;
+  }
+}
+
+// Case Contextを各AI社員のPromptへ渡すテキストへ変換する（存在する値のみ・過剰な肥大化を避ける）。
+//   Instagram固有の文言は使わず、Case Contextが存在するあらゆる案件に汎用的に適用できるルールとする。
+function _leaderCaseContextToText(cc) {
+  if (!cc) return '';
+  //   Formal Truth Priority Architecture 実装④: 取り扱いルール（再判定禁止・再要求禁止・捏造禁止）は
+  //   Prompt側の formalTruthRule（openaiClient.js buildSystemPrompt）へ統合済みのため、ここでは重複させない。
+  //   本関数の責務は「Formal Truthのデータ行を列挙すること」に限定する（修正Aの長文ルールは統合・廃止）。
+  const lines = ['【CASE CONTEXT｜同一caseの保存済み正本から取得した機械判定済み正式情報（Formal Truth）】'];
+  const i = cc.iadp || {};
+  if (i.packageId) lines.push(`IADP Package ID: ${i.packageId}`);
+  if (i.adoptedCandidateId) lines.push(`採用候補ID: ${i.adoptedCandidateId}／採用ジャンル: ${i.adoptedGenre || '不明'}`);
+  if (i.accountName || i.username) lines.push(`表示名: ${i.accountName || '未設定'}／ユーザー名候補: ${i.username || '未設定'}`);
+  if (i.bio) lines.push(`Profile Bio: ${i.bio}`);
+  if (i.brandConcept) lines.push(`ブランドコンセプト: ${i.brandConcept}`);
+  if (i.target) lines.push(`ターゲット: ${i.target}`);
+  const e = cc.evidence || {};
+  if (e.status) lines.push(`Evidence Status: ${e.status}（Verified ${e.verifiedCount ?? 0}件／Independent Source ${e.independentSourceCount ?? 0}件／総数${e.totalCount ?? 0}件）`);
+  const q = cc.qualityGate || {};
+  if (q.executed) lines.push(`Quality Gate: ${q.status || '未実行'}（sourceStatus: ${q.sourceStatus || '不明'}）`);
+  const a = cc.assessment || {};
+  if (a.accountCreationReadiness) lines.push(`Account Creation Readiness: ${a.accountCreationReadiness}`);
+  if (a.userApproval) lines.push(`User Approval: ${a.userApproval}（この値はユーザー本人の操作でのみ変更されます。あなたが承認済みとして扱ってはいけません）`);
+  return lines.join('\n');
+}
+
+// Option B: client側で構築済みの Case Data Context（Formal Truth／Intelligence要約テキスト）を、
+//   既存 LCC Phase2 の server-side Case Context テキストへ連結する。
+//   ★server側の責務は「不透明な文字列の境界検証と連結」のみ。APFR Factの意味解釈・再構築・補完・
+//     Resolver再実装・facts参照はいずれも行わない（C-1A Contract「server.jsは受動パススルーのみ」を維持）。
+//   検証は型（string）と最大長のみ。内容には一切触れない。
+const CASE_DATA_CONTEXT_MAX_CHARS = 8000;   // client側 CDC_MAX_CHARS と同値（多重防御・server側でも上限を強制）
+function _mergeCaseContextText(serverContextText, clientContextText) {
+  const parts = [];
+  if (typeof serverContextText === 'string' && serverContextText) parts.push(serverContextText);
+  if (typeof clientContextText === 'string' && clientContextText) {
+    parts.push(clientContextText.length > CASE_DATA_CONTEXT_MAX_CHARS
+      ? clientContextText.slice(0, CASE_DATA_CONTEXT_MAX_CHARS)
+      : clientContextText);
+  }
+  return parts.join('\n\n');
+}
+
 app.post('/api/chat', express.json(), async (req, res) => {
-  const { message, memberId, history, knowledgeContext = '' } = req.body || {};
+  // Option B: caseDataContext は任意項目（省略時は既存動作と完全同一・受動パススルーのみ）。
+  const { message, memberId, history, knowledgeContext = '', caseId = null, caseDataContext = '' } = req.body || {};
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ ok: false, error: 'message は必須です' });
   }
   try {
     const agent = memberId || 'leader';
     const genre = detectGenre(message);
+
+    // Leader Case Context（Instagram実運用 Blocking Issue対応）: caseId未指定・取得失敗時はfail-openで従来どおり。
+    let caseContext = '';
+    if (caseId) {
+      try {
+        const cc = await buildLeaderCaseContext(caseId);
+        caseContext = _leaderCaseContextToText(cc);
+      } catch (e) { caseContext = ''; }
+    }
+    // Option B: Path Aと同一契約でclient構築Contextを連結（内容解釈なし・IADP必須ガードは変更しない）。
+    caseContext = _mergeCaseContextText(caseContext, caseDataContext);
 
     // Supabaseから学習データ・会社記憶・ノウハウを並行取得
     const [bestsResult, avoidsResult, successResult, failureResult, knowledgeResult, scoreResult, strategyResult] = await Promise.allSettled([
@@ -709,6 +919,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
       strategyContext: strategyCtx,
       memberData: customMemberData || null,
       knowledgeContext: knowledgeContext || '',
+      caseContext: caseContext || '',   // Leader Case Context（generateReply()・generateClaudeReply()の共通入力契約。Provider差でFormal Truthは消失しない）
     });
     const reply = result.text
       || JSON.stringify({ reply: 'AIに接続できませんでした。OPENAI_API_KEYを確認してください。', suggestions: [] });
@@ -723,12 +934,17 @@ app.post('/api/chat', express.json(), async (req, res) => {
 // ── Strategy 全担当統合意見 API ───────────────────────
 // POST /api/strategy-consolidate { userMessage, memberReplies: [{id, name, reply}] }
 app.post('/api/strategy-consolidate', express.json(), async (req, res) => {
-  const { userMessage, memberReplies } = req.body || {};
+  const { userMessage, memberReplies, caseId = null } = req.body || {};
   if (!userMessage || !Array.isArray(memberReplies) || memberReplies.length === 0) {
     return res.json({ ok: false, error: 'userMessage と memberReplies は必須です' });
   }
   try {
-    const result = await strategyConsolidate({ userMessage, memberReplies });
+    // Leader Case Context Phase2: caseId未指定・取得失敗時はfail-openで従来どおり。
+    let caseContext = '';
+    if (caseId) {
+      try { caseContext = _leaderCaseContextToText(await buildLeaderCaseContext(caseId)); } catch (e) { caseContext = ''; }
+    }
+    const result = await strategyConsolidate({ userMessage, memberReplies, caseContext });
     if (result) {
       return res.json({ ok: true, reply: result.reply || '', suggestions: result.suggestions || [] });
     }
@@ -745,12 +961,17 @@ app.post('/api/strategy-consolidate', express.json(), async (req, res) => {
 app.post('/api/leader-summary', express.json(), async (req, res) => {
   // Phase B-9D-5A: ruleArtifactsは任意項目。手動Leader再生成のみ送信し、Path B等の既存呼び出しは
   //   従来どおり省略する（未指定でも動作は完全に既存どおり・request/response契約の破壊的変更なし）。
-  const { userMessage, memberReplies, strategyReply, ruleArtifacts } = req.body || {};
+  const { userMessage, memberReplies, strategyReply, ruleArtifacts, caseId = null } = req.body || {};
   if (!userMessage || !memberReplies) {
     return res.json({ ok: false, error: 'missing params' });
   }
   try {
-    const reply = await leaderSummary(userMessage, memberReplies, strategyReply || '', ruleArtifacts);
+    // Leader Case Context Phase2: caseId未指定・取得失敗時はfail-openで従来どおり。
+    let caseContext = '';
+    if (caseId) {
+      try { caseContext = _leaderCaseContextToText(await buildLeaderCaseContext(caseId)); } catch (e) { caseContext = ''; }
+    }
+    const reply = await leaderSummary(userMessage, memberReplies, strategyReply || '', ruleArtifacts, caseContext);
     if (!reply) return res.json({ ok: false, error: 'no reply' });
     return res.json({ ok: true, reply });
   } catch (e) {
@@ -810,7 +1031,9 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
   // Phase54-3b-2: caseId は任意（未指定でも従来動作＝NULL横断履歴）
   // Phase IG-2B: accountIntelligenceMode / existingIntelligenceContext は任意項目（省略時は既存動作と完全同一）
   // APFR Step C-1A: complianceContext は任意項目（省略時は既存動作と完全同一・受動パススルーのみ）
-  const { userMessage, tasks, autonomousConsult = false, workflowId = null, caseId = null, knowledgeContext = '', accountIntelligenceMode = false, existingIntelligenceContext = null, complianceContext = null } = req.body || {};
+  // Option B: caseDataContext は任意項目（省略時は既存動作と完全同一）。client側で構築済みのテキストを
+  //   受け取るのみで、server側では内容を解釈・再構築・補完しない（APFR Resolver再実装／facts参照を行わない）。
+  const { userMessage, tasks, autonomousConsult = false, workflowId = null, caseId = null, knowledgeContext = '', accountIntelligenceMode = false, existingIntelligenceContext = null, caseDataContext = '', complianceContext = null } = req.body || {};
 
   // 入力バリデーション（input validation）
   if (!userMessage || !Array.isArray(tasks) || tasks.length === 0) {
@@ -832,6 +1055,21 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
   }
 
   try {
+    // Formal Truth Priority Architecture: 1 workflow = 1 case = 1 Formal Truth snapshot。
+    //   caseIdがある場合のみ、Workflow開始前に1回だけCase Contextを構築する（DB読み取りは最大1回）。
+    //   最新case・active case・別caseへのfallbackは行わない（このcaseIdだけを使用）。fail-open。
+    let autoTaskCaseContext = '';
+    if (caseId) {
+      try {
+        const _atcc = await buildLeaderCaseContext(caseId);
+        autoTaskCaseContext = _leaderCaseContextToText(_atcc);
+      } catch (e) { autoTaskCaseContext = ''; }
+    }
+    // Option B: client構築のFormal Truth／Intelligence Contextを連結（内容解釈なし）。
+    //   server側IADP Contextがnull（IADP未生成）でも、client側Contextがあれば caseContext は非空となり、
+    //   下流の hasCaseContext===true → formalTruthRule 有効化が成立する（IADP必須ガードは変更しない）。
+    autoTaskCaseContext = _mergeCaseContextText(autoTaskCaseContext, caseDataContext);
+
     // Phase37: agentCaller を渡すことで Claude/OpenAI を動的ルーティング
     // Phase42修正: onProgress で逐次進捗をグローバルストアへ書き込む
     if (!global.__workflowProgress) global.__workflowProgress = {};
@@ -842,6 +1080,7 @@ app.post('/api/auto-task', express.json(), async (req, res) => {
       userMessage, tasks, autonomousConsult, workflowId: _wfId, agentCaller: workflowAgentCaller,
       complianceContext, // APFR Step C-1A: 受動パススルーのみ（Resolver再実装・facts参照・value加工は一切行わない）
       accountIntelligenceMode, existingIntelligenceContext, // Phase IG-2B: 任意項目のパススルーのみ（省略時は既存動作と同一）
+      caseContext: autoTaskCaseContext, // Formal Truth Priority Architecture: Workflow開始時snapshot（1回構築・全担当共有）
       onProgress: (state) => {
         global.__workflowProgress[_wfId] = { ...state, updatedAt: Date.now() };
       },
@@ -1136,6 +1375,19 @@ app.post('/api/consult', express.json(), async (req, res) => {
       ? `【${fromName}からの相談】\n${question}\n\n【${fromName}の成果（参考）】\n${priorResult}`
       : `【${fromName}からの相談】\n${question}`;
 
+    // Formal Truth Priority Architecture: 本APIのcaseIdは任意（Phase54-3b-2・line1279）。
+    //   caseIdがある相談のみ、/api/chatと同一の既存関数でCase Contextを構築する（二重構築なし・
+    //   Cross-case guardは buildLeaderCaseContext(caseId) の既存境界をそのまま使用）。
+    //   caseIdなしの一般相談は caseContext='' ＝ hasCaseContext=false で従来挙動を完全維持する。
+    //   架空caseId・最新caseへのfallbackは行わない。
+    let consultCaseContext = '';
+    if (caseId) {
+      try {
+        const ccc = await buildLeaderCaseContext(caseId);
+        consultCaseContext = _leaderCaseContextToText(ccc);
+      } catch (e) { consultCaseContext = ''; }
+    }
+
     // Phase27: Claude対象社員への相談もClaude APIへ routing
     const consultFn = CLAUDE_AGENTS.has(toAgentId) ? generateClaudeReply : generateReply;
     const result = await consultFn({
@@ -1143,6 +1395,7 @@ app.post('/api/consult', express.json(), async (req, res) => {
       assignee: toAgentId,
       history: [],
       knowledgeContext: knowledgeContext || '',
+      caseContext: consultCaseContext || '',
     });
 
     // AI 返答の JSON から reply 部分を取り出す
@@ -1976,4 +2229,7 @@ module.exports = {
   getReplyPayload,
   resetConversationState,
   isContinuationMessage,
+  // Instagram実運用 Blocking Issue対応（合成テスト・検証用に公開。既存exportは無変更のまま追加のみ）
+  buildLeaderCaseContext,
+  _leaderCaseContextToText,
 };

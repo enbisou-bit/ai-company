@@ -214,16 +214,27 @@ async function generateClaudeReply({
   strategyContext = '',
   memberData = null,
   knowledgeContext = '',
+  // Formal Truth Priority Architecture: Case Context（会社の正式保存・機械判定済み情報）。
+  //   OpenAI側 generateReply() と同一の入力契約とし、Provider差でFormal Truthが消失しないようにする。
+  //   未指定（''）時は下の全分岐が従来と完全同一（fail-open）。
+  caseContext = '',
 }) {
   // 既存の buildSystemPrompt を流用（プロンプト内容はOpenAIと同じ）
   const practiceData = (bestPractices.length > 0 || avoidPractices.length > 0 || companyContext || strategyContext)
     ? { bestPractices, avoidPractices, companyContext, strategyContext }
     : null;
-  let systemPrompt = buildSystemPrompt(assignee, practiceData, memberData);
+  //   caseContextあり時のみ hasCaseContext:true を渡し、Formal Truth Priority Architecture
+  //   （正本参照義務・新③情報不足判定・条件付きworkerFinalOverride）をClaude担当にも適用する。
+  let systemPrompt = buildSystemPrompt(assignee, practiceData, memberData, { hasCaseContext: !!caseContext });
   if (knowledgeContext) systemPrompt += '\n' + knowledgeContext;
 
+  // Case Context実データはSystem Promptへ後置連結せず、user側（messages）へ渡す。
+  //   OpenAI側 generateReply()（userContent）・strategyConsolidate・leaderSummary と同一方針。
+  //   Anthropic Messages APIも system と messages が分離しているため同じ責務分離が成立する。
+  const userContent = caseContext ? `${messageText}\n\n${caseContext}` : messageText;
+
   // Claude 呼び出し（失敗時は null）
-  const claudeText = await callClaudeAI(systemPrompt, messageText, history, assignee);
+  const claudeText = await callClaudeAI(systemPrompt, userContent, history, assignee);
   if (claudeText !== null) {
     return { text: claudeText, provider: 'claude', model: getClaudeModelForRole(assignee), fallback: false };
   }
@@ -231,7 +242,10 @@ async function generateClaudeReply({
   // Fallback: OpenAI へ切り替え
   console.warn(`[Claude Fallback] ${assignee} → OpenAI fallback. reason: ${claudeUsage.errorMsg || 'no key'}`);
   const { generateReply } = require('./openaiClient');
-  const result = await generateReply({ messageText, assignee, history, bestPractices, avoidPractices, companyContext, strategyContext, memberData, knowledgeContext });
+  //   Formal Truth Priority Architecture: Provider が Claude → OpenAI fallback へ変わっても
+  //   Formal Truth を消失させない。fallback条件・エラー処理自体は変更していない。
+  //   （messageTextは原文のまま渡す。generateReply()側が同じ方針でuser側へcaseContextを合成する）
+  const result = await generateReply({ messageText, assignee, history, bestPractices, avoidPractices, companyContext, strategyContext, memberData, knowledgeContext, caseContext });
   return { ...result, provider: 'openai_fallback', fallback: true };
 }
 

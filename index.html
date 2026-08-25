@@ -8585,7 +8585,9 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: instruction, memberId: m.id, history }),
+        // Leader Case Context Phase2: dispatch元Leaderと同一caseId（この関数冒頭で1度だけ確定した値）を
+        //   そのまま伝播する（Cross-case guard維持・再取得しない＝dispatch中のcase切替の影響を受けない）。
+        body: JSON.stringify({ message: instruction, memberId: m.id, history, caseId }),
       });
       const data = await res.json();
       if (data.ok && data.reply) {
@@ -8618,7 +8620,7 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
         // 完了リストに追加 → 全員完了で統合意見（Strategy監視はconsolidateで一括）
         completedReplies.push({ id: m.id, name: m.name, reply });
         if (completedReplies.length === assignedMembers.length) {
-          triggerStrategyConsolidate(userText, completedReplies, cardId, _liSession && _liSession.interactionId);
+          triggerStrategyConsolidate(userText, completedReplies, cardId, _liSession && _liSession.interactionId, caseId);
           // autoStart（自動開始）ON の場合は Auto Task を自動実行
           atAutoStartWorkflow(userText, assignedIds);
         }
@@ -8647,13 +8649,14 @@ async function handleLeaderDispatch(userText, assignedIds, memberInstructions = 
 }
 
 // ── Strategy 全担当統合意見 ────────────────────────
-async function triggerStrategyConsolidate(userText, memberReplies, cardId, interactionId) {
+async function triggerStrategyConsolidate(userText, memberReplies, cardId, interactionId, caseId = null) {
   if (!memberReplies || memberReplies.length === 0) return;
   try {
     const res = await fetch('/api/strategy-consolidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage: userText, memberReplies }),
+      // Leader Case Context Phase2: 呼び出し元（handleLeaderDispatch）から伝播された同一caseIdをそのまま使用。
+      body: JSON.stringify({ userMessage: userText, memberReplies, caseId }),
     });
     const data = await res.json();
     if (!data.ok || !data.reply) return;
@@ -8676,18 +8679,19 @@ async function triggerStrategyConsolidate(userText, memberReplies, cardId, inter
       if (noteText) noteText.textContent = '✅ 全担当返答完了 ・ ♟️ 戦略顧問が統合意見を提案しました';
     }
     // Leader推奨方針サマリーを生成して表示
-    triggerLeaderSummary(userText, memberReplies, data.reply, interactionId);
+    triggerLeaderSummary(userText, memberReplies, data.reply, interactionId, caseId);
   } catch (e) {
     console.warn('[consolidate] error:', e.message);
   }
 }
 
-async function triggerLeaderSummary(userText, memberReplies, strategyReply, interactionId) {
+async function triggerLeaderSummary(userText, memberReplies, strategyReply, interactionId, caseId = null) {
   try {
     const res = await fetch('/api/leader-summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage: userText, memberReplies, strategyReply }),
+      // Leader Case Context Phase2: dispatch元と同一caseIdを最終会社回答生成まで伝播する。
+      body: JSON.stringify({ userMessage: userText, memberReplies, strategyReply, caseId }),
     });
     const data = await res.json();
     if (!data.ok || !data.reply) return;
@@ -11623,6 +11627,12 @@ async function sendMessage() {
         memberId: currentMember.id,
         history: apiMessages.slice(0, -1),
         knowledgeContext: getRoutedKnowledgeContext(currentMember.id),
+        // Instagram実運用 Blocking Issue対応: 現在選択中caseのみ送信（未選択/最新一覧/案件一覧はundefined→
+        //   サーバー側でCase Context構築をスキップし既存動作を維持。Cross-case補完は行わない）。
+        caseId: _ncActiveCaseId(currentMember.id) || null,
+        // Option B: Path Aと同一helperで構築したFormal Truth／Intelligence Context（同一case scope）。
+        //   取得できない場合は''＝既存動作と完全同一（fail-open）。Path B専用の構築処理は作らない。
+        caseDataContext: _buildCaseDataContext(_ncActiveCaseId(currentMember.id) || null),
       }),
     });
 
@@ -15882,6 +15892,15 @@ async function atRunWorkflow(options) {
     }
   } catch (_complianceErr) { _complianceContext = {}; } // fail-open: 取得失敗時は空オブジェクトのまま
 
+  // Instagram実運用 Data Context Wiring（Option B）Path A:
+  //   保存済みFormal Truth／IntelligenceのテキストContextを構築して送信する。
+  //   Cross-case guardはWorkflow開始時に捕捉した _atRunCaseId で行う（helper内部で二重検証）。
+  //   IADP判定（_iadpRequested）・complianceContextとは独立（通常の投稿作成Workflowでも常時算出する）。
+  var _caseDataContext = '';
+  try {
+    _caseDataContext = _buildCaseDataContext(_atRunCaseId);
+  } catch (_cdcErr) { _caseDataContext = ''; } // fail-open: 取得失敗時は空文字列＝既存動作と同一
+
   // 実行開始時にフラグリセット（成否を atAutoStartWorkflow が参照する）
   _atLastRunSuccess = false;
 
@@ -15992,7 +16011,7 @@ async function atRunWorkflow(options) {
     const res  = await fetch('/api/auto-task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext(), accountIntelligenceMode: _iadpRequested, existingIntelligenceContext: _iadpExistingIntelligenceContext, complianceContext: _complianceContext }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用。Phase IG-2B: 任意項目2つを追加送信（既定はfalse/null=既存動作と同一）。APFR Step C-1A: complianceContextを追加送信（既定は{}=既存動作と同一・prompt注入はまだ行わない）
+      body: JSON.stringify({ userMessage, tasks, autonomousConsult, workflowId: _atCurrentWorkflowId || null, caseId: _atRunCaseId, knowledgeContext: getRoutedKnowledgeContext('leader') + getInjectedKnowledgeContext(), accountIntelligenceMode: _iadpRequested, existingIntelligenceContext: _iadpExistingIntelligenceContext, complianceContext: _complianceContext, caseDataContext: _caseDataContext }),   // Phase54-3b-2: 現在案件を任意送信（未確定はnull=横断履歴）。前半工程: 実行開始時に捕捉した _atRunCaseId を使用。Phase IG-2B: 任意項目2つを追加送信（既定はfalse/null=既存動作と同一）。APFR Step C-1A: complianceContextを追加送信（既定は{}=既存動作と同一・prompt注入はまだ行わない）。Option B: caseDataContextを追加送信（既定は''=既存動作と同一）
     });
     const data = await res.json();
 
@@ -39529,6 +39548,147 @@ function _apfrBuildComplianceContext(product) {
     });
   } catch (e) { /* fail-open: 取得失敗時は空オブジェクト（Formal Truthなしとして扱う） */ }
   return out;
+}
+
+// ══════════════════════════════════════════════════════════════
+// Instagram実運用 Data Context Wiring（Option B / B-text）
+//   保存済みのAPFR Formal Truth（Current Fact）とIntelligence要約を、
+//   AI社員へ渡すコンパクトなテキストContextとして構築する唯一の口。
+//   Path A（atRunWorkflow → /api/auto-task）とPath B（sendMessage → /api/chat）の
+//   双方がこの1関数だけを使う（Path別のFormal Truth構築ロジックは作らない）。
+//
+//   Resolver Contract（Phase 1・厳守）:
+//     ・Current Fact判定は _apfrResolveCurrentFacts() のみが行う（本関数は呼ぶだけ）。
+//     ・product.facts の直接走査・supersedes独自解決・recordedAt最新判定・配列末尾判定は一切行わない。
+//     ・resolved のみ採用。none／ambiguous は値として出力しない（fail-closed維持・候補代表選択もしない）。
+//     ・Fact履歴（superseded含む全件）・evidence[]・fieldEvidence・usedEvidenceIdsは出力しない（payload肥大化防止）。
+//
+//   値の忠実性（変換禁止）:
+//     ・保存されたresolved valueをそのまま文字列化するのみ。
+//     ・数値化（"5000"→5000）・%スケール変換（100→1.0）・円記号除去・単位推測・roundingはいずれも行わない。
+//
+//   Intelligence:
+//     ・保存済みの derived / confidence を読むだけ。新しい市場情報の生成・欠損値の推測補完は行わない。
+//
+//   安全性: read-only純粋構築。DB write 0・Output Draft mutation 0・APFR Fact mutation 0・Intelligence mutation 0。
+//   Cross-case: 呼び出し側が渡した expectedCaseId と draft.caseId／product.caseId の完全一致を必須とする
+//               （不一致・未確定なら空文字列を返し、他案件へfallbackしない）。
+//   Cross-product: 既存Resolverのguardへ完全に委ねる（独自productIdentifier判定を追加しない）。
+// ══════════════════════════════════════════════════════════════
+
+// Case Data Context対象のIntelligenceモジュール（保存済み6層）。表示名は既存Roadmap表記に合わせる。
+const CDC_INTEL_MODULES = [
+  { key: 'product',     label: 'Product Intelligence' },
+  { key: 'asp',         label: 'ASP Intelligence' },
+  { key: 'revenue',     label: 'Revenue Intelligence' },
+  { key: 'competition', label: 'Competition Intelligence' },
+  { key: 'content',     label: 'Content Intelligence' },
+  { key: 'market',      label: 'Market Opportunity Intelligence' },
+];
+// derived から渡すscalarキー（保存値をそのまま読むだけ・新規算出は行わない）。巨大配列・オブジェクトは対象外。
+const CDC_INTEL_DERIVED_KEYS = ['integratedScore', 'integratedScoreAverage', 'integratedScoreMax',
+  'estimatedSales', 'estimatedProfit', 'knownFactors', 'totalFactors', 'productCount'];
+// モジュール直下から渡すscalarキー（同上・保存値の読み取りのみ）。
+const CDC_INTEL_TOP_KEYS = ['recommendedAspName', 'comparedAspCount', 'market', 'productStatus'];
+// Context全体の安全上限（token浪費・prompt肥大化防止）。超過時は末尾を切り詰める。
+const CDC_MAX_CHARS = 8000;
+
+// Formal Truth値の忠実な文字列化（型変換・単位変換・丸めを行わない）。
+function _cdcFormatValue(v) {
+  if (typeof v === 'string') return v;                       // "5000" は "5000" のまま（数値化しない）
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try { return JSON.stringify(v); } catch (e) { return String(v); }  // 配列は構造を保ったまま渡す
+}
+
+// scalar（string/number/boolean）のみ採用するguard。null/undefined/オブジェクト/配列は渡さない。
+function _cdcIsScalar(v) {
+  return v !== null && v !== undefined && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean');
+}
+
+// resolved Current Factのみを ['ラベル（field）: 値', ...] の行配列へ変換する（read-only）。
+function _cdcBuildFormalTruthLines(product) {
+  var lines = [];
+  try {
+    var res = _apfrResolveCurrentFacts(product);              // Resolverが唯一のcurrent判定口
+    var order = (typeof APFR_FIELD_ORDER !== 'undefined' && Array.isArray(APFR_FIELD_ORDER)) ? APFR_FIELD_ORDER : [];
+    order.forEach(function (field) {
+      var f = res.resolved[field];                            // resolvedのみ（none/ambiguousは存在しない）
+      if (!f) return;
+      if (f.value === null || f.value === undefined) return;
+      var meta = (typeof APFR_FIELD_META !== 'undefined') ? APFR_FIELD_META[field] : null;
+      var label = (meta && meta.label) || field;
+      lines.push(label + '（' + field + '）: ' + _cdcFormatValue(f.value));
+    });
+  } catch (e) { /* fail-open: 取得失敗時は行なし＝Formal Truthなしとして扱う */ }
+  return lines;
+}
+
+// 保存済みIntelligenceの要約行を構築する（derived / confidence の読み取りのみ・再計算しない）。
+function _cdcBuildIntelligenceLines(ctx) {
+  var lines = [];
+  try {
+    if (!ctx || typeof ctx !== 'object') return lines;
+    CDC_INTEL_MODULES.forEach(function (m) {
+      var mod = ctx[m.key];
+      if (!mod || typeof mod !== 'object') return;
+      var parts = [];
+      var derived = (mod.derived && typeof mod.derived === 'object') ? mod.derived : null;
+      if (derived && typeof derived.status === 'string' && derived.status) parts.push('status=' + derived.status);
+      var conf = (mod.confidence && typeof mod.confidence === 'object') ? mod.confidence : null;
+      if (conf && typeof conf.confidenceLevel === 'string' && conf.confidenceLevel) {
+        parts.push('Confidence=' + conf.confidenceLevel
+          + (_cdcIsScalar(conf.confidenceScore) ? '(' + conf.confidenceScore + ')' : ''));
+      }
+      if (derived) {
+        CDC_INTEL_DERIVED_KEYS.forEach(function (k) {
+          if (_cdcIsScalar(derived[k])) parts.push(k + '=' + _cdcFormatValue(derived[k]));
+        });
+      }
+      CDC_INTEL_TOP_KEYS.forEach(function (k) {
+        if (_cdcIsScalar(mod[k])) parts.push(k + '=' + _cdcFormatValue(mod[k]));
+      });
+      if (parts.length === 0) return;                         // 情報が無いモジュールは行を作らない（空表示で誤認させない）
+      lines.push(m.label + ': ' + parts.join(' / '));
+    });
+  } catch (e) { /* fail-open */ }
+  return lines;
+}
+
+// Path A/B共通の唯一の構築口。expectedCaseId と一致する案件のみを対象とし、無ければ空文字列を返す。
+function _buildCaseDataContext(expectedCaseId) {
+  try {
+    if (!expectedCaseId) return '';                           // 案件未確定 → Context構築しない（横断fallbackしない）
+    var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+    if (!draft || String(draft.caseId || '') !== String(expectedCaseId)) return '';   // Cross-case guard①
+    var fields = draft.fields;
+    if (!fields || !fields.intelligenceContext) return '';
+    var ctx = fields.intelligenceContext;
+    var product = ctx.product;
+
+    var ftLines = [];
+    if (product && typeof product === 'object'
+        && String(product.caseId || '') === String(expectedCaseId)                    // Cross-case guard②
+        && product.productIdentifier) {
+      ftLines = _cdcBuildFormalTruthLines(product);
+    }
+    var intelLines = _cdcBuildIntelligenceLines(ctx);
+    if (ftLines.length === 0 && intelLines.length === 0) return '';                   // 空Contextを「情報あり」と誤認させない
+
+    var out = ['【CASE DATA CONTEXT｜同一caseの保存済み正本（APFR Formal Truth／Intelligence要約）】'];
+    if (ftLines.length > 0) {
+      out.push('■ 商品Formal Truth（ユーザー本人が確認済みの正式値。推測ではない）');
+      out = out.concat(ftLines);
+    }
+    if (intelLines.length > 0) {
+      if (ftLines.length > 0) out.push('');
+      out.push('■ Intelligence要約（保存済みの評価結果。新たな推測ではない）');
+      out = out.concat(intelLines);
+    }
+    var text = out.join('\n');
+    return text.length > CDC_MAX_CHARS ? text.slice(0, CDC_MAX_CHARS) : text;         // payload安全上限
+  } catch (e) {
+    return '';                                                // fail-open: 失敗時は既存動作（Contextなし）へ退避
+  }
 }
 
 // ══════════════════════════════════════════════════════════════

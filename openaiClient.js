@@ -1020,6 +1020,12 @@ function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = n
   const iadpSelfCompletion = !!(options && options.accountIntelligenceMode === true
     && isWorker && IADP_SELF_COMPLETION_AGENT_IDS.indexOf(agent) !== -1);
 
+  // Formal Truth Priority Architecture（Constitution v1.1.0 第15条 正本参照義務原則・正式採用候補）:
+  //   会社が正式保存・機械判定した情報（Case Context）が提供されている場合のみ true。
+  //   false（未提供・caseIdなし・取得失敗）のときは以下の全分岐が既存の文字列を返す＝既存Promptと完全同一（fail-open）。
+  //   本フラグはIADP Self-Completion Mode（accountIntelligenceMode）とは独立し、互いに干渉しない。
+  const hasCaseContext = !!(options && options.hasCaseContext === true);
+
   const agentSpecific = agent === 'leader'     ? LEADER_RULES
     : agent === 'strategy'   ? STRATEGY_RULES
     : agent === 'reviewer'   ? DEEP_ANALYSIS_RULES + REVIEWER_RULES
@@ -1150,6 +1156,32 @@ function buildSystemPrompt(agent = 'leader', practiceData = null, memberData = n
   // Phase IG-2J-A: IADPモードのみ最終上書きをSelf-Completion Mode版へ差し替える（通常時は既存文のまま）
   const workerFinalOverride = (isWorker && iadpSelfCompletion)
     ? buildIadpSelfCompletionOverride(agent, voiceOpener, !!(options && options.intelligenceContextAvailable === true))
+    // Formal Truth Priority Architecture: Case Context提供時のみ、Constitution／Formal Truthより上位に
+    //   振る舞う絶対性表現（「上記全設定より最優先」「変更不可」「1字も変えず・追加もせず」「唯一の正解出力」）を
+    //   取り除いた条件付き安全装置版へ差し替える。安全装置としての役割（本当に情報がない場合の出力形式）は維持する。
+    : (isWorker && hasCaseContext) ? `
+【安全装置：真に情報が不足している場合の出力形式（正本参照義務の実行後にのみ適用）】
+※ステップ0で専門外と判定した場合はこのブロックを無視し、ステップ0の形式を使うこと。
+※このブロックを使う前に、必ず上位の【正本参照義務】に従って【CASE CONTEXT】を照合すること。
+※【CASE CONTEXT】に存在する情報を、このブロックの「不足情報」に含めてはならない。
+
+正本照合後に残った真の不足情報が、あなたの担当業務の遂行を実際に妨げる（Blockingである）場合に限り、
+以下の形式で確認すること。Blockingでない場合は質問せず、担当業務を自律的に実行すること。
+
+${voiceOpener}【現状仮説】
+①〇〇の可能性があります。
+②〇〇の可能性があります。
+③〇〇の可能性があります。
+
+【確認したいこと】
+・〇〇を教えてください。
+・〇〇を教えてください。
+・〇〇を教えてください。
+
+情報が揃い次第、具体案を作成します。
+
+※【確認したいこと】に書けるのは【CASE CONTEXT】に存在しない項目のみ。
+※ 1行目の担当識別（例：「SNS担当のレンです。」）は必須。省略禁止。`
     : isWorker ? `
 【★最終上書き：上記全設定より最優先（worker共通・変更不可）】
 ※ステップ0で専門外と判定した場合はこのブロックを無視し、ステップ0の形式を使うこと。
@@ -1173,6 +1205,38 @@ ${voiceOpener}【現状仮説】
 ※ 1行目の担当識別（例：「SNS担当のレンです。」）は必須。省略禁止。
 この形式（担当識別行＋3ブロック）以外を情報不足時に出力することは絶対禁止。` : '';
 
+  // Formal Truth Priority Architecture（第15条 正本参照義務原則）:
+  //   Case Context提供時のみ、全ルールの先頭（ステップ0の直後・FOUR_STEP_FRAMEWORKより前）へ
+  //   判断優先順位と情報不足判定の新定義を1箇所だけ置く。以降に現れる既存の情報不足ルール
+  //   （AGENT_RULE_HEADER／FOUR_STEP_FRAMEWORK／COMMON_RULES／DEEP_ANALYSIS_RULES／domainRule／
+  //   questionStyle）は本ブロックの下位として明示的に位置付けられる。
+  //   Instagram等の特定事業に依存しない汎用ルールとし、Case Contextが存在するあらゆる案件で機能する。
+  //   修正D（caseContextPriorityRule）は本ブロックへ統合・廃止（重複解消）。
+  const formalTruthRule = hasCaseContext ? `
+【★最上位ルール：正本参照義務（Formal Truth Priority）— 以下の全ルールより上位・例外なし】
+
+会社の判断優先順位（下位は上位を覆してはならない）：
+① 会社憲法（Executive Constitution）
+② Formal Truth（会社が正式に保存・確定・機械判定した情報＝入力内の【CASE CONTEXT】）
+③ 会社判断
+④ あなたの専門判断
+⑤ ヒアリングルール・情報不足判定・最終上書きルール等（以下に現れる全ルール）
+
+【情報不足の判定手順（この案件ではこれだけが正しい手順。以下の全ルールに書かれた情報不足判定より優先する）】
+1. まず【CASE CONTEXT】を確認する
+2. 担当業務の遂行に必要な情報を【CASE CONTEXT】と照合する
+3. 【CASE CONTEXT】に存在する情報は「取得済み」として扱う
+4. 取得済みの情報をユーザーへ再質問・再提示要求しない
+5. 【CASE CONTEXT】に存在せず、かつ担当業務の遂行に本当に必要な項目だけを「不足」とする
+6. 不足があっても業務遂行を妨げない場合は質問せず、自律的に業務を実行する
+7. 【CASE CONTEXT】に存在しない情報を、存在するものとして推測・捏造しない
+
+【絶対禁止】
+・【CASE CONTEXT】に存在する情報を「不足」「未確認」「存在しない」「アクセスできない」と述べること
+・【CASE CONTEXT】に存在する情報について、ユーザーへ再提出・再説明・再共有を要求すること
+・【CASE CONTEXT】の機械判定済みの値（Gate・Status・Count等）を、あなた自身の自然言語判断で再判定・否定すること
+・【CASE CONTEXT】に記載のない情報を、あるものとして断定すること` : '';
+
   // APFR Step C-1B: Compliance Formal Truth の Writer/Reviewer prompt注入。
   //   agent限定・null/empty判定はbuildCompliancePromptBlock内部で行う（writer/reviewer以外は常に''）。
   const complianceBlock = buildCompliancePromptBlock(agent, options && options.complianceContext);
@@ -1180,6 +1244,8 @@ ${voiceOpener}【現状仮説】
   return [
     // ⓪ 専門領域事前判定（最絶対優先・専門外は即断する）
     domainPreCheck,
+    // ⓪.5 正本参照義務（Formal Truth Priority・Case Context提供時のみ。以降の情報不足ルール群より前に置く）
+    formalTruthRule,
     // ① FOUR_STEP_FRAMEWORK を最優先・先頭に配置
     universalRules,
     // ② プロフィール・人格
@@ -1206,6 +1272,7 @@ ${voiceOpener}【現状仮説】
     // ④.5 担当識別ルール（全返答で冒頭に voiceOpener を強制。profile.voiceOpener が未定義なら空）
     identityRule,
     // ⑤ 最終上書き（tone/persona/rulesを全て上書き・worker全員共通）
+    //    Case Context提供時は条件付き安全装置版（正本参照義務の下位）へ差し替わる
     workerFinalOverride,
     '',
     ...jsonFormat,
@@ -1237,7 +1304,13 @@ function buildStrategyMonitorPrompt() {
 // ══════════════════════════════════════════════════════════════
 // Strategy 全担当統合プロンプト（dispatch完了後に呼ばれる）
 // ══════════════════════════════════════════════════════════════
-function buildStrategyConsolidatePrompt() {
+// Leader Case Context Phase2修正B: hasCaseContext===trueの場合のみ、JSON形式指示より前の位置へ
+//   「機械判定済み正式値を再判定しない」という短い固定ルールを挿入する。挿入位置は常にJSON形式指示より前で
+//   固定されるため、最終命令は常にJSON-only契約のまま変わらない（後置concatは行わない）。
+function buildStrategyConsolidatePrompt(hasCaseContext = false) {
+  const caseContextRule = hasCaseContext
+    ? ['', '入力内に【CASE CONTEXT】（機械判定済み正式情報）が含まれる場合、その内容と矛盾する評価・統合を行わないでください。各担当の提案がCASE CONTEXT内の正式値と矛盾する場合（例：正式値でsufficient/passedとなっている項目を担当が「不足」と述べている等）は、正式値を優先し、その担当の指摘を採用しないでください。', '']
+    : [];
   return [
     'あなたは縁美創AI COMPANYの♟️ 戦略顧問（社長補佐）です。',
     '各担当の提案を受け取り、経営視点で比較・評価・優先順位付けを行い、最終提案を出してください。',
@@ -1276,6 +1349,7 @@ function buildStrategyConsolidatePrompt() {
     '③ [具体的タスク・期限]',
     '',
     '一般論・感覚評価は禁止。必ず各担当の提案を引用・数値化して判断すること。',
+    ...caseContextRule,
     '',
     '必ず以下のJSON形式で返してください：',
     '{"reply":"【戦略顧問評価】\\n\\n📊 各担当提案の評価\\n\\n提案①：...\\n利益率：★X｜...\\n総合：Xpt\\n\\n🏆 推奨案：...\\n\\n理由：...\\n\\n次にやること：\\n①...\\n②...\\n③...","suggestions":["🏆 推奨案を今すぐ実行","📊 第2案との比較を深掘り","⚠️ リスク対策を確認","🔄 別の切り口で再提案"]}',
@@ -1286,8 +1360,18 @@ function buildStrategyConsolidatePrompt() {
 // ══════════════════════════════════════════════════════════════
 // Leader 推奨方針サマリー（全担当返答完了後）
 // ══════════════════════════════════════════════════════════════
-async function leaderSummary(userMessage, memberReplies, strategyReply, ruleArtifacts) {
+async function leaderSummary(userMessage, memberReplies, strategyReply, ruleArtifacts, caseContext = '') {
   if (!OPENAI_API_KEY || !costTracker.canProcess()) return null;
+  // Leader Case Context Phase2修正C: hasCaseContext===trueの場合のみ、JSON形式指示より前の固定位置へ
+  //   短いルール文を挿入する（後置concatは行わない＝JSON-only契約は常に維持される）。実データはcontext側へ渡す。
+  //   Formal Truth Priority Architecture 実装⑤: 既存Leader Rule Engineの機械判定結果
+  //   （detectInformationInsufficientStub()→evaluateLeaderRuleFacts()→「情報不足形式の担当」）は
+  //   既に下の leaderRuleBlock としてcontextへ渡っている。新しいValidatorは作らず、その既存出力を
+  //   会社最終判断へ反映させる採否ルールを1行だけ追加する（担当の回答自体は削除・改変しない）。
+  const caseContextRule = caseContext
+    ? ['', '入力内に【CASE CONTEXT】（機械判定済み正式情報）が含まれる場合、最終回答（reply）はその内容と矛盾してはいけません。各担当・戦略顧問の自然言語判断がCASE CONTEXT内の正式値と矛盾する場合（例：正式値でsufficient/passedとなっている項目を「不足」「未確認」と述べている等）は、正式値を優先してください。すべての項目を毎回列挙する必要はありませんが、ユーザーの判断に関わる場合は簡潔に反映してください。',
+       '構造化サマリーで「情報不足形式の担当」として機械判定された担当が、CASE CONTEXT内に存在する項目を「不足」「未確認」「未提示」として述べている場合、その主張は会社の最終判断へ採用しないでください（その担当の回答全体を無視するという意味ではありません。CASE CONTEXTに存在しない項目についての指摘は、必要に応じて採用してかまいません）。', '']
+    : [];
   const systemPrompt = [
     'あなたは縁美創AI COMPANYのLeaderです。',
     'この回答は、各担当の意見を並べたまとめではありません。ENBISOU AI COMPANYとしてユーザーへ提示する唯一の正式回答です。',
@@ -1307,6 +1391,7 @@ async function leaderSummary(userMessage, memberReplies, strategyReply, ruleArti
     '実行順序：[①→②→③の順で進めてください / または並行可など]',
     '',
     '各担当の意見をそのまま引用・列挙しないこと。余分な前置き・後書き禁止。上記フォーマット通りに返すこと。',
+    ...caseContextRule,
     '必ず以下のJSON形式で返してください：',
     '{"reply":"🎯 今回の推奨方針\\n\\n① ...\\n② ...\\n③ ...\\n\\n期待効果：...\\n実行順序：..."}',
     'JSON以外は一切出力しないこと。',
@@ -1363,6 +1448,7 @@ async function leaderSummary(userMessage, memberReplies, strategyReply, ruleArti
     leaderRuleBlock, // 空文字列時は下のfilter(Boolean)で除外＝区切りも追加しない（二重挿入なし）
     `【各担当提案】\n${repliesText}`,
     `【戦略顧問判断】${(strategyReply || '').slice(0, 300)}`,
+    caseContext, // Leader Case Context Phase2修正C: 実データはmemberReplies等と同じcontext側で渡す
   ].filter(Boolean).join('\n');
   const text = await callOpenAI(systemPrompt, context);
   if (!text) return null;
@@ -1663,20 +1749,26 @@ function buildStrategyCompanyContext({ successRate, avgRating, totalCases, inter
 }
 
 // ── 担当返答生成 ─────────────────────────────────────────────
-async function generateReply({ messageText = '', assignee = 'leader', history = [], bestPractices = [], avoidPractices = [], companyContext = '', strategyContext = '', memberData = null, knowledgeContext = '' }) {
+async function generateReply({ messageText = '', assignee = 'leader', history = [], bestPractices = [], avoidPractices = [], companyContext = '', strategyContext = '', memberData = null, knowledgeContext = '', caseContext = '' }) {
   // LINE_AGENT_PROFILESに未登録でも autoGenerateProfile() で対応するため
   // 'leader' へのフォールバックは廃止。assignee をそのまま使う。
   const agent = assignee || 'leader';
   const practiceData = (bestPractices.length > 0 || avoidPractices.length > 0 || companyContext || strategyContext)
     ? { bestPractices, avoidPractices, companyContext, strategyContext }
     : null;
-  let systemPrompt = buildSystemPrompt(agent, practiceData, memberData);
+  let systemPrompt = buildSystemPrompt(agent, practiceData, memberData, { hasCaseContext: !!caseContext });
   // Phase25: Knowledge Injection — 社長指示を最優先とし、Knowledgeは補助情報として末尾に追記
   if (knowledgeContext) systemPrompt += '\n' + knowledgeContext;
+  // Formal Truth Priority Architecture 実装①: Case Contextの「実データ」はSystem Promptへ連結せず、
+  //   user-role側（callOpenAIの第2引数）へ渡す。修正B（strategyConsolidate）・修正C（leaderSummary）と同一方針。
+  //   System Prompt末尾のJSON形式指示（'JSON以外は一切出力しないこと。'）より後ろへ実データをconcatすると
+  //   JSON-only契約が破壊されるため、後置connectは行わない。ルール文はbuildSystemPrompt()内の
+  //   formalTruthRule（固定位置）が担当する。caseContext未指定時はuserContent===messageText＝既存と完全同一（fail-open）。
+  const userContent = caseContext ? `${messageText}\n\n${caseContext}` : messageText;
   if (process.env.DEBUG_PROMPT === '1') {
     console.log(`\n=== [DEBUG] systemPrompt for agent="${agent}" ===\n${systemPrompt.slice(0, 1200)}\n===END===\n`);
   }
-  const text = await callOpenAI(systemPrompt, messageText, history);
+  const text = await callOpenAI(systemPrompt, userContent, history);
   return {
     text,
     fixedSuggestions: LINE_AGENT_PROFILES[agent]?.fixedSuggestions || null,
@@ -1721,14 +1813,19 @@ function findBalancedEnd(str, startIdx) {
 
 // ── Strategy 全担当統合意見 ──────────────────────────────────
 // memberReplies: [{ id, name, reply }]
-async function strategyConsolidate({ userMessage, memberReplies }) {
+async function strategyConsolidate({ userMessage, memberReplies, caseContext = '' }) {
   if (!OPENAI_API_KEY || !costTracker.canProcess()) return null;
   if (!memberReplies || memberReplies.length === 0) return null;
   const repliesText = memberReplies
     .map(r => `【${r.name || r.id}】${r.reply}`)
     .join('\n\n');
-  const context = `【ユーザーの依頼】${userMessage}\n\n【各担当の提案】\n${repliesText}`;
-  const text = await callOpenAI(buildStrategyConsolidatePrompt(), context);
+  // Leader Case Context Phase2修正B: 実データはmemberRepliesと同じcontext（user-role）側へ渡す。
+  //   system prompt側にはJSON形式指示より前の固定位置へ短いルール文のみ挿入する（buildStrategyConsolidatePrompt参照）。
+  //   後置concatは行わない＝JSON-only契約は常に維持される。caseContext未指定時は既存と完全同一（fail-open）。
+  const context = `【ユーザーの依頼】${userMessage}\n\n【各担当の提案】\n${repliesText}`
+    + (caseContext ? `\n\n${caseContext}` : '');
+  const strategyPrompt = buildStrategyConsolidatePrompt(!!caseContext);
+  const text = await callOpenAI(strategyPrompt, context);
   if (!text) return null;
   try {
     const start = text.indexOf('{');
@@ -2703,7 +2800,7 @@ const IADP_STRUCTURED_OUTPUT_SCHEMA = {
   additionalProperties: false,
 };
 
-async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult, knowledgeResult, agentCaller, accountIntelligenceMode = false, existingIntelligenceContext = null }) {
+async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult, knowledgeResult, agentCaller, accountIntelligenceMode = false, existingIntelligenceContext = null, caseContext = '' }) {
   const startMs = Date.now();
 
   // 完了した通常タスクの結果を収集（後処理・LeaderFinal除く）
@@ -2761,7 +2858,8 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   // memberReplies 形式（成果物生成のため全文を渡す）
   const memberReplies = mainTasks.map(function(t) {
     var profile = LINE_AGENT_PROFILES[t.agentId];
-    var reply = _extractReply(t.result || '');
+    // STEP2: suggestions（実際の提案本文）を含む完全な成果物をLeader Finalへ渡す
+    var reply = _extractReply(_atDeliverableText(t));
     return { id: t.agentId, name: profile ? profile.name : t.agentId, reply: reply.slice(0, 1200) };
   });
 
@@ -2953,6 +3051,21 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '要約・方針・提案は不要。完成した文章・コピー・構成をそのまま出力してください。',
     ].filter(Boolean);
     question = parts.join('\n');
+  }
+
+  // Formal Truth Priority Architecture: LEADER_FINAL_PROMPT／ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT は
+  //   buildSystemPrompt()を経由しない独立の固定System Prompt定数のため、hasCaseContextオプションを
+  //   直接渡せない（両定数は無変更）。そのため短いルール文＋実データをuser側（question）末尾へ
+  //   まとめて付加する（leaderSummary()の修正Cと同じ趣旨。JSON契約はSystem Prompt側にあるため
+  //   user側への付加はJSON-only契約を破壊しない）。caseContext未指定時はquestionと完全同一（fail-open）。
+  if (caseContext) {
+    question += '\n\n' + [
+      '【CASE CONTEXT優先ルール】',
+      '入力内に【CASE CONTEXT】（機械判定済み正式情報）が含まれる場合、成果物の内容はその正式値と矛盾してはいけません。',
+      '各担当・戦略顧問の自然言語判断がCASE CONTEXT内の正式値と矛盾する場合（例：正式値でsufficient/passedとなっている項目を「不足」「未確認」と述べている等）は、正式値を優先してください。',
+      '',
+      caseContext,
+    ].join('\n');
   }
 
   var text = '';
@@ -3183,9 +3296,80 @@ async function runCompanyBrain(userMessage, agentCaller, knowledgeData) {
   };
 }
 
-async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null, accountIntelligenceMode = false, existingIntelligenceContext = null, complianceContext = null }) {
+// ══════════════════════════════════════════════════════════════
+// End-to-End Completion Stabilization STEP3: Auto Task 1 workflowのAI call事前見積もり
+//   実行前に「何回・どの担当・どのProviderのAI callが発生するか」を正確に算出する純関数
+//   （API呼び出しなし・副作用なし）。無条件発火するCompany Brain / Reviewer / Strategy /
+//   Leader Final を必ず含めるため、「最大4call承認 → 実際5call」のような超過が起きない。
+//   実際の発火条件はrunAutoTaskWorkflow()本体と一致させている：
+//     ・Company Brain … 常に1回（無条件）
+//     ・Main Task Agents … tasks件数分
+//     ・Autonomous Consult … autonomousConsult=true時のみ・workflow全体でmaxConsultationsが上限
+//     ・Reviewer / Strategy … 主タスクが1件以上完了した場合（実質必須）
+//     ・Leader Final … 常に1回（無条件・callOpenAI直接）
+// ══════════════════════════════════════════════════════════════
+function estimateAutoTaskCalls({ tasks = [], autonomousConsult = false, maxConsultations = 2 } = {}) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  const providerOf = (agentId) => (AGENT_WORKFLOW_CONFIG[agentId] || {}).provider || 'openai';
+  const calls = [];
+
+  calls.push({ step: 'company_brain', agentId: 'brain', provider: 'claude', conditional: false, note: '無条件で1回' });
+  list.forEach((t) => {
+    const a = t && t.agentId;
+    calls.push({ step: 'main_task', agentId: a, provider: providerOf(a), conditional: false, note: 'tasks件数分' });
+  });
+
+  const hasMain = list.length > 0;
+  const consultMax = autonomousConsult && hasMain ? Math.max(0, maxConsultations) : 0;
+  for (let i = 0; i < consultMax; i++) {
+    calls.push({ step: 'autonomous_consult', agentId: null, provider: 'unknown', conditional: true, note: '相談先により変動・workflow全体で上限' });
+  }
+
+  if (hasMain) {
+    calls.push({ step: 'reviewer', agentId: 'reviewer', provider: providerOf('reviewer'), conditional: true, note: '主タスク1件以上完了時（実質必須）' });
+    calls.push({ step: 'strategy', agentId: 'strategy', provider: providerOf('strategy'), conditional: true, note: 'Reviewerと同一条件' });
+  }
+  calls.push({ step: 'leader_final', agentId: 'leader', provider: 'openai', conditional: false, note: '無条件で1回・callOpenAI直接' });
+
+  const min = calls.filter((c) => !c.conditional).length;
+  return {
+    calls,
+    max: calls.length,          // 承認上限として提示すべき値
+    min,                        // 条件付きが全て不発の場合
+    byProvider: calls.reduce((acc, c) => { acc[c.provider] = (acc[c.provider] || 0) + 1; return acc; }, {}),
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
+// End-to-End Completion Stabilization STEP2: 担当成果物の引継ぎ契約
+//   normalizeAgentResult()はLLM応答の {"reply":"...","suggestions":[...]} を reply のみへ正規化するため、
+//   task.result には suggestions（＝実際の提案本文）が含まれない。原文は task.rawResult に保持されているので、
+//   後続担当（Reviewer/Strategy/Leader Final）へ渡す際はそこから suggestions を復元して合成する。
+//   task.result 自体は書き換えない（UI表示・保存契約・既存の派生判定は不変）。
+//   rawResultが無い／JSONでない／suggestionsが無い場合は task.result をそのまま返す（fail-open）。
+function _atDeliverableText(task) {
+  var base = (task && task.result) ? String(task.result) : '';
+  try {
+    if (!task || !task.rawResult) return base;
+    var raw = String(task.rawResult).trim();
+    var s = raw.indexOf('{');
+    var e = raw.lastIndexOf('}');
+    if (s === -1 || e <= s) return base;
+    var parsed = JSON.parse(raw.slice(s, e + 1));
+    var sug = parsed && Array.isArray(parsed.suggestions) ? parsed.suggestions : null;
+    if (!sug || sug.length === 0) return base;
+    var lines = sug.filter(function (x) { return typeof x === 'string' && x.trim(); });
+    if (lines.length === 0) return base;
+    return base + '\n' + lines.join('\n');
+  } catch (e) { return base; } // fail-open: 解析できなければ既存挙動と完全同一
+}
+
+async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = false, workflowId = null, agentCaller = null, maxConsultations = 2, onProgress = null, accountIntelligenceMode = false, existingIntelligenceContext = null, caseContext = '', complianceContext = null }) {
   // APFR Step C-1A: complianceContext は受け取れる状態まで（引数受領のみ）。
   //   buildSystemPrompt()等のprompt文字列生成へはC-1Aでは一切使用しない（未使用のまま・C-1Bで別途接続）。
+  // Formal Truth Priority Architecture: caseIdそのものはWorkflow内部で再解決しない。
+  //   呼び出し元（server.js /api/auto-task）がWorkflow開始前に1回だけ構築したCase Context文字列
+  //   （snapshot）だけを使用する。未指定（''）時は以下の全箇所が従来と完全同一（fail-open）。
   // Phase39: ワークフロー全体の相談回数カウンター（最大 maxConsultations 回）
   let _consultCount = 0;
   // tasks に provider / enabled / collaborators / status / result / タイムスタンプ を付与
@@ -3404,9 +3588,12 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
           .join('\n\n');
 
         // 指示内容に前工程の成果を付加
-        const fullInstruction = prevResults
+        const baseInstruction = prevResults
           ? `${task.instruction}\n\n---\n前工程の成果（参考にして作業すること）：\n${prevResults}`
           : task.instruction;
+        // Formal Truth Priority Architecture: Case Context実データはuser側（fullInstruction）の末尾へ。
+        //   caseContext未指定時は従来のfullInstructionと文字列完全一致（fail-open）。
+        const fullInstruction = caseContext ? `${baseInstruction}\n\n${caseContext}` : baseInstruction;
 
         // provider（AIの種類）に応じて実行
         // Phase37: agentCaller 経由で Claude / OpenAI を動的ルーティング
@@ -3425,6 +3612,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
           complianceContext: complianceContext, // APFR Step C-1B: 全agentへ無条件で渡す・agent限定はbuildCompliancePromptBlock内部で行う（既存intelligenceContextAvailableと同一パターン）
           accountIntelligenceMode: accountIntelligenceMode,
           intelligenceContextAvailable: _iadpHasUsableIntelligence(existingIntelligenceContext),
+          hasCaseContext: !!caseContext, // Formal Truth Priority Architecture: IADP Self-Completion Modeとは独立・併存可
         });
         if (agentCaller) {
           const cr = await agentCaller(task.agentId, systemPrompt, fullInstruction, []);
@@ -3541,7 +3729,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
             taskHistory.push(acHistEntry);
 
             try {
-              const acSystemPrompt = buildSystemPrompt(consultTargetId, null, null);
+              const acSystemPrompt = buildSystemPrompt(consultTargetId, null, null, { hasCaseContext: !!caseContext });
               const acQuestion = [
                 `【依頼内容】${task.instruction}`,
                 ``,
@@ -3549,7 +3737,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
                 cleanResult,
                 ``,
                 `この提案についてあなたの専門的な観点からフィードバック・補足・改善点を簡潔に提示してください。`,
-              ].join('\n');
+              ].join('\n') + (caseContext ? `\n\n${caseContext}` : ''); // Formal Truth Priority Architecture: 未指定時は従来と完全一致
 
               // Phase39: agentCaller 経由で Provider 設定を維持
               const acStart = Date.now();
@@ -3668,11 +3856,12 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
       // 各担当のメイン成果（自律相談の追記部分を除く）を収集
       const mainResultsText = completedMainTasks.map(t => {
         const p        = LINE_AGENT_PROFILES[t.agentId];
-        const mainPart = (t.result || '').split('\n\n---\n')[0]; // 自律相談追記前の本文
+        // STEP2: suggestions（実際の提案本文）を含む完全な成果物をReviewerへ渡す
+        const mainPart = _atDeliverableText(t).split('\n\n---\n')[0]; // 自律相談追記前の本文
         return `【${p ? p.name : t.agentId}】\n${mainPart}`;
       }).join('\n\n---\n');
 
-      const rvSystemPrompt = buildSystemPrompt('reviewer', null, null);
+      const rvSystemPrompt = buildSystemPrompt('reviewer', null, null, { hasCaseContext: !!caseContext });
       const rvQuestion     = [
         `【元の依頼】${userMessage}`,
         ``,
@@ -3683,7 +3872,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         `①抜け漏れ（依頼に対して不足している点）`,
         `②品質（各担当の成果物の完成度）`,
         `③矛盾（担当間で内容が食い違っている点）`,
-      ].join('\n');
+      ].join('\n') + (caseContext ? `\n\n${caseContext}` : ''); // Formal Truth Priority Architecture: 未指定時は従来と完全一致
 
       let rvReply;
       const rvStartMs = Date.now();
@@ -3789,11 +3978,12 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
       const reviewerOutput = reviewerTask.result || '（Reviewerのフィードバックなし）';
       const summaryText    = completedMainTasks.map(t => {
         const p        = LINE_AGENT_PROFILES[t.agentId];
-        const mainPart = (t.result || '').split('\n\n---\n')[0];
+        // STEP2: suggestions を含む完全な成果物から要約する（要約長は既存どおり200文字）
+        const mainPart = _atDeliverableText(t).split('\n\n---\n')[0];
         return `【${p ? p.name : t.agentId}】${mainPart.slice(0, 200)}…`;
       }).join('\n');
 
-      const stSystemPrompt = buildSystemPrompt('strategy', null, null);
+      const stSystemPrompt = buildSystemPrompt('strategy', null, null, { hasCaseContext: !!caseContext });
       const stQuestion     = [
         `【元の依頼】${userMessage}`,
         ``,
@@ -3807,7 +3997,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
         `①優先順位（最初に実行すべきことは何か）`,
         `②改善案（Reviewerの指摘を受けての具体的な改善点）`,
         `③リスク（このまま進む場合の懸念点）`,
-      ].join('\n');
+      ].join('\n') + (caseContext ? `\n\n${caseContext}` : ''); // Formal Truth Priority Architecture: 未指定時は従来と完全一致
 
       let stReply;
       const stStartMs = Date.now();
@@ -3919,6 +4109,7 @@ async function runAutoTaskWorkflow({ userMessage, tasks, autonomousConsult = fal
       agentCaller,
       accountIntelligenceMode,
       existingIntelligenceContext,
+      caseContext, // Formal Truth Priority Architecture: Workflow開始時snapshotをLeader Finalにも伝播
     });
 
     leaderFinalTask.result       = leaderFinalResult.text;
@@ -3982,6 +4173,8 @@ module.exports = {
   CONSULTATION_LEVELS,
   shouldAutoConsult,
   runAutoTaskWorkflow,
+  estimateAutoTaskCalls,   // STEP3: 実行前AI call見積もり（純関数・API呼び出しなし）
+  _atDeliverableText,      // STEP2: 担当成果物の引継ぎ（テスト用に公開・副作用なし）
   runCompanyBrain,
   runKnowledgeLookup,
   runLeaderFinalResponse,
