@@ -545,7 +545,11 @@ caseHeader('static: IADP必須ガード無変更 / 既存Contract非干渉（11,
   assert(indexSrc.indexOf('_complianceContext = _apfrBuildComplianceContext(') !== -1, '52. C-1A Compliance Context既存配線が維持されている');
   assert(indexSrc.indexOf('function evaluateQualityGate(packageQuality) {') !== -1, '53. evaluateQualityGate()が無変更で存在する');
   assert(indexSrc.indexOf('function evaluateComplianceGate(outputDraft, complianceContext) {') !== -1, '54. evaluateComplianceGate()が無変更で存在する');
-  assert(indexSrc.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai);') !== -1, '55. User Approval（canApprove）算出が無変更');
+  // C-1C-2b-1（Mobile Approval Enforcement）でcanApproveへ `!_mapCompliance.blocked` が追加された。
+  //   本test（LCC Phase2 + Option B）の関心は「Case Data Context配線がUser Approvalを操作していないこと」であり、
+  //   既存2条件が維持されていることを引き続き検証する（EnforcementはCompliance系列の別工程による追加）。
+  assert(indexSrc.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;') !== -1,
+    '55. User Approval（canApprove）の既存2条件が維持されている（C-1C-2b-1のEnforcement条件追加後も_mapAllChecked/_mapReviewApprovedは不変）');
   assert(indexSrc.indexOf("READY:     'ready',") !== -1, '56. OUTPUT_STATUS.READYが無変更');
   assert(indexSrc.indexOf('function _aicIntegratedScore(c) {') !== -1, '57. _aicIntegratedScore()が無変更で存在する');
 

@@ -433,10 +433,23 @@ caseHeader('28. OUTPUT_STATUS.READY変更0');
 caseHeader('29-30. User Approval変更0');
 {
   const src = fs.readFileSync(indexHtmlPath, 'utf8');
-  assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai);') !== -1, '29-1. IADP canApprove算出ロジックが既存のまま');
+  // APFR Step C-1C-2b-1（Mobile Approval Enforcement）により canApprove へ Compliance Assessment 由来の
+  //   `!_mapCompliance.blocked` が追加された。既存2条件（_mapAllChecked / _mapReviewApproved）は
+  //   そのまま維持されており、判定が緩められたのではなく **blocked時に承認不可となる条件が追加** されている。
+  //   本assertionは「既存2条件の維持」＋「Enforcement条件の存在」の両方を検証する形へ追随修正（弱化していない）。
+  assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;') !== -1,
+    '29-1. canApprove算出が既存2条件を維持したままCompliance Enforcement条件を追加している（C-1C-2b-1）');
   const apStart = src.indexOf('function approveInstagramPackage() {');
   const apBody = src.slice(apStart, src.indexOf('\n}\n', apStart));
-  assert(apBody.indexOf('Assessment') === -1, '29-2. approveInstagramPackage()本体にAssessmentへの参照0件');
+  // C-1C-2b-1でapproveInstagramPackage()へsubmit直前のCompliance再評価が接続された（stale防止）。
+  //   旧assertion「Assessmentへの参照0件（＝承認ブロック未接続）」はC-1C-2a時点の正しい状態を固定していたが、
+  //   C-1C-2b-1はその接続自体が目的のため、**接続されていること**を検証する形へ追随修正する。
+  //   detectorの再実装が持ち込まれていないことは引き続き検証する（弱化していない）。
+  assert(apBody.indexOf('_apfrEvaluateMobileApprovalCompliance()') !== -1,
+    '29-2. approveInstagramPackage()がsubmit直前にCompliance再評価を行う（C-1C-2b-1・stale防止）');
+  assert(apBody.indexOf('listingNgWords') === -1 && apBody.indexOf('APFR_DISCLOSURE_ACCEPTED_MARKERS') === -1
+    && apBody.indexOf('_apfrResolveCurrentFact') === -1,
+    '29-2b. approveInstagramPackage()本体でdetector/Resolverを再実装していない（helper経由のみ）');
   const iaStart = src.indexOf('function _iadpApproveDesign() {');
   const iaBody = src.slice(iaStart, src.indexOf('\n}\n', iaStart));
   assert(iaBody.indexOf('Assessment') === -1, '30-1. _iadpApproveDesign()本体にAssessmentへの参照0件');

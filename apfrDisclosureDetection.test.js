@@ -358,12 +358,20 @@ caseHeader('33. READY変更0');
 caseHeader('34. User Approval変更0');
 {
   const src = fs.readFileSync(indexHtmlPath, 'utf8');
-  assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai);') !== -1, '34-1. IADP canApprove算出ロジックが既存のまま');
+  // C-1C-2b-1（Mobile Approval Enforcement）でcanApproveへ `!_mapCompliance.blocked` が追加された。
+  //   本test（C-1C-1b）の関心は「_apfrEvaluateDisclosureMarkers()がUser Approvalを直接操作していないこと」であり、
+  //   既存2条件が維持されていることを引き続き検証する（Enforcementはhelper経由でありC-1C-1bの責務外）。
+  assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;') !== -1,
+    '34-1. canApprove算出が既存2条件を維持している（C-1C-2b-1のEnforcement条件追加後も_mapAllChecked/_mapReviewApprovedは不変）');
   const start = src.indexOf('function approveInstagramPackage() {');
   assert(start !== -1, '34-2. approveInstagramPackage()が実在する');
   const end = src.indexOf('\n}\n', start);
   const body = src.slice(start, end);
-  assert(body.indexOf('Disclosure') === -1 && body.indexOf('disclosure') === -1, '34-3. approveInstagramPackage()本体にDisclosure Detectionへの参照が0件（承認ブロック未接続）');
+  // C-1C-2b-1でapproveInstagramPackage()へCompliance Enforcementが接続された（承認ブロック接続済み）。
+  //   ただし接続は集約helper（_apfrEvaluateMobileApprovalCompliance → Assessment）経由であり、
+  //   Disclosure Detectorを直接呼ぶ・再実装することは引き続き禁止であるため、その点を検証する形へ追随修正する。
+  assert(body.indexOf('_apfrEvaluateDisclosureMarkers') === -1 && body.indexOf('APFR_DISCLOSURE_ACCEPTED_MARKERS') === -1,
+    '34-3. approveInstagramPackage()本体がDisclosure Detectorを直接参照・再実装していない（C-1C-2b-1のEnforcementはhelper経由のみ）');
 }
 
 caseHeader('35. server.js変更0（Disclosure Detection関連識別子が存在しない）');

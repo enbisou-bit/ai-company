@@ -441,7 +441,11 @@ caseHeader('17. IADP無回帰: canApprove算出ロジック・Executive Decision
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
   const src = fs.readFileSync(indexHtmlPath, 'utf8');
-  assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai);') !== -1, '17-1. IADP canApprove算出ロジックが既存のまま');
+  // C-1C-2b-1（Mobile Approval Enforcement）でcanApproveへ `!_mapCompliance.blocked` が追加された。
+  //   本test（C-1C-1）の関心は「evaluateComplianceGate()がUser Approvalを直接操作していないこと」であり、
+  //   既存2条件が維持されていることを引き続き検証する（Enforcementはhelper経由でありC-1C-1の責務外）。
+  assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;') !== -1,
+    '17-1. canApprove算出が既存2条件を維持している（C-1C-2b-1のEnforcement条件追加後も_mapAllChecked/_mapReviewApprovedは不変）');
   assert(src.indexOf('inbox.qualityGate = (typeof evaluateQualityGate === ') !== -1, '17-2. Executive Decision Engine内のevaluateQualityGate呼び出し箇所が既存のまま（変更なし）');
 }
 

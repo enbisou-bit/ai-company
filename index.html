@@ -37255,7 +37255,14 @@ function createMobileApprovalDraft(outputDraft) {
   });
 
   var approvalStatus = _mapDerivedStatus(mai);
-  var canApprove = _mapAllChecked() && _mapReviewApproved(mai);
+  // APFR Step C-1C-2b-1: Compliance Assessment blocked時はMobile Approvalを承認不可にする。
+  //   判定源は _apfrEvaluateComplianceAssessment()（C-1C-2a）のみで、detectorの再実装は行わない。
+  //   not_checked／例外はfail-openで既存条件のみに従う（未検査を理由に承認を止めない）。
+  //   UIのdisabled属性だけをEnforcement正本にせず、approveInstagramPackage()内でもsubmit直前に再評価する。
+  var _mapCompliance = (typeof _apfrEvaluateMobileApprovalCompliance === 'function')
+    ? _apfrEvaluateMobileApprovalCompliance()
+    : { evaluated: false, blocked: false, status: 'not_checked', blockers: [], unchecked: [] };
+  var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;
 
   var reviewSummary = {
     overallStatus: mai.reviewStatus,
@@ -37296,6 +37303,16 @@ function createMobileApprovalDraft(outputDraft) {
   var warnings = ['本Phaseは承認とPublishing Readyへの引き渡しのみです。実際の投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行いません（承認後の投稿は手動）。'];
   if (_mobileApprovalState.approveBlocked) warnings.push('承認できません。全チェック項目の完了とMobile Review Centerでの承認（reviewStatus=承認済）が必要です。');
   if (approvalStatus !== 'approved' && revisionCount > 0) warnings.push('Mobile Review Centerに未対応の修正依頼が' + revisionCount + '件あります。');
+  // APFR Step C-1C-2b-1: Compliance blocked時は理由と復旧導線を表示する（override UIは設けない）。
+  //   成果物修正またはAPFR Fact訂正（CUI-2）でAssessmentがclearへ戻れば、次回描画・submit再評価で自動的に承認可能へ復帰する。
+  if (_mapCompliance.blocked) {
+    warnings.push('承認できません。理由：'
+      + _mapCompliance.blockers.map(function (b) { return b.label + '（' + b.detail + '）'; }).join('・')
+      + '。成果物を修正すると自動的に再判定されます。');
+  } else if (_mapCompliance.unchecked.length > 0) {
+    // not_checkedはfail-open（承認可）。ただし「全Compliance確認済み」と誤解させないため警告のみ表示する。
+    warnings.push('Compliance Assessmentの一部が未検査です（未登録のFactがあるため）。承認は可能ですが、内容はご自身で確認してください。');
+  }
 
   return {
     version: MOBILE_APPROVAL_VERSION,
@@ -37337,6 +37354,18 @@ function toggleApprovalCheck(key) {
 function approveInstagramPackage() {
   var review = _lastOutputDraft ? (_lastOutputDraft.mobileReviewCenter || createMobileReviewCenterDraft(_lastOutputDraft)) : null;
   var mai = review ? review.mobileApprovalInput : null;
+  // APFR Step C-1C-2b-1: submit直前のCompliance再評価（CUI-2のstale target防止と同一思想）。
+  //   描画時にclearでも押下直前にFact訂正・成果物変更でblockedへ転じ得るため、UIのdisabled属性だけを
+  //   Enforcement正本にせず、ここで必ず再評価する。blocked時は decision を 'approved' へ変更せず、
+  //   pushApprovalToServer() へも進まない（既存Approval stateを破壊しない・新規Approval保存を行わない）。
+  var _apCompliance = (typeof _apfrEvaluateMobileApprovalCompliance === 'function')
+    ? _apfrEvaluateMobileApprovalCompliance()
+    : { blocked: false };
+  if (_apCompliance.blocked) {
+    _mobileApprovalState.approveBlocked = true;   // decision・approvedAtは変更しない
+    _mapRerender();                                // warnings（blocker理由）を表示するための再描画のみ
+    return;                                        // pushApprovalToServer()へ進まない
+  }
   if (_mapAllChecked() && _mapReviewApproved(mai)) {
     _mobileApprovalState.decision = 'approved';
     _mobileApprovalState.approvedAt = new Date().toISOString();
@@ -40046,6 +40075,67 @@ function _apfrEvaluateComplianceAssessment(outputDraft, complianceContext) {
     };
   } catch (e) {
     return EMPTY_NOT_CHECKED; // fail-open: 例外時は「検査していない」として扱う（誤ってclearを返さない）
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-2b-1: Mobile Approval Enforcement（読み取り専用・Approval可否の薄い判定のみ）
+//   C-1C-2aの `_apfrEvaluateComplianceAssessment()` を**唯一の判定源**として、
+//   通常Instagram投稿のMobile Approvalを実際に承認不可とするかを返すだけのhelper。
+//
+//   ★本関数はAssessmentを呼ぶだけで、独自判定を一切持たない：
+//     ・listingNgWordsの再検索をしない（evaluateComplianceGate()の責務）
+//     ・広告開示マーカーの再検索をしない（_apfrEvaluateDisclosureMarkers()の責務）
+//     ・advertisingDisclosureRequirementsの独自判定をしない
+//     ・APFR Resolver（_apfrResolveCurrentFact / _apfrResolveCurrentFacts）を呼ばない
+//     ・product.facts を直接走査しない
+//   Cross-case／Cross-productのscope guardは既存 _apfrCurrentAdoptedProduct()（caseId完全一致）と
+//   既存Resolverのguardへ完全に委譲する（独自scope resolutionを追加しない）。
+//   → 採用商品が無い／別案件へ切替済みの場合は product=null となり complianceContext={} となるため、
+//     Assessmentは not_checked を返し **Compliance理由での誤ブロックは発生しない**（fail-open）。
+//
+//   Enforcement Contract（C-1C-2b-1）:
+//     status==='blocked'      → blocked:true（Mobile Approvalを承認不可にする唯一の条件）
+//     status==='not_checked'  → blocked:false（**fail-open**。未検査を理由に承認を止めない）
+//     status==='clear'        → blocked:false
+//     例外・Assessment未定義  → blocked:false（誤ってblockedを詐称しない＝既存承認動作を壊さない）
+//
+//   本Enforcementの適用範囲（Enforcement spine）:
+//     Compliance Assessment blocked
+//       → Mobile Approval 不可（canApprove=false ＋ submit直前再評価で拒否）
+//       → Publishing Ready 到達不可（createPublishingReadyDraft は approvalStatus 由来のため自動追従・独立guard不要）
+//       → markInstagramPublished 実行不可（既存 if (!approved) return; のhard guardで自動）
+//     変更しないもの: OUTPUT_STATUS.READY（AI生成完了状態として維持）／accountCreationReadiness
+//     （C-1C-2b-2で別途）／evaluateQualityGate()／Executive Decision Engine／server-side validation
+//     （APFR Resolverがclient専用のためC-1A Contract上server側で再評価できない＝client-only Enforcement。
+//      直接POSTによる技術的回避可能性は残るが、本工程の目的は単一運用者の操作ミス防止である）。
+//
+//   保存: runtime onlyの読み取り専用（DB・Output Draft・APFR Fact・Compliance Context・EERへの
+//   書き込みは0・呼び出しのたび再計算）。
+// ══════════════════════════════════════════════════════════════
+function _apfrEvaluateMobileApprovalCompliance() {
+  var NOT_BLOCKED = { evaluated: false, blocked: false, status: 'not_checked', blockers: [], unchecked: [] };
+  try {
+    if (typeof _apfrCurrentAdoptedProduct !== 'function'
+      || typeof _apfrBuildComplianceContext !== 'function'
+      || typeof _apfrEvaluateComplianceAssessment !== 'function') return NOT_BLOCKED;
+
+    // Cross-case／Cross-productのguardは既存関数へ委譲（product=nullなら空contextとなりnot_checked）
+    var product = _apfrCurrentAdoptedProduct();
+    var complianceContext = product ? _apfrBuildComplianceContext(product) : {};
+
+    var assessment = _apfrEvaluateComplianceAssessment(_lastOutputDraft, complianceContext);
+    var status = (assessment && typeof assessment.status === 'string') ? assessment.status : 'not_checked';
+
+    return {
+      evaluated: !!(assessment && assessment.executed),
+      blocked: status === 'blocked', // blockedのみ承認不可（not_checkedはfail-open）
+      status: status,
+      blockers: (assessment && Array.isArray(assessment.blockers)) ? assessment.blockers : [],
+      unchecked: (assessment && Array.isArray(assessment.unchecked)) ? assessment.unchecked : [],
+    };
+  } catch (e) {
+    return NOT_BLOCKED; // fail-open: 例外時は承認を止めない（誤ってblockedを詐称しない）
   }
 }
 
