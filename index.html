@@ -31657,13 +31657,47 @@ function buildComplianceGateHtml() {
       ? '禁止語違反：0件'
       : 'listingNgWordsが未登録、またはFactが未確定のため検査していません';
 
+  // APFR Step C-1C-1b: Advertising Disclosure Detection（読み取り専用・非ブロッキング・別項目として並記）。
+  //   evaluateComplianceGate()（listingNgWords）とは完全に独立した表示。User Approval・READY・
+  //   Quality Gate・Executive Decisionはいずれも自動停止しない（非ブロッキングを維持）。
+  var disclosureResult = (typeof _apfrEvaluateDisclosureMarkers === 'function')
+    ? _apfrEvaluateDisclosureMarkers(_lastOutputDraft, complianceContext)
+    : { executed: false, checked: false, requirementPresent: false, foundMarkers: [], status: 'not_checked' };
+
+  var disclosureStatusMeta = {
+    satisfied:   { label: 'SATISFIED',  color: '#5ddb8e' },
+    missing:     { label: 'MISSING',    color: '#e06060' },
+    not_checked: { label: 'NOT CHECKED', color: 'rgba(255,255,255,0.35)' },
+  };
+  var disclosureMeta = disclosureStatusMeta[disclosureResult.status] || disclosureStatusMeta.not_checked;
+
+  var disclosureSummaryText = (disclosureResult.status === 'missing')
+    ? '広告開示マーカーが確認できません'
+    : (disclosureResult.status === 'satisfied')
+      ? '確認済み：' + disclosureResult.foundMarkers.map(esc).join('・')
+      : '広告表示義務が未登録、またはFactが未確定のため検査していません';
+
+  // Instagramのタイアップ投稿ラベルは外部UI操作のため本Detectionでは検証していない旨を明示（satisfied/missing時のみ）
+  var disclosureInstagramNote = (disclosureResult.status !== 'not_checked')
+    ? '<div class="oe-quality-sub" style="margin-top:2px;opacity:.55;">※Instagram投稿時はタイアップ投稿ラベルの設定も別途確認してください（本Detectionでは検証していません）。</div>'
+    : '';
+
+  var disclosureHtml = '<div class="oe-quality-overall" style="margin-top:8px;">'
+    +   '<span style="opacity:.7;font-size:11px;">広告開示：</span> '
+    +   '<span class="oe-quality-badge" style="background:' + disclosureMeta.color + '22;color:' + disclosureMeta.color + ';border:1px solid ' + disclosureMeta.color + '55;">' + disclosureMeta.label + '</span>'
+    + '</div>'
+    + '<div class="oe-status-sub">' + esc(disclosureSummaryText) + '</div>'
+    + disclosureInstagramNote;
+
   return '<div class="oe-quality-section">'
-    + '<div class="oe-quality-title">🚫 Compliance Check <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Step C-1C-1・listingNgWordsのみ</span></div>'
+    + '<div class="oe-quality-title">🚫 Compliance Check <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Step C-1C-1・C-1C-1b</span></div>'
     + '<div class="oe-quality-overall">'
+    +   '<span style="opacity:.7;font-size:11px;">禁止語：</span> '
     +   '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">' + meta.label + '</span>'
     + '</div>'
     + '<div class="oe-status-sub">' + esc(summaryText) + '</div>'
     + violationsHtml
+    + disclosureHtml
     + '<div class="oe-quality-sub" style="margin-top:6px;opacity:.55;">※現在は確認表示のみです。User Approval・READY・Quality Gate・Executive Decisionは自動停止しません。</div>'
     + '</div>';
 }
@@ -39763,6 +39797,114 @@ function evaluateComplianceGate(outputDraft, complianceContext) {
     };
   } catch (e) {
     return EMPTY_NOT_CHECKED; // fail-open: 判定失敗時は「検査していない」として扱う（誤ってclearを返さない）
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-1b: Advertising Disclosure Detection（読み取り専用・非ブロッキング）
+//   Decision108・Leader Final Grounding Option F実AI E2Eで実測された「advertisingDisclosureRequirements
+//   はCASE CONTEXT/Writer/Reviewer/Leader Finalへ到達しているが、evaluateComplianceGate()（C-1C-1）は
+//   listingNgWordsしか検査していないため、成果物に【広告】/#PR等の開示表示が欠落しても検出されない」
+//   問題への対策。evaluateComplianceGate()本体・listingNgWords Contractは無変更（兄弟関数として追加）。
+//
+//   自然言語要求（advertisingDisclosureRequirements）の意味解釈・充足度判定は行わない
+//   （Decision108 C-1C-1設計時の「regulatoryCategory／listingPolicyは自然言語のため機械Gate化しない」
+//   という既存結論を踏襲。本関数はスコープを「成果物内に明確な開示マーカーが存在するか」という
+//   deterministicな存在検査のみへ限定する）。
+//
+//   Accepted Marker（whitelist・誤ってsatisfiedを返さないことを最優先）:
+//     ラベル: 【広告】／【PR】
+//     ハッシュタグ（token境界一致のみ・部分一致では判定しない）: #広告／#PR／#プロモーション
+//     明示文章: 「この投稿はアフィリエイト広告を利用しています」
+//               「この投稿はプロモーションを含みます」
+//               「この投稿には広告が含まれます」
+//   #アフィリエイト・#案件・#提供・「広告」の無境界部分一致等は単独でsatisfiedにしない（whitelist外）。
+//
+//   正規化は既存 _apfrComplianceGateNormalize()（String化→NFKC→lowercase→trim）をそのまま再利用し、
+//   新しい自然言語解析・新規正規化ロジックは作らない。
+//
+//   Instagramのタイアップ投稿ラベル（Paid partnershipラベル）はプラットフォーム上の外部UI操作であり、
+//   Output Draft文字列からは実際に設定されたか確認できないため、本関数のsatisfied条件には含めない
+//   （架空の「設定済み」判定をしない・新規Factを作らない・DBへ保存しない）。
+//
+//   保存: runtime onlyの純関数（DB・Output Draft・APFR Fact・Intelligence Context・complianceContext・
+//   EERへの書き込みは一切行わない・呼び出しのたびに再計算）。
+//   requirementPresent: complianceContext.advertisingDisclosureRequirements が有効なnon-empty arrayとして
+//   存在する場合のみ true（C-1Aの既存Contract上、none／ambiguousはcomplianceContextへ出力されないため、
+//   その場合は自然にfalse＝not_checkedとなる。C-1Aのshapeは変更しない）。
+// ══════════════════════════════════════════════════════════════
+const APFR_DISCLOSURE_ACCEPTED_MARKERS = [
+  { type: 'label',    display: '【広告】', normalized: _apfrComplianceGateNormalize('【広告】') },
+  { type: 'label',    display: '【PR】',   normalized: _apfrComplianceGateNormalize('【PR】') },
+  { type: 'hashtag',  display: '#広告',        normalized: _apfrComplianceGateNormalize('広告') },
+  { type: 'hashtag',  display: '#PR',          normalized: _apfrComplianceGateNormalize('PR') },
+  { type: 'hashtag',  display: '#プロモーション', normalized: _apfrComplianceGateNormalize('プロモーション') },
+  { type: 'sentence', display: 'この投稿はアフィリエイト広告を利用しています', normalized: _apfrComplianceGateNormalize('この投稿はアフィリエイト広告を利用しています') },
+  { type: 'sentence', display: 'この投稿はプロモーションを含みます',           normalized: _apfrComplianceGateNormalize('この投稿はプロモーションを含みます') },
+  { type: 'sentence', display: 'この投稿には広告が含まれます',                 normalized: _apfrComplianceGateNormalize('この投稿には広告が含まれます') },
+];
+
+function _apfrEvaluateDisclosureMarkers(outputDraft, complianceContext) {
+  var EMPTY_NOT_CHECKED = { executed: false, checked: false, requirementPresent: false, foundMarkers: [], status: 'not_checked' };
+  try {
+    if (!outputDraft || typeof outputDraft !== 'object') return EMPTY_NOT_CHECKED;
+    var fields = outputDraft.fields;
+    if (!fields || typeof fields !== 'object') return EMPTY_NOT_CHECKED;
+    if (!complianceContext || typeof complianceContext !== 'object') return EMPTY_NOT_CHECKED;
+
+    var requirements = complianceContext.advertisingDisclosureRequirements;
+    if (!Array.isArray(requirements) || requirements.length === 0) return EMPTY_NOT_CHECKED;
+
+    var foundSeen = {};
+    var foundMarkers = [];
+    function addMarker(display) {
+      if (foundSeen[display]) return;
+      foundSeen[display] = true;
+      foundMarkers.push(display);
+    }
+
+    Object.keys(fields).forEach(function (fieldKey) {
+      var value = fields[fieldKey];
+      var texts = [];
+      if (typeof value === 'string') {
+        texts.push(value);
+      } else if (Array.isArray(value)) {
+        value.forEach(function (v) { if (v !== null && v !== undefined) texts.push(String(v)); });
+      } else {
+        return; // string/array以外（object等）は対象外・deep recursionしない（C-1C-1と同一方針）
+      }
+      texts.forEach(function (text) {
+        var normalizedText = _apfrComplianceGateNormalize(text);
+        if (normalizedText === '') return;
+
+        // ラベル・明示文章: 正規化済みテキストへの部分一致（【】括弧／文章全体が既に十分な境界を持つため安全）
+        APFR_DISCLOSURE_ACCEPTED_MARKERS.forEach(function (m) {
+          if (m.type === 'hashtag') return; // hashtagはtoken境界一致で別途判定
+          if (normalizedText.indexOf(m.normalized) !== -1) addMarker(m.display);
+        });
+
+        // ハッシュタグ: token境界での完全一致のみ（#profile 等が #PR に誤爆しないよう部分一致にしない）
+        var tokenRe = /#([^\s#]+)/g;
+        var tm;
+        while ((tm = tokenRe.exec(normalizedText)) !== null) {
+          var token = tm[1];
+          APFR_DISCLOSURE_ACCEPTED_MARKERS.forEach(function (m) {
+            if (m.type !== 'hashtag') return;
+            if (token === m.normalized) addMarker(m.display);
+          });
+        }
+      });
+    });
+
+    return {
+      executed: true,
+      checked: true,
+      requirementPresent: true,
+      foundMarkers: foundMarkers,
+      status: foundMarkers.length > 0 ? 'satisfied' : 'missing',
+    };
+  } catch (e) {
+    return EMPTY_NOT_CHECKED; // fail-open: 例外時は「検査していない」として扱う（誤ってsatisfiedを返さない）
   }
 }
 
