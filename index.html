@@ -31689,8 +31689,50 @@ function buildComplianceGateHtml() {
     + '<div class="oe-status-sub">' + esc(disclosureSummaryText) + '</div>'
     + disclosureInstagramNote;
 
+  // APFR Step C-1C-2a: 上記2 detector結果の総合Compliance Assessment（読み取り専用・非ブロッキング）。
+  //   独自判定は持たず _apfrEvaluateComplianceAssessment() の結果を表示するだけ。
+  //   blockedでもQuality Gate・READY・User Approval・accountCreationReadinessは停止しない。
+  var assessmentResult = (typeof _apfrEvaluateComplianceAssessment === 'function')
+    ? _apfrEvaluateComplianceAssessment(_lastOutputDraft, complianceContext)
+    : { executed: false, status: 'not_checked', blockers: [], unchecked: [], details: { compliance: null, disclosure: null } };
+
+  var assessmentStatusMeta = {
+    clear:       { label: 'CLEAR',       color: '#5ddb8e' },
+    blocked:     { label: 'BLOCKED',     color: '#e06060' },
+    not_checked: { label: 'NOT CHECKED', color: 'rgba(255,255,255,0.35)' },
+  };
+  var assessmentMeta = assessmentStatusMeta[assessmentResult.status] || assessmentStatusMeta.not_checked;
+
+  var ASSESSMENT_ITEM_LABELS = {
+    listing_ng_words: 'リスティングNGワード',
+    advertising_disclosure: '広告開示',
+  };
+
+  var assessmentBlockersHtml = (assessmentResult.blockers || []).map(function (b) {
+    return '<div class="oe-quality-sub" style="margin-top:2px;">・' + esc(b.label) + '：' + esc(b.detail) + '</div>';
+  }).join('');
+
+  // not_checkedを握りつぶさない（clear＝全Compliance完全確認済みと誤解させない）
+  var assessmentUncheckedHtml = (assessmentResult.unchecked && assessmentResult.unchecked.length > 0)
+    ? '<div class="oe-quality-sub" style="margin-top:2px;opacity:.7;">未検査項目あり：'
+      + esc((assessmentResult.unchecked || []).map(function (u) { return ASSESSMENT_ITEM_LABELS[u] || u; }).join('・'))
+      + '</div>'
+    : '';
+
+  var assessmentHtml = '<div class="oe-quality-sub" style="margin-top:8px;opacity:.3;">────────────</div>'
+    + '<div class="oe-quality-overall" style="margin-top:6px;">'
+    +   '<span style="opacity:.7;font-size:11px;">総合：</span> '
+    +   '<span class="oe-quality-badge" style="background:' + assessmentMeta.color + '22;color:' + assessmentMeta.color + ';border:1px solid ' + assessmentMeta.color + '55;">' + assessmentMeta.label + '</span>'
+    + '</div>'
+    + assessmentBlockersHtml
+    + assessmentUncheckedHtml
+    // 非ブロッキングである旨の明示（C-1C-1／C-1C-1bのリリース済みContract文言「確認表示のみ」を維持しつつ、
+    //   C-1C-2aが集約であることを補足する。BLOCKEDは「Compliance Assessment上で明確な問題あり」の意味のみで、
+    //   システム全体の投稿禁止状態ではない）。
+    + '<div class="oe-quality-sub" style="margin-top:4px;opacity:.55;">※現在は確認表示のみです（検出・集約のみ）。User Approval・READY・Quality Gate・Executive Decisionは自動停止しません。</div>';
+
   return '<div class="oe-quality-section">'
-    + '<div class="oe-quality-title">🚫 Compliance Check <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Step C-1C-1・C-1C-1b</span></div>'
+    + '<div class="oe-quality-title">🚫 Compliance Check <span style="font-size:8px;font-weight:400;color:rgba(255,255,255,0.35);">Step C-1C-1・C-1C-1b・C-1C-2a</span></div>'
     + '<div class="oe-quality-overall">'
     +   '<span style="opacity:.7;font-size:11px;">禁止語：</span> '
     +   '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">' + meta.label + '</span>'
@@ -31698,7 +31740,7 @@ function buildComplianceGateHtml() {
     + '<div class="oe-status-sub">' + esc(summaryText) + '</div>'
     + violationsHtml
     + disclosureHtml
-    + '<div class="oe-quality-sub" style="margin-top:6px;opacity:.55;">※現在は確認表示のみです。User Approval・READY・Quality Gate・Executive Decisionは自動停止しません。</div>'
+    + assessmentHtml
     + '</div>';
 }
 
@@ -39905,6 +39947,105 @@ function _apfrEvaluateDisclosureMarkers(outputDraft, complianceContext) {
     };
   } catch (e) {
     return EMPTY_NOT_CHECKED; // fail-open: 例外時は「検査していない」として扱う（誤ってsatisfiedを返さない）
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-2a: Compliance Assessment Aggregation（読み取り専用・非ブロッキング）
+//   正式リリース済みの2つのdeterministic detectorの結果を、1つの総合Compliance Assessmentへ集約するのみ。
+//     ① C-1C-1  evaluateComplianceGate()          → clear / violation / not_checked（listingNgWords）
+//     ② C-1C-1b _apfrEvaluateDisclosureMarkers()  → satisfied / missing / not_checked（広告開示マーカー）
+//
+//   ★本関数は上記2 detectorを「呼ぶだけ」であり、独自判定を一切持たない：
+//     ・listingNgWordsの検索を再実装しない（NGワード配列にも正規化関数にも触れない）
+//     ・広告開示マーカーの検出を再実装しない（APFR_DISCLOSURE_ACCEPTED_MARKERSを参照しない）
+//     ・APFR Resolver（_apfrResolveCurrentFact / _apfrResolveCurrentFacts）を呼ばない
+//     ・product.facts を直接走査しない
+//   新しい判定基準を作らず、既存detector結果の「要約」に責務を限定する。
+//
+//   対象外（意図的に含めない）:
+//     ・Numeric Consistency（C-2-1 _apfrEvaluateNumericConsistency）はblockerにしない＝Step C-2-2として別工程。
+//     ・Leader Final Grounding（Option F）はprompt-based preventionでありdeterministic detectorが存在しないため、
+//       「Grounding clear」等のstatusを新設しない（prompt遵守をPASSと見なさない）。
+//
+//   Non-blocking Contract（今回は検出・集約のみ）:
+//     status==='blocked' でも evaluateQualityGate() / packageQuality / OUTPUT_STATUS.READY /
+//     accountCreationReadiness / User Approval（approveInstagramPackage・_iadpApproveDesign）/
+//     Publishing Ready のいずれも停止しない。ここでのblockedは「Compliance Assessment上で明確な問題あり」
+//     という意味のみで、システム全体の投稿禁止状態ではない。実ブロック接続はStep C-1C-2b以降。
+//
+//   unchecked Contract: not_checkedを握りつぶさない。片方だけ判定済みでclearとなった場合でも、
+//     未検査だった項目をuncheckedへ明示し「clear＝全Compliance完全確認済み」と誤解させない。
+//
+//   保存: runtime onlyの純関数（DB・Output Draft・APFR Fact・Intelligence Context・Compliance Context・
+//   EER・IADP assessmentContext・Quality Gate fieldのいずれへも書き込まない・呼び出しのたび再計算）。
+// ══════════════════════════════════════════════════════════════
+const APFR_COMPLIANCE_ASSESSMENT_ITEMS = {
+  LISTING_NG_WORDS: 'listing_ng_words',
+  ADVERTISING_DISCLOSURE: 'advertising_disclosure',
+};
+
+function _apfrEvaluateComplianceAssessment(outputDraft, complianceContext) {
+  var EMPTY_NOT_CHECKED = {
+    executed: false, status: 'not_checked', blockers: [], unchecked: [],
+    details: { compliance: null, disclosure: null },
+  };
+  try {
+    if (!outputDraft || typeof outputDraft !== 'object') return EMPTY_NOT_CHECKED;
+    if (!complianceContext || typeof complianceContext !== 'object') return EMPTY_NOT_CHECKED;
+    if (typeof evaluateComplianceGate !== 'function' || typeof _apfrEvaluateDisclosureMarkers !== 'function') return EMPTY_NOT_CHECKED;
+
+    // 既存detectorをそのまま呼ぶ（判定ロジックは各detectorの責務・ここでは再実装も再判定もしない）
+    var compliance = evaluateComplianceGate(outputDraft, complianceContext);
+    var disclosure = _apfrEvaluateDisclosureMarkers(outputDraft, complianceContext);
+
+    var complianceStatus = (compliance && typeof compliance.status === 'string') ? compliance.status : 'not_checked';
+    var disclosureStatus = (disclosure && typeof disclosure.status === 'string') ? disclosure.status : 'not_checked';
+
+    var blockers = [];
+    var unchecked = [];
+
+    // listingNgWords: violation のみblocker（not_checkedは未検査としてuncheckedへ・fail-open）
+    if (complianceStatus === 'violation') {
+      blockers.push({
+        type: APFR_COMPLIANCE_ASSESSMENT_ITEMS.LISTING_NG_WORDS,
+        label: 'リスティングNGワード違反',
+        detail: '禁止語違反：' + ((compliance.violations && compliance.violations.length) || 0) + '件',
+      });
+    } else if (complianceStatus === 'not_checked') {
+      unchecked.push(APFR_COMPLIANCE_ASSESSMENT_ITEMS.LISTING_NG_WORDS);
+    }
+
+    // 広告開示: missing のみblocker（not_checkedは未検査としてuncheckedへ・fail-open）
+    if (disclosureStatus === 'missing') {
+      blockers.push({
+        type: APFR_COMPLIANCE_ASSESSMENT_ITEMS.ADVERTISING_DISCLOSURE,
+        label: '広告開示マーカー不足',
+        detail: '広告開示マーカーが確認できません',
+      });
+    } else if (disclosureStatus === 'not_checked') {
+      unchecked.push(APFR_COMPLIANCE_ASSESSMENT_ITEMS.ADVERTISING_DISCLOSURE);
+    }
+
+    // 両方が未検査＝Assessment自体が成立しない（clearを詐称しない）
+    var status;
+    if (blockers.length > 0) {
+      status = 'blocked';
+    } else if (complianceStatus === 'not_checked' && disclosureStatus === 'not_checked') {
+      status = 'not_checked';
+    } else {
+      status = 'clear'; // 少なくとも片方は実判定済みでblocker 0件（未検査項目はuncheckedに残る）
+    }
+
+    return {
+      executed: true,
+      status: status,
+      blockers: blockers,
+      unchecked: unchecked,
+      details: { compliance: compliance, disclosure: disclosure },
+    };
+  } catch (e) {
+    return EMPTY_NOT_CHECKED; // fail-open: 例外時は「検査していない」として扱う（誤ってclearを返さない）
   }
 }
 
