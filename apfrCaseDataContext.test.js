@@ -524,7 +524,12 @@ caseHeader('static: openaiClient / claudeClient 無変更（41-42）');
 
 caseHeader('static: LCC Phase2 既存配線の維持（40, 43-47, 58）');
 {
-  assert(openaiSrc.indexOf('const formalTruthRule = hasCaseContext ?') !== -1, '40. formalTruthRuleがhasCaseContextで有効化される配線が維持されている');
+  // Leader Final Grounding（Option F）にてformalTruthRuleは単一ソース関数（_buildFormalTruthRuleText）へ
+  //   抽出された（挙動不変のリファクタ）。hasCaseContextによる有効化そのものは関数内へ移動しただけで維持されている。
+  assert(openaiSrc.indexOf('const formalTruthRule = _buildFormalTruthRuleText(hasCaseContext);') !== -1
+    && openaiSrc.indexOf('function _buildFormalTruthRuleText(hasCaseContext) {') !== -1
+    && openaiSrc.indexOf('return hasCaseContext ? `') !== -1,
+    '40. formalTruthRuleがhasCaseContextで有効化される配線が維持されている（Leader Final Grounding実装により単一ソース関数へ抽出・挙動不変）');
   assert(openaiSrc.indexOf('const fullInstruction = caseContext ?') !== -1, '43-45. main担当（Writer/Researcher等）へのcaseContext配線が維持されている');
   assert(openaiSrc.indexOf("buildSystemPrompt('reviewer', null, null, { hasCaseContext: !!caseContext })") !== -1, '45. Reviewerへの配線が維持されている');
   assert(openaiSrc.indexOf("buildSystemPrompt('strategy', null, null, { hasCaseContext: !!caseContext })") !== -1, '46. Strategyへの配線が維持されている');

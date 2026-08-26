@@ -999,6 +999,72 @@ function buildCompliancePromptBlock(agent, complianceContext) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// Leader Final Grounding: formalTruthRule 単一ソース化
+//   buildSystemPrompt()内部にあった同名ルール文をそのまま関数化しただけで、本文は一切変更しない
+//   （buildSystemPrompt()はこの関数を呼ぶだけになり、既存出力は完全に同一のまま＝挙動不変のリファクタ）。
+//   Leader Final Grounding（runLeaderFinalResponse）からも同一ソースとして再利用する。
+// ══════════════════════════════════════════════════════════════
+function _buildFormalTruthRuleText(hasCaseContext) {
+  return hasCaseContext ? `
+【★最上位ルール：正本参照義務（Formal Truth Priority）— 以下の全ルールより上位・例外なし】
+
+会社の判断優先順位（下位は上位を覆してはならない）：
+① 会社憲法（Executive Constitution）
+② Formal Truth（会社が正式に保存・確定・機械判定した情報＝入力内の【CASE CONTEXT】）
+③ 会社判断
+④ あなたの専門判断
+⑤ ヒアリングルール・情報不足判定・最終上書きルール等（以下に現れる全ルール）
+
+【情報不足の判定手順（この案件ではこれだけが正しい手順。以下の全ルールに書かれた情報不足判定より優先する）】
+1. まず【CASE CONTEXT】を確認する
+2. 担当業務の遂行に必要な情報を【CASE CONTEXT】と照合する
+3. 【CASE CONTEXT】に存在する情報は「取得済み」として扱う
+4. 取得済みの情報をユーザーへ再質問・再提示要求しない
+5. 【CASE CONTEXT】に存在せず、かつ担当業務の遂行に本当に必要な項目だけを「不足」とする
+6. 不足があっても業務遂行を妨げない場合は質問せず、自律的に業務を実行する
+7. 【CASE CONTEXT】に存在しない情報を、存在するものとして推測・捏造しない
+
+【絶対禁止】
+・【CASE CONTEXT】に存在する情報を「不足」「未確認」「存在しない」「アクセスできない」と述べること
+・【CASE CONTEXT】に存在する情報について、ユーザーへ再提出・再説明・再共有を要求すること
+・【CASE CONTEXT】の機械判定済みの値（Gate・Status・Count等）を、あなた自身の自然言語判断で再判定・否定すること
+・【CASE CONTEXT】に記載のない情報を、あるものとして断定すること` : '';
+}
+
+// ══════════════════════════════════════════════════════════════
+// Leader Final Grounding Block（Option F）
+//   実AI E2Eで実測された「Writer等が情報不足で正しく停止したのに、Leader Finalがそれを
+//   乗り越えてCASE CONTEXT外の具体的事実を捏造する」問題への対策。runLeaderFinalResponse()の
+//   questionへ末尾付加するテキストを純粋に組み立てるだけの関数（DOM/Network/グローバル状態を
+//   一切読み書きしない・fail-open）。LEADER_FINAL_PROMPT／ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT
+//   本体・evaluateQualityGate・READY判定・APFR Resolver・Compliance Gateのいずれにも触れない。
+//
+//   ruleFacts は shared/leaderRuleEngine.js の evaluateLeaderRuleFacts() が返す既存契約
+//   （{ informationInsufficient: { count, memberIds, allInsufficient }, ... }）をそのまま渡す。
+//   新しいschemaは作らない。件数0（不足担当なし）のときはfail-closed文を追加しない
+//   （不足がない場合まで過剰にブロック方向の文言を足さない）。
+// ══════════════════════════════════════════════════════════════
+function _buildLeaderFinalGroundingBlock(caseContext, ruleFacts) {
+  var infoInsufficientCount = (ruleFacts && ruleFacts.informationInsufficient
+    && typeof ruleFacts.informationInsufficient.count === 'number') ? ruleFacts.informationInsufficient.count : 0;
+  var lines = [
+    _buildFormalTruthRuleText(true), // Writer/Researcher/Reviewer/Strategyと同一ソース（断定禁止・情報不足判定手順を含む）
+    '',
+    '【Leader Final固有の追加ルール（優先順位：①Formal Truth／CASE CONTEXT＞②本Grounding Rule＞③下記の情報不足補足＞④Compliance等の正式制約＞⑤完成成果物生成の要求。完成成果物生成の要求は、これらを破ってまで満たしてはならない）】',
+    '・CASE CONTEXTに存在しない具体的事実（商品成分・効能・価格・割引・キャンペーン・特典・口コミ・実績・商品固有の比較優位・ASP条件・法規制条件等）を、社内検討内容・あなた自身の判断・一般的な業界知識から補って断定してはいけません。',
+    '・文章表現・構成・トーン・見出し表現・一般的なCTA表現・レイアウト案など、Formal Truthを必要としない創作表現までは禁止しません。',
+    '・Formal Truthのfield名・意味・用途を維持し、別の概念へ読み替えてはいけません。保存された数値・boolean・statusに、そこから論理的に導けない意味を付与しないでください（例：成果承認率のような社内向け指標を、消費者向けの「審査通過率」や「品質保証」の意味へ変換しない。計測期間のような内部条件を、消費者向けの「購入者特典期間」の意味へ変換しない。技術仕様を、消費者向けの購入利便性の意味へ変換しない）。',
+  ];
+  if (infoInsufficientCount > 0) {
+    lines.push('・担当の一部が情報不足（【現状仮説】【確認したいこと】形式）で回答している場合、その担当が本来提供すべきだった具体的事実を、あなたが代わりに創作してその担当の判断を上書きしてはいけません。');
+  }
+  lines.push('・CASE CONTEXTに広告表示・コンプライアンス上の要件が含まれる場合、それを無視・省略してはいけません。');
+  lines.push('');
+  lines.push(caseContext);
+  return lines.join('\n');
+}
+
+// ══════════════════════════════════════════════════════════════
 // システムプロンプト生成
 // ══════════════════════════════════════════════════════════════
 // Phase IG-2J-A: 第4引数 options を追加（任意・既存呼び出しは引数を追加しなくても従来動作と完全同一）。
@@ -1212,30 +1278,7 @@ ${voiceOpener}【現状仮説】
   //   questionStyle）は本ブロックの下位として明示的に位置付けられる。
   //   Instagram等の特定事業に依存しない汎用ルールとし、Case Contextが存在するあらゆる案件で機能する。
   //   修正D（caseContextPriorityRule）は本ブロックへ統合・廃止（重複解消）。
-  const formalTruthRule = hasCaseContext ? `
-【★最上位ルール：正本参照義務（Formal Truth Priority）— 以下の全ルールより上位・例外なし】
-
-会社の判断優先順位（下位は上位を覆してはならない）：
-① 会社憲法（Executive Constitution）
-② Formal Truth（会社が正式に保存・確定・機械判定した情報＝入力内の【CASE CONTEXT】）
-③ 会社判断
-④ あなたの専門判断
-⑤ ヒアリングルール・情報不足判定・最終上書きルール等（以下に現れる全ルール）
-
-【情報不足の判定手順（この案件ではこれだけが正しい手順。以下の全ルールに書かれた情報不足判定より優先する）】
-1. まず【CASE CONTEXT】を確認する
-2. 担当業務の遂行に必要な情報を【CASE CONTEXT】と照合する
-3. 【CASE CONTEXT】に存在する情報は「取得済み」として扱う
-4. 取得済みの情報をユーザーへ再質問・再提示要求しない
-5. 【CASE CONTEXT】に存在せず、かつ担当業務の遂行に本当に必要な項目だけを「不足」とする
-6. 不足があっても業務遂行を妨げない場合は質問せず、自律的に業務を実行する
-7. 【CASE CONTEXT】に存在しない情報を、存在するものとして推測・捏造しない
-
-【絶対禁止】
-・【CASE CONTEXT】に存在する情報を「不足」「未確認」「存在しない」「アクセスできない」と述べること
-・【CASE CONTEXT】に存在する情報について、ユーザーへ再提出・再説明・再共有を要求すること
-・【CASE CONTEXT】の機械判定済みの値（Gate・Status・Count等）を、あなた自身の自然言語判断で再判定・否定すること
-・【CASE CONTEXT】に記載のない情報を、あるものとして断定すること` : '';
+  const formalTruthRule = _buildFormalTruthRuleText(hasCaseContext);
 
   // APFR Step C-1B: Compliance Formal Truth の Writer/Reviewer prompt注入。
   //   agent限定・null/empty判定はbuildCompliancePromptBlock内部で行う（writer/reviewer以外は常に''）。
@@ -3053,19 +3096,16 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     question = parts.join('\n');
   }
 
-  // Formal Truth Priority Architecture: LEADER_FINAL_PROMPT／ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT は
-  //   buildSystemPrompt()を経由しない独立の固定System Prompt定数のため、hasCaseContextオプションを
-  //   直接渡せない（両定数は無変更）。そのため短いルール文＋実データをuser側（question）末尾へ
-  //   まとめて付加する（leaderSummary()の修正Cと同じ趣旨。JSON契約はSystem Prompt側にあるため
-  //   user側への付加はJSON-only契約を破壊しない）。caseContext未指定時はquestionと完全同一（fail-open）。
+  // Leader Final Grounding（Option F・実AI E2Eで実測された「情報不足を乗り越えた事実捏造」への対策）:
+  //   LEADER_FINAL_PROMPT／ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT は buildSystemPrompt()を
+  //   経由しない独立の固定System Prompt定数のため、hasCaseContextオプションを直接渡せない
+  //   （両定数は無変更・本修正でも変更しない）。そのためWriter等へ適用済みの formalTruthRule を
+  //   単一ソース（_buildFormalTruthRuleText）から再利用し、Leader Final固有の意味維持条項・
+  //   fail-closed指示をuser側（question）末尾へ追加する（leaderSummary()の修正Cと同じ趣旨。
+  //   JSON契約はSystem Prompt側にあるためuser側への付加はJSON-only契約を破壊しない）。
+  //   caseContext未指定時はquestionと完全同一のまま（fail-open・既存経路への影響0）。
   if (caseContext) {
-    question += '\n\n' + [
-      '【CASE CONTEXT優先ルール】',
-      '入力内に【CASE CONTEXT】（機械判定済み正式情報）が含まれる場合、成果物の内容はその正式値と矛盾してはいけません。',
-      '各担当・戦略顧問の自然言語判断がCASE CONTEXT内の正式値と矛盾する場合（例：正式値でsufficient/passedとなっている項目を「不足」「未確認」と述べている等）は、正式値を優先してください。',
-      '',
-      caseContext,
-    ].join('\n');
+    question += '\n\n' + _buildLeaderFinalGroundingBlock(caseContext, _lfFacts);
   }
 
   var text = '';
@@ -4156,6 +4196,9 @@ module.exports = {
   strategyConsolidate,
   leaderSummary,
   buildSystemPrompt,
+  // Leader Final Grounding（Option F・合成テスト用に公開・既存exportは無変更のまま追加のみ）
+  _buildFormalTruthRuleText,
+  _buildLeaderFinalGroundingBlock,
   buildCompanyContext,
   buildStrategyCompanyContext,
   callOpenAI,
