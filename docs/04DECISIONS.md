@@ -6,6 +6,118 @@
 
 ---
 
+# Decision 109
+## APFR Step C-1C-2b-1 ─ Mobile Approval Enforcement（Compliance AssessmentによるUser Approval Contract変更・2026-08-27）
+
+**新規Decision番号を採用する理由**：Decision108（ASP Product Fact Record／Formal Truth Contract）は、APFR Step C-1C-1（Deterministic Compliance Check）／C-1C-1b（Advertising Disclosure Detection）／C-1C-2a（Compliance Assessment Aggregation）まで一貫して「非ブロッキング・既存Contract無変更」の追記として吸収してきた。しかし本工程（C-1C-2b-1）は、**人間のUser Approval操作を初めてdeterministic判定で実際に拒否する**という、Approval Contract自体の変更である。これはFormal Truthの保存・解決契約（Decision108の範囲）ではなくUser Approval Contractの変更であるため、新規Decision番号（109）として分離する。番号は`docs/04DECISIONS.md`の既存最大番号（108）をread-onlyで実測確認したうえで採用し、推測や重複はない。
+
+### 背景
+
+既存のCompliance系列は以下のとおり進行していた：
+- **C-1C-1**：`evaluateComplianceGate()`が`listingNgWords`のみをdeterministicに確認（clear/violation/not_checked）。表示のみ・非ブロッキング。
+- **C-1C-1b**：`_apfrEvaluateDisclosureMarkers()`が`advertisingDisclosureRequirements`の開示マーカー存在をwhitelist方式でdeterministicに確認（satisfied/missing/not_checked）。表示のみ・非ブロッキング。
+- **C-1C-2a**：`_apfrEvaluateComplianceAssessment()`が上記2 detectorの結果を1つの総合Assessmentへ集約（clear/blocked/not_checked）。表示のみ・非ブロッキング。
+
+C-1C-2aまでの時点で、Compliance Assessmentが`blocked`となっても、Quality Gate・READY・User Approval・Publishing Ready・accountCreationReadiness・Executive Decisionのいずれも実際には停止しなかった（Decision108・C-1C-2a追記に明記済み）。この「検出はできるが誰も止まらない」状態を解消するため、C-1C-2b（Compliance Enforcement）の実装前調査を実施した。
+
+### 実装前調査の結論（Enforcement対象の確定）
+
+調査の結果、以下を実コードから確定した：
+1. **Mobile Approvalが通常Instagram投稿経路の単一chokepointである**：`createPublishingReadyDraft()`／`_prcResolveStatus()`はいずれも`approvalStatus`（Mobile Approval由来）から導出されるのみで独立判定を持たない。`markInstagramPublished()`には既存の`if (!approved) return;`というhard guardが既にあり、Approvalが`approved`にならなければ実行されない。**Mobile Approvalを止めれば、Publishing Ready・投稿記録は独立guardを追加せずとも自動的に停止する。**
+2. **server-side Enforcementは実装不可**：APFR Resolver（`_apfrResolveCurrentFacts`等）はclient専用であり、`server.js`には「Resolver再実装・facts参照はいずれも行わない（C-1A Contract『server.jsは受動パススルーのみ』を維持）」という既存released Contractが明記されている。server側でCompliance Assessmentを再計算することはC-1A Contract違反となるため、**C-1C-2b-3（server-side validation）は実装不可として対象から除外**した。
+3. **IADP Approvalは別のspineである**：`_iadpApproveDesign()`はMobile Approvalと独立した承認経路であり、`accountCreationReadiness`という別のenforcement spine（Reviewer/Strategy/Quality Gate結果を既に集約している）に接続している。これは**C-1C-2b-2として別工程**に分離する。
+
+この結論に基づき、C-1C-2bを以下へ分割した：
+- **C-1C-2b-1 Mobile Approval Enforcement**（本Decisionの対象・実装Complete）
+- C-1C-2b-2 IADP Approval Enforcement（未着手）
+- C-1C-2b-3 server-side validation（実装不可・対象外）
+
+### 正式Enforcement spine
+
+```
+Compliance Assessment blocked
+  → Mobile Approval 不可（canApprove=false ＋ submit直前再評価で拒否）
+  → Publishing Ready 到達不可（既存 approvalStatus 由来ロジックで自動追従・独立guard追加なし）
+  → markInstagramPublished 実行不可（既存 if (!approved) return; のhard guardで自動）
+```
+
+変更していないもの（すべて実コード・テスト双方で確認済み）：
+- `OUTPUT_STATUS.READY`（AI生成完了状態として維持。Compliance blockedでもERROR等へ変換しない）
+- `evaluateQualityGate()`／`evaluateOutputPackageCompleteness()`／`QUALITY_GATE_PASSING_STATUSES`（Reviewer Passed ≠ Compliance Clear、Quality Gate Passed ≠ Mobile Approval可能、を混同しない）
+- `accountCreationReadiness`（`shared/instagramAccountDesignQuality.js`は変更0）
+- `_iadpApproveDesign()`（IADP承認は未接続のまま。C-1C-2b-2で別途）
+- `_edRunDecisionEngine()`（Executive Decision Engine。Compliance blockedでも上流を止めない）
+- `server.js`（client-only Enforcement。直接API POSTによる技術的回避可能性は残る。本Enforcementの目的は**単一運用者の操作ミス防止**であり、悪意ある第三者に対するserver-side securityではない）
+
+### 実装内容（`index.html`のみ）
+
+新規純関数`_apfrEvaluateMobileApprovalCompliance()`を追加し、**`_apfrEvaluateComplianceAssessment()`（C-1C-2a）を唯一の判定源**とする：
+- Cross-case／Cross-productのscope guardは既存`_apfrCurrentAdoptedProduct()`（caseId完全一致）と既存Resolverのguardへ完全に委譲（独自scope resolution追加なし）。採用商品が無い場合は`complianceContext={}`となり、Assessmentは`not_checked`を返す（**Compliance理由での誤ブロックは発生しない**）。
+- listingNgWords検索・広告marker検索・`advertisingDisclosureRequirements`独自判定・`APFR_DISCLOSURE_ACCEPTED_MARKERS`・`_apfrComplianceGateNormalize()`・APFR Resolver（`_apfrResolveCurrentFact`／`_apfrResolveCurrentFacts`）・`.facts`直接走査は、いずれも本関数内で再実装していない（既存2 detector・既存Assessmentを呼ぶだけ）。
+
+**canApprove Contract**：
+```js
+var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;
+```
+既存2条件（`_mapAllChecked()`・`_mapReviewApproved(mai)`）は削除・緩和せず維持し、Enforcement条件を追加した。
+
+**submit直前再評価（CUI-2のstale target防止と同一思想）**：`approveInstagramPackage()`内部で、UIのdisabled属性という描画時点の状態を信用せず、`_apfrEvaluateMobileApprovalCompliance()`を再実行する。押下直前にAssessmentが`blocked`へ転じていた場合は、`decision`を`'approved'`へ変更せず、`approvedAt`も設定せず、`pushApprovalToServer()`へも進まず`return`する（既存Approval stateを破壊しない・新規Approval保存を行わない）。
+
+**status別Enforcement**：
+| status | Mobile Approval |
+|---|---|
+| `blocked` | 不可 |
+| `clear` | 既存Approval条件（checklist・review）に従う |
+| `not_checked` | **fail-open**。既存条件のみに従う。承認は止めない |
+| 例外 | **fail-open**。Compliance理由ではApprovalを止めない |
+
+`not_checked`を承認不可にしなかった理由：APFR Factを1つも登録していない大多数の既存案件を過剰ブロックしないため（C-1C-2aのfail-open Contractとの整合を優先）。
+
+**warnings / UI**：blocked時は「承認できません。理由：〔listing_ng_words／advertising_disclosureのblocker理由〕。成果物を修正すると自動的に再判定されます。」を表示。not_checked時は「Compliance Assessmentの一部が未検査です…承認は可能ですが、内容はご自身で確認してください。」を表示するのみで承認は止めない。**新規override UI（`complianceOverride`／`forceApprove`等）は作成していない**。
+
+**False Positive解除**：成果物修正またはAPFR Fact訂正（CUI-2の正規Correction経路）でAssessmentが`clear`へ戻れば、次回描画・submit再評価で自動的にMobile Approvalが復旧する。新規解除state・override機構は不要。
+
+**保存**：Compliance Assessment結果・blocked状態はいずれも保存しない（runtime再計算のみ）。新規DB field・Output Draft field・snapshot・override record・audit recordはいずれも追加していない。blocked時はApproval保存自体（`pushApprovalToServer()`）へ進まない。
+
+### released test追随修正（Contract弱化ではない）
+
+以下4つの正式リリース済みtestが「canApproveが完全に旧式のまま（＝Enforcement未接続）」という文字列を固定していたため、C-1C-2b-1の実装に伴い追随修正した：
+
+| ファイル | 変更内容 | 弱化でない根拠 |
+|---|---|---|
+| `apfrCaseDataContext.test.js`（test 55） | canApprove完全一致→新式（既存2条件維持を検証） | 条件が**追加**されただけで既存2条件は引き続き要求される |
+| `apfrComplianceGate.test.js`（test 17-1） | 同上 | C-1C-1 detectorがApprovalを直接操作しないという関心は維持 |
+| `apfrDisclosureDetection.test.js`（test 34-1／34-3） | canApprove新式へ更新＋「Disclosure Detectorを直接参照・再実装していない」への更新 | 承認ブロック接続自体が本工程の目的。helper経由のみという制約は維持・強化 |
+| `apfrComplianceAssessment.test.js`（test 29-1／29-2、**29-2b新規追加**） | canApprove新式＋「submit直前再評価接続」検証＋detector/Resolver再実装0の新規assertion追加 | assertion**削除ではなく追加**。検証範囲が増えている |
+
+いずれもassertion削除・skip化・todo化・単純PASS化ではなく、新しい正規Contract（Enforcement接続済み・detector非再実装）をより正確に検証する形へ更新した。
+
+### deterministic test
+
+新規`apfrApprovalEnforcement.test.js` **76/76 PASS**。主要確認：clear→Approval可能／blocked(listing)→Approval不可／blocked(disclosure)→Approval不可／not_checked→fail-open／blocked→clear修正後の自動復旧／submit直前blocked拒否（decision・approvedAt変更0・push 0）／Publishing Ready・markInstagramPublishedの下流自動停止／Quality Gate・READY・IADP Approval・accountCreationReadiness・server.js変更0／APFR Resolver再実装0／override 0。
+
+既存回帰：`apfrComplianceAssessment` 84/84・`apfrComplianceGate` 42/42・`apfrDisclosureDetection` 66/66・`apfrComplianceContext` 48/48・`apfrComplianceInjection` 62/62・`apfrCaseDataContext` 80/80・`iadpQualityContractRouting` 86/86・`apfrCurrentFactResolver` 70/70・`apfrCore` 49/49、他既存重要回帰も新規FAIL0。
+
+**`leaderFinalGrounding.test.js` 49/53**（FAIL: 18-1・20-1・20-2a・20-2b。Option F commit時点のCode diff状態を固定するstatic guardが今回の正規`index.html`変更を検出した既知の非機能FAILであり、C-1C-2b-1機能のFAILではない。**53/53 PASSとは記録しない**。test修正・assertion削除はいずれも行っていない）。
+
+`node --check`・`git diff --cached --check`いずれもCLEAN。**localhost**：`/`200・`/api/task-history`200・`/api/workflow-dashboard`200・Console Error0。**fixture確認**：ブラウザ実行環境でclear／blocked(listing)／blocked(disclosure)／not_checkedの4状態、およびblocked状態でのsubmit（`decision=null`・`approvedAt=null`・**pushCount=0**）、修正後の自動復旧（`status=clear`）を実測確認。fixture実行によるPOST発火**0件**・DB write0・AI API実行0。
+
+### 実運用への影響（重要）
+
+プラファスト実案件では`advertising disclosure missing`が既に実測されている。したがって**C-1C-2b-1正式リリース後、次回のMobile Approval操作は実際にblockされる可能性が高い**。これは意図したEnforcement動作である。解除するには成果物へ正式Accepted Marker（【広告】／#PR等）を追加し、Compliance Assessmentが`clear`へ戻る必要がある。
+
+### Code commit
+
+`46b37dc2785bdd02c1cc578581c6b95f7ea8d95f`（`feat: enforce compliance on mobile approval`）。対象6ファイルのみ（`index.html`／新規`apfrApprovalEnforcement.test.js`／`apfrCaseDataContext.test.js`／`apfrComplianceAssessment.test.js`／`apfrComplianceGate.test.js`／`apfrDisclosureDetection.test.js`）・push/Tag/Render未実施。working treeの別系統runtime差分（`cost-logs.json`／`data/conversations/_meta.json`・既存untracked7件）は本Code commit・本docs追記いずれにも不混入。
+
+### 正式化する意味の境界
+
+今回正式化してよいのは**Mobile Approval Enforcement Complete**まで。以下とは記録しない：Compliance Enforcement全体Complete／IADP Approval Enforcement Complete／Quality Gate Grounding Complete／READY Grounding Complete／accountCreationReadiness Enforcement Complete／server-side Enforcement Complete。
+
+**Version1 Final Complete／Version1.1 Connected AI Company開発中・Phase54 Complete維持・Phase55未着手（変更なし）**。本docs追記工程はdocs更新のみでCode/DB/API変更0・新規push/Tag/Render操作0。
+
+---
+
 # Decision 108
 ## ASP Product Fact Record（APFR）─ Product Formal Truth Contract 正式採用（Contract設計正式化＋Step A Core／Step B Manual Input UI 正式リリース・2026-08-21／プラファスト本番実運用検証Complete・2026-08-22／Phase 0 再Adopt時Fact消失防止＋Phase 1 Current Fact Resolver Contract 正式化・2026-08-22／CUI-0 Correction-aware Duplicate Policy・2026-08-22／CUI-1 Current Fact / History UI・2026-08-23／CUI-2 Correction UI Core・2026-08-23／Correction UI Core CUI-0〜CUI-2 正式リリースComplete・2026-08-24）
 
