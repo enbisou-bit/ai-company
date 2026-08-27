@@ -415,8 +415,12 @@ caseHeader('40. 既存C-1C-1 Contract維持: Output Engine配線・独立パネ�
   assert(src.indexOf("_oeSafe(buildComplianceGateHtml,           'ComplianceGate')") !== -1, '40-1. buildComplianceGateHtmlのOutput Engine配線が既存のまま維持');
   const start = src.indexOf('function buildComplianceGateHtml() {');
   assert(start !== -1, '40-2. buildComplianceGateHtml()が実在する');
-  const end = src.indexOf('\napfrDisclosureDetectionMarkerNeverMatches', start); // dummy: force fallback below
-  const body = src.slice(start, start + 6000);
+  // 固定長window（旧: start + 6000）は、C-1C-2a-1（Compliance UI Scope Correction）による正規の
+  //   関数拡張で検証対象文言がwindow外へ押し出されるアーティファクトを生んだため、既存test suite内の
+  //   標準パターン（apfrComplianceGate.test.js 16-1等が採用する `\n}\n` 終端検出＋fallback）へ統一する。
+  //   検証内容・Contractは変更せず、関数本体全体を安全に取得する方式へ追随修正するのみ。
+  const end = src.indexOf('\n}\n', start);
+  const body = src.slice(start, end !== -1 ? end : start + 9000);
   assert(body.indexOf('_apfrEvaluateDisclosureMarkers') !== -1, '40-3. buildComplianceGateHtml()内でDisclosure Detectionが呼び出されている');
   assert(body.indexOf('OUTPUT_STATUS.READY') === -1, '40-4. READY遷移への参照0件（非ブロッキング維持）');
   assert(body.indexOf('canApprove') === -1, '40-5. canApprove（IADP承認）への参照0件（非ブロッキング維持）');

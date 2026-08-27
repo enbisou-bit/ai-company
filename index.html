@@ -31638,6 +31638,18 @@ function buildComplianceGateHtml() {
   var esc = escapeHtml;
   var product = _apfrCurrentAdoptedProduct();
   var complianceContext = product ? _apfrBuildComplianceContext(product) : {};
+
+  // APFR Step C-1C-2a-1: Compliance UI Scope Correction（表示専用・検出/集約は必ず実行する）。
+  //   評価対象テキストが1件も無い場合（IADPアカウント設計フェーズ等）に、確定判定に見える表示
+  //   （CLEAR/VIOLATION/MISSING/BLOCKED）を出さず、NOT CHECKEDへ表示のみ差し替える。
+  //   evaluateComplianceGate() / _apfrEvaluateDisclosureMarkers() / _apfrEvaluateComplianceAssessment()
+  //   の呼び出し・戻り値（result / disclosureResult / assessmentResult）は一切変更しない。
+  //   helper未定義時はfail-open（true＝既存表示を維持。誤ってNOT CHECKEDへ倒し実際の違反を隠さない）。
+  var hasScannableContent = (typeof _apfrComplianceHasScannableContent === 'function')
+    ? _apfrComplianceHasScannableContent(_lastOutputDraft)
+    : true;
+  var NOT_SCANNABLE_NOTE = '投稿成果物などの検査対象テキストがまだ存在しないため、Compliance Checkは未実施です。';
+
   var result = evaluateComplianceGate(_lastOutputDraft, complianceContext);
 
   var statusMeta = {
@@ -31645,17 +31657,20 @@ function buildComplianceGateHtml() {
     violation:   { label: 'VIOLATION',   color: '#e06060' },
     not_checked: { label: 'NOT CHECKED', color: 'rgba(255,255,255,0.35)' },
   };
-  var meta = statusMeta[result.status] || statusMeta.not_checked;
+  var meta = hasScannableContent ? (statusMeta[result.status] || statusMeta.not_checked) : statusMeta.not_checked;
 
-  var violationsHtml = (result.violations || []).map(function (v) {
+  // 評価対象テキストが無い場合は違反一覧も表示しない（内部resultには残るが表示のみ抑制）
+  var violationsHtml = hasScannableContent ? (result.violations || []).map(function (v) {
     return '<div class="oe-quality-sub" style="margin-top:2px;">' + esc(v.field) + '：' + esc(v.ngWord) + '</div>';
-  }).join('');
+  }).join('') : '';
 
-  var summaryText = (result.status === 'violation')
-    ? '禁止語違反：' + result.violations.length + '件'
-    : (result.status === 'clear')
-      ? '禁止語違反：0件'
-      : 'listingNgWordsが未登録、またはFactが未確定のため検査していません';
+  var summaryText = !hasScannableContent
+    ? NOT_SCANNABLE_NOTE
+    : (result.status === 'violation')
+      ? '禁止語違反：' + result.violations.length + '件'
+      : (result.status === 'clear')
+        ? '禁止語違反：0件'
+        : 'listingNgWordsが未登録、またはFactが未確定のため検査していません';
 
   // APFR Step C-1C-1b: Advertising Disclosure Detection（読み取り専用・非ブロッキング・別項目として並記）。
   //   evaluateComplianceGate()（listingNgWords）とは完全に独立した表示。User Approval・READY・
@@ -31669,16 +31684,18 @@ function buildComplianceGateHtml() {
     missing:     { label: 'MISSING',    color: '#e06060' },
     not_checked: { label: 'NOT CHECKED', color: 'rgba(255,255,255,0.35)' },
   };
-  var disclosureMeta = disclosureStatusMeta[disclosureResult.status] || disclosureStatusMeta.not_checked;
+  var disclosureMeta = hasScannableContent ? (disclosureStatusMeta[disclosureResult.status] || disclosureStatusMeta.not_checked) : disclosureStatusMeta.not_checked;
 
-  var disclosureSummaryText = (disclosureResult.status === 'missing')
-    ? '広告開示マーカーが確認できません'
-    : (disclosureResult.status === 'satisfied')
-      ? '確認済み：' + disclosureResult.foundMarkers.map(esc).join('・')
-      : '広告表示義務が未登録、またはFactが未確定のため検査していません';
+  var disclosureSummaryText = !hasScannableContent
+    ? NOT_SCANNABLE_NOTE
+    : (disclosureResult.status === 'missing')
+      ? '広告開示マーカーが確認できません'
+      : (disclosureResult.status === 'satisfied')
+        ? '確認済み：' + disclosureResult.foundMarkers.map(esc).join('・')
+        : '広告表示義務が未登録、またはFactが未確定のため検査していません';
 
-  // Instagramのタイアップ投稿ラベルは外部UI操作のため本Detectionでは検証していない旨を明示（satisfied/missing時のみ）
-  var disclosureInstagramNote = (disclosureResult.status !== 'not_checked')
+  // Instagramのタイアップ投稿ラベルは外部UI操作のため本Detectionでは検証していない旨を明示（satisfied/missing時のみ・評価対象テキストがある場合のみ）
+  var disclosureInstagramNote = (hasScannableContent && disclosureResult.status !== 'not_checked')
     ? '<div class="oe-quality-sub" style="margin-top:2px;opacity:.55;">※Instagram投稿時はタイアップ投稿ラベルの設定も別途確認してください（本Detectionでは検証していません）。</div>'
     : '';
 
@@ -31701,22 +31718,28 @@ function buildComplianceGateHtml() {
     blocked:     { label: 'BLOCKED',     color: '#e06060' },
     not_checked: { label: 'NOT CHECKED', color: 'rgba(255,255,255,0.35)' },
   };
-  var assessmentMeta = assessmentStatusMeta[assessmentResult.status] || assessmentStatusMeta.not_checked;
+  var assessmentMeta = hasScannableContent ? (assessmentStatusMeta[assessmentResult.status] || assessmentStatusMeta.not_checked) : assessmentStatusMeta.not_checked;
 
   var ASSESSMENT_ITEM_LABELS = {
     listing_ng_words: 'リスティングNGワード',
     advertising_disclosure: '広告開示',
   };
 
-  var assessmentBlockersHtml = (assessmentResult.blockers || []).map(function (b) {
+  // 評価対象テキストが無い場合はblockers/unchecked表示も抑制する（内部assessmentResultには残るが表示のみ抑制。
+  //   「NOT CHECKEDなのにblocker理由が並ぶ」という矛盾表示を防ぐ）
+  var assessmentBlockersHtml = hasScannableContent ? (assessmentResult.blockers || []).map(function (b) {
     return '<div class="oe-quality-sub" style="margin-top:2px;">・' + esc(b.label) + '：' + esc(b.detail) + '</div>';
-  }).join('');
+  }).join('') : '';
 
   // not_checkedを握りつぶさない（clear＝全Compliance完全確認済みと誤解させない）
-  var assessmentUncheckedHtml = (assessmentResult.unchecked && assessmentResult.unchecked.length > 0)
+  var assessmentUncheckedHtml = (hasScannableContent && assessmentResult.unchecked && assessmentResult.unchecked.length > 0)
     ? '<div class="oe-quality-sub" style="margin-top:2px;opacity:.7;">未検査項目あり：'
       + esc((assessmentResult.unchecked || []).map(function (u) { return ASSESSMENT_ITEM_LABELS[u] || u; }).join('・'))
       + '</div>'
+    : '';
+
+  var assessmentSummaryHtml = !hasScannableContent
+    ? '<div class="oe-status-sub">' + esc(NOT_SCANNABLE_NOTE) + '</div>'
     : '';
 
   var assessmentHtml = '<div class="oe-quality-sub" style="margin-top:8px;opacity:.3;">────────────</div>'
@@ -31724,6 +31747,7 @@ function buildComplianceGateHtml() {
     +   '<span style="opacity:.7;font-size:11px;">総合：</span> '
     +   '<span class="oe-quality-badge" style="background:' + assessmentMeta.color + '22;color:' + assessmentMeta.color + ';border:1px solid ' + assessmentMeta.color + '55;">' + assessmentMeta.label + '</span>'
     + '</div>'
+    + assessmentSummaryHtml
     + assessmentBlockersHtml
     + assessmentUncheckedHtml
     // 非ブロッキングである旨の明示（C-1C-1／C-1C-1bのリリース済みContract文言「確認表示のみ」を維持しつつ、
@@ -40076,6 +40100,38 @@ function _apfrEvaluateComplianceAssessment(outputDraft, complianceContext) {
   } catch (e) {
     return EMPTY_NOT_CHECKED; // fail-open: 例外時は「検査していない」として扱う（誤ってclearを返さない）
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-2a-1: Compliance UI Scope Correction（表示専用・純粋関数・副作用0）
+//   IADPアカウント設計フェーズ（fields.iadpのみ存在・投稿成果物なし）で、Compliance Checkパネルが
+//   「広告開示：MISSING／総合：BLOCKED」「禁止語：CLEAR」等の確定判定に見える表示を出してしまう
+//   表示レベルfalse positiveへの対策。
+//
+//   ★本関数は「スキャン可能なテキストが1件でも存在するか」という浅い形状チェックのみを行い、
+//   NGワード検索・広告marker検索・意味判定・output type判定・IADP存在判定は一切行わない。
+//   判定基準は既存2 detector（evaluateComplianceGate() / _apfrEvaluateDisclosureMarkers()）が
+//   内部で使っている型判定（typeof value==='string' || Array.isArray(value)。objectはskip）と
+//   完全に同一のため、detector自体が実際にスキャンする対象と過不足なく一致する。
+//
+//   判定軸は「IADPが存在するか」ではなく「投稿成果物としてスキャン可能なtext/array fieldが
+//   存在するか」という直交した軸である（fields.iadpと投稿成果物（caption/slides/hashtags等）は
+//   同一Output Draftへ併存し得るため、IADP存在の有無だけでは正しく判別できない＝
+//   IADP存在 ≠ IADP-only。1件でもstring/array fieldがあればtrueを返し、本来のCompliance評価を
+//   隠さない：false negativeを避けることを最優先する）。
+//
+//   本関数の戻り値はdetector/Assessmentの戻り値そのものには一切影響しない（呼び出し元の表示層でのみ
+//   使用する）。evaluateComplianceGate() / _apfrEvaluateDisclosureMarkers() /
+//   _apfrEvaluateComplianceAssessment() / _apfrEvaluateMobileApprovalCompliance()のいずれも
+//   本関数を参照しない・変更しない（Mobile Approval EnforcementはAssessmentを直接評価するため、
+//   本関数は実ブロック判定に一切関与しない＝表示のみ）。
+// ══════════════════════════════════════════════════════════════
+function _apfrComplianceHasScannableContent(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return false;
+  return Object.keys(outputDraft.fields).some(function (k) {
+    var v = outputDraft.fields[k];
+    return typeof v === 'string' || Array.isArray(v);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
