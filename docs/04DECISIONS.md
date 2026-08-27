@@ -116,6 +116,43 @@ var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.
 
 **Version1 Final Complete／Version1.1 Connected AI Company開発中・Phase54 Complete維持・Phase55未着手（変更なし）**。本docs追記工程はdocs更新のみでCode/DB/API変更0・新規push/Tag/Render操作0。
 
+### 追記：APFR Step C-1C-2b-2 IADP Approval Enforcement ─ **Not Required**（2026-08-27）
+
+Mobile Approval Enforcement（C-1C-2b-1）の正式リリース後、対称的な工程として検討されたIADP Approval Enforcement（IADP側のUser Approvalへも同様にCompliance Assessment blockedを接続する案）について、実装前調査（Opus）を実施した。**結論：C-1C-2b-2は実装しない（Not Required）**。理由はserver-side Contract上の制約ではなく、**Compliance AssessmentとIADP Approvalが評価対象とする成果物そのものが異なるという責務不一致**である。
+
+**技術的根拠（Detector scope）**：`evaluateComplianceGate()`（C-1C-1）・`_apfrEvaluateDisclosureMarkers()`（C-1C-1b）はいずれも`outputDraft.fields`を走査する際、値がstring／arrayの場合のみテキストを抽出し、object型の値は`return; // string/array以外（object等）は対象外・deep recursionしない`として明示的にスキップする（[index.html:39848](../index.html:39848)／[index.html:39945](../index.html:39945)）。IADPアカウント設計パッケージは`_lastOutputDraft.fields.iadp = {package, validation, quality, generationContext, assessmentContext, caseId, savedAt}`という**object**として保存される（[index.html:16092](../index.html:16092)）。したがって`fields.iadp.package`配下のアカウント名・bio・ブランドコンセプト等は、**構造上Compliance Assessmentの評価対象に一切含まれない**。
+
+**ブラウザ実測で確認した事実**：`fields.iadp.package`内にlistingNgWords対象文字列や広告開示Accepted Marker（【広告】等）を配置しても、Compliance Detectorは検出しない（`compliance: 'clear'`／`disclosure: 'missing'`のまま）。同じ文字列をトップレベルのstringフィールド（`caption`等）に置くと正しく`violation`／`satisfied`として検出される。**IADPパッケージ内容とCompliance Assessmentは別スコープであることを実測で確認済み**。
+
+**false positiveリスク**：`advertisingDisclosureRequirements`が登録済みの案件で、投稿成果物ではないIADPアカウント設計フェーズのdraft（アカウント設計文書。広告投稿ではないため【広告】/#PRは本来不要）を評価すると、`status: 'blocked'（広告開示マーカー不足）`となることを実測確認した。これは意味的に誤ったfalse positiveであり、**IADPパッケージ内へマーカーを追加してもdeep recursionしないため解消できない＝修復不能な永久blockを生み得る**。もしIADP ApprovalへこのAssessmentを接続していれば、この状態は実運用上のブロッカーとなっていた。
+
+**責務境界（正式Contract）**：
+| 対象 | 判定するもの |
+|---|---|
+| IADP Approval（`_iadpApproveDesign()`） | Instagramアカウント設計パッケージ（accountName／username／bio／brandConcept／target／adoptedCandidate等） |
+| Compliance Assessment（`_apfrEvaluateComplianceAssessment()`） | Instagram投稿成果物のトップレベルtext/arrayフィールド（slides／caption／hashtags／CTA等） |
+
+両者は同一成果物ではないため接続しない。
+
+**Mobile Approvalが正しいchokepointである理由**：投稿向けCompliance問題は、既にC-1C-2b-1（Mobile Approval Enforcement）により正しい責務境界（実際の投稿成果物を確認する段階）で強制済みである。加えてMobile Approvalパネル自体、`createMobileReviewCenterDraft()`が実際のカルーセルスライド（`buildMobileReviewSlides()`が非空）を要件とするため、アカウント設計のみのdraftでは描画されない——**投稿成果物が存在する場合にのみ作動するよう既に正しくスコープされている**。IADP Approvalへ二重接続する必要はない。
+
+**正式Enforcement spine**：
+```
+Compliance Assessment blocked
+  → Mobile Approvalは不可（C-1C-2b-1正式リリース済み）
+  → IADP Approvalは止めない（Compliance対象成果物が異なるため）
+  → accountCreationReadinessは変更しない（既存のIADP品質集約spineを維持）
+  → OUTPUT_STATUS.READYは変更しない
+```
+
+**変更0（実装しないため）**：`_iadpApproveDesign()`（canApprove相当の条件追加0・submit直前guard追加0）／`accountCreationReadiness`（`ready`/`conditional`/`not_ready`のContract維持・既存Reviewer/Strategy/Quality Gate/Evidence/採用案整合の集約を汚染しない）／既存User Approval（プラファスト案件含む既存Approvedを遡及的にPending等へ変更しない・新規DB write 0）／EER（Instagram Account Creation／ASP Registration／ASP Media Registration等の既存記録を無効化しない）／`evaluateQualityGate()`／`OUTPUT_STATUS.READY`／`server.js`（新規server-side Enforcement追加なし）。**IADPカードへの新規Compliance warning表示も追加しない**（現行Compliance判定はIADP package自体を評価していないため、表示すると「アカウント設計にCompliance違反がある」という誤解を招くため）。
+
+**将来の拡張余地**：将来IADPパッケージ自体（accountName／bio／brandConcept等）のCompliance検査が必要になった場合は、C-1C-2b-2を復活させるのではなく、**「IADP Content Compliance Detection」という別工程**として設計する。その場合は既存detectorのobject／deep recursion対応、またはIADP専用detectorという**新しいDetection Contract**が先に必要であり、既存C-1C-1／C-1C-1bを勝手に拡張しない。
+
+**既知の残課題（今回修正しない・分離）**：`advertisingDisclosureRequirements`を持つ案件でIADP設計フェーズのdraftを表示すると、Compliance Check UIが「総合：BLOCKED／広告開示マーカー不足」と表示され得る表示レベルのfalse positiveが存在する（C-1C-2a表示スコープ問題として別課題）。現時点ではnon-blockingのため機能停止は発生しないが、運用者の誤解を招く可能性があり、今回のNot Required判断とは別に将来是正の対象とする。**プラファスト案件で実投稿成果物が存在するMobile Approval段階でのadvertising disclosure missingは、上記の表示false positiveとは異なり正しいCompliance blockerであり、C-1C-2b-1のEnforcementは引き続き維持する。**
+
+**今回の正式化はC-1C-2b-2 Not Requiredの判断のみであり、以下とは記録しない**：Compliance Enforcement Complete／Quality Gate Grounding Complete／READY Grounding Complete／IADP Content Compliance Complete／server-side Enforcement Complete。Code変更0・test変更0・DB変更0・AI API実行0。本追記はdocsのみの記録であり、新規Decision番号は作成せず本Decision109へ追記する。
+
 ---
 
 # Decision 108
