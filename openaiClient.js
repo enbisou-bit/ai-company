@@ -2906,8 +2906,30 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     return { id: t.agentId, name: profile ? profile.name : t.agentId, reply: reply.slice(0, 1200) };
   });
 
-  var reviewerText = (reviewerTask && reviewerTask.result) ? reviewerTask.result.slice(0, 600) : '';
-  var strategyText = (strategyTask && strategyTask.result) ? strategyTask.result.slice(0, 600) : '';
+  // P1-2 修正2: Reviewer reject遵守Contract（question側のみ・LEADER_FINAL_PROMPT定数は無変更）。
+  //   実運用1周目で、Reviewerが「重大な問題あり・このままでは公開できない・修正版へ差し戻し必須」と判断し
+  //   Strategyも公開停止と判断したにもかかわらず、Leader Finalが同じ成果物を完成版として採用した。
+  //   構造的原因はLEADER_FINAL_PROMPT側に「Reviewerのreject判断に従う」ルールが存在せず、
+  //   逆に「情報不足でも自分の判断で完成品を作れ」「完成成果物のみを出力せよ」と指示していること。
+  //   既存released test（apfrComplianceContext等）がLEADER_FINAL_PROMPT本体のbyte一致を固定しているため、
+  //   定数は変更せずuser側（question）末尾へ最小の遵守Contractを追加する（Option Fと同一方式）。
+  //   reviewerTextが存在する場合のみ付加する（Reviewer未実行時は既存questionと完全同一＝fail-open）。
+  var LEADER_FINAL_REVIEWER_REJECT_RULE = [
+    '',
+    '【Reviewer判断の遵守（最優先・完成成果物の可否）】',
+    'Reviewerが公開不可・差し戻し・修正必須と判断している場合、その指摘を解消していない内容を完成成果物として採用してはいけません。',
+    'Reviewerの指摘を解消できる場合は、解消した内容で完成成果物を出力してください。',
+    'Reviewerの指摘を解消できない場合は、公開可能な完成成果物として扱わず、未解消の指摘と必要な対応を明示してください。',
+    'Reviewerの指摘を、あなたの判断で「問題なし」と上書きしないでください。',
+    'Reviewerが解消を確認していない内容について「Reviewer確認済み」「Compliance Check完了」等と記載しないでください。',
+  ].join('\n');
+
+  // P1-2 修正1: Reviewer/Strategyの結論部（公開不可・差し戻し等の判断）は指摘列挙のあとに書かれるため、
+  //   600文字truncateでは結論がLeaderへ届かないことが実運用1周目で実測された。
+  //   memberReplies（1200文字）と同水準へ揃える。上限自体は撤廃しない（payload肥大化防止）。
+  var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;
+  var reviewerText = (reviewerTask && reviewerTask.result) ? reviewerTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
+  var strategyText = (strategyTask && strategyTask.result) ? strategyTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
 
   // Brain / Knowledge コンテキスト
   var brainCtx = brainResult
@@ -3092,6 +3114,7 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '',
       '上記の社内検討内容を統合し、依頼された範囲内の完成成果物のみを、指定フォーマットのうち該当する項目だけで出力してください。依頼されていない項目・案件種別は追加しないでください。',
       '要約・方針・提案は不要。完成した文章・コピー・構成をそのまま出力してください。',
+      reviewerText ? LEADER_FINAL_REVIEWER_REJECT_RULE : '',
     ].filter(Boolean);
     question = parts.join('\n');
   }

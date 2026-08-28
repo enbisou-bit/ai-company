@@ -15972,6 +15972,16 @@ async function atRunWorkflow(options) {
   // STEP1: 退避しておいた案件単位の正式fieldsを新Draftへ引き継ぐ
   //   （このAuto Task実行が別種の依頼でもFormal Truthが消えないようにする）。
   if (_lastOutputDraft) {
+    // P1-1 caseId Binding Fix: createOutputDraft()はcaseIdを持たないDraftを返すため、
+    //   生成直後のDraftでは _apfrCurrentAdoptedProduct() の三重guard（caseId一致）が必ず失敗し、
+    //   complianceContextが{}となってCompliance Check表示がNOT CHECKEDへ、
+    //   さらに _apfrEvaluateMobileApprovalCompliance() も not_checked→fail-open→blocked:false となり
+    //   C-1C-2b-1 Mobile Approval Enforcementが生成直後のDraftに対して発火しなかった（実運用1周目で実測）。
+    //   復元経路（_outputDraftFromServerRow）は row.case_id を設定済みのため、F5後のみ正常という不一致が生じていた。
+    //   ここでWorkflow開始時に捕捉済みの _atRunCaseId をbindingし、生成直後Draftを復元Draftと同一の状態へ揃える。
+    //   Cross-case安全性: 値は既存carry-forwardと同一の _atRunCaseId のみを使用し、他案件のIDへfallbackしない。
+    //   既存値がある場合は上書きしない（冪等・復元Draftのcase_idを壊さない）。
+    if (!_lastOutputDraft.caseId && _atRunCaseId) _lastOutputDraft.caseId = _atRunCaseId;
     if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
     Object.keys(_formalFieldsCarryForward).forEach(function (k) {
       _lastOutputDraft.fields[k] = _formalFieldsCarryForward[k];
