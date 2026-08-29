@@ -820,12 +820,26 @@ function _leaderCaseContextToText(cc) {
   //   本関数の責務は「Formal Truthのデータ行を列挙すること」に限定する（修正Aの長文ルールは統合・廃止）。
   const lines = ['【CASE CONTEXT｜同一caseの保存済み正本から取得した機械判定済み正式情報（Formal Truth）】'];
   const i = cc.iadp || {};
-  if (i.packageId) lines.push(`IADP Package ID: ${i.packageId}`);
-  if (i.adoptedCandidateId) lines.push(`採用候補ID: ${i.adoptedCandidateId}／採用ジャンル: ${i.adoptedGenre || '不明'}`);
-  if (i.accountName || i.username) lines.push(`表示名: ${i.accountName || '未設定'}／ユーザー名候補: ${i.username || '未設定'}`);
-  if (i.bio) lines.push(`Profile Bio: ${i.bio}`);
-  if (i.brandConcept) lines.push(`ブランドコンセプト: ${i.brandConcept}`);
-  if (i.target) lines.push(`ターゲット: ${i.target}`);
+  // Issue B / Option E: IADP Scope Boundary。
+  //   実AI Path A E2Eで、IADPのbrandConcept（例「自然由来の美容と健康を専門的に伝える情報プラットフォーム」）と
+  //   account.bioが、本ヘッダの「Formal Truth」ラベル下にフラットに並んでいたため、
+  //   AI社員が「自然由来」を対象商品の成分・特性の事実として転用するClass C（意味誤用）が発生した。
+  //   IADP値そのものは正式なFormal Truthだが、その用途は「媒体（アカウント）運用設計」であって
+  //   「対象商品の事実」ではない。ここでは値・schemaを一切変更せず、用途境界の見出しだけを追加する
+  //   （AIへ渡す値・順序・件数は不変。行が増えるのは見出しのみ）。
+  //   AIが従うべき禁止事項の本文は openaiClient.js の formalTruthRule（全Agent共通・単一ソース）が担当し、
+  //   ここでは重複させない（本関数の責務＝データ行の列挙、という既存方針を維持）。
+  const iadpLines = [];
+  if (i.packageId) iadpLines.push(`IADP Package ID: ${i.packageId}`);
+  if (i.adoptedCandidateId) iadpLines.push(`採用候補ID: ${i.adoptedCandidateId}／採用ジャンル: ${i.adoptedGenre || '不明'}`);
+  if (i.accountName || i.username) iadpLines.push(`表示名: ${i.accountName || '未設定'}／ユーザー名候補: ${i.username || '未設定'}`);
+  if (i.bio) iadpLines.push(`Profile Bio: ${i.bio}`);
+  if (i.brandConcept) iadpLines.push(`ブランドコンセプト: ${i.brandConcept}`);
+  if (i.target) iadpLines.push(`ターゲット: ${i.target}`);
+  if (iadpLines.length > 0) {
+    lines.push('■ アカウント設計（IADP｜運用する媒体アカウント側の設計・方針です。対象商品の成分・効能・効果・適性・品質・実施中のキャンペーンや特典といった商品事実ではありません）');
+    lines.push(...iadpLines);
+  }
   const e = cc.evidence || {};
   if (e.status) lines.push(`Evidence Status: ${e.status}（Verified ${e.verifiedCount ?? 0}件／Independent Source ${e.independentSourceCount ?? 0}件／総数${e.totalCount ?? 0}件）`);
   const q = cc.qualityGate || {};
