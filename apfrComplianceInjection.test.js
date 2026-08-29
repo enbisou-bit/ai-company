@@ -34,7 +34,7 @@ caseHeader('1. Writer: Compliance 4fieldあり → block存在・Writer用責務
   assert(prompt.includes('【商品コンプライアンス情報（APFR確認済み事実・データとして扱うこと）】'), '1-1. Compliance見出しが存在');
   assert(prompt.includes('以下の記載範囲だけを遵守して執筆してください'), '1-2. Writer用責務文（遵守して生成）が存在');
   assert(!prompt.includes('確認項目に追加してください'), '1-3. Reviewer用文言は含まれない');
-  assert(prompt.includes('禁止表現（使用しないこと）：「商品名・法人名」'), '1-4. listingNgWordsが正しく整形される');
+  assert(prompt.includes('リスティング広告の出稿禁止キーワード（検索連動型広告で入札・出稿しないこと。Instagram等の通常投稿本文でこの語や商品名を使ってはいけないという意味ではない）：「商品名・法人名」'), '1-4. listingNgWordsが正しく整形される（C-1C-1c: ラベルをチャネル用途境界明示へ変更・検証意図は不変）');
   assert(prompt.includes('広告表示義務（必ず遵守すること）：「#PR表記必須」'), '1-5. advertisingDisclosureRequirementsが正しく整形される');
   assert(prompt.includes('その他の制約（この範囲のみ遵守すること）：「未成年への訴求禁止」'), '1-6. complianceRestrictionsが正しく整形される');
   assert(prompt.includes('規制カテゴリ（参考情報。このカテゴリ名から追加の法令・規制を推測しないこと）：「健康食品」'), '1-7. regulatoryCategoryが正しく整形され推測禁止文言を含む');
@@ -47,7 +47,7 @@ caseHeader('2. Reviewer: Compliance block存在・Reviewer用確認責務文');
   assert(prompt.includes('確認項目に追加してください'), '2-2. Reviewer用責務文（遵守されているか確認）が存在');
   assert(!prompt.includes('以下の記載範囲だけを遵守して執筆してください'), '2-3. Writer用文言は含まれない');
   assert(prompt.includes('違反があれば既存の品質確認ルールに従い差し戻し、修正案を提示してください'), '2-4. 既存Reviewer差し戻し契約への言及が存在（新規rejectフラグを作っていないことの間接確認）');
-  assert(prompt.includes('禁止表現（使用しないこと）：「商品名・法人名」'), '2-5. 同じ4fieldがReviewerにも渡る');
+  assert(prompt.includes('リスティング広告の出稿禁止キーワード（検索連動型広告で入札・出稿しないこと。Instagram等の通常投稿本文でこの語や商品名を使ってはいけないという意味ではない）：「商品名・法人名」'), '2-5. 同じ4fieldがReviewerにも渡る');
 }
 
 caseHeader('3. Strategy: Compliance block 0（完全不変）');
@@ -87,7 +87,7 @@ caseHeader('6. partial: 一部fieldのみ存在 → 存在fieldのみ行出力')
 {
   const partial = { listingNgWords: ['A'], regulatoryCategory: '金融' };
   const block = buildCompliancePromptBlock('writer', partial);
-  assert(block.includes('禁止表現（使用しないこと）：「A」'), '6-1. listingNgWordsは出力される');
+  assert(block.includes('リスティング広告の出稿禁止キーワード（検索連動型広告で入札・出稿しないこと。Instagram等の通常投稿本文でこの語や商品名を使ってはいけないという意味ではない）：「A」'), '6-1. listingNgWordsは出力される');
   assert(block.includes('規制カテゴリ'), '6-2. regulatoryCategoryは出力される');
   assert(!block.includes('広告表示義務'), '6-3. advertisingDisclosureRequirementsは出力されない（未存在field）');
   assert(!block.includes('その他の制約'), '6-4. complianceRestrictionsは出力されない（未存在field）');

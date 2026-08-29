@@ -943,7 +943,11 @@ ${voiceOpener}上記の最低成果物を、見出し付きの箇条書きで出
 // ══════════════════════════════════════════════════════════════
 const APFR_COMPLIANCE_PROMPT_FIELD_ORDER = ['listingNgWords', 'advertisingDisclosureRequirements', 'complianceRestrictions', 'regulatoryCategory'];
 const APFR_COMPLIANCE_PROMPT_FIELD_LABELS = {
-  listingNgWords: '禁止表現（使用しないこと）',
+  // C-1C-1c: 用途境界を明示する。listingNgWordsはA8.net上「リスティング広告で入札・出稿を禁止する
+  //   検索キーワード」であり、Instagram organic投稿本文での商品名使用禁止を意味しない。
+  //   旧ラベル「禁止表現（使用しないこと）」により、Leader Finalが productName（プラファスト）を
+  //   別名へ置換する誤動作が実AI E2Eで実測されたため、誤解を生まない表記へ変更する。
+  listingNgWords: 'リスティング広告の出稿禁止キーワード（検索連動型広告で入札・出稿しないこと。Instagram等の通常投稿本文でこの語や商品名を使ってはいけないという意味ではない）',
   advertisingDisclosureRequirements: '広告表示義務（必ず遵守すること）',
   complianceRestrictions: 'その他の制約（この範囲のみ遵守すること）',
   regulatoryCategory: '規制カテゴリ（参考情報。このカテゴリ名から追加の法令・規制を推測しないこと）',

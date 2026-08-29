@@ -31648,6 +31648,15 @@ function buildComplianceGateHtml() {
   var esc = escapeHtml;
   var product = _apfrCurrentAdoptedProduct();
   var complianceContext = product ? _apfrBuildComplianceContext(product) : {};
+  // C-1C-1c: Instagram organic投稿ではリスティング広告専用field（listingNgWords）を評価入力から除外する。
+  //   detector自体は無変更で、除外されたfieldは既存Contractどおり not_checked となる。
+  var _cgListingAdScoped = (typeof _apfrScopeComplianceContextForOutput === 'function')
+    && (typeof _apfrIsInstagramOrganicOutput === 'function')
+    && _apfrIsInstagramOrganicOutput(_lastOutputDraft)
+    && Object.prototype.hasOwnProperty.call(complianceContext, 'listingNgWords');
+  if (typeof _apfrScopeComplianceContextForOutput === 'function') {
+    complianceContext = _apfrScopeComplianceContextForOutput(complianceContext, _lastOutputDraft);
+  }
 
   // APFR Step C-1C-2a-1: Compliance UI Scope Correction（表示専用・検出/集約は必ず実行する）。
   //   評価対象テキストが1件も無い場合（IADPアカウント設計フェーズ等）に、確定判定に見える表示
@@ -31680,7 +31689,9 @@ function buildComplianceGateHtml() {
       ? '禁止語違反：' + result.violations.length + '件'
       : (result.status === 'clear')
         ? '禁止語違反：0件'
-        : 'listingNgWordsが未登録、またはFactが未確定のため検査していません';
+        : _cgListingAdScoped
+          ? 'リスティングNGワードはリスティング広告の出稿キーワード制約のため、Instagram投稿本文では検査しません（登録値は保持しています）。'
+          : 'listingNgWordsが未登録、またはFactが未確定のため検査していません';
 
   // APFR Step C-1C-1b: Advertising Disclosure Detection（読み取り専用・非ブロッキング・別項目として並記）。
   //   evaluateComplianceGate()（listingNgWords）とは完全に独立した表示。User Approval・READY・
@@ -40136,6 +40147,56 @@ function _apfrEvaluateComplianceAssessment(outputDraft, complianceContext) {
 //   本関数を参照しない・変更しない（Mobile Approval EnforcementはAssessmentを直接評価するため、
 //   本関数は実ブロック判定に一切関与しない＝表示のみ）。
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// APFR Step C-1C-1c: listingNgWords Channel Scope Fix（表示・Enforcement入力の scope 補正のみ）
+//   Formal Contract（A8.net公式定義）:
+//     listingNgWords ＝「リスティング広告で入札・出稿を禁止する検索キーワード」。
+//     すなわち検索連動型広告（リスティング広告）の出稿制約であり、
+//     Instagram organic投稿本文（caption/slides/hashtags等）の使用禁止語ではない。
+//
+//   問題（実AI Path A E2Eで実測）:
+//     evaluateComplianceGate() が listingNgWords を Instagram organic投稿本文へ substring 適用していたため、
+//     ① 本文中の「商品名」という語自体が violation となり Mobile Approval が誤 block された、
+//     ② Leader Final が「商品名はNGワード」と誤解し Formal Truth の productName（プラファスト）を
+//        IADPアカウント名（ナチュラルエッセンス）へ置換する二次被害が発生した。
+//
+//   修正方針（最小・既存Contract非変更）:
+//     detector 側（evaluateComplianceGate / _apfrEvaluateDisclosureMarkers /
+//     _apfrEvaluateComplianceAssessment / _apfrBuildComplianceContext）は**一切変更しない**。
+//     Instagram organic出力タイプのときだけ、評価入力である complianceContext から
+//     リスティング広告専用fieldを取り除いて渡す（＝そのfieldは既存Contractどおり not_checked になる）。
+//     これにより violation にも blocker にもならず、advertisingDisclosureRequirements 等
+//     Instagram投稿に実際に関係する判定は従来どおり維持される。
+//
+//   Formal Truth は書き換えない: APFR Fact（listingNgWords=["商品名","法人名"]）は保持し、
+//     Correction も schema変更も行わない。将来リスティング広告機能を実装した際に使用する。
+//
+//   fail-open: 入力不正・例外時は元の complianceContext をそのまま返す（誤って判定を隠さない）。
+// ══════════════════════════════════════════════════════════════
+// リスティング広告出稿専用のFormal Truth（Instagram organic投稿の本文判定には使わない）
+const APFR_LISTING_AD_ONLY_FIELDS = ['listingNgWords'];
+// Instagram organic投稿（＝リスティング広告ではない）のOutput Type
+const APFR_INSTAGRAM_ORGANIC_TYPES = ['instagram_carousel', 'instagram_post'];
+
+function _apfrIsInstagramOrganicOutput(outputDraft) {
+  return !!(outputDraft && typeof outputDraft.type === 'string'
+    && APFR_INSTAGRAM_ORGANIC_TYPES.indexOf(outputDraft.type) !== -1);
+}
+
+// Instagram organic出力のときだけ、リスティング広告専用fieldを除いたcomplianceContextを返す（純関数・入力非破壊）。
+function _apfrScopeComplianceContextForOutput(complianceContext, outputDraft) {
+  try {
+    if (!complianceContext || typeof complianceContext !== 'object' || Array.isArray(complianceContext)) return complianceContext;
+    if (!_apfrIsInstagramOrganicOutput(outputDraft)) return complianceContext;   // 他チャネルは従来どおり
+    var scoped = {};
+    Object.keys(complianceContext).forEach(function (k) {
+      if (APFR_LISTING_AD_ONLY_FIELDS.indexOf(k) !== -1) return;                 // リスティング広告専用fieldのみ除外
+      scoped[k] = complianceContext[k];
+    });
+    return scoped;
+  } catch (e) { return complianceContext; }  // fail-open: 失敗時は既存動作を維持
+}
+
 function _apfrComplianceHasScannableContent(outputDraft) {
   if (!outputDraft || !outputDraft.fields) return false;
   return Object.keys(outputDraft.fields).some(function (k) {
@@ -40189,6 +40250,11 @@ function _apfrEvaluateMobileApprovalCompliance() {
     // Cross-case／Cross-productのguardは既存関数へ委譲（product=nullなら空contextとなりnot_checked）
     var product = _apfrCurrentAdoptedProduct();
     var complianceContext = product ? _apfrBuildComplianceContext(product) : {};
+    // C-1C-1c: 表示側（buildComplianceGateHtml）と同一のscope補正をEnforcement入力にも適用する
+    //   （表示とEnforcementで判定入力が食い違わないようにする）。Assessment本体は無変更。
+    if (typeof _apfrScopeComplianceContextForOutput === 'function') {
+      complianceContext = _apfrScopeComplianceContextForOutput(complianceContext, _lastOutputDraft);
+    }
 
     var assessment = _apfrEvaluateComplianceAssessment(_lastOutputDraft, complianceContext);
     var status = (assessment && typeof assessment.status === 'string') ? assessment.status : 'not_checked';
