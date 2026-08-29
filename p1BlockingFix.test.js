@@ -404,9 +404,13 @@ caseHeader('E. Leader Final question への Reviewer reject遵守Contract 追加
   assert(ocSrc.indexOf('あなたの判断で「問題なし」と上書きしないでください。') !== -1, 'E-5. Leaderによるreject上書きを禁止している');
   assert(ocSrc.indexOf('「Reviewer確認済み」「Compliance Check完了」等と記載しないでください。') !== -1, 'E-6. 未確認の「Reviewer確認済み」表示を禁止している');
 
-  // questionへ条件付きで挿入されていること（Reviewer未実行時は既存questionと同一＝fail-open）
-  assert(ocSrc.indexOf("reviewerText ? LEADER_FINAL_REVIEWER_REJECT_RULE : ''") !== -1,
-    'E-7. reviewerTextが存在する場合のみquestionへ付加する（Reviewer未実行時はfail-open）');
+  // questionへ条件付きで挿入されていること（Reviewerが1人も居ない場合は既存questionと同一＝fail-open）
+  //   Issue A / Option D: main-task Reviewer（mainReviewerText）も発火条件へ追加された。
+  //   Ruleの対象と実際に停止判断を出すReviewerを一致させるための拡張であり、条件緩和ではない。
+  assert(ocSrc.indexOf("(reviewerText || mainReviewerText) ? LEADER_FINAL_REVIEWER_REJECT_RULE : ''") !== -1,
+    'E-7. Reviewer（post-process または main-task）が存在する場合のみquestionへ付加する（Reviewer未実行時はfail-open）');
+  assert(ocSrc.indexOf("LEADER_FINAL_REVIEWER_REJECT_RULE : ''") !== -1,
+    'E-7b. 付加は依然として条件付き（無条件付加になっていない）');
 
   // LEADER_FINAL_PROMPT定数は無変更（released testのbyte一致固定を壊さない）
   const cp = require('child_process');

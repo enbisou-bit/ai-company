@@ -2858,6 +2858,22 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   });
   const reviewerTask = (workflowTasks || []).find(function(t) { return t.agentId === 'reviewer' && t.isPostProcess; });
   const strategyTask = (workflowTasks || []).find(function(t) { return t.agentId === 'strategy' && t.isPostProcess; });
+  // Issue A / Option D: main-task Reviewer を別変数として取得する（上の既存2行は変更しない）。
+  //   Path A実AI E2Eで3回連続して観測された問題の構造的原因:
+  //     Auto Taskの担当行として実行されるReviewer（例 at-task-3）は workflowTasks.map() 生成物であり
+  //     isPostProcess プロパティを持たない（undefined）。そのため上の reviewerTask 取得条件
+  //     （agentId==='reviewer' && t.isPostProcess）にマッチせず、reviewerText は常に
+  //     at-postprocess-reviewer だけを指していた。
+  //     結果として「情報が不足・確認が必要」と停止判断を出した main-task Reviewer の本文は
+  //     memberReplies 内に他担当と横並びで埋もれ、LEADER_FINAL_REVIEWER_REJECT_RULE の対象外だった。
+  //   本修正は「Leader Final へ届いていなかったReviewer判断を明示的に供給する」ことだけを行う。
+  //     deterministic block・停止語のsubstring/regex判定・Enforcement追加はいずれも行わない
+  //     （Reviewer停止を無条件blockにすると、Formal Truthに商品成分等が存在しない案件が永久blockになる。
+  //      実E2EではStrategyが「それらを使わない投稿なら作成可能」と判断し、実際に成果物へ不使用だった）。
+  //   post-process Reviewer（reviewerText）とは統合せず、両方をLeader Finalへ渡す。
+  const mainReviewerTask = (workflowTasks || []).find(function(t) {
+    return t && t.agentId === 'reviewer' && !t.isPostProcess && t.status === 'completed' && t.result;
+  });
 
   // 工程2: error・skippedとなったメイン担当の状態サマリー（成果本文には混ぜない・後処理タスク自身は対象外）
   function _lfShortReason(raw) {
@@ -2936,6 +2952,12 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;
   var reviewerText = (reviewerTask && reviewerTask.result) ? reviewerTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
   var strategyText = (strategyTask && strategyTask.result) ? strategyTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
+  // Issue A / Option D: main-task Reviewer 本文（上限は既存 reviewerText / memberReplies と同一の1200文字）。
+  //   memberReplies にも同じ本文が含まれるが、そちらは「AI社員の社内検討内容（正式回答ではない）」という
+  //   格下げラベルで他担当と横並びに置かれるため、Reviewer判断であることが失われる。
+  //   下の question で専用ラベルを付けて別途明示する（memberReplies の構造・内容は一切変更しない）。
+  var mainReviewerText = (mainReviewerTask && mainReviewerTask.result)
+    ? _extractReply(_atDeliverableText(mainReviewerTask)).slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
 
   // Brain / Knowledge コンテキスト
   var brainCtx = brainResult
@@ -3072,6 +3094,7 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '',
       '【AI社員の社内検討内容（正式回答ではない。重複除去・矛盾解消・採否判断を行ったうえであなたの判断で統合すること）】',
       repliesText, '',
+      mainReviewerText ? '【Reviewer（品質レビュー担当）の作業中レビュー】\n' + mainReviewerText : '',
       reviewerText ? '【Reviewerの品質フィードバック】\n' + reviewerText : '',
       strategyText ? '【Strategyの統合提言】\n' + strategyText : '',
       '',
@@ -3110,6 +3133,7 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '',
       '【AI社員の社内検討内容（正式回答ではない。重複除去・矛盾解消・採否判断を行ったうえであなたの判断で統合すること）】',
       repliesText, '',
+      mainReviewerText ? '【Reviewer（品質レビュー担当）の作業中レビュー】\n' + mainReviewerText : '',
       reviewerText ? '【Reviewerの品質フィードバック】\n' + reviewerText : '',
       strategyText ? '【Strategyの統合提言】\n' + strategyText : '',
       statusSummaryText ? '【担当実行状況・成果物には含めない】\n' + statusSummaryText : '',
@@ -3120,7 +3144,7 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
       '',
       '上記の社内検討内容を統合し、依頼された範囲内の完成成果物のみを、指定フォーマットのうち該当する項目だけで出力してください。依頼されていない項目・案件種別は追加しないでください。',
       '要約・方針・提案は不要。完成した文章・コピー・構成をそのまま出力してください。',
-      reviewerText ? LEADER_FINAL_REVIEWER_REJECT_RULE : '',
+      (reviewerText || mainReviewerText) ? LEADER_FINAL_REVIEWER_REJECT_RULE : '',
     ].filter(Boolean);
     question = parts.join('\n');
   }
