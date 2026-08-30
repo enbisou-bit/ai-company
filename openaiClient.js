@@ -24,6 +24,19 @@ const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 const EEA_WEB_SEARCH_MODEL = 'gpt-5.6-terra';
 const EEA_WEB_SEARCH_CONTEXT_SIZE = 'low';   // 初期値は必ずlow固定（high・mediumは使用しない）
 
+// Instagram実運用 Blocking Fix: Leader Final専用モデル（既存OPENAI_MODELとは独立した別定数。
+//   EEA_WEB_SEARCH_MODELと同じ「別経路は別定数」方式であり、OPENAI_MODEL自体は変更しない
+//   ＝各AI社員・Company Brain・leaderSummary・strategyConsolidate等の既存OpenAI呼び出しは全て従来モデルのまま）。
+//   背景（実測）: 実AI Path A（workflow wf-1788103235478 / case-msr9yckye65y）で、Reviewerの否認・
+//   LEADER_FINAL_REVIEWER_REJECT_RULE・formalTruthRule・IADP Scope BoundaryはいずれもLeader Final
+//   promptへ正しく供給されていたにもかかわらず、gpt-4.1-nanoがそれらを遵守せず、CASE CONTEXTに存在しない
+//   商品事実（植物由来・肌に優しい・安全性・口コミ・継続効果・キャンペーン）を復活させた。
+//   出力がLEADER_FINAL_PROMPTのテンプレート見出しを逐語コピーし末尾が「※※※」の反復で崩壊していたことから、
+//   供給経路ではなくLeader Final実行モデルの能力不足が直接原因と判定した。
+//   適用範囲: 通常Leader Final（_iadpMode=false）のみ。IADP用Leader Final（structuredOutput/8192tokens）は
+//   別責務・別検証のため従来モデルのまま変更しない。
+const LEADER_FINAL_MODEL = 'gpt-5.4-mini';
+
 // ══════════════════════════════════════════════════════════════
 // AI社員プロフィール定義
 // ・name        : 表示名
@@ -1612,8 +1625,12 @@ async function callOpenAI(systemPrompt, userMessage, history = [], options = {})
   if (!OPENAI_API_KEY || !costTracker.canProcess()) return null;
   try {
     const historyMessages = (history || []).map(({ role, content }) => ({ role, content }));
+    // 呼び出し単位のモデル指定（任意）。options.model 未指定時は従来どおり OPENAI_MODEL を使用するため、
+    //   既存の全呼び出し（各AI社員・Company Brain・leaderSummary・strategyConsolidate等）は挙動不変。
+    //   料金計上（addOpenAIUsage / persistOpenAICostEvent）も同じ実効モデル名で行う（計上先の食い違いを作らない）。
+    const effectiveModel = (options && typeof options.model === 'string' && options.model) ? options.model : OPENAI_MODEL;
     const body = {
-      model: OPENAI_MODEL,
+      model: effectiveModel,
       input: [
         { role: 'system', content: systemPrompt },
         ...historyMessages,
@@ -1650,12 +1667,12 @@ async function callOpenAI(systemPrompt, userMessage, history = [], options = {})
     const inputTokens  = usage.input_tokens  || usage.inputTokens  || 0;
     const outputTokens = usage.output_tokens || usage.outputTokens || 0;
     if (inputTokens || outputTokens) {
-      addOpenAIUsage(OPENAI_MODEL, inputTokens, outputTokens, 'aiDevelopment', 'text');
+      addOpenAIUsage(effectiveModel, inputTokens, outputTokens, 'aiDevelopment', 'text');
       // A-2-5: 既存料金記録に加え、Supabase へ料金イベントを保存（dual-write）。
       //   保存失敗しても AI回答は返す（persistOpenAICostEvent は throw しない）。
       await persistOpenAICostEvent({
         responseId:  response?.data?.id,
-        model:       OPENAI_MODEL,
+        model:       effectiveModel,
         inputTokens,
         outputTokens,
         assignee:    'aiDevelopment',
@@ -3182,10 +3199,16 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     var _iadpCallOptions = { max_output_tokens: _iadpMaxOutputTokens };
     if (_iadpMode) {
       _iadpCallOptions.structuredOutput = { name: 'instagram_account_design_package', schema: IADP_STRUCTURED_OUTPUT_SCHEMA };
+    } else {
+      // Instagram実運用 Blocking Fix: 通常Leader Finalのみ LEADER_FINAL_MODEL で実行する。
+      //   question（Reviewer本文・LEADER_FINAL_REVIEWER_REJECT_RULE・Grounding Block・CASE CONTEXT）と
+      //   LEADER_FINAL_PROMPT本体はいずれも1文字も変更していない＝供給内容は従来と完全同一で、モデルのみが差分。
+      _iadpCallOptions.model = LEADER_FINAL_MODEL;
     }
     text = await callOpenAI(_iadpPromptToUse, question, [], _iadpCallOptions) || '';
     provider = 'openai';
-    model    = OPENAI_MODEL;
+    // 実際に使用したモデルを返す（task_history.modelUsed へそのまま記録され、実測で検証できる）
+    model    = _iadpCallOptions.model || OPENAI_MODEL;
     fallback = false;
     // JSON返答のフォールバック解析（leaderSummary互換）
     if (text.trimStart().startsWith('{')) {
