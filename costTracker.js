@@ -21,6 +21,15 @@ const MODEL_PRICES = {
     cachedInput: 0.20,
     output: 12.00,
   },
+  // Instagram実運用 Blocking Fix: Leader Final専用モデル（openaiClient.js LEADER_FINAL_MODEL）の公式単価。
+  //   単位は本表の既存形式と同一＝USD / 1,000,000 tokens（換算不要）。
+  //   Input $0.75 / 1M、Cached input $0.075 / 1M、Output $4.50 / 1M。
+  //   cachedInput は既存 calculateOpenAICost() の按分計算（gpt-5.6-terra と同方式）でそのまま機能する。
+  'gpt-5.4-mini': {
+    input: 0.75,
+    cachedInput: 0.075,
+    output: 4.50,
+  },
 };
 // EEA-8: developers.openai.com/api/docs/pricing で2026-08-12時点に実測確認。
 //   web_searchツール（Responses API）＝ $10.00 / 1,000 calls。1 call = $0.01。
