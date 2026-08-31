@@ -30386,6 +30386,48 @@ function _getRoleReplyText(agentId) {
   return '';
 }
 
+// Output Draft Parser P2（B案）: Leader Final の `### ` セクション構造を解析するだけの純関数。
+//   背景（実運用 wf-1788170283441 / out_1788170314753 で実測）: gpt-5.4-mini / gpt-4.1-nano とも
+//   LEADER_FINAL_PROMPT のテンプレート（### Instagram投稿（カルーセル）→【N枚目】/ ### キャプション /
+//   ### CTA / ### ハッシュタグ / ### 画像生成Prompt〔プロンプト表記ゆれ〕）で出力するが、
+//   既存 parser が `【N枚目】` を認識せず slides 10→1・imagePrompts 10→1（stub）・CTA 誤取得となっていた。
+//   本関数は Leader Final 本文を見出しで分割し各セクションの生テキストを返すだけ（新しい商品事実・
+//   新しい文字列は一切生成しない）。1つも見つからない旧形式では found:false を返し、呼び出し側は
+//   現行 heuristic へ完全 fallback する。DOM/Network/グローバル状態を読み書きしない。
+function _parseLeaderFinalCarouselSections(finalText) {
+  var out = { slides: null, caption: null, cta: null, hashtags: null, imagePrompts: null, found: false };
+  try {
+    var text = String(finalText || '');
+    if (!text) return out;
+    var lines = text.split('\n');
+    var cur = null;
+    var buf = [];
+    function flush() {
+      if (cur && buf.length) {
+        var body = buf.join('\n').trim();
+        if (body && out[cur] == null) { out[cur] = body; out.found = true; }
+      }
+      buf = [];
+    }
+    function classify(h) {
+      var s = String(h).replace(/^#{2,}\s*/, '').trim();
+      if (/画像生成|画像プロンプト|image\s*prompt/i.test(s)) return 'imagePrompts';
+      if (/ハッシュタグ|hashtag/i.test(s)) return 'hashtags';
+      if (/(^|[^a-z])cta([^a-z]|$)|行動喚起/i.test(s)) return 'cta';
+      if (/キャプション|caption/i.test(s)) return 'caption';
+      if (/カルーセル|instagram\s*投稿|スライド構成/i.test(s)) return 'slides';
+      return null;
+    }
+    lines.forEach(function(line) {
+      var m = line.match(/^#{2,}\s+(.+?)\s*$/);
+      if (m) { flush(); cur = classify(m[1]); }   // 未分類見出しは cur=null（以降の本文を捨てる）
+      else if (cur) { buf.push(line); }
+    });
+    flush();
+  } catch (_e) { /* fail-open: 解析失敗時は found:false のまま */ }
+  return out;
+}
+
 function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
   // 工程3-2: completed成果0件（全担当error/skipped）で呼ばれた場合、完成成果物として誤認しない扱いにする。
   //   呼び出し元が opts を渡さない既存経路（例: 手動Leader Final再生成）は従来どおり動作する（後方互換）。
@@ -30412,7 +30454,10 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
     var current = null;
     lines.forEach(function(line) {
       var t = line.trim();
-      if (/^(Slide|スライド|slide)\s*\d+/i.test(t) || /^[①②③④⑤⑥⑦⑧⑨⑩]/.test(t) || /^\d+[\.\)]\s/.test(t)) {
+      // Output Draft Parser P2（B案）: 既存3形式（Slide N / ①〜⑩ / N. or N)）に加え、
+      //   LEADER_FINAL_PROMPT テンプレートの【N枚目】/【スライドN】を認識する（既存条件は置換せず追加のみ）。
+      if (/^(Slide|スライド|slide)\s*\d+/i.test(t) || /^[①②③④⑤⑥⑦⑧⑨⑩]/.test(t) || /^\d+[\.\)]\s/.test(t)
+          || /^【\s*(\d+\s*枚目|スライド\s*\d+)\s*】/.test(t)) {
         if (current !== null) slides.push(current);
         current = t;
       } else if (current !== null && t) {
@@ -30433,7 +30478,11 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
   if (type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL) {
     // 社員向上B B-2-2f: instagram_carousel を定義駆動へ移行（ハイブリッド）。
     // targetAudience/benefit は動的フォールバック searchText.slice(0,100) のため定義駆動から除外し旧ロジックを維持（二重代入なし）。失敗時は下の旧処理へフォールバック。
-    var _slidesCar = extractSlides(finalText);   // 分岐内で1回だけ生成
+    // Output Draft Parser P2（B案）: Leader Final の ### セクション構造を優先解析する（存在時のみ）。
+    //   slides は「カルーセルセクションだけ」を extractSlides へ渡す＝### 画像生成Prompt セクションの
+    //   【N枚目】を巻き込まない。セクション不在の旧形式では finalText 全体を渡す（後方互換）。
+    var _lfSec = _parseLeaderFinalCarouselSections(finalText);
+    var _slidesCar = extractSlides(_lfSec.slides != null ? _lfSec.slides : finalText);   // 分岐内で1回だけ生成
     var _ddCtxCar = buildOutputSectionContext({
       type: type, finalText: finalText,
       writerText: _writerText, strategyText: _strategyText, designerText: _designerText,
@@ -30455,6 +30504,28 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
       fields.targetAudience  = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ターゲット層?|想定読者|Target\s*Audience)\s*[:：]/i], searchText.slice(0, 100));
       fields.benefit          = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(ベネフィット|メリット|得られる価値|Benefit)\s*[:：]/i], searchText.slice(0, 100));
       fields.saveSharePrompt   = _extractLabeledSection(searchText, [/^[■●◆\-\*]?\s*(保存|シェア|Save|Share)\s*[:：]/i], '保存してあとで見返してください');
+    }
+    // ── Output Draft Parser P2（B案）overlay: Leader Final の ### セクションが取れたときだけ上書き ──
+    //   1つも取れない旧形式では _lfSec.found===false → 何も上書きせず上記の現行挙動を完全維持。
+    //   packageQuality / completionAssessment / targetAudience / benefit / caption(fullText) は今回対象外（不変）。
+    if (_lfSec.found) {
+      // imagePrompts: ### 画像生成Prompt/プロンプト セクションの実プロンプト（stub を使わない）。
+      //   同セクションも【N枚目】区切りのため extractSlides を再利用し、先頭の【N枚目】マーカーだけ除去する。
+      if (_lfSec.imagePrompts != null) {
+        var _ip = extractSlides(_lfSec.imagePrompts)
+          .map(function(s){ return String(s).replace(/^【\s*(?:\d+\s*枚目|スライド\s*\d+)\s*】[\s　]*/, '').trim(); })
+          .filter(Boolean);
+        if (_ip.length) fields.imagePrompts = _ip;
+      }
+      // cta: ### CTA セクションの先頭の実文（### 画像生成Prompt 内の「フォロー」等を誤取得しない）。
+      if (_lfSec.cta != null) {
+        var _ctaLine = _lfSec.cta.split('\n').map(function(l){ return l.trim(); }).filter(Boolean)[0] || '';
+        if (_ctaLine) fields.cta = _ctaLine;
+      }
+    }
+    // hashtags: 重複だけ除去（順序保持）。件数上限・_extractHashtagsFromText 本体は変更しない。
+    if (Array.isArray(fields.hashtags)) {
+      fields.hashtags = fields.hashtags.filter(function(h, i, a){ return a.indexOf(h) === i; });
     }
     updatedFields = ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts', 'targetAudience', 'benefit', 'saveSharePrompt'];
 
