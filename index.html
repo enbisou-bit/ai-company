@@ -30448,6 +30448,15 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
   var fields = draft.fields;
   var updatedFields = [];
 
+  // Mobile Review Grounded Output Wiring: これから fields を作り直すため、fields 由来の派生キャッシュ
+  //   （publishing / instagramContentPlanning / instagramCarouselBuilder / instagramDesignSystem /
+  //   mobileReviewCenter）を無効化する。旧 parser 内容（caption 全文・CTA 断片・テンプレ再生成 slides）が
+  //   stale で残り Mobile Review / Approval / Publishing に再出現するのを防ぐ。次回 buildXxxHtml /
+  //   createMobileApprovalDraft / createPublishingDraft が新 fields から再計算する（生成物の意味は不変）。
+  ['publishing', 'instagramContentPlanning', 'instagramCarouselBuilder', 'instagramDesignSystem', 'mobileReviewCenter'].forEach(function(_ck) {
+    if (draft && draft[_ck] != null) draft[_ck] = null;
+  });
+
   function extractSlides(text) {
     var lines = text.split('\n');
     var slides = [];
@@ -32286,7 +32295,16 @@ function _fillPublishingInstagram(base, f) {
   var slides = Array.isArray(f.slides) ? f.slides : [];
   base.title = slides.length ? _pubTruncate(slides[0], 40) : (f.caption ? _pubTruncate(f.caption, 40) : '');
   base.description = f.caption || '';
-  base.hashtags = _pubPadHashtags(_pubToHashtagArray(f.hashtags), [f.targetAudience, f.benefit], 15, 30);
+  // Mobile Review Grounded Output Wiring: fields.hashtags（Leader Final の ### ハッシュタグ由来・正本）が
+  //   あれば、それを順序保持・重複除去でそのまま使う。targetAudience/benefit（動的 fallback で本文断片が
+  //   入り得る）からのキーワード補完は行わない＝「###」「#今回は第1投」等のゴミタグを再生成しない。
+  //   fields.hashtags が空の旧形式でのみ従来の補完ロジックへ fallback（後方互換）。
+  var _igTags = _pubToHashtagArray(f.hashtags)
+    .map(function(h) { h = String(h).trim().replace(/\s+/g, ''); return (h && h.indexOf('#') !== 0) ? '#' + h : h; })
+    .filter(function(h) { return h && h.length > 1 && h.length <= 40; });
+  base.hashtags = _igTags.length
+    ? _igTags.filter(function(h, i, a) { return a.indexOf(h) === i; })
+    : _pubPadHashtags([], [f.targetAudience, f.benefit], 15, 30);
   base.imageList = Array.isArray(f.imagePrompts) && f.imagePrompts.length
     ? f.imagePrompts.map(function(p) { return String(p); })
     : slides.map(function(s, i) { return 'スライド' + (i + 1) + '用画像（未生成）: ' + _pubTruncate(s, 40); });
@@ -36197,6 +36215,59 @@ function _icbBuildStructureReview(score) {
   return review;
 }
 
+// Mobile Review Grounded Output Wiring: Output Draft の structured carousel fields
+//   （P2 / caption parser 由来 = Leader Final を直接パースした正本）を Carousel Builder の
+//   スライド形状へ変換する。theme / benefit / painPoint からのテンプレ再生成
+//   （buildInstagramCarouselSlides）で Leader Final 非準拠の新規コピーを作らないための入口。
+//   「本物の構造化 slides」でないとき（旧形式の 1件フォールバック等）は null を返し、
+//   呼び出し側は従来どおり buildInstagramCarouselSlides() へ fallback する。
+//   新しい商品事実・新しい文言は一切生成しない（fields.slides / fields.imagePrompts の抽出のみ）。
+function _icbSlidesFromOutputFields(fields) {
+  if (!fields || !Array.isArray(fields.slides)) return null;
+  var raw = fields.slides.map(function(s) { return s == null ? '' : String(s); }).filter(function(s) { return s.trim(); });
+  // 構造化判定: 2件以上 かつ 少なくとも1件が スライド区切りマーカー / 見出しラベルを持つ
+  //   （extractSlides が認識する形式のみ。単一 200字ブロブ等の旧 fallback は対象外）
+  var structured = raw.length >= 2 && raw.some(function(s) {
+    return /【[^】]*】/.test(s) || /(タイトル|見出し|本文)[：:]/.test(s)
+      || /^(?:Slide|スライド|slide)\s*\d+/i.test(s) || /^[①-⑩]/.test(s) || /^\d+[\.\)]\s/.test(s);
+  });
+  if (!structured) return null;
+  var prompts = Array.isArray(fields.imagePrompts) ? fields.imagePrompts : [];
+  var FUNNEL = ['hook', 'empathy', 'cause', 'solution_1', 'solution_2', 'solution_3', 'caution', 'howto', 'summary', 'cta'];
+  var n = raw.length;
+  return raw.map(function(line, i) {
+    var body = String(line)
+      .replace(/^【[^】]*】[\s　]*/, '')
+      .replace(/^(?:Slide|スライド|slide)\s*\d+[\s　：:.\)]*/i, '')
+      .replace(/^[①-⑩][\s　]*/, '')
+      .replace(/^\d+[\.\)][\s　]*/, '');
+    var seg = {};
+    body.split(/\s*\/\s*(?=(?:タイトル|見出し|本文|ビジュアル|visual)[：:])/i).forEach(function(p) {
+      var m = p.match(/^(タイトル|見出し|本文|ビジュアル|visual)[：:]\s*([\s\S]*)$/i);
+      if (m) seg[m[1].toLowerCase()] = m[2].trim();
+    });
+    var title = seg['タイトル'] || seg['見出し'] || '';
+    var honbun = seg['本文'] || '';
+    var visual = seg['ビジュアル'] || seg['visual'] || '';
+    var hasSeg = !!(title || honbun || visual);
+    var headline = title || (hasSeg ? honbun.slice(0, 40) : body.slice(0, 40));
+    var bodyText = honbun || (title ? '' : (hasSeg ? '' : body));
+    var role = (i === 0) ? 'hook' : (i === n - 1) ? 'cta' : (FUNNEL[i] || 'howto');
+    var label = (i === 0) ? 'タイトル' : (i === n - 1) ? 'CTA / プロフィール誘導' : ('本文 #' + (i + 1));
+    var seed = (prompts[i] != null && String(prompts[i]).trim()) ? String(prompts[i]) : visual;
+    return {
+      slideId: 'icb-' + (i + 1), slideNumber: i + 1, role: role, roleLabel: label,
+      headline: headline, bodyText: bodyText, visualDirection: visual,
+      layoutHint: '見出し＋本文＋ビジュアル指定（Output Draft 正本）',
+      emotionTarget: '', saveTrigger: (i >= n - 2) ? '保存して見返す' : '',
+      ctaElement: (i === n - 1) ? 'プロフィール誘導＋アフィリエイトリンク訴求' : '',
+      imagePromptSeed: seed,
+      textDensity: 'medium', priority: (i === 0 || i === n - 1) ? 'high' : 'medium',
+      notes: 'Output Draft（Leader Final 由来）の structured slide を正本として使用。テンプレ再生成なし',
+    };
+  });
+}
+
 // Phase50-3: Instagram Carousel Builder Draft生成（selectedPlan優先→bestPlan→outputDraftからfallback。null draftでも例外なし）
 function createInstagramCarouselBuilderDraft(outputDraft) {
   if (!outputDraft || !outputDraft.fields) return null;
@@ -36235,6 +36306,23 @@ function createInstagramCarouselBuilderDraft(outputDraft) {
 
   var pi = _icbNormalizeInput(piRaw);
   var slides = buildInstagramCarouselSlides(pi);
+  // Mobile Review Grounded Output Wiring: Output Draft に Leader Final 由来の structured carousel
+  //   fields があれば、テンプレ生成ではなくそれを正本として採用する（Mobile Review / Approval /
+  //   Publishing に Leader Final 非準拠の新規コピーを出さない）。変換不可時は上のテンプレ slides を維持。
+  var _groundedSlides = _icbSlidesFromOutputFields(outputDraft.fields);
+  if (_groundedSlides && _groundedSlides.length) {
+    slides = _groundedSlides;
+    sourceMeta.source = 'outputDraftFields';
+    // hashtags / CTA も正本（fields）を優先し、下流（Design System → Mobile Review → Mobile Approval）へ伝播させる。
+    if (Array.isArray(outputDraft.fields.hashtags) && outputDraft.fields.hashtags.length) {
+      pi.suggestedHashtags = outputDraft.fields.hashtags
+        .map(function(h) { return String(h).trim(); })
+        .filter(function(h, i, a) { return h && a.indexOf(h) === i; });
+    }
+    if (outputDraft.fields.cta && String(outputDraft.fields.cta).trim()) {
+      pi.suggestedCTA = String(outputDraft.fields.cta).trim();
+    }
+  }
   var score = scoreInstagramCarouselStructure(slides);
   var carouselScore = score.carouselScore;
 
