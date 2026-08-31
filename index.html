@@ -30507,7 +30507,7 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
     }
     // ── Output Draft Parser P2（B案）overlay: Leader Final の ### セクションが取れたときだけ上書き ──
     //   1つも取れない旧形式では _lfSec.found===false → 何も上書きせず上記の現行挙動を完全維持。
-    //   packageQuality / completionAssessment / targetAudience / benefit / caption(fullText) は今回対象外（不変）。
+    //   packageQuality / completionAssessment / targetAudience / benefit は今回対象外（不変）。
     if (_lfSec.found) {
       // imagePrompts: ### 画像生成Prompt/プロンプト セクションの実プロンプト（stub を使わない）。
       //   同セクションも【N枚目】区切りのため extractSlides を再利用し、先頭の【N枚目】マーカーだけ除去する。
@@ -30521,6 +30521,12 @@ function buildOutputDraftFromLeaderFinal(finalText, opts, targetDraft) {
       if (_lfSec.cta != null) {
         var _ctaLine = _lfSec.cta.split('\n').map(function(l){ return l.trim(); }).filter(Boolean)[0] || '';
         if (_ctaLine) fields.cta = _ctaLine;
+      }
+      // caption: ### キャプション セクション本文を投稿用 caption に採用する（Leader Final 全文を caption にしない）。
+      //   セクション不在/空のときは上の finalText フォールバックを維持（後方互換）＝
+      //   caption = (_lfSec.found && _lfSec.caption) ? _lfSec.caption : finalText
+      if (_lfSec.caption != null && String(_lfSec.caption).trim()) {
+        fields.caption = String(_lfSec.caption).trim();
       }
     }
     // hashtags: 重複だけ除去（順序保持）。件数上限・_extractHashtagsFromText 本体は変更しない。

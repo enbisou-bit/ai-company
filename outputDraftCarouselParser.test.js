@@ -15,7 +15,12 @@
 //     2. _parseLeaderFinalCarouselSections() を新設（### セクション分割のみ・新規文字列を生成しない）
 //     3. INSTAGRAM_CAROUSEL 分岐: セクションが取れたときだけ slides/imagePrompts/cta を上書き、hashtags を重複除去
 //        セクション不在の旧形式では found:false → 現行 heuristic へ完全 fallback
-//   今回対象外: packageQuality / completionAssessment 乖離、targetAudience/benefit fallback、caption=fullText、hashtag 上限。
+//   今回対象外: packageQuality / completionAssessment 乖離、targetAudience/benefit fallback、hashtag 上限。
+//
+//   Caption Section Wiring 追加分（今回）:
+//     INSTAGRAM_CAROUSEL 分岐で fields.caption を Leader Final 全文ではなく
+//     _parseLeaderFinalCarouselSections().caption（### キャプション セクション本文）へ配線する。
+//     セクション不在/空のときは従来どおり finalText へフォールバック（後方互換）。
 
 const fs = require('fs');
 const path = require('path');
@@ -147,6 +152,9 @@ function applyCarouselOverlay(finalText) {
       const _ctaLine = _lfSec.cta.split('\n').map(l => l.trim()).filter(Boolean)[0] || '';
       if (_ctaLine) fields.cta = _ctaLine;
     }
+    if (_lfSec.caption != null && String(_lfSec.caption).trim()) {
+      fields.caption = String(_lfSec.caption).trim();
+    }
   }
   if (Array.isArray(fields.hashtags)) {
     fields.hashtags = fields.hashtags.filter((h, i, a) => a.indexOf(h) === i);
@@ -251,15 +259,14 @@ caseHeader('9. slides: カルーセルセクションのみを extractSlides へ
 }
 
 // ── 10. 今回対象外フィールドの非変更（静的確認） ───────────────────
-caseHeader('10. 今回対象外（packageQuality / completionAssessment / targetAudience / benefit / caption）は不変');
+caseHeader('10. 今回対象外（packageQuality / completionAssessment / targetAudience / benefit）は不変');
 {
   // packageQuality の IADP routing ブロックが無変更
   assert(src.indexOf("if (_iadpQ && _iadpPkgId && _iadpIsValid && typeof _iadpQ.status === 'string' && typeof _iadpQ.score === 'number') {") !== -1, '10-1. Phase IG-QC の routing 条件が無変更');
   assert(src.indexOf('_lastOutputDraft.completionAssessment = evaluateDeliverableCompletion(_lastOutputDraft, { userApproval: _compUserApproval });') !== -1, '10-2. completionAssessment 接続が無変更');
-  // caption は依然 fullText（overlay で caption を触っていない）
-  assert(src.indexOf("var _ip = extractSlides(_lfSec.imagePrompts)") !== -1
-      && src.slice(src.indexOf('if (_lfSec.found) {'), src.indexOf('updatedFields = [\'slides\', \'caption\', \'cta\', \'hashtags\', \'imagePrompts\'')).indexOf('fields.caption') === -1,
-      '10-3. overlay ブロックで fields.caption を上書きしていない');
+  // caption 配線は _lfSec.found かつ _lfSec.caption 有効時のみ（それ以外は finalText フォールバックのまま）
+  assert(src.slice(src.indexOf('if (_lfSec.found) {'), src.indexOf("updatedFields = ['slides', 'caption', 'cta', 'hashtags', 'imagePrompts'")).indexOf('if (_lfSec.caption != null && String(_lfSec.caption).trim()) {') !== -1,
+      '10-3. caption 配線は overlay 内で条件付き（_lfSec.found && _lfSec.caption）');
   // targetAudience/benefit の行が無変更
   assert(src.indexOf("fields.targetAudience = _extractLabeledSection(searchText, [/^[■●◆\\-\\*]?\\s*(ターゲット層?|想定読者|Target\\s*Audience)\\s*[:：]/i], searchText.slice(0, 100));") !== -1, '10-4. targetAudience の fallback 行が無変更');
 }
@@ -287,6 +294,52 @@ caseHeader('12. 非Instagram Output は未変更');
   assert(afterCar.indexOf('_parseLeaderFinalCarouselSections') === -1, '12-2. INSTAGRAM_POST 以降の分岐に overlay は無い');
   // extractSlides の追加は POWERPOINT でも有効だが「追加のみ・既存形式非破壊」であることを 2-x で担保
   assert(src.indexOf("|| /^【\\s*(\\d+\\s*枚目|スライド\\s*\\d+)\\s*】/.test(t)) {") !== -1, '12-3. extractSlides の追加条件は既存3条件へ OR 追加（置換していない）');
+}
+
+// ── 13. caption: ### キャプション セクションを投稿用 caption へ配線（Caption Section Wiring） ──
+caseHeader('13. caption: ### キャプション セクション本文を投稿用 caption に採用（Leader Final 全文を渡さない）');
+{
+  const o = applyCarouselOverlay(REAL_LEADER_FINAL);
+  const _lfCap = _parseLeaderFinalCarouselSections(REAL_LEADER_FINAL).caption.trim();
+  assert(o.fields.caption === _lfCap, '13-1. fields.caption === _lfSec.caption（### キャプション本文のみ）');
+  assert(o.fields.caption.indexOf('【広告】') === 0, '13-2. fields.caption 先頭が【広告】');
+  assert(o.fields.caption.indexOf('#PR') !== -1, '13-3. fields.caption に #PR（開示表記）が含まれる');
+  assert(o.fields.caption.length < REAL_LEADER_FINAL.length, `13-4. fields.caption が Leader Final 全文ではない（${o.fields.caption.length} < ${REAL_LEADER_FINAL.length}）`);
+  assert(o.fields.caption.indexOf('### Instagram投稿') === -1 && o.fields.caption.indexOf('### 画像生成Prompt') === -1, '13-5. fields.caption に他セクションの ### 見出しが混入していない');
+  assert(REAL_LEADER_FINAL.indexOf(o.fields.caption) !== -1, '13-6. fields.caption は finalText の部分文字列（生成でなく抽出）');
+  // 同一 overlay で他フィールドが回帰していない
+  assert(o.fields.slides.length === 10, '13-7. slides 10 維持');
+  assert(o.fields.imagePrompts.length === 10, '13-8. imagePrompts 10 維持');
+  assert(o.fields.cta === 'プロフィールのリンクから公式ページをご確認ください。', '13-9. cta 不変');
+  assert(o.fields.hashtags.filter(h => h === '#PR').length === 1, '13-10. hashtags #PR 1件 維持');
+}
+
+// ── 14. caption: ### キャプション セクション不在（旧形式）→ finalText フォールバック ──
+caseHeader('14. caption: ### キャプション 不在 → 従来どおり finalText フォールバック（後方互換）');
+{
+  const legacy = 'Slide 1: こんにちは\nSlide 2: よろしく\nフォローしてね';
+  const o = applyCarouselOverlay(legacy);
+  assert(o._lfSec.found === false, '14-1. ### 見出しなし → found:false');
+  assert(o._lfSec.caption === null, '14-2. caption セクション null');
+  assert(o.fields.caption === legacy, '14-3. fields.caption === finalText（フォールバック維持）');
+  // ### 他セクションはあるが ### キャプション だけ無いケース
+  const noCap = '### Instagram投稿（カルーセル）\n【1枚目】タイトル：A / 本文：B\n【2枚目】タイトル：C / 本文：D\n\n### CTA\nリンクから確認してください。';
+  const o2 = applyCarouselOverlay(noCap);
+  assert(o2._lfSec.found === true && o2._lfSec.caption == null, '14-4. 他セクションのみ found:true・caption は null');
+  assert(o2.fields.caption === noCap, '14-5. caption セクション空 → finalText フォールバック（overlay で上書きしない）');
+  assert(o2.fields.cta === 'リンクから確認してください。', '14-6. 同ケースで cta 配線は従来どおり機能');
+}
+
+// ── 15. index.html: caption 配線行の静的確認 ──────────────────────
+caseHeader('15. index.html: caption wiring 行が INSTAGRAM_CAROUSEL 分岐の overlay 内にある');
+{
+  const carBranch = src.slice(src.indexOf('if (type === OUTPUT_TYPES.INSTAGRAM_CAROUSEL) {'), src.indexOf('} else if (type === OUTPUT_TYPES.INSTAGRAM_POST) {'));
+  assert(carBranch.indexOf('if (_lfSec.caption != null && String(_lfSec.caption).trim()) {') !== -1, '15-1. caption 配線行が INSTAGRAM_CAROUSEL 分岐内にある');
+  assert(carBranch.indexOf('fields.caption = String(_lfSec.caption).trim();') !== -1, '15-2. fields.caption へ _lfSec.caption(trim) を代入');
+  const afterCar = src.slice(src.indexOf('} else if (type === OUTPUT_TYPES.INSTAGRAM_POST) {'));
+  assert(afterCar.indexOf('_lfSec.caption != null && String(_lfSec.caption).trim()') === -1, '15-3. INSTAGRAM_POST 以降の分岐に caption 配線は無い');
+  // fallback 経路の finalText 代入は残っている（セクション不在時の後方互換）
+  assert(carBranch.indexOf('fields.caption     = finalText;') !== -1, '15-4. フォールバック経路の caption=finalText は残置（後方互換）');
 }
 
 console.log('\n' + '─'.repeat(60));
