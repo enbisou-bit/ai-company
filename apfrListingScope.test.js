@@ -218,8 +218,8 @@ caseHeader('3. 静的検証: Formal Truth / schema / Resolver / caseId Binding �
 {
   assert(indexSrc.indexOf("listingNgWords:                   { label: 'リスティングNGワード',  type: 'array',   group: 'Compliance' },") !== -1,
     '3-1. APFR_FIELD_META の listingNgWords 定義が不変（schema変更0）');
-  assert(indexSrc.indexOf("'listingNgWords','regulatoryCategory','complianceRestrictions','advertisingDisclosureRequirements'];") !== -1,
-    '3-2. APFR_FIELD_ORDER 不変');
+  assert(indexSrc.indexOf("'listingNgWords','regulatoryCategory','complianceRestrictions','advertisingDisclosureRequirements',") !== -1,
+    '3-2. APFR_FIELD_ORDER の listing/compliance field 群が順序内に保持されている（末尾かどうかは Contract 外）');
   assert(indexSrc.indexOf('function _apfrResolveCurrentFact(product, field) {') !== -1, '3-3. APFR Resolver 無変更');
   assert(indexSrc.indexOf('if (!_lastOutputDraft.caseId && _atRunCaseId) _lastOutputDraft.caseId = _atRunCaseId;') !== -1,
     '3-4. P1-1 caseId Binding 不変');

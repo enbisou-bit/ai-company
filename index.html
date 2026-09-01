@@ -42781,12 +42781,21 @@ const APFR_FIELD_META = {
   regulatoryCategory:                { label: '規制カテゴリ',          type: 'string',  group: 'Compliance' },
   complianceRestrictions:           { label: 'コンプライアンス制約',  type: 'array',   group: 'Compliance' },
   advertisingDisclosureRequirements:{ label: '広告表示義務',          type: 'array',   group: 'Compliance' },
+  // APFR Product Content Formal Truth Extension: 広告主公式LP／A8実画面で確認した「消費者向け商品情報」の受け皿。
+  //   Compliance情報（listingNgWords等）とは責務分離する（APFR_COMPLIANCE_CONTEXT_FIELDS／
+  //   APFR_COMPLIANCE_PROMPT_FIELD_ORDER へは追加しない）。Fact昇格Contract（Decision108）は既存のまま適用。
+  //   散文は string（_apfrNormalizeUiValue の「、」分割で断片化しないため）、列挙は array。
+  productDescription:               { label: '商品説明',              type: 'string',  group: '商品内容' },
+  productFeatures:                  { label: '商品特徴',              type: 'array',   group: '商品内容' },
+  productUsage:                     { label: '使用方法',              type: 'string',  group: '商品内容' },
+  targetUser:                       { label: '対象者',                type: 'string',  group: '商品内容' },
 };
 const APFR_FIELD_ORDER = ['aspName','programId','productName','productCategory',
   'partnershipStatus','landingUrl','productLinkAvailable',
   'payout','epc','approvalRate','cookieWindowDays','approvalEstimateDays',
   'reviewRequired','mobileOptimized','itpSupported','linkManagerSupported','listingPolicy',
-  'listingNgWords','regulatoryCategory','complianceRestrictions','advertisingDisclosureRequirements'];
+  'listingNgWords','regulatoryCategory','complianceRestrictions','advertisingDisclosureRequirements',
+  'productDescription','productFeatures','productUsage','targetUser'];
 // CUI-1: boolean値のユーザー向け日本語表示ラベル（field固有）。**表示専用**であり保存値は boolean のまま変更しない。
 //   未定義fieldは既定の「あり／なし」を使う（新fieldが増えても表示が壊れない）。
 const APFR_BOOLEAN_LABELS = {
