@@ -1073,6 +1073,8 @@ function _buildLeaderFinalGroundingBlock(caseContext, ruleFacts) {
     '・CASE CONTEXTに存在しない具体的事実（商品成分・効能・価格・割引・キャンペーン・特典・口コミ・実績・商品固有の比較優位・ASP条件・法規制条件等）を、社内検討内容・あなた自身の判断・一般的な業界知識から補って断定してはいけません。',
     '・文章表現・構成・トーン・見出し表現・一般的なCTA表現・レイアウト案など、Formal Truthを必要としない創作表現までは禁止しません。',
     '・Formal Truthのfield名・意味・用途を維持し、別の概念へ読み替えてはいけません。保存された数値・boolean・statusに、そこから論理的に導けない意味を付与しないでください（例：成果承認率のような社内向け指標を、消費者向けの「審査通過率」や「品質保証」の意味へ変換しない。計測期間のような内部条件を、消費者向けの「購入者特典期間」の意味へ変換しない。技術仕様を、消費者向けの購入利便性の意味へ変換しない）。',
+    '・Formal Truth／CASE CONTEXTは「捏造・未確認断定を防ぐための事実境界」であり、「そのまま使ってよい表現の許可リスト」ではありません。Formal Truthに記載のあるFactでも、必ず成果物で使用する必要はなく、省略・より安全な言い換え・「詳細は公式ページ」等への誘導は常に許容されます。禁止するのはFormal Truthを超えた商品事実の断定・捏造だけです。',
+    '・Reviewer／Strategy／Complianceが、ある表現をその媒体（Instagram等）で使用不可・要変更と判断している場合、その判断を優先してください。Formal Truthに記載があることを理由に、そのCompliance判断を上書きしてはいけません。上の優先順位④「Compliance等の正式制約」には、Reviewer／Strategyが媒体上のリスクとして指摘した表現の除外・言い換えも含みます。',
   ];
   if (infoInsufficientCount > 0) {
     lines.push('・担当の一部が情報不足（【現状仮説】【確認したいこと】形式）で回答している場合、その担当が本来提供すべきだった具体的事実を、あなたが代わりに創作してその担当の判断を上書きしてはいけません。');
@@ -2953,6 +2955,11 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   //   既存released test（apfrComplianceContext等）がLEADER_FINAL_PROMPT本体のbyte一致を固定しているため、
   //   定数は変更せずuser側（question）末尾へ最小の遵守Contractを追加する（Option Fと同一方式）。
   //   reviewerTextが存在する場合のみ付加する（Reviewer未実行時は既存questionと完全同一＝fail-open）。
+  //   Enforcement追記（原因分類B対策・一般則・商品固有ハードコードなし）:
+  //     Reviewer/Strategyが特定表現の削除・言い換え・Compliance変更を明示指示した場合、その表現が
+  //     Formal Truth／CASE CONTEXTに記載されていても、記載がある事実だけを理由に元表現を採用しない。
+  //     「Formal Truthに記載がある」ことと「その媒体でその表現を使用してよい」ことは別（実運用で
+  //     Leader FinalがFormal Truth記載を根拠にReviewer/Strategyの媒体上リスク指摘を上書きした事例への対策）。
   var LEADER_FINAL_REVIEWER_REJECT_RULE = [
     '',
     '【Reviewer判断の遵守（最優先・完成成果物の可否）】',
@@ -2961,6 +2968,8 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
     'Reviewerの指摘を解消できない場合は、公開可能な完成成果物として扱わず、未解消の指摘と必要な対応を明示してください。',
     'Reviewerの指摘を、あなたの判断で「問題なし」と上書きしないでください。',
     'Reviewerが解消を確認していない内容について「Reviewer確認済み」「Compliance Check完了」等と記載しないでください。',
+    'ReviewerまたはStrategyが、特定の表現の「削除」「使用禁止」「具体的な言い換え」「Compliance上の変更」を明示している場合、その表現がFormal Truth／CASE CONTEXTに記載されていても、記載があるという事実だけを理由に元の表現をそのまま採用してはいけません。Formal Truthに記載があることと、その媒体でその表現を使用してよいことは別です。',
+    'その場合は、（1）Reviewer／Strategyが指示した安全な削除・言い換えを適用する、（2）それを適切に適用できないときは当該の問題表現を成果物から除外する、のいずれかを行ってください。指示された対応を、あなた自身の解釈だけで「実質的に解消した」とみなして元の表現を残してはいけません。',
   ].join('\n');
 
   // P1-2 修正1: Reviewer/Strategyの結論部（公開不可・差し戻し等の判断）は指摘列挙のあとに書かれるため、

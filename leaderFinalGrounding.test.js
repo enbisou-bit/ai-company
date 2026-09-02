@@ -221,6 +221,102 @@ caseHeader('single-source: formalTruthRule定義が1箇所のみ');
 }
 
 // ──────────────────────────────────────────────────────────────
+// Reviewer / Compliance Enforcement 追記（原因分類B対策・一般則・商品固有ハードコードなし）
+// ──────────────────────────────────────────────────────────────
+const _ocSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
+
+caseHeader('E1. Reviewer/Strategyの削除要求 > Formal Truth記載（一般則）');
+{
+  assert(_ocSrc.indexOf('ReviewerまたはStrategyが、特定の表現の「削除」「使用禁止」「具体的な言い換え」「Compliance上の変更」を明示している場合') !== -1,
+    'E1-1. Reviewer/Strategyの明示指示（削除・使用禁止・言い換え・Compliance変更）を対象とするContractが存在する');
+  assert(_ocSrc.indexOf('その表現がFormal Truth／CASE CONTEXTに記載されていても、記載があるという事実だけを理由に元の表現をそのまま採用してはいけません') !== -1,
+    'E1-2. Formal Truth記載を理由に元表現を採用してはいけないことが明記されている（LEADER_FINAL_REVIEWER_REJECT_RULE内）');
+  assert(_ocSrc.indexOf('Formal Truthに記載があることと、その媒体でその表現を使用してよいことは別です。') !== -1,
+    'E1-3. 「Formal Truth記載」と「媒体での使用可否」が別であることが明記されている');
+  // 商品固有ハードコード禁止の確認
+  ['シミが生まれる5つのステップ', 'プラファスト', '肝斑', '医薬部外品案件', 'バリア成分'].forEach(function (w) {
+    assert(_ocSrc.indexOf("'" + w) === -1 && _ocSrc.indexOf('"' + w) === -1,
+      'E1-4. 商品固有語「' + w + '」がEnforcement文言にハードコードされていない');
+  });
+}
+
+caseHeader('E2. Reviewer/Strategyの具体的言い換え要求への従属Contract');
+{
+  assert(_ocSrc.indexOf('（1）Reviewer／Strategyが指示した安全な削除・言い換えを適用する') !== -1,
+    'E2-1. 指示された削除・言い換えを適用する選択肢が明記されている');
+  assert(_ocSrc.indexOf('（2）それを適切に適用できないときは当該の問題表現を成果物から除外する') !== -1,
+    'E2-2. 適用できない場合は問題表現を除外する選択肢が明記されている');
+  assert(_ocSrc.indexOf('あなた自身の解釈だけで「実質的に解消した」とみなして元の表現を残してはいけません') !== -1,
+    'E2-3. Leader Finalの独自解釈でreject解除・元表現保持することを禁止している');
+}
+
+caseHeader('E3. Formal Truth記載 ≠ Compliance上の使用許可（Grounding Block明示）');
+{
+  const block = oc._buildLeaderFinalGroundingBlock(CASE_CONTEXT_FIXTURE, ruleFacts(0));
+  assert(block.indexOf('「捏造・未確認断定を防ぐための事実境界」であり、「そのまま使ってよい表現の許可リスト」ではありません') !== -1,
+    'E3-1. Formal Truthが「許可リスト」ではなく「事実境界」であることがGrounding Blockに明示されている');
+  assert(block.indexOf('Reviewer／Strategy／Complianceが、ある表現をその媒体（Instagram等）で使用不可・要変更と判断している場合、その判断を優先してください') !== -1,
+    'E3-2. Reviewer/Strategy/Complianceの媒体上の使用不可判断を優先するルールがGrounding Blockに存在する');
+  assert(block.indexOf('Formal Truthに記載があることを理由に、そのCompliance判断を上書きしてはいけません') !== -1,
+    'E3-3. Formal Truth記載を理由にCompliance判断を上書き禁止');
+  assert(block.indexOf('優先順位④「Compliance等の正式制約」には、Reviewer／Strategyが媒体上のリスクとして指摘した表現の除外・言い換えも含みます') !== -1,
+    'E3-4. 優先順位④Complianceの範囲にReviewer/Strategyの媒体リスク指摘が含まれると明記');
+}
+
+caseHeader('E4. Formal Truth記載Factの省略・安全な言い換えが許容される');
+{
+  const block = oc._buildLeaderFinalGroundingBlock(CASE_CONTEXT_FIXTURE, ruleFacts(0));
+  assert(block.indexOf('必ず成果物で使用する必要はなく、省略・より安全な言い換え・「詳細は公式ページ」等への誘導は常に許容されます') !== -1,
+    'E4-1. Formal Truth記載Factの省略・安全な言い換え・公式ページ誘導が常に許容されると明記');
+  assert(block.indexOf('禁止するのはFormal Truthを超えた商品事実の断定・捏造だけです') !== -1,
+    'E4-2. 禁止範囲がFormal Truthを超えた断定・捏造に限定されると明記');
+}
+
+caseHeader('E5. Formal TruthにないFactの捏造禁止（既存Grounding Contract維持）');
+{
+  const block = oc._buildLeaderFinalGroundingBlock(CASE_CONTEXT_FIXTURE, ruleFacts(0));
+  assert(block.indexOf('CASE CONTEXTに存在しない具体的事実') !== -1,
+    'E5-1. Context外具体的事実の断定禁止（主文）が維持されている');
+  ['キャンペーン', '特典', '成分', '効能'].forEach(function (w, i) {
+    assert(block.indexOf(w) !== -1, 'E5-' + (i + 2) + '. 断定禁止例「' + w + '」が維持されている');
+  });
+  assert(block.indexOf('別の概念へ読み替えてはいけません') !== -1, 'E5-6. Formal Truth意味変換禁止が維持されている');
+}
+
+caseHeader('E6. Reviewer不在の既存経路に破壊なし');
+{
+  assert(_ocSrc.indexOf("(reviewerText || mainReviewerText) ? LEADER_FINAL_REVIEWER_REJECT_RULE : ''") !== -1,
+    'E6-1. LEADER_FINAL_REVIEWER_REJECT_RULE の発火条件（reviewerText||mainReviewerText）は無変更（Reviewer未実行時は付加されない）');
+  assert(_ocSrc.indexOf("reviewerText ? LEADER_FINAL_REVIEWER_REJECT_RULE : ''") === -1,
+    'E6-2. 旧発火条件（reviewerTextのみ）は復活していない');
+  // caseContext なしのとき Grounding Block は付加されない（既存挙動）
+  assert(_ocSrc.indexOf("if (caseContext) {\n    question += '\\n\\n' + _buildLeaderFinalGroundingBlock(caseContext, _lfFacts);") !== -1,
+    'E6-3. Grounding Block の付加条件（caseContext あり時のみ）は無変更');
+}
+
+caseHeader('E7. LEADER_FINAL_PROMPT / truncate上限 / 単一ソースの無変更');
+{
+  const headSrc = require('child_process').execSync('git show HEAD:openaiClient.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 20 }).toString('utf8');
+  function extractConst(s, name) {
+    const start = s.indexOf('const ' + name + ' = [');
+    if (start === -1) return null;
+    const end = s.indexOf('\n].join', start);
+    return s.slice(start, end !== -1 ? end : start + 3000);
+  }
+  assert(extractConst(_ocSrc, 'LEADER_FINAL_PROMPT') === extractConst(headSrc, 'LEADER_FINAL_PROMPT'),
+    'E7-1. LEADER_FINAL_PROMPT 本体は HEAD と完全一致（今回変更0）');
+  assert(extractConst(_ocSrc, 'ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT') === extractConst(headSrc, 'ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT'),
+    'E7-2. ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT 本体は HEAD と完全一致（今回変更0）');
+  assert(_ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1,
+    'E7-3. truncate上限 1200 は今回変更していない（potential riskとして記録のみ）');
+  assert((_ocSrc.match(/function _buildFormalTruthRuleText\(hasCaseContext\)/g) || []).length === 1,
+    'E7-4. _buildFormalTruthRuleText は単一ソースのまま');
+  const rule = oc._buildFormalTruthRuleText(true);
+  const gb = oc._buildLeaderFinalGroundingBlock('<<CC>>', { informationInsufficient: { count: 0 } });
+  assert(gb.indexOf(rule) !== -1, 'E7-5. Grounding Block は formalTruthRule を引き続き再利用している');
+}
+
+// ──────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(60));
 console.log(`結果: ${_passed} passed / ${_failed} failed`);
 if (_failed === 0) {
