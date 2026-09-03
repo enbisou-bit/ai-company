@@ -390,7 +390,7 @@ caseHeader('14. 既存Contract 変更0（Quality Gate / READY / Approval / serve
   }
   assert(extractConst(ocSrc, 'LEADER_FINAL_PROMPT') === extractConst(ocHead, 'LEADER_FINAL_PROMPT'), '14-10. LEADER_FINAL_PROMPT 無変更');
   assert(ocSrc.indexOf('var LEADER_FINAL_REVIEWER_REJECT_RULE = [') !== -1, '14-11. P1-2 reject遵守Contract は維持されている');
-  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1, '14-12. P1-2 1200文字化 は維持されている');
+  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1, '14-12. post-process feedback truncate上限（P1-2の1200→Truncation最小拡張で2400）が定義されている');
 }
 
 console.log('\n' + '─'.repeat(60));

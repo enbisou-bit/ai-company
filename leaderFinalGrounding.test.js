@@ -200,7 +200,14 @@ caseHeader('20. fail-closedでも現行Quality Gateが素通しし得る既知�
   // leaderFinalGrounding.test.js: 本ファイル自身。Option Fの一部として新規追加された既知ファイルであり、
   //   untracked時は`git diff`に現れず無関係だったが、stage（git add）された時点でHEAD差分に現れるようになった
   //   だけで、これはOption Fの意図した変更対象そのもの（想定外の混入ではない）。
-  const ALLOWED_COMPANION_FILES = ['apfrCaseDataContext.test.js', 'leaderFinalGrounding.test.js'];
+  // 別工程 Truncation最小拡張（LEADER_FINAL_POSTPROCESS_TEXT_MAX 1200→2400）に伴い、
+  //   released test 内の静的値アサーション（`= 1200;` → `= 2400;`）を更新した正当な追随修正。
+  //   検証対象・意図は不変（定数の存在と truncate 撤廃なしを固定）・弱化していない。runtime変更は openaiClient.js の1定数のみ。
+  const ALLOWED_COMPANION_FILES = [
+    'apfrCaseDataContext.test.js', 'leaderFinalGrounding.test.js',
+    'apfrListingScope.test.js', 'iadpScopeBoundary.test.js', 'leaderFinalModel.test.js',
+    'mainReviewerSupply.test.js', 'p1BlockingFix.test.js',
+  ];
   assert(diffFiles.indexOf('index.html') === -1, '20-1. index.html（evaluateQualityGate/READY判定の実体）は今回のdiffに含まれない');
   assert(diffFiles.indexOf('openaiClient.js') !== -1, '20-2a. openaiClient.jsが変更対象に含まれる');
   const unexpected = diffFiles.filter(function (f) {
@@ -307,8 +314,8 @@ caseHeader('E7. LEADER_FINAL_PROMPT / truncate上限 / 単一ソースの無変�
     'E7-1. LEADER_FINAL_PROMPT 本体は HEAD と完全一致（今回変更0）');
   assert(extractConst(_ocSrc, 'ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT') === extractConst(headSrc, 'ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT'),
     'E7-2. ACCOUNT_INTELLIGENCE_LEADER_FINAL_PROMPT 本体は HEAD と完全一致（今回変更0）');
-  assert(_ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1,
-    'E7-3. truncate上限 1200 は今回変更していない（potential riskとして記録のみ）');
+  assert(_ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1,
+    'E7-3. truncate上限は 2400（別工程 Truncation最小拡張で 1200→2400・Enforcement文言側は不変）');
   assert((_ocSrc.match(/function _buildFormalTruthRuleText\(hasCaseContext\)/g) || []).length === 1,
     'E7-4. _buildFormalTruthRuleText は単一ソースのまま');
   const rule = oc._buildFormalTruthRuleText(true);

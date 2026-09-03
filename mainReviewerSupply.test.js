@@ -41,7 +41,7 @@ function findMainReviewerTask(workflowTasks) {
 function findPostProcessReviewerTask(workflowTasks) {
   return (workflowTasks || []).find(function (t) { return t.agentId === 'reviewer' && t.isPostProcess; });
 }
-const LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;
+const LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;
 
 // ── 実E2E相当の workflowTasks fixture ────────────────────────────
 const MAIN_REVIEWER_TEXT = 'Reviewer担当です。現時点での判断に重要な情報が不足しているため、確認が必要です。【現状仮説】①【CASE CONTEXT】に保存されている商品Formal Truthが成分・配合・効能・効果・適用肌質の具体的な情報を保有していない可能性があります。';
@@ -127,9 +127,9 @@ caseHeader('5. mainReviewerTextが生成される');
 caseHeader('6. 文字数上限が機能する');
 {
   assert(ocSrc.indexOf('LEADER_FINAL_POSTPROCESS_TEXT_MAX') !== -1, '6-1. 既存の上限定数を使用している（新規定数を作っていない）');
-  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1, '6-2. 上限は既存の1200（reviewerText / strategyText と同値）');
+  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1, '6-2. 上限は共通定数2400（reviewerText / strategyText と同値・Truncation最小拡張で1200→2400）');
   const long = 'あ'.repeat(5000);
-  assert(long.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX).length === 1200, '6-3. 1200文字で切り詰められる');
+  assert(long.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX).length === 2400, '6-3. 上限文字数（2400）で切り詰められる');
   const short = 'テスト';
   assert(short.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) === short, '6-4. 上限未満はそのまま');
   // memberReplies の1200文字も無変更

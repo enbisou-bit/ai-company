@@ -432,7 +432,7 @@ caseHeader('E. Leader Final question への Reviewer reject遵守Contract 追加
 // ══════════════════════════════════════════════════════════════
 caseHeader('F. Reviewer/Strategy の truncate 上限');
 {
-  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1, 'F-1. 上限定数が1200で定義されている');
+  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1, 'F-1. 上限定数が定義されている（Truncation最小拡張で1200→2400）');
   assert(ocSrc.indexOf('reviewerTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX)') !== -1, 'F-2. reviewerTextが新上限を使用する');
   assert(ocSrc.indexOf('strategyTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX)') !== -1, 'F-3. strategyTextが新上限を使用する');
   assert(ocSrc.indexOf('reviewerTask.result.slice(0, 600)') === -1, 'F-4. 旧600文字truncateが残っていない（reviewer）');
@@ -441,7 +441,8 @@ caseHeader('F. Reviewer/Strategy の truncate 上限');
 
   // 上限自体は撤廃していない（payload肥大化防止）
   const longText = 'あ'.repeat(5000);
-  assert(longText.slice(0, 1200).length === 1200, 'F-7. 上限は撤廃せず1200で切り詰める');
+  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1, 'F-7a. 上限は撤廃せず有限値（2400）で定義されている');
+  assert(longText.slice(0, 2400).length === 2400, 'F-7. 上限（2400）で切り詰める（撤廃していない）');
 }
 
 // ══════════════════════════════════════════════════════════════

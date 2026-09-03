@@ -105,8 +105,8 @@ caseHeader('5. Reviewer / Strategy 供給の維持');
     '5-5. main-task Reviewer 専用ラベル供給（Option D）が維持されている');
   assert(ocSrc.indexOf("strategyText ? '【Strategyの統合提言】\\n' + strategyText : ''") !== -1,
     '5-6. Strategy本文がLeader Final questionへ供給される');
-  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1,
-    '5-7. 供給上限1200文字が無変更（緩和も削除もしていない）');
+  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1,
+    '5-7. 供給上限が定義されている（Truncation最小拡張で1200→2400・撤廃も削除もしていない）');
 }
 
 // ── 6. reject遵守Contract の維持 ────────────────────────────────

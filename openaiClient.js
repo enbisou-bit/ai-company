@@ -2973,12 +2973,17 @@ async function runLeaderFinalResponse({ userMessage, workflowTasks, brainResult,
   ].join('\n');
 
   // P1-2 修正1: Reviewer/Strategyの結論部（公開不可・差し戻し等の判断）は指摘列挙のあとに書かれるため、
-  //   600文字truncateでは結論がLeaderへ届かないことが実運用1周目で実測された。
-  //   memberReplies（1200文字）と同水準へ揃える。上限自体は撤廃しない（payload肥大化防止）。
-  var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;
+  //   600文字truncateでは結論がLeaderへ届かないことが実運用1周目で実測された。当初は memberReplies と
+  //   同水準の1200文字へ揃えた。
+  // Truncation 最小拡張: 実運用 wf-1788342440813 で Reviewer全文 約2118字・Strategy全文 約1496字となり、
+  //   1200では Reviewer の【修正指示】ブロックが途中（「◆必須修正2：商」）で切断され Leader Final へ未達だった（実測）。
+  //   今回実測された欠落を解消するための最小の安全マージンとして 2400 へ拡張する。上限自体は撤廃しない
+  //   （payload肥大化防止）。2400は「恒久的に十分な上限」ではなく、恒久策（重要指摘の優先抽出等）は別工程。
+  //   memberReplies（下方の reply.slice(0, 1200)）は本変更の対象外・1200のまま。
+  var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;
   var reviewerText = (reviewerTask && reviewerTask.result) ? reviewerTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
   var strategyText = (strategyTask && strategyTask.result) ? strategyTask.result.slice(0, LEADER_FINAL_POSTPROCESS_TEXT_MAX) : '';
-  // Issue A / Option D: main-task Reviewer 本文（上限は既存 reviewerText / memberReplies と同一の1200文字）。
+  // Issue A / Option D: main-task Reviewer 本文（上限は既存 reviewerText / strategyText と同一の LEADER_FINAL_POSTPROCESS_TEXT_MAX）。
   //   memberReplies にも同じ本文が含まれるが、そちらは「AI社員の社内検討内容（正式回答ではない）」という
   //   格下げラベルで他担当と横並びに置かれるため、Reviewer判断であることが失われる。
   //   下の question で専用ラベルを付けて別途明示する（memberReplies の構造・内容は一切変更しない）。

@@ -209,7 +209,7 @@ caseHeader('13. Issue A 非変更（Reviewer / Strategy → Leader Final Enforce
   assert(ocSrc.indexOf("const strategyTask = (workflowTasks || []).find(function(t) { return t.agentId === 'strategy' && t.isPostProcess; });") !== -1,
     '13-2. strategyTask取得ロジック 無変更');
   assert(ocSrc.indexOf('var LEADER_FINAL_REVIEWER_REJECT_RULE = [') !== -1, '13-3. LEADER_FINAL_REVIEWER_REJECT_RULE 存在（変更せず維持）');
-  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 1200;') !== -1, '13-4. 1200文字化 維持');
+  assert(ocSrc.indexOf('var LEADER_FINAL_POSTPROCESS_TEXT_MAX = 2400;') !== -1, '13-4. post-process feedback truncate上限（1200→Truncation最小拡張で2400）維持');
   const reNow = fs.readFileSync(path.join(__dirname, 'shared', 'leaderRuleEngine.js'), 'utf8');
   const reHead = cp.execSync('git show HEAD:shared/leaderRuleEngine.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 10 }).toString('utf8');
   assert(reNow === reHead, '13-5. shared/leaderRuleEngine.js がHEADと完全一致（Rule Engine変更0）');
