@@ -209,7 +209,20 @@ caseHeader('20. fail-closedでも現行Quality Gateが素通しし得る既知�
     'mainReviewerSupply.test.js', 'p1BlockingFix.test.js',
   ];
   assert(diffFiles.indexOf('index.html') === -1, '20-1. index.html（evaluateQualityGate/READY判定の実体）は今回のdiffに含まれない');
-  assert(diffFiles.indexOf('openaiClient.js') !== -1, '20-2a. openaiClient.jsが変更対象に含まれる');
+  // 20-2a: 元は「openaiClient.js が未commit diff に含まれる」という一時的な開発状態依存guardだった。
+  //   対象の Option F Grounding / Reviewer reject Contract は commit d164e6e・2f478b2 で HEAD へ確定済みのため、
+  //   `git diff --name-only HEAD` には現れなくなり、実装が正しく入っていても失敗するようになった。
+  //   guard の意図（＝本実装が index.html 側ではなく openaiClient.js 側に存在する）は一切変えず、
+  //   検出方法だけを「HEAD時点の openaiClient.js に対象実装が存在し配線されている」静的確認へ追随させる。
+  //   diff 依存を外した分、対象シンボルを直接assertするため検証はむしろ強化されている（弱化していない）。
+  assert(src.indexOf('function _buildLeaderFinalGroundingBlock(') !== -1,
+    '20-2a-1. Option F Grounding Block 実装が openaiClient.js に存在する');
+  assert(src.indexOf('var LEADER_FINAL_REVIEWER_REJECT_RULE = [') !== -1,
+    '20-2a-2. Reviewer reject遵守Contract が openaiClient.js に存在する');
+  assert(src.indexOf('_buildLeaderFinalGroundingBlock(caseContext, _lfFacts)') !== -1,
+    '20-2a-3. Grounding Block が Leader Final question へ配線されている');
+  assert(src.indexOf('evaluateOutputPackageCompleteness') === -1,
+    '20-2a-4. openaiClient.js は index.html 側 Quality Gate 実体（evaluateOutputPackageCompleteness）を呼ばない（20-1の対）');
   const unexpected = diffFiles.filter(function (f) {
     return f !== 'openaiClient.js' && KNOWN_RUNTIME_FILES.indexOf(f) === -1 && ALLOWED_COMPANION_FILES.indexOf(f) === -1;
   });
