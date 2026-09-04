@@ -83,13 +83,15 @@ function run(overrides) {
   {
     const r = run();
     const svg2 = r.overlaySvgs[1].svg;
-    assert(svg2.indexOf('1. やさしく洗う') !== -1, '4. slide2 headline が正本どおり SVG に含まれる');
-    const joined = (svg2.match(/<tspan[^>]*>([^<]*)<\/tspan>/g) || []).join('').replace(/<[^>]+>/g, '').replace(/\s/g, '');
-    assert(joined.indexOf('こすりすぎず') !== -1 && joined.indexOf('意識します') !== -1, '5. slide2 body の日本語が SVG に保持される（改行分割は許容）');
+    // Phase 2-B: 文字は <path> 化されるため、本文の同一性は data-text 属性で検証する
+    const dataTexts = [...svg2.matchAll(/data-text="([^"]*)"/g)].map(m => m[1]);
+    assert(dataTexts.indexOf('1. やさしく洗う') !== -1, '4. slide2 headline が正本どおり SVG（data-text）に保持される');
+    assert(dataTexts.indexOf('こすりすぎず、肌をやさしく洗うことを意識します。') !== -1, '5. slide2 body の日本語が SVG（data-text）に保持される');
     const parsed = core.parseFieldSlide(FIXTURE_DRAFT.fields.slides[1]);
     assert(parsed.headline === '1. やさしく洗う', '4. parseFieldSlide が headline を正確抽出');
     assert(parsed.body === 'こすりすぎず、肌をやさしく洗うことを意識します。', '5. parseFieldSlide が body を正確抽出');
-    const lines = renderer.wrapText(parsed.body, 500, 36);
+    // weight は必ず明示（未指定は carouselFont 側で fail-closed）
+    const lines = renderer.wrapText(parsed.body, 500, 36, 'regular');
     assert(lines.join('') === parsed.body, '6. wrapText が1文字も落とさず改行のみ行う（日本語保持）');
     assert(lines.length >= 2, '6. wrapText が長文を複数行へ折る');
   }
@@ -266,17 +268,116 @@ function run(overrides) {
     });
   }
 
-  caseHeader('補. compositor graceful degradation（sharp 未導入）');
+  // ══════════════════════════════════════════════════════════════
+  // Phase 2-B: 日本語 deterministic path 化（system font 非依存）
+  // ══════════════════════════════════════════════════════════════
+  caseHeader('P2B-1〜5. SVG text 依存の排除と weight 明示');
   {
-    const c = await compositor.compositeSlide({ overlaySvg: '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"></svg>', width: 1080, height: 1350 });
-    if (compositor.isSharpAvailable()) {
-      assert(c.ok === true && Buffer.isBuffer(c.buffer), '補. sharp あり → PNG buffer を返す');
-    } else {
-      assert(c.ok === false && c.reason === 'sharp_unavailable' && c.degraded === true, '補. sharp なし → 例外を投げず degraded 応答');
-      assert(typeof c.overlaySvg === 'string' && c.overlaySvg.indexOf('<svg') === 0, '補. degraded 応答に overlaySvg を含む');
-    }
+    const r = run();
+    const allSvg = r.overlaySvgs.map(o => o.svg).join('\n');
+    assert((allSvg.match(/<text[\s>]/g) || []).length === 0, 'P2B-1. 全7枚の overlay SVG に <text> が存在しない');
+    assert((allSvg.match(/<tspan[\s>]/g) || []).length === 0, 'P2B-1. 全7枚の overlay SVG に <tspan> が存在しない');
+    assert((allSvg.match(/font-family/g) || []).length === 0, 'P2B-2. font-family 依存が存在しない');
+    assert((allSvg.match(/font-size/g) || []).length === 0, 'P2B-2. font-size 依存が存在しない');
+    const rendererSrc = fs.readFileSync(path.join(__dirname, 'shared', 'carouselRenderer.js'), 'utf8');
+    assert(rendererSrc.indexOf('fontFamily:') === -1, 'P2B-2. renderer に fontFamily 定義が残っていない');
+    const svg2 = r.overlaySvgs[1].svg;
+    const headG = /<g data-role="headline"[^>]*>(.*?)<\/g>/s.exec(svg2);
+    const bodyG = /<g data-role="body"[^>]*>(.*?)<\/g>/s.exec(svg2);
+    assert(!!headG && /<path d="[^"]{50,}"/.test(headG[1]), 'P2B-3. 日本語タイトルが <path> になる');
+    assert(!!bodyG && /<path d="[^"]{50,}"/.test(bodyG[1]), 'P2B-4. 日本語本文が <path> になる');
+    assert(/data-role="headline" data-weight="bold"/.test(svg2), 'P2B-5. headline は weight=bold が明示される');
+    assert(/data-role="body" data-weight="regular"/.test(svg2), 'P2B-5. body は weight=regular が明示される');
+    assert(renderer.WEIGHT.title === 'bold' && renderer.WEIGHT.body === 'regular', 'P2B-5. WEIGHT 定義が title=bold / body=regular');
+  }
+
+  caseHeader('P2B-6〜7. fail-closed（missing glyph / unsupported weight）');
+  {
+    const font = require('./shared/carouselFont');
+    // private use area（U+E000 / U+E001）は Noto Sans JP に glyph が存在しない。
+    // 角括弧付きの文字列ではなく、実 code point を生成して使う。
+    const PUA_1 = String.fromCodePoint(0xE000);
+    const PUA_2 = String.fromCodePoint(0xE001);
+    assert(PUA_1.codePointAt(0) === 0xE000 && PUA_1.length === 1, 'P2B-6. テスト用 PUA が実 code point（U+E000）である');
+
+    let threw = null;
+    try { font.textToPathData('テスト' + PUA_1, 0, 100, 36, 'regular'); } catch (e) { threw = e; }
+    assert(threw && threw.code === 'missing_glyph', 'P2B-6. missing glyph で textToPathData が fail-closed');
+    assert(threw && threw.detail.missingCount === 1, 'P2B-6. missingCount === 1');
+    assert(threw && threw.detail.missingSample[0] === 'U+E000', 'P2B-6. missingSample[0] === "U+E000"');
+    assert(threw && String(threw.message).indexOf('テスト') === -1, 'P2B-6. エラーメッセージに raw 本文が含まれない');
+    assert(threw && JSON.stringify(threw.detail).indexOf('テスト') === -1, 'P2B-6. detail にも raw 本文が含まれない');
+
+    // renderer 経由でも fail-closed（fallback font / system font へ逃がさない）
+    let threw2 = null;
+    try {
+      renderer.renderSlideOverlaySvg(
+        { slideIndex: 2, slideId: 'icb-2', headline: '見出し' + PUA_2, body: 'ほんぶん', layout: {} },
+        { totalSlides: 7 });
+    } catch (e) { threw2 = e; }
+    assert(threw2 && threw2.code === 'missing_glyph', 'P2B-6. renderer も missing glyph で停止（path を出さない）');
+    assert(threw2 && threw2.detail.missingSample[0] === 'U+E001', 'P2B-6. renderer 側も U+XXXX で報告');
+
+    // unsupported weight
+    ['light', 'medium', '900', undefined, null, ''].forEach(w => {
+      let t = null;
+      try { font.normalizeWeight(w); } catch (e) { t = e; }
+      assert(t && t.code === 'unsupported_weight', 'P2B-7. unsupported weight で fail-closed: ' + JSON.stringify(w));
+    });
+    assert(font.normalizeWeight('bold') === 'bold' && font.normalizeWeight('700') === 'bold', 'P2B-7. 許可 weight/エイリアスは通る');
+    let t3 = null;
+    try { renderer.wrapText('あいうえお', 300, 36); } catch (e) { t3 = e; }
+    assert(t3 && t3.code === 'unsupported_weight', 'P2B-7. wrapText の weight 未指定も fail-closed（暗黙 regular fallback なし）');
+  }
+
+  caseHeader('P2B-8〜10. deterministic / canvas / 本文同一性');
+  {
+    const a = run(), b = run();
+    assert(JSON.stringify(a.overlaySvgs) === JSON.stringify(b.overlaySvgs), 'P2B-8. 同一入力2回で overlay SVG が完全一致');
+    const svg1 = a.overlaySvgs[0].svg;
+    assert(/width="1080" height="1350"/.test(svg1), 'P2B-9. canvas 1080×1350 を維持');
+    assert(/viewBox="0 0 1080 1350"/.test(svg1), 'P2B-9. viewBox も 1080×1350');
+    assert(renderer.CANVAS.ratio === '4:5', 'P2B-9. ratio 4:5 を維持');
+    let allMatch = true, checked = 0;
+    a.plan.items.forEach((it, i) => {
+      const svg = a.overlaySvgs[i].svg;
+      const dts = [...svg.matchAll(/data-text="([^"]*)"/g)].map(m => m[1]);
+      const unesc = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      const plain = dts.map(unesc);
+      if (it.headline) { checked++; if (plain.indexOf(it.headline) === -1) allMatch = false; }
+      if (it.body) { checked++; if (plain.indexOf(it.body) === -1) allMatch = false; }
+    });
+    assert(allMatch && checked >= 14, 'P2B-10. 全7枚の headline/body が Output Draft と文字内容・順序ともに一致（' + checked + '件検証）');
+    const long = a.plan.items[4].body;
+    const wrapped = renderer.wrapText(long, 888, 36, 'regular');
+    assert(wrapped.join('') === long, 'P2B-10. wrapText は改行のみ（結合で元本文に復元）');
+  }
+
+  caseHeader('P2B-11〜12. filesystem / network 非使用');
+  {
+    const rendererSrc = fs.readFileSync(path.join(__dirname, 'shared', 'carouselRenderer.js'), 'utf8');
+    const fontSrc = fs.readFileSync(path.join(__dirname, 'shared', 'carouselFont.js'), 'utf8');
+    assert(rendererSrc.indexOf('writeFile') === -1 && rendererSrc.indexOf('createWriteStream') === -1, 'P2B-11. renderer に filesystem write が存在しない');
+    assert(fontSrc.indexOf('writeFile') === -1 && fontSrc.indexOf('createWriteStream') === -1, 'P2B-11. carouselFont に filesystem write が存在しない');
+    assert(fontSrc.indexOf('readFileSync') !== -1, 'P2B-11. carouselFont の I/O は同梱 asset の read のみ');
+    assert(!fs.existsSync(path.join(__dirname, 'generated')), 'P2B-11. generated/ が作成されていない');
+    ['fetch(', 'axios', 'http.get', 'https.get', 'child_process'].forEach(t => {
+      assert(rendererSrc.indexOf(t) === -1 && fontSrc.indexOf(t) === -1, 'P2B-12. network/shell 非使用: ' + t);
+    });
+    assert(/FONT_FILES\[w\]/.test(fontSrc), 'P2B-12. font path は FONT_FILES の値のみを使用（任意パス指定不可）');
+  }
+
+  caseHeader('補. compositor（sharp 導入済み・入力検証）');
+  {
+    // Phase 2-B で sharp を導入済み。未導入前提の分岐は廃止し、利用可能であることを明示検証する。
+    assert(compositor.isSharpAvailable() === true, '補. sharp が利用可能（Phase 2-B 導入済み）');
+    const sharpVer = require('sharp').versions;
+    assert(typeof sharpVer.sharp === 'string' && typeof sharpVer.vips === 'string', '補. sharp/libvips のバージョンが取得できる（sharp ' + sharpVer.sharp + ' / libvips ' + sharpVer.vips + '）');
+    // 入力検証の fail-closed は維持
     const c2 = await compositor.compositeSlide({ width: 1080, height: 1350 });
-    assert(c2.ok === false && c2.reason === 'missing_overlay_svg', '補. overlaySvg なしは missing_overlay_svg');
+    assert(c2.ok === false && c2.reason === 'missing_overlay_svg', '補. overlaySvg なしは missing_overlay_svg で fail-closed');
+    // ※ 実 PNG 合成（fixture background → 1080×1350 PNG Buffer / magic bytes / sRGB）の検証は
+    //    次工程「compositor + sharp fixture PNG 検証」で追加する。ここでは前提の陳腐化解消のみ。
   }
 
   console.log('\n' + '─'.repeat(60));
