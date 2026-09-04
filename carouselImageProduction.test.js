@@ -376,12 +376,139 @@ function run(overrides) {
     // 入力検証の fail-closed は維持
     const c2 = await compositor.compositeSlide({ width: 1080, height: 1350 });
     assert(c2.ok === false && c2.reason === 'missing_overlay_svg', '補. overlaySvg なしは missing_overlay_svg で fail-closed');
-    // ※ 実 PNG 合成（fixture background → 1080×1350 PNG Buffer / magic bytes / sRGB）の検証は
-    //    次工程「compositor + sharp fixture PNG 検証」で追加する。ここでは前提の陳腐化解消のみ。
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // Phase 2-C: fixture background Buffer + overlay SVG → PNG Buffer 検証
+  //   filesystem は一切使わない（sharp.toFile / fs.writeFile / generated/ 不使用）。
+  //   背景は memory Buffer で生成し、overlay は Phase 2-B の実 renderer が出力したものを使う。
+  // ══════════════════════════════════════════════════════════════
+  const sharp = require('sharp');
+  const crypto = require('crypto');
+  const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  // fixture 背景（単色・memory Buffer・外部ファイル不使用）
+  async function fixtureBackground(w, h) {
+    return await sharp({ create: { width: w, height: h, channels: 4, background: { r: 245, g: 242, b: 238, alpha: 1 } } })
+      .png().toBuffer();
+  }
+  // 第1投稿相当の日本語 slide から実 renderer で overlay を生成
+  function fixtureOverlay() {
+    return renderer.renderSlideOverlaySvg(
+      { slideIndex: 2, slideId: 'icb-2', headline: '1. やさしく洗う', body: 'こすりすぎず、肌をやさしく洗うことを意識します。', layout: { badgeNumber: 1 } },
+      { totalSlides: 7 });
+  }
+
+  caseHeader('P2C-1〜10. fixture PNG Buffer 生成と検証');
+  {
+    const bg = await fixtureBackground(1080, 1350);
+    assert(Buffer.isBuffer(bg) && bg.length > 0, 'P2C-1. fixture background を memory Buffer で生成できる（' + bg.length + ' bytes）');
+    const bgMeta = await sharp(bg).metadata();
+    assert(bgMeta.width === 1080 && bgMeta.height === 1350, 'P2C-1. fixture background が 1080×1350');
+
+    const svg = fixtureOverlay();
+    assert(typeof svg === 'string' && svg.indexOf('<svg') === 0, 'P2C-2. overlay SVG を string のまま渡せる');
+    assert(svg.indexOf('<path ') !== -1 && svg.indexOf('<text') === -1, 'P2C-2. overlay は path 化済み（<text> なし）');
+
+    const r = await compositor.compositeSlide({ backgroundBuffer: bg, overlaySvg: svg, width: 1080, height: 1350 });
+    assert(r.ok === true, 'P2C-3. composite が成功する（reason=' + (r.reason || '-') + '）');
+    assert(Buffer.isBuffer(r.buffer), 'P2C-3. 出力が Buffer である');
+    assert(r.buffer.slice(0, 8).equals(PNG_MAGIC), 'P2C-4. PNG magic bytes 89 50 4E 47 0D 0A 1A 0A を満たす');
+
+    const m = await sharp(r.buffer).metadata();
+    assert(m.width === 1080, 'P2C-5. metadata width === 1080');
+    assert(m.height === 1350, 'P2C-6. metadata height === 1350');
+    assert(m.width / m.height === 1080 / 1350 && (m.width * 5) === (m.height * 4), 'P2C-7. ratio === 4:5');
+    assert(m.format === 'png', 'P2C-8. format === png');
+    assert(m.space === 'srgb', 'P2C-9. colorspace が sRGB（space=' + m.space + '）');
+    assert(m.depth === 'uchar' && m.channels === 4 && m.hasAlpha === true, 'P2C-9. channels=4 / hasAlpha=true / depth=uchar');
+    assert(r.buffer.length > 0, 'P2C-10. 出力 Buffer length > 0（' + r.buffer.length + ' bytes）');
+    assert(r.width === 1080 && r.height === 1350 && r.format === 'png', 'P2C-10. 戻り値のメタが入力と一致');
+  }
+
+  caseHeader('P2C-11. deterministic（byte 一致）');
+  {
+    const bg = await fixtureBackground(1080, 1350);
+    const svg = fixtureOverlay();
+    const a = await compositor.compositeSlide({ backgroundBuffer: bg, overlaySvg: svg, width: 1080, height: 1350 });
+    const b = await compositor.compositeSlide({ backgroundBuffer: bg, overlaySvg: svg, width: 1080, height: 1350 });
+    assert(a.ok && b.ok, 'P2C-11. 2回とも composite 成功');
+    // 一次判定: PNG Buffer の byte 一致（緩和せずまずこれを見る）
+    assert(a.buffer.equals(b.buffer), 'P2C-11. 同一入力2回で PNG Buffer が byte 一致（' + a.buffer.length + ' bytes）');
+    // 二次確認: raw pixel データのハッシュ一致（byte 一致の裏付け）
+    const rawA = await sharp(a.buffer).raw().toBuffer();
+    const rawB = await sharp(b.buffer).raw().toBuffer();
+    const hA = crypto.createHash('sha256').update(rawA).digest('hex');
+    const hB = crypto.createHash('sha256').update(rawB).digest('hex');
+    assert(hA === hB, 'P2C-11. raw pixel hash も一致（sha256 ' + hA.slice(0, 16) + '…）');
+    assert(rawA.length === 1080 * 1350 * 4, 'P2C-11. raw pixel サイズが 1080×1350×4ch と一致');
+    // 背景を作り直しても同一（fixture 生成自体が deterministic）
+    const bg2 = await fixtureBackground(1080, 1350);
+    assert(bg.equals(bg2), 'P2C-11. fixture background 生成自体も deterministic');
+  }
+
+  caseHeader('P2C-12〜14. compositor fail-closed（silent fallback なし）');
+  {
+    const bg = await fixtureBackground(1080, 1350);
+    const svg = fixtureOverlay();
+    const W = 1080, H = 1350;
+    const call = (o) => compositor.compositeSlide(o);
+
+    // 12. overlay
+    let r = await call({ backgroundBuffer: bg, width: W, height: H });
+    assert(r.ok === false && r.reason === 'missing_overlay_svg', 'P2C-12. overlaySvg 無し → missing_overlay_svg');
+    r = await call({ backgroundBuffer: bg, overlaySvg: null, width: W, height: H });
+    assert(r.ok === false && r.reason === 'missing_overlay_svg', 'P2C-12. overlaySvg=null → missing_overlay_svg');
+    r = await call({ backgroundBuffer: bg, overlaySvg: '<svg><<<broken', width: W, height: H });
+    assert(r.ok === false && r.reason === 'composite_error', 'P2C-12. malformed SVG → composite_error（正常扱いしない）');
+    assert(r.detail && r.detail.stage === 'composite' && Object.keys(r.detail).length === 1, 'P2C-12. detail は固定値のみ（raw message を返さない）');
+
+    // 13. background
+    r = await call({ overlaySvg: svg, width: W, height: H });
+    assert(r.ok === false && r.reason === 'missing_background', 'P2C-13. background 無し → missing_background（白背景 fallback しない）');
+    r = await call({ backgroundBuffer: Buffer.alloc(0), overlaySvg: svg, width: W, height: H });
+    assert(r.ok === false && r.reason === 'empty_background', 'P2C-13. 空 Buffer → empty_background');
+    r = await call({ backgroundBuffer: Buffer.from('notanimage'), overlaySvg: svg, width: W, height: H });
+    assert(r.ok === false && r.reason === 'invalid_background', 'P2C-13. malformed background → invalid_background');
+    assert(r.detail && r.detail.stage === 'background_metadata' && Object.keys(r.detail).length === 1, 'P2C-13. detail は固定値のみ（raw message / path を返さない）');
+
+    // 14. 寸法
+    const bgSmall = await fixtureBackground(800, 600);
+    r = await call({ backgroundBuffer: bgSmall, overlaySvg: svg, width: W, height: H });
+    assert(r.ok === false && r.reason === 'background_dimension_mismatch', 'P2C-14. 背景実寸の不一致 → background_dimension_mismatch（resize/cover で吸収しない）');
+    assert(r.detail && r.detail.expected === '1080x1350' && r.detail.actual === '800x600', 'P2C-14. 期待値と実寸を detail に記録');
+    r = await call({ backgroundBuffer: bg, overlaySvg: svg, height: H });
+    assert(r.ok === false && r.reason === 'missing_width', 'P2C-14. width 無し → missing_width（1080 へ暗黙 default しない）');
+    r = await call({ backgroundBuffer: bg, overlaySvg: svg, width: W });
+    assert(r.ok === false && r.reason === 'missing_height', 'P2C-14. height 無し → missing_height');
+    for (const bad of [0, -5, 'abc', 1080.5, NaN, Infinity, 99999]) {
+      r = await call({ backgroundBuffer: bg, overlaySvg: svg, width: bad, height: H });
+      assert(r.ok === false && r.reason === 'invalid_width', 'P2C-14. width=' + String(bad) + ' → invalid_width');
+    }
+    // resize が使われていないこと（ソース確認）
+    const compSrc = fs.readFileSync(path.join(__dirname, 'lib', 'carouselCompositor.js'), 'utf8');
+    assert(compSrc.indexOf('.resize(') === -1, 'P2C-14. compositor に resize() が存在しない（silent crop/scale なし）');
+    assert(compSrc.indexOf("fit: 'cover'") === -1, 'P2C-14. fit:cover が存在しない');
+  }
+
+  caseHeader('P2C-15〜17. filesystem / network / DB 非使用');
+  {
+    const compSrc = fs.readFileSync(path.join(__dirname, 'lib', 'carouselCompositor.js'), 'utf8');
+    assert(compSrc.indexOf('toFile(') === -1, 'P2C-15. sharp.toFile() を使用しない');
+    assert(compSrc.indexOf('writeFile') === -1 && compSrc.indexOf('createWriteStream') === -1, 'P2C-15. fs write を使用しない');
+    assert(compSrc.indexOf('.toBuffer()') !== -1, 'P2C-15. 出力は toBuffer() のみ');
+    assert(!fs.existsSync(path.join(__dirname, 'generated')), 'P2C-15. generated/ が作成されていない');
+    ['fetch(', 'axios', 'http.get', 'https.get', 'child_process'].forEach(t => {
+      assert(compSrc.indexOf(t) === -1, 'P2C-16. network/shell 非使用: ' + t);
+    });
+    ['supabase', 'outputDraftsDb', 'approvalsDb', 'INSERT', 'upsert'].forEach(t => {
+      assert(compSrc.indexOf(t) === -1, 'P2C-17. DB 非使用: ' + t);
+    });
+    assert(client.REAL_ENABLED === false, 'P2C-17. REAL_ENABLED=false 維持（実画像 API 0）');
   }
 
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }
-  else { console.log('🟢 All Carousel Image Production Phase 1 cases passed'); }
+  else { console.log('🟢 All Carousel Image Production cases passed (Phase 1 / 2-B / 2-C)'); }
 })().catch(e => { console.error('TEST CRASH:', e); process.exitCode = 1; });
