@@ -12,7 +12,10 @@
 //   非責務: 画像 API 呼び出し（lib/carouselImageClient.js）・合成（lib/carouselCompositor.js）・
 //           DB I/O・filesystem I/O・network I/O。ここには一切書かない。
 
+var crypto = require('crypto');
 var renderer = require('./carouselRenderer');
+var client = require('../lib/carouselImageClient');
+var approval = require('./carouselApproval');
 
 // ── 定数 ──────────────
 var ID_RE = /^[a-zA-Z0-9_-]+$/;
@@ -314,9 +317,276 @@ function regenerateSlideMock(input) {
   };
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase 2-D: draftFingerprint
+//   「承認したのはこの Draft のこの内容」を一意に固定する SHA-256。
+//   slides の1文字変更・built_at 変更・updated_at 変更のいずれでも hash が変わる。
+// ══════════════════════════════════════════════════════════════
+function draftFingerprint(draftRow) {
+  var d = draftRow || {};
+  var outputId = d.output_id != null ? d.output_id : d.id;
+  var fields = d.fields || {};
+  var slides = Array.isArray(fields.slides) ? fields.slides : [];
+  // canonical: キー順固定・全て文字列化（JSON の型ゆれで hash が動かないようにする）
+  var canonical = JSON.stringify({
+    outputId: String(outputId == null ? '' : outputId),
+    built_at: String(d.built_at == null ? '' : d.built_at),
+    updated_at: String(d.updated_at == null ? '' : d.updated_at),
+    slides: slides.map(function (s) { return String(s == null ? '' : s); }),
+  });
+  return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase 2-D: 実 provider 呼び出しの単一 guard
+//
+//   ★ すべての条件の完全 AND。1つでも false なら provider call = 0 で停止する。
+//   ★ REAL_ENABLED=true 単独では絶対に通らない構造（他条件も同時に成立する必要がある）。
+//   ★ costTracker は require しない（cost-logs.json は Protected Working Tree のため、
+//     read/write 経路に触れない）。canProcess() の結果は呼び出し側が boolean で注入する。
+// ══════════════════════════════════════════════════════════════
+function assertRealCallAllowed(ctx) {
+  ctx = ctx || {};
+  var checks = [];
+  function fail(reason) { checks.push({ reason: reason, ok: false }); return { ok: false, reason: reason, checks: checks }; }
+  function pass(name) { checks.push({ reason: name, ok: true }); }
+
+  // 1. 見積りが公式確認済みでなければ課金しない
+  if (client.ESTIMATE_VERIFIED !== true) return fail('estimate_not_verified');
+  pass('estimate_verified');
+
+  // 2. 実 API 有効化フラグ（これ単独では通らない）
+  if (client.REAL_ENABLED !== true) return fail('real_api_disabled');
+  pass('real_enabled');
+
+  // 3. 課金ロック（明示的に false でなければ通さない）
+  if (ctx.billingLock !== false) return fail('billing_locked');
+  pass('billing_unlocked');
+
+  // 4. costTracker.canProcess()（注入 boolean。true 以外は通さない）
+  if (ctx.costTrackerCanProcess !== true) return fail('cost_limit_stopped');
+  pass('cost_tracker_ok');
+
+  // 5. scope（caseId / outputId / draft の帰属）
+  var scope = validateScope({ caseId: ctx.caseId, outputId: ctx.outputId, draftRow: ctx.draftRow });
+  if (!scope.ok) return fail(scope.reason);
+  pass('scope_valid');
+
+  // 6. 承認済みであること
+  var appr = validateApproval(ctx.approvalRow);
+  if (!appr.ok) return fail(appr.reason);
+  pass('approved');
+
+  // 7. 未 published であること
+  var pub = validateNotPublished(ctx.approvalRow);
+  if (!pub.ok) return fail(pub.reason);
+  pass('not_published');
+
+  // 8. stale でないこと（承認時点と現在の built_at / updated_at が一致）
+  var stale = validateNotStale(ctx.staleBefore, ctx.staleAfter);
+  if (!stale.ok) return fail(stale.reason);
+  pass('not_stale');
+
+  // 9. quality enum
+  var q = client.validateQuality(ctx.quality);
+  if (!q.ok) return fail(q.reason);
+  pass('quality_valid');
+
+  // 10. slideCount が実際の slides 数と一致
+  var fields = (ctx.draftRow && ctx.draftRow.fields) || {};
+  var slides = Array.isArray(fields.slides) ? fields.slides : [];
+  var slideCount = Number(ctx.slideCount);
+  if (!Number.isInteger(slideCount) || slideCount < 1) return fail('invalid_slide_count');
+  if (slideCount !== slides.length) return fail('slide_count_mismatch');
+  pass('slide_count_valid');
+
+  // 11. 見積り額が呼び出し側の主張値と一致（改竄検出）
+  var budget = Number.isFinite(Number(ctx.budgetJpyPerPost)) ? Number(ctx.budgetJpyPerPost) : BUDGET_JPY_PER_POST_DEFAULT;
+  var computedJpy = client.estimateImageJpy(q.value, slideCount);
+  if (computedJpy === null) return fail('estimate_unavailable');
+  if (approval.normalizeCostJpy(ctx.estimatedCostJpy) !== approval.normalizeCostJpy(computedJpy)) {
+    return fail('estimated_cost_mismatch');
+  }
+  pass('estimated_cost_matches');
+
+  // 12. 予算 hard stop（pre-flight）
+  if (computedJpy > budget) return fail('budget_exceeded');
+  pass('within_budget');
+
+  // 13. draftFingerprint が現在の Draft と一致
+  var fp = draftFingerprint(ctx.draftRow);
+  if (String(ctx.draftFingerprint || '') !== fp) return fail('draft_fingerprint_mismatch');
+  pass('fingerprint_matches');
+
+  // 14. Approval Token（HMAC / TTL / scope / nonce 未使用）
+  var v = approval.verifyApprovalToken(ctx.approvalToken, {
+    caseId: ctx.caseId,
+    outputId: ctx.outputId,
+    draftFingerprint: fp,
+    quality: q.value,
+    slideCount: slideCount,
+    estimatedCostJpy: computedJpy,
+  }, { secret: ctx.approvalSecret, now: ctx.now });
+  if (!v.ok) return fail(v.reason);
+  pass('approval_token_valid');
+
+  return { ok: true, checks: checks, scope: v.scope, estimatedCostJpy: computedJpy, budgetJpyPerPost: budget };
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase 2-D: all-or-nothing orchestration（running budget 付き）
+//
+//   deps（注入必須。既定で実 provider を掴まない＝テストから実 API へ落ちない）:
+//     deps.provider({ prompt, quality, aspectRatio, slideIndex }) → { ok, buffer }
+//     deps.normalize({ buffer, mimeType })                        → { ok, buffer }
+//     deps.composite({ backgroundBuffer, overlaySvg, width, height }) → { ok, buffer }
+//
+//   予算: provider call の直前ごとに
+//         spentEstimatedJpy + nextCallEstimatedJpy <= budget
+//         を検証する。再生成分も同じ累計へ含める（MAX_REGEN_PER_SLIDE だけでは予算保証にならない）。
+//
+//   all-or-nothing: 1枚でも失敗したら completed asset を正式成果物として返さず、
+//                   後続 provider call を止め、filesystem にも一切書かない。
+// ══════════════════════════════════════════════════════════════
+async function runCarouselImageJob(input, deps) {
+  input = input || {};
+  deps = deps || {};
+
+  var result = {
+    ok: false, reason: null,
+    mode: input.real === true ? 'real' : 'mock',
+    realApiCalled: false, dbWritten: false, filesWritten: false,
+    providerCalls: 0,
+    formalAssets: [],          // 全枚成功時のみ埋まる
+    failedSlides: [],
+    spentEstimatedJpy: 0,
+    budgetJpyPerPost: null,
+    actualUsage: null,         // 取得できた場合のみ。推測値は入れない。
+  };
+
+  if (typeof deps.provider !== 'function') { result.reason = 'provider_not_injected'; return result; }
+  if (typeof deps.normalize !== 'function') { result.reason = 'normalize_not_injected'; return result; }
+  if (typeof deps.composite !== 'function') { result.reason = 'composite_not_injected'; return result; }
+
+  // 実 provider を呼ぶ場合のみ、単一 guard を全通過させる（mock は課金しないため対象外）。
+  if (input.real === true) {
+    var guard = assertRealCallAllowed(input);
+    if (!guard.ok) { result.reason = guard.reason; return result; }
+  }
+
+  var plan = planCarouselImageJob(input);
+  if (!plan.ok) { result.reason = plan.reason; return result; }
+
+  var q = client.validateQuality(plan.quality);
+  if (!q.ok) { result.reason = q.reason; return result; }
+
+  var budget = Number.isFinite(Number(plan.budgetJpyPerPost)) ? Number(plan.budgetJpyPerPost) : BUDGET_JPY_PER_POST_DEFAULT;
+  result.budgetJpyPerPost = budget;
+
+  var perCallJpy = client.estimateImageJpy(q.value, 1);
+  if (perCallJpy === null) { result.reason = 'estimate_unavailable'; return result; }
+
+  // pre-flight: 全枚分の見積りが予算を超えるなら provider を1回も呼ばない
+  //   （high は 7枚で予算超過するため、ここで必ず拒否される。個別ハードコードではなく計算結果で判定）
+  var totalJpy = client.estimateImageJpy(q.value, plan.totalSlides);
+  if (totalJpy === null) { result.reason = 'estimate_unavailable'; return result; }
+  if (totalJpy > budget) {
+    result.reason = 'budget_exceeded';
+    result.detail = { quality: q.value, slideCount: plan.totalSlides, estimatedJpy: Math.round(totalJpy * 100) / 100, budgetJpyPerPost: budget };
+    return result;
+  }
+
+  var completed = [];       // 成功分は memory にのみ保持（正式成果物として返すのは全枚成功時だけ）
+  var spent = Number(input.alreadySpentEstimatedJpy) || 0;   // 再生成を同じ累計へ含めるための持ち越し
+  result.spentEstimatedJpy = spent;
+
+  for (var i = 0; i < plan.items.length; i++) {
+    var it = plan.items[i];
+
+    // ── running budget check（provider call の直前・毎回） ──
+    if (spent + perCallJpy > budget) {
+      result.reason = 'budget_exceeded';
+      result.failedSlides = [it.slideIndex];
+      result.detail = { stage: 'running_budget', spentEstimatedJpy: Math.round(spent * 100) / 100, nextCallJpy: Math.round(perCallJpy * 10000) / 10000, budgetJpyPerPost: budget };
+      result.formalAssets = [];
+      result.spentEstimatedJpy = spent;
+      return result;
+    }
+
+    var pr;
+    try {
+      pr = await deps.provider({
+        prompt: it.asset.bgPrompt,
+        quality: q.value,
+        aspectRatio: plan.aspectRatio,
+        slideIndex: it.slideIndex,
+      });
+    } catch (e) {
+      pr = { ok: false, reason: 'provider_threw' };   // raw message は載せない
+    }
+    result.providerCalls++;
+    spent += perCallJpy;
+    result.spentEstimatedJpy = spent;
+    if (input.real === true) result.realApiCalled = true;
+
+    if (!pr || pr.ok !== true || !Buffer.isBuffer(pr.buffer)) {
+      result.reason = (pr && pr.reason) ? pr.reason : 'provider_failed';
+      result.failedSlides = [it.slideIndex];
+      result.formalAssets = [];
+      return result;
+    }
+
+    // ── 正規化（1088x1360 → 1080x1350・crop なし） ──
+    var nr;
+    try { nr = await deps.normalize({ buffer: pr.buffer, mimeType: 'image/png' }); }
+    catch (e) { nr = { ok: false, reason: 'normalize_threw' }; }
+    if (!nr || nr.ok !== true || !Buffer.isBuffer(nr.buffer)) {
+      result.reason = (nr && nr.reason) ? nr.reason : 'normalize_failed';
+      result.failedSlides = [it.slideIndex];
+      result.formalAssets = [];
+      return result;
+    }
+
+    // ── overlay 生成 → 合成（compositor は Phase 2-C のまま・resize しない） ──
+    var svg = renderer.renderSlideOverlaySvg({
+      slideIndex: it.slideIndex, slideId: it.slideId,
+      headline: it.headline, body: it.body, layout: it.layout,
+    }, { totalSlides: plan.totalSlides });
+
+    var cr;
+    try {
+      cr = await deps.composite({
+        backgroundBuffer: nr.buffer, overlaySvg: svg,
+        width: TARGET.width, height: TARGET.height,
+      });
+    } catch (e) { cr = { ok: false, reason: 'composite_threw' }; }
+    if (!cr || cr.ok !== true || !Buffer.isBuffer(cr.buffer)) {
+      result.reason = (cr && cr.reason) ? cr.reason : 'composite_failed';
+      result.failedSlides = [it.slideIndex];
+      result.formalAssets = [];
+      return result;
+    }
+
+    completed.push({
+      slideIndex: it.slideIndex, slideId: it.slideId,
+      width: TARGET.width, height: TARGET.height, aspectRatio: TARGET.aspectRatio,
+      format: 'png', buffer: cr.buffer, bytes: cr.buffer.length,
+    });
+  }
+
+  // 全枚成功したときだけ正式成果物として返す
+  result.ok = true;
+  result.formalAssets = completed;
+  result.estimatedCostJpy = Math.round(spent * 100) / 100;
+  return result;
+}
+
 module.exports = {
   TARGET: TARGET,
   ID_RE: ID_RE,
+  draftFingerprint: draftFingerprint,
+  assertRealCallAllowed: assertRealCallAllowed,
+  runCarouselImageJob: runCarouselImageJob,
   SAFE_SUFFIX: SAFE_SUFFIX,
   MAX_REGEN_PER_SLIDE: MAX_REGEN_PER_SLIDE,
   IMAGE_QUALITY_DEFAULT: IMAGE_QUALITY_DEFAULT,

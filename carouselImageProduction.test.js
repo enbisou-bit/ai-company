@@ -206,15 +206,15 @@ function run(overrides) {
 
   caseHeader('16. image API mock（実 API 呼び出し 0）');
   {
-    assert(client.REAL_ENABLED === false, '16. REAL_ENABLED = false（Phase 1・実 API 無効）');
-    const m = client.mockBackground('some prompt, no text, 4:5 ratio, vertical, 1080x1350', '1024x1536');
+    assert(client.REAL_ENABLED === false, '16. REAL_ENABLED = false（実 API 無効）');
+    const m = client.mockBackground('some prompt, no text, 4:5 ratio, vertical, 1080x1350', '1088x1360');
     assert(m.ok === true && m.mock === true && m.b64 === null, '16. mockBackground は b64 なしの擬似応答');
-    const m2 = client.mockBackground('some prompt, no text, 4:5 ratio, vertical, 1080x1350', '1024x1536');
+    const m2 = client.mockBackground('some prompt, no text, 4:5 ratio, vertical, 1080x1350', '1088x1360');
     assert(m.promptHash === m2.promptHash, '16. mock は決定的（同一 prompt → 同一 hash）');
     const g = await client.generateBackground({ prompt: 'clean white background, no text, 4:5 ratio, vertical, 1080x1350' });
     assert(g.mock === true && g.b64 === null, '16. generateBackground 既定は mock');
     const g2 = await client.generateBackground({ prompt: 'clean white background, no text, 4:5 ratio, vertical, 1080x1350', mock: false });
-    assert(g2.ok === false && g2.reason === 'real_api_disabled_phase1', '16. mock:false でも Phase 1 は real_api_disabled_phase1 で停止（実 API 呼ばない）');
+    assert(g2.ok === false && g2.reason === 'real_api_disabled', '16. mock:false でも real_api_disabled で停止（実 API 呼ばない）');
     const g3 = await client.generateBackground({ prompt: 'has letters but missing safe suffix' });
     assert(g3.ok === false && g3.reason === 'unsafe_prompt_shape', '16. no text / 4:5 を欠く prompt は生成前に拒否');
   }
@@ -223,8 +223,11 @@ function run(overrides) {
   {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'carouselImageClient.js'), 'utf8');
     assert(src.indexOf('console.log(process.env.OPENAI_API_KEY') === -1, '17. API key を console.log しない');
-    assert(src.indexOf('Bearer [redacted]') !== -1, '17. エラー時に Bearer トークンを redact する処理がある');
-    const m = client.mockBackground('p, no text, 4:5 ratio, vertical, 1080x1350', '1024x1536');
+    // Phase 2-D: redact ではなく「raw exception message をそもそも戻り値へ載せない」方式へ強化した。
+    assert(src.indexOf('e.message') === -1 && src.indexOf('e && e.message') === -1,
+      '17. raw exception message を戻り値へ載せない（redact 以前に露出させない）');
+    assert(src.indexOf("detail: { stage: 'request' }") !== -1, '17. API エラーの detail は固定 { stage } のみ');
+    const m = client.mockBackground('p, no text, 4:5 ratio, vertical, 1080x1350', '1088x1360');
     const j = JSON.stringify(m).toLowerCase();
     assert(j.indexOf('api_key') === -1 && j.indexOf('bearer') === -1 && j.indexOf('sk-') === -1, '17. mock 応答に key/Bearer/sk- を含めない');
   }
@@ -263,7 +266,8 @@ function run(overrides) {
     const keys = Object.keys(r.fieldsPatch).sort();
     assert(keys.length === 2 && keys[0] === 'carouselAspectRatio' && keys[1] === 'carouselAssets', '20. fieldsPatch は carouselAssets + carouselAspectRatio の追加のみ（slides/caption/cta/hashtags を含まない）');
     assert(r.dbWritten === false && r.filesWritten === false && r.realApiCalled === false, '20. mock は DB / filesystem / 実 API に触れない');
-    ['shared/carouselRenderer.js', 'shared/carouselImageCore.js', 'lib/carouselImageClient.js', 'lib/carouselCompositor.js'].forEach(f => {
+    ['shared/carouselRenderer.js', 'shared/carouselImageCore.js', 'lib/carouselImageClient.js', 'lib/carouselCompositor.js',
+      'shared/carouselFont.js', 'shared/carouselApproval.js', 'lib/carouselImageNormalize.js'].forEach(f => {
       assert(fs.existsSync(path.join(__dirname, f)), '20. 新規ファイル存在: ' + f);
     });
   }
@@ -505,6 +509,435 @@ function run(overrides) {
       assert(compSrc.indexOf(t) === -1, 'P2C-17. DB 非使用: ' + t);
     });
     assert(client.REAL_ENABLED === false, 'P2C-17. REAL_ENABLED=false 維持（実画像 API 0）');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // Phase 2-D: provider adapter / normalization / fingerprint / approval / budget / all-or-nothing
+  //   real image API 呼び出し 0件。すべて mock + 注入 provider で検証する。
+  // ══════════════════════════════════════════════════════════════
+  const normalize = require('./lib/carouselImageNormalize');
+  const approval = require('./shared/carouselApproval');
+  const sharpD = require('sharp');
+  const clientSrc = fs.readFileSync(path.join(__dirname, 'lib', 'carouselImageClient.js'), 'utf8');
+  const normSrc = fs.readFileSync(path.join(__dirname, 'lib', 'carouselImageNormalize.js'), 'utf8');
+  const apprSrc = fs.readFileSync(path.join(__dirname, 'shared', 'carouselApproval.js'), 'utf8');
+  const coreSrcD = fs.readFileSync(path.join(__dirname, 'shared', 'carouselImageCore.js'), 'utf8');
+  const TEST_SECRET = 'phase2d-test-secret-0123456789';
+
+  async function nativePng(w, h, tint) {
+    return await sharpD({ create: { width: w, height: h, channels: 4, background: { r: tint || 240, g: 240, b: 236, alpha: 1 } } })
+      .png().toBuffer();
+  }
+
+  caseHeader('P2D-1. gpt-image-2 正式採用 / provider request size / SIZE_BY_RATIO 廃止');
+  {
+    assert(client.CAROUSEL_IMAGE_MODEL === 'gpt-image-2', 'P2D-1. model = gpt-image-2');
+    assert(clientSrc.indexOf("'gpt-image-1'") === -1, 'P2D-1. gpt-image-1 をコード上で使用しない');
+    assert(client.PROVIDER_REQUEST_SIZE['4:5'] === '1088x1360', 'P2D-1. 4:5 の provider request size = 1088x1360');
+    assert(client.PROVIDER_REQUEST_SIZE['1:1'] === '1024x1024', 'P2D-1. 1:1 = 1024x1024');
+    assert(client.SIZE_BY_RATIO === undefined && clientSrc.indexOf('var SIZE_BY_RATIO') === -1,
+      'P2D-1. 旧 SIZE_BY_RATIO は廃止（target と request size の混同を除去）');
+    assert(core.TARGET.width === 1080 && core.TARGET.height === 1350 && core.TARGET.aspectRatio === '4:5',
+      'P2D-1. Carousel target は 1080x1350 / 4:5 のまま変更しない');
+    // 1088x1360 と 1080x1350 が厳密に同一比（crop 不要）であること
+    assert(1080 * 1360 === 1350 * 1088, 'P2D-1. 1088x1360 と 1080x1350 は厳密に同一の 4:5（crop 不要）');
+  }
+
+  caseHeader('P2D-2. 公式確認済み価格定数（token ベース算出・USD magic number なし）');
+  {
+    assert(client.IMAGE_OUTPUT_USD_PER_1M === 30.00, 'P2D-2. image output = $30.00 / 1M tokens（公式 Pricing）');
+    assert(client.OUTPUT_TOKENS_BY_QUALITY.low === 181, 'P2D-2. low = 181 output tokens（公式 calculator / 1088x1360）');
+    assert(client.OUTPUT_TOKENS_BY_QUALITY.medium === 1587, 'P2D-2. medium = 1587 output tokens');
+    assert(client.OUTPUT_TOKENS_BY_QUALITY.high === 6431, 'P2D-2. high = 6431 output tokens');
+    assert(client.OUTPUT_TOKENS_MEASURED_AT_SIZE === '1088x1360', 'P2D-2. 計測サイズを明記している');
+    // USD 枚単価を直接ハードコードしていないこと
+    ['0.00543', '0.04761', '0.19293', '0.011', '0.042', '0.167'].forEach(n => {
+      assert(clientSrc.indexOf(n) === -1, 'P2D-2. USD 枚単価を magic number として持たない: ' + n);
+    });
+    assert(Math.abs(client.estimateImageUsd('medium', 1) - (1587 * 30 / 1000000)) < 1e-12,
+      'P2D-2. USD は tokens × $30/1M から算出');
+    assert(Math.abs(client.estimateImageJpy('medium', 7) - 53.3232) < 1e-9, 'P2D-2. medium × 7 = ¥53.3232');
+    assert(Math.abs(client.estimateImageJpy('high', 7) - 216.0816) < 1e-9, 'P2D-2. high × 7 = ¥216.0816');
+    assert(Math.abs(client.estimateImageJpy('low', 7) - 6.0816) < 1e-9, 'P2D-2. low × 7 = ¥6.0816');
+    assert(client.USD_TO_JPY_STATIC === 160 && client.EXCHANGE_RATE_SOURCE === 'static',
+      'P2D-2. 為替は社内 static 正本（由来を明示）');
+    assert(client.ESTIMATE_VERIFIED === true, 'P2D-2. ESTIMATE_VERIFIED = true（公式 calculator 確認済み）');
+    const bd = client.estimateBreakdown('medium', 7);
+    assert(bd.ok === true && bd.isActualCost === false && bd.exchangeRateSource === 'static',
+      'P2D-2. 見積りは actual cost ではないことを明示（isActualCost:false）');
+    assert(client.estimateImageUsd('ultra', 1) === null, 'P2D-2. 未知 quality は null（既定へ fallback しない）');
+    assert(clientSrc.indexOf("require('../costTracker')") === -1 && clientSrc.indexOf("require('./costTracker')") === -1,
+      'P2D-2. costTracker を require しない（cost-logs.json 経路に触れない）');
+    assert(coreSrcD.indexOf('costTracker') === -1 || coreSrcD.indexOf("require('../costTracker')") === -1,
+      'P2D-2. core も costTracker を require しない');
+  }
+
+  caseHeader('P2D-3. quality enum / aspectRatio / timeout の検証（暗黙 fallback なし）');
+  {
+    ['low', 'medium', 'high'].forEach(q => {
+      assert(client.validateQuality(q).ok === true, 'P2D-3. quality 許可: ' + q);
+    });
+    assert(client.validateQuality('ultra').reason === 'invalid_quality', 'P2D-3. 未知 quality → invalid_quality');
+    assert(client.validateQuality('Medium').reason === 'invalid_quality', 'P2D-3. 大文字違いも拒否（暗黙正規化なし）');
+    assert(client.validateQuality(undefined).reason === 'missing_quality', 'P2D-3. 未指定 → missing_quality（medium へ黙って落ちない）');
+    assert(client.validateAspectRatio('4:5').value === '1088x1360', 'P2D-3. 4:5 → 1088x1360');
+    assert(client.validateAspectRatio('16:9').reason === 'invalid_aspect_ratio', 'P2D-3. 未対応比率 → invalid_aspect_ratio');
+    assert(client.validateTimeout(undefined).value === client.DEFAULT_TIMEOUT_MS, 'P2D-3. timeout 未指定 → 既定値');
+    assert(client.validateTimeout(30000).value === 30000, 'P2D-3. timeout は configurable');
+    [0, -1, 'abc', 1.5, client.MAX_TIMEOUT_MS + 1].forEach(t => {
+      assert(client.validateTimeout(t).reason === 'invalid_timeout', 'P2D-3. 不正 timeout 拒否: ' + String(t));
+    });
+    const raw = await client.generateBackgroundRaw({ prompt: 'bg, no text, 4:5 ratio, vertical, 1080x1350', quality: 'medium', aspectRatio: '4:5' });
+    assert(raw.ok === false && raw.reason === 'mock_buffer_required',
+      'P2D-3. mock でも実画像を捏造しない（Buffer 未注入 → mock_buffer_required）');
+    const injected = await client.generateBackgroundRaw({ prompt: 'bg, no text, 4:5 ratio, vertical, 1080x1350', quality: 'medium', aspectRatio: '4:5', mockBuffer: Buffer.from([1, 2, 3]) });
+    assert(injected.ok === true && Buffer.isBuffer(injected.buffer) && injected.usage === null,
+      'P2D-3. provider 出口は必ず Buffer。mock の usage は null（推測値を入れない）');
+    assert(client.extractActualUsage({}) === null && client.extractActualUsage({ usage: {} }) === null,
+      'P2D-3. usage フィールドの存在を前提にしない（無ければ null）');
+    assert(client.actualUsdFromUsage(null) === null, 'P2D-3. usage なし → actual cost を算出しない');
+    assert(Math.abs(client.actualUsdFromUsage({ outputTokens: 1587 }) - 0.04761) < 1e-12,
+      'P2D-3. actual usage が取れた場合のみ実コストを算出');
+  }
+
+  caseHeader('P2D-4. normalization（MIME / magic bytes / metadata / 1088x1360 → 1080x1350 / crop なし）');
+  {
+    const native = await nativePng(1088, 1360);
+    const r = await normalize.normalizeBackground({ buffer: native, mimeType: 'image/png' });
+    assert(r.ok === true, 'P2D-4. 1088x1360 PNG を正規化できる');
+    assert(r.width === 1080 && r.height === 1350, 'P2D-4. 出力は 1080x1350');
+    assert(r.format === 'png' && Buffer.isBuffer(r.buffer), 'P2D-4. 出力は PNG Buffer');
+    assert(r.resize.cropped === false && r.resize.kernel === 'lanczos3' && r.resize.fit === 'fill',
+      'P2D-4. crop なし・kernel 固定の等比縮小');
+    assert(Math.abs(r.resize.scale - 1080 / 1088) < 1e-12, 'P2D-4. 縮小率は 1080/1088（純粋等比）');
+    const meta = await sharpD(r.buffer).metadata();
+    assert(meta.width === 1080 && meta.height === 1350 && meta.format === 'png',
+      'P2D-4. 出力 metadata 再検証（1080x1350 / png）');
+    // deterministic
+    const r2 = await normalize.normalizeBackground({ buffer: native, mimeType: 'image/png' });
+    assert(r2.ok === true && r.buffer.equals(r2.buffer), 'P2D-4. deterministic（同一入力 → byte 一致）');
+    // MIME
+    assert((await normalize.normalizeBackground({ buffer: native, mimeType: 'image/jpeg' })).reason === 'mime_not_allowed',
+      'P2D-4. image/jpeg → mime_not_allowed');
+    assert((await normalize.normalizeBackground({ buffer: native })).reason === 'missing_mime',
+      'P2D-4. MIME 未指定 → missing_mime（image/png へ黙って仮定しない）');
+    assert((await normalize.normalizeBackground({ buffer: native, mimeType: 'image/png; charset=utf-8' })).reason === 'mime_not_allowed',
+      'P2D-4. パラメータ付き MIME も拒否（完全一致のみ）');
+    // magic bytes
+    const fakePng = Buffer.concat([Buffer.from('NOTAPNG!'), native.subarray(8)]);
+    assert((await normalize.normalizeBackground({ buffer: fakePng, mimeType: 'image/png' })).reason === 'signature_mismatch',
+      'P2D-4. signature 不一致 → signature_mismatch（MIME 自己申告だけを信じない）');
+    // metadata（寸法）
+    const wrong = await nativePng(1080, 1350);
+    const wr = await normalize.normalizeBackground({ buffer: wrong, mimeType: 'image/png' });
+    assert(wr.reason === 'dimension_mismatch' && wr.detail.expected === '1088x1360' && wr.detail.actual === '1080x1350',
+      'P2D-4. provider native 寸法でなければ dimension_mismatch');
+    const wrong2 = await nativePng(1024, 1024);
+    assert((await normalize.normalizeBackground({ buffer: wrong2, mimeType: 'image/png' })).reason === 'dimension_mismatch',
+      'P2D-4. 1024x1024 も dimension_mismatch（silent resize で吸収しない）');
+    // Buffer 化
+    assert((await normalize.normalizeBackground({ buffer: Buffer.alloc(0), mimeType: 'image/png' })).reason === 'empty_buffer',
+      'P2D-4. 空 Buffer → empty_buffer');
+    assert((await normalize.normalizeBackground({ mimeType: 'image/png' })).reason === 'missing_buffer',
+      'P2D-4. Buffer 未指定 → missing_buffer');
+    assert((await normalize.normalizeBackground({ buffer: '!!!notbase64!!!', mimeType: 'image/png' })).reason === 'invalid_base64',
+      'P2D-4. 不正 base64 → invalid_base64');
+    const b64ok = await normalize.normalizeBackground({ base64: native.toString('base64'), mimeType: 'image/png' });
+    assert(b64ok.ok === true && Buffer.isBuffer(b64ok.buffer), 'P2D-4. base64 入力も受けるが出口は Buffer');
+    // crop 禁止のソース確認
+    assert(normSrc.indexOf('.extract(') === -1, 'P2D-4. extract()（crop）を使用しない');
+    assert(normSrc.indexOf("fit: 'cover'") === -1, 'P2D-4. fit:cover を使用しない');
+    assert(normalize.RESIZE_FIT === 'fill' && normSrc.indexOf('fit: RESIZE_FIT') !== -1,
+      'P2D-4. fit は fill 固定（cover/inside/outside を使わない）');
+    assert(normSrc.indexOf("kernel: RESIZE_KERNEL") !== -1, 'P2D-4. kernel を明示指定している（既定依存にしない）');
+    // raw exception 非露出
+    const brokenR = await normalize.normalizeBackground({ buffer: Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01]), mimeType: 'image/png' });
+    assert(brokenR.ok === false && brokenR.reason === 'invalid_image' && Object.keys(brokenR.detail).length === 1,
+      'P2D-4. 壊れた PNG → invalid_image（detail は固定 { stage } のみ）');
+    assert(normSrc.indexOf('e.message') === -1, 'P2D-4. raw exception message を戻り値へ載せない');
+    // filesystem / network 非使用
+    ['toFile(', 'writeFile', 'createWriteStream', 'axios', 'fetch(', 'child_process'].forEach(t => {
+      assert(normSrc.indexOf(t) === -1, 'P2D-4. filesystem/network 非使用: ' + t);
+    });
+  }
+
+  caseHeader('P2D-5. draftFingerprint（SHA-256 / 1文字変更で変化）');
+  {
+    const fp = core.draftFingerprint(FIXTURE_DRAFT);
+    assert(/^[0-9a-f]{64}$/.test(fp), 'P2D-5. SHA-256 hex 64桁');
+    assert(fp === core.draftFingerprint(FIXTURE_DRAFT), 'P2D-5. 同一 Draft → 同一 hash');
+    const clone = o => JSON.parse(JSON.stringify(o));
+    const d1 = clone(FIXTURE_DRAFT); d1.fields.slides[3] = d1.fields.slides[3] + '。';
+    assert(core.draftFingerprint(d1) !== fp, 'P2D-5. slides 1文字変更 → hash が変わる');
+    const d2 = clone(FIXTURE_DRAFT); d2.built_at = '2026-09-03T05:24:48.533Z';
+    assert(core.draftFingerprint(d2) !== fp, 'P2D-5. built_at 変更 → hash が変わる');
+    const d3 = clone(FIXTURE_DRAFT); d3.updated_at = '2026-09-03T05:52:03.599Z';
+    assert(core.draftFingerprint(d3) !== fp, 'P2D-5. updated_at 変更 → hash が変わる');
+    const d4 = clone(FIXTURE_DRAFT); d4.output_id = 'out_other';
+    assert(core.draftFingerprint(d4) !== fp, 'P2D-5. outputId 変更 → hash が変わる');
+    const d5 = clone(FIXTURE_DRAFT); d5.fields.caption = 'caption を変えても対象外';
+    assert(core.draftFingerprint(d5) === fp, 'P2D-5. 対象4項目以外は hash に影響しない（定義どおり）');
+  }
+
+  caseHeader('P2D-6. Approval Token（HMAC / TTL / scope / nonce / secret 非露出）');
+  {
+    approval._resetNonceStore();
+    const fp = core.draftFingerprint(FIXTURE_DRAFT);
+    const scopeIn = {
+      caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+      draftFingerprint: fp, quality: 'medium', slideCount: 7,
+      estimatedCostJpy: client.estimateImageJpy('medium', 7),
+    };
+    const iss = approval.issueApprovalToken(scopeIn, { secret: TEST_SECRET });
+    assert(iss.ok === true && typeof iss.token === 'string' && iss.token.split('.').length === 3,
+      'P2D-6. token 発行（v1.payload.sig）');
+    assert(approval.verifyApprovalToken(iss.token, scopeIn, { secret: TEST_SECRET }).ok === true,
+      'P2D-6. 正しい token / scope → 検証成功');
+    // secret なし
+    assert(approval.issueApprovalToken(scopeIn, { secret: '' }).reason === 'no_approval_secret',
+      'P2D-6. secret 未設定 → 発行不可（fail-closed）');
+    assert(approval.verifyApprovalToken(iss.token, scopeIn, { secret: 'short' }).reason === 'no_approval_secret',
+      'P2D-6. 短すぎる secret は無効');
+    // 署名改竄
+    const parts = iss.token.split('.');
+    const tamperedSig = parts[0] + '.' + parts[1] + '.' + parts[2].slice(0, -2) + 'AA';
+    assert(approval.verifyApprovalToken(tamperedSig, scopeIn, { secret: TEST_SECRET }).reason === 'signature_invalid',
+      'P2D-6. 署名改竄 → signature_invalid');
+    const badPayload = Buffer.from(JSON.stringify({ ...iss.scope, estimatedCostJpy: 1 }), 'utf8')
+      .toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    assert(approval.verifyApprovalToken(parts[0] + '.' + badPayload + '.' + parts[2], scopeIn, { secret: TEST_SECRET }).reason === 'signature_invalid',
+      'P2D-6. estimatedCostJpy 改竄 → signature_invalid（payload 改変が署名で検出される）');
+    assert(approval.verifyApprovalToken('v2.' + parts[1] + '.' + parts[2], scopeIn, { secret: TEST_SECRET }).reason === 'malformed_token',
+      'P2D-6. version 不一致 → malformed_token');
+    assert(approval.verifyApprovalToken('', scopeIn, { secret: TEST_SECRET }).reason === 'missing_token',
+      'P2D-6. token 無し → missing_token');
+    // 別 secret
+    assert(approval.verifyApprovalToken(iss.token, scopeIn, { secret: TEST_SECRET + 'x' }).reason === 'signature_invalid',
+      'P2D-6. 別 secret では検証不可');
+    // scope 不一致
+    [['caseId', 'case-other'], ['outputId', 'out_other'], ['quality', 'high'], ['slideCount', 6],
+      ['draftFingerprint', 'f'.repeat(64)], ['estimatedCostJpy', 99]].forEach(([k, v]) => {
+      const bad = Object.assign({}, scopeIn); bad[k] = v;
+      const res = approval.verifyApprovalToken(iss.token, bad, { secret: TEST_SECRET });
+      assert(res.ok === false && res.reason === 'scope_mismatch' && res.detail.field === k,
+        'P2D-6. scope 不一致 → scope_mismatch: ' + k);
+    });
+    assert(approval.verifyApprovalToken(iss.token, null, { secret: TEST_SECRET }).reason === 'missing_expected_scope',
+      'P2D-6. 期待 scope 未指定 → 検証不可');
+    // TTL
+    assert(approval.verifyApprovalToken(iss.token, scopeIn, { secret: TEST_SECRET, now: iss.scope.expiresAt }).reason === 'token_expired',
+      'P2D-6. TTL 切れ → token_expired');
+    assert(approval.verifyApprovalToken(iss.token, scopeIn, { secret: TEST_SECRET, now: iss.scope.issuedAt - 1 }).reason === 'token_not_yet_valid',
+      'P2D-6. issuedAt より前 → token_not_yet_valid');
+    assert(approval.issueApprovalToken(scopeIn, { secret: TEST_SECRET, ttlMs: approval.MAX_TTL_MS + 1 }).reason === 'invalid_ttl',
+      'P2D-6. TTL 上限超過 → 発行不可');
+    // nonce 再利用
+    assert(approval.consumeNonce(iss.scope.nonce).ok === true, 'P2D-6. nonce 初回消費は成功');
+    assert(approval.consumeNonce(iss.scope.nonce).reason === 'nonce_reused', 'P2D-6. nonce 2回目 → nonce_reused');
+    assert(approval.verifyApprovalToken(iss.token, scopeIn, { secret: TEST_SECRET }).reason === 'nonce_reused',
+      'P2D-6. 消費済み nonce の token は検証段階で拒否');
+    // secret がブラウザへ出ない
+    const idxSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    assert(idxSrc.indexOf('CAROUSEL_APPROVAL_SECRET') === -1, 'P2D-6. index.html に CAROUSEL_APPROVAL_SECRET が出現しない');
+    assert(apprSrc.indexOf('process.env.CAROUSEL_APPROVAL_SECRET') !== -1, 'P2D-6. secret は server-side env のみ');
+    assert(apprSrc.indexOf('client-side use is forbidden') !== -1, 'P2D-6. client 生成を構造的に禁止している');
+    assert(apprSrc.indexOf('timingSafeEqual') !== -1, 'P2D-6. 署名比較は timing-safe');
+    // in-memory single-use の限界を明記しているか
+    ['process restart', 'multi-instance', 'production-grade'].forEach(t => {
+      assert(apprSrc.indexOf(t) !== -1, 'P2D-6. in-memory single-use の限界を明記: ' + t);
+    });
+    approval._resetNonceStore();
+  }
+
+  caseHeader('P2D-7. assertRealCallAllowed（完全 AND / REAL_ENABLED 単独では通らない）');
+  {
+    approval._resetNonceStore();
+    const fp = core.draftFingerprint(FIXTURE_DRAFT);
+    const estJpy = client.estimateImageJpy('medium', 7);
+    const stale = { built_at: FIXTURE_DRAFT.built_at, updated_at: FIXTURE_DRAFT.updated_at };
+    function baseCtx(over) {
+      const iss = approval.issueApprovalToken({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftFingerprint: fp, quality: 'medium', slideCount: 7, estimatedCostJpy: estJpy,
+      }, { secret: TEST_SECRET });
+      return Object.assign({
+        billingLock: false, costTrackerCanProcess: true,
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+        staleBefore: stale, staleAfter: stale,
+        quality: 'medium', slideCount: 7, estimatedCostJpy: estJpy,
+        draftFingerprint: fp, approvalToken: iss.token, approvalSecret: TEST_SECRET,
+        budgetJpyPerPost: 100,
+      }, over || {});
+    }
+
+    // REAL_ENABLED=false のうちは、他が全部そろっていても通らない
+    assert(core.assertRealCallAllowed(baseCtx()).reason === 'real_api_disabled',
+      'P2D-7. REAL_ENABLED=false なら他条件が全て成立していても停止');
+
+    // 以降は REAL_ENABLED を一時的に true にして AND の残りを検証する（ファイルは書き換えない）
+    const savedReal = client.REAL_ENABLED;
+    client.REAL_ENABLED = true;
+    try {
+      assert(core.assertRealCallAllowed(baseCtx()).ok === true, 'P2D-7. 全条件成立 → 許可');
+      // REAL_ENABLED=true 単独では通らないこと
+      assert(core.assertRealCallAllowed(baseCtx({ billingLock: true })).reason === 'billing_locked',
+        'P2D-7. REAL_ENABLED=true 単独では不可（billingLock）');
+      assert(core.assertRealCallAllowed(baseCtx({ billingLock: undefined })).reason === 'billing_locked',
+        'P2D-7. billingLock 未指定も不可（明示 false のみ許可）');
+      assert(core.assertRealCallAllowed(baseCtx({ costTrackerCanProcess: false })).reason === 'cost_limit_stopped',
+        'P2D-7. costTracker.canProcess()=false → 停止');
+      assert(core.assertRealCallAllowed(baseCtx({ costTrackerCanProcess: undefined })).reason === 'cost_limit_stopped',
+        'P2D-7. canProcess 未注入も停止（true 以外は通さない）');
+      assert(core.assertRealCallAllowed(baseCtx({ caseId: 'case-other' })).reason === 'cross_case',
+        'P2D-7. caseId 不一致 → cross_case');
+      assert(core.assertRealCallAllowed(baseCtx({ outputId: 'out_other' })).reason === 'output_mismatch',
+        'P2D-7. outputId 不一致 → output_mismatch');
+      assert(core.assertRealCallAllowed(baseCtx({ approvalRow: { approval_decision: 'pending', published: false } })).reason === 'not_approved',
+        'P2D-7. 未承認 → not_approved');
+      assert(core.assertRealCallAllowed(baseCtx({ approvalRow: { approval_decision: 'approved', published: true } })).reason === 'already_published',
+        'P2D-7. published 済み → already_published');
+      assert(core.assertRealCallAllowed(baseCtx({ staleAfter: { built_at: 'x', updated_at: stale.updated_at } })).reason === 'stale_built_at',
+        'P2D-7. stale → stale_built_at');
+      assert(core.assertRealCallAllowed(baseCtx({ quality: 'ultra' })).reason === 'invalid_quality',
+        'P2D-7. 未知 quality → invalid_quality');
+      assert(core.assertRealCallAllowed(baseCtx({ slideCount: 6 })).reason === 'slide_count_mismatch',
+        'P2D-7. slideCount 不一致 → slide_count_mismatch');
+      assert(core.assertRealCallAllowed(baseCtx({ estimatedCostJpy: 1 })).reason === 'estimated_cost_mismatch',
+        'P2D-7. estimatedCost 改竄 → estimated_cost_mismatch');
+      assert(core.assertRealCallAllowed(baseCtx({ draftFingerprint: 'a'.repeat(64) })).reason === 'draft_fingerprint_mismatch',
+        'P2D-7. fingerprint 不一致 → draft_fingerprint_mismatch');
+      assert(core.assertRealCallAllowed(baseCtx({ approvalToken: 'v1.aaa.bbb' })).reason === 'signature_invalid',
+        'P2D-7. token 改竄 → signature_invalid');
+      assert(core.assertRealCallAllowed(baseCtx({ approvalToken: undefined })).reason === 'missing_token',
+        'P2D-7. token 無し → missing_token');
+      assert(core.assertRealCallAllowed(baseCtx({ approvalSecret: '' })).reason === 'no_approval_secret',
+        'P2D-7. secret 無し → no_approval_secret');
+      // high は 7枚で予算超過 → guard 段階で拒否（個別ハードコードではなく計算結果）
+      const highJpy = client.estimateImageJpy('high', 7);
+      const hiIss = approval.issueApprovalToken({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftFingerprint: fp, quality: 'high', slideCount: 7, estimatedCostJpy: highJpy,
+      }, { secret: TEST_SECRET });
+      const hiRes = core.assertRealCallAllowed(baseCtx({ quality: 'high', estimatedCostJpy: highJpy, approvalToken: hiIss.token }));
+      assert(hiRes.reason === 'budget_exceeded', 'P2D-7. high × 7 (¥216.08) → budget_exceeded');
+      assert(highJpy > 100 && client.estimateImageJpy('medium', 7) <= 100,
+        'P2D-7. 拒否理由は計算結果（high>100 / medium<=100）');
+      // nonce 再利用
+      const ctxN = baseCtx();
+      assert(core.assertRealCallAllowed(ctxN).ok === true, 'P2D-7. 初回は許可');
+      approval.consumeNonce(approval.verifyApprovalToken(ctxN.approvalToken, {
+        caseId: ctxN.caseId, outputId: ctxN.outputId, draftFingerprint: fp,
+        quality: 'medium', slideCount: 7, estimatedCostJpy: estJpy,
+      }, { secret: TEST_SECRET }).scope.nonce);
+      assert(core.assertRealCallAllowed(ctxN).reason === 'nonce_reused', 'P2D-7. nonce 消費後は再実行不可');
+    } finally {
+      client.REAL_ENABLED = savedReal;
+    }
+    assert(client.REAL_ENABLED === false, 'P2D-7. テスト後も REAL_ENABLED=false へ復帰');
+    assert(clientSrc.indexOf('var REAL_ENABLED = false;') !== -1, 'P2D-7. ソース上の REAL_ENABLED は false のまま');
+    approval._resetNonceStore();
+  }
+
+  caseHeader('P2D-8. all-or-nothing + running budget（mock provider 注入・実 API 0）');
+  {
+    const native = await nativePng(1088, 1360);
+    function makeDeps(failAtSlide) {
+      const calls = [];
+      return {
+        calls,
+        deps: {
+          provider: async (a) => {
+            calls.push(a.slideIndex);
+            if (failAtSlide && a.slideIndex === failAtSlide) return { ok: false, reason: 'provider_failed' };
+            return { ok: true, buffer: native, usage: null };
+          },
+          normalize: (a) => normalize.normalizeBackground(a),
+          composite: (a) => compositor.compositeSlide(a),
+        },
+      };
+    }
+    const jobInput = {
+      caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+      draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium',
+    };
+
+    // 全枚成功
+    const okDeps = makeDeps(null);
+    const okRes = await core.runCarouselImageJob(jobInput, okDeps.deps);
+    assert(okRes.ok === true, 'P2D-8. 7枚すべて成功 → ok');
+    assert(okRes.providerCalls === 7 && okDeps.calls.length === 7, 'P2D-8. provider calls = 7');
+    assert(okRes.formalAssets.length === 7, 'P2D-8. 正式成果物 = 7枚');
+    assert(okRes.formalAssets.every(a => a.width === 1080 && a.height === 1350 && Buffer.isBuffer(a.buffer)),
+      'P2D-8. 全成果物が 1080x1350 の PNG Buffer');
+    assert(okRes.realApiCalled === false && okRes.dbWritten === false && okRes.filesWritten === false,
+      'P2D-8. 実 API / DB / filesystem に触れない');
+    assert(Math.abs(okRes.spentEstimatedJpy - 53.3232) < 1e-9, 'P2D-8. 累計見積り = ¥53.3232');
+
+    // 4枚目失敗 → all-or-nothing
+    const failDeps = makeDeps(4);
+    const failRes = await core.runCarouselImageJob(jobInput, failDeps.deps);
+    assert(failRes.ok === false, 'P2D-8. 1枚でも失敗 → ジョブ全体が失敗');
+    assert(failRes.providerCalls === 4, 'P2D-8. provider calls = 4（5枚目以降 = 0）');
+    assert(failDeps.calls.length === 4 && Math.max(...failDeps.calls) === 4, 'P2D-8. 5枚目以降を呼んでいない');
+    assert(failRes.formalAssets.length === 0, 'P2D-8. 正式成果物 = 0（完成分も返さない）');
+    assert(JSON.stringify(failRes.failedSlides) === '[4]', 'P2D-8. failedSlides = [4]');
+    assert(failRes.filesWritten === false, 'P2D-8. partial 保存なし');
+
+    // normalize 失敗（provider が native 寸法でない Buffer を返す）
+    const badNative = await nativePng(1024, 1024);
+    const nres = await core.runCarouselImageJob(jobInput, {
+      provider: async () => ({ ok: true, buffer: badNative }),
+      normalize: (a) => normalize.normalizeBackground(a),
+      composite: (a) => compositor.compositeSlide(a),
+    });
+    assert(nres.ok === false && nres.reason === 'dimension_mismatch' && nres.providerCalls === 1,
+      'P2D-8. normalize 失敗も all-or-nothing（1枚目で停止）');
+
+    // pre-flight budget: high は provider を1回も呼ばない
+    const hiDeps = makeDeps(null);
+    const hiRes = await core.runCarouselImageJob(Object.assign({}, jobInput, { quality: 'high' }), hiDeps.deps);
+    assert(hiRes.ok === false && hiRes.reason === 'budget_exceeded', 'P2D-8. high → budget_exceeded');
+    assert(hiRes.providerCalls === 0 && hiDeps.calls.length === 0, 'P2D-8. high は provider call = 0（pre-flight で停止）');
+    assert(hiRes.detail.estimatedJpy > 100 && hiRes.detail.budgetJpyPerPost === 100, 'P2D-8. 拒否は計算結果（¥216.08 > ¥100）');
+
+    // medium は受理される
+    assert((await core.runCarouselImageJob(jobInput, makeDeps(null).deps)).ok === true, 'P2D-8. medium は受理');
+
+    // running budget: 再生成分を含む累計で判定（枚数キャップではない）
+    const runDeps = makeDeps(null);
+    const runRes = await core.runCarouselImageJob(
+      Object.assign({}, jobInput, { alreadySpentEstimatedJpy: 90 }), runDeps.deps);
+    assert(runRes.ok === false && runRes.reason === 'budget_exceeded', 'P2D-8. 累計 ¥90 消費済み → 途中で budget_exceeded');
+    assert(runRes.providerCalls === 1, 'P2D-8. running check により 1回だけ呼んで停止（90+7.62=97.6 は可 / 次は 105.2 で不可）');
+    assert(runRes.detail.stage === 'running_budget', 'P2D-8. running budget 段階での停止であることを記録');
+    assert(runRes.formalAssets.length === 0, 'P2D-8. 予算停止時も正式成果物 = 0');
+
+    // deps 未注入は fail-closed（既定で実 provider を掴まない）
+    assert((await core.runCarouselImageJob(jobInput, {})).reason === 'provider_not_injected',
+      'P2D-8. provider 未注入 → fail-closed（既定で実 API を掴まない）');
+    assert((await core.runCarouselImageJob(jobInput, { provider: async () => ({}), normalize: () => ({}) })).reason === 'composite_not_injected',
+      'P2D-8. composite 未注入 → fail-closed');
+
+    // real:true は Phase 2-D では必ず guard で止まる
+    const realRes = await core.runCarouselImageJob(Object.assign({}, jobInput, { real: true }), makeDeps(null).deps);
+    assert(realRes.ok === false && realRes.reason === 'real_api_disabled' && realRes.providerCalls === 0,
+      'P2D-8. real:true は REAL_ENABLED=false により provider call = 0');
+  }
+
+  caseHeader('P2D-9. compositor 非改変 / filesystem write 0 / 実 API 0');
+  {
+    const compSrc = fs.readFileSync(path.join(__dirname, 'lib', 'carouselCompositor.js'), 'utf8');
+    assert(compSrc.indexOf('.resize(') === -1, 'P2D-9. compositor に resize() を戻していない');
+    assert(compSrc.indexOf("fit: 'cover'") === -1, 'P2D-9. compositor に fit:cover なし');
+    assert(normSrc.indexOf('.resize(') !== -1, 'P2D-9. resize は normalization 層のみに存在する');
+    assert(!fs.existsSync(path.join(__dirname, 'generated')), 'P2D-9. generated/ が作成されていない（filesystem write 0）');
+    assert(client.REAL_ENABLED === false, 'P2D-9. REAL_ENABLED=false 維持（real image API 0）');
+    assert(coreSrcD.indexOf('writeFile') === -1 && coreSrcD.indexOf('createWriteStream') === -1,
+      'P2D-9. core は filesystem write を行わない');
+    ['shared/carouselRenderer.js', 'shared/carouselFont.js', 'lib/carouselCompositor.js'].forEach(f => {
+      assert(fs.existsSync(path.join(__dirname, f)), 'P2D-9. 変更禁止ファイルが存在する: ' + f);
+    });
   }
 
   console.log('\n' + '─'.repeat(60));
