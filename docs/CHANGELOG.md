@@ -4,6 +4,26 @@
 
 ---
 
+## Carousel Image Production ─ Production Safety / Activation Foundation **正式リリース**（2026-09-08・Tag `v1.01-carousel-image-production-safety-release`）
+
+- **Release**：Production Activation Step PA-1〜PA-6で実装した安全基盤一式（Decision 110〜116）を `main` へ確定した3 commitsをfast-forward push（`02f8f6c..341eaa7`）。**code commit `e0dadc4`（feat: connect guarded carousel image production）＋docs commit `341eaa7`（docs: formalize carousel production activation safeguards）＋その前段の `21b20330`（docs: record carousel phase 2-d release and phase 2-e preconditions）**。push前後で `HEAD = origin/main`・`ahead 0 / behind 0` を実測確認。本docs commit（CHANGELOG本entry含む）自体をAnnotated Tag `v1.01-carousel-image-production-safety-release` のtargetとする。
+- **Render**：main push後のAuto-Deployを本番URL（`https://ai-company-l45x.onrender.com`）へのread-only GETで確認。**`GET /` = 200**・**`GET /api/auth-required` = 200**（既存API無傷）。`index.html` の `Last-Modified` がpush直後の時刻帯と一致し、旧commitでは発生し得ない挙動変化（下記Decision 116）が観測されたことから、deploy反映を確認した（Render管理画面での直接確認ではなく本番挙動からの確認である旨を明記）。
+- **実装内容（Decision 110〜116）**：
+  - **Decision 110**：`carousel_image_executions` ledger専用のserver-only privileged Supabase client（`lib/carouselExecutionSupabase.js`）。anon client・NEXT_PUBLIC鍵を一切参照しない。
+  - **Decision 111**：per-post conservative cumulative budget（`BUDGET_JPY_PER_POST=100`）。
+  - **Decision 112**：partial UNIQUE index predicateを `WHERE status IN ('in_progress','completed')` へ拡張し、同一Output Draftへのcompleted generationを最大1件に制限するSafety Lock。PA-3Aで charged-failure（`failed_after_charge`／`unknown_billing`）の非対称性と read→reserve invariant（新しいawaitを区間へ追加してはならない）を追記。
+  - **Decision 113**：Carousel 3route（approval／generate／assets）へserver-side session（`WEB_SESSION_SECRET`）＋trusted Origin検証によるaccess controlを追加。billingLockは明示 `boolean false` のみ課金許可。
+  - **Decision 114**：Storage専用privileged client（`lib/carouselAssetStorageSupabase.js`）。ledger用clientとは完全独立。`upsert:false`・public URL非生成・PNG signature検証。
+  - **Decision 115**：`REAL_ENABLED` をsource gate（`_sourceRealEnabled`）とserver-only env gate（`CAROUSEL_IMAGE_REAL_ENABLED`、厳密一致 `'true'` のみ）のdual-keyへ拡張。deployなしの緊急停止を可能にする。
+  - **Decision 116**：`express.static(repo root)` によるstatic-root全体公開を廃止し、`lib/publicStatic.js` のallowlist型 Public Static Asset Boundary へ置換。`docs/`／`lib/`／`supabase/`／`server.js`／`package.json`等はHTTP静的配信の対象外。
+- **Decision 116 Production Verification（PASSED）**：本番で以下を実測。**blocked internal paths 8/8 = 404**（`/docs/04DECISIONS.md`／`/docs/06HANDOVER_NEXT_CHAT.md`／`/lib/webSession.js`／`/lib/carouselAssetStorageSupabase.js`／`/supabase/schema.sql`／`/server.js`／`/data/conversations/_meta.json`／`/package.json`）。**public allowlist resources = 200**（`/`・`/index.html`・`/shared/agentResultNormalizer.js`・`/shared/evidenceAcquisition.js`）。**`GET /api/carousel-image/assets`（cookie無し）= 401 `{ok:false,reason:'unauthorized'}`**（fail-closed実測）。
+- **Carousel Production Activation = NOT YET（重要）**：本リリースは **Carousel Image Production の safety / activation foundation** を正式に本番へ載せた段階であり、**real paid generation は引き続き無効**である。`_sourceRealEnabled = false`・`CAROUSEL_IMAGE_REAL_ENABLED` 未設定・実DB（`carousel_image_executions`）未適用・`carousel-images` bucket未作成・Render Carousel関連secret（`SUPABASE_SECRET_KEY`／`CAROUSEL_APPROVAL_SECRET`／`WEB_SESSION_SECRET`／`WEB_TRUSTED_ORIGIN`）未設定・**Image API call 0・paid generation 0・Publishing 0・Instagram投稿 0**をリリース後も維持。「Carousel Production Activated」「Real Image Generation Released」「DB Applied」「Storage Ready」「Paid Generation Ready」「End-to-End Production Complete」とは記録しない。
+- **回帰テスト**：`carouselImageProduction` 465／`carouselImageRoutes` 95／`carouselAccessControl` 82／`carouselAssetStorage` 54／`carouselExecutionDb` 88／`carouselRealEnabledKillSwitch` 51／`carouselAssetStorageSupabase` 31／`staticExposureBoundary` 211 ＝ **合計1,077 passed／0 failed**（PA-4 push前実測・PA-6/PA-7でcode変更0のため同一値を維持）。
+- **Version1 Final Complete 維持／Version1.1 Connected AI Company 開発中 維持／Phase54 Complete 維持／Phase55 未着手**。**Decision新規追加なし（既存Decision 110〜116の実装完了・本番反映記録のみ）**。
+
+---
+
+
 ## Carousel Image Production Phase 2-D **正式リリース**（2026-09-07・Tag `v1.01-carousel-image-production-phase-2d`）
 
 - **Release**：未Push 7 commitsを `main` へfast-forward push（`3d13527..02f8f6c`）。**origin/main = `02f8f6c219ab01795a87c4960d126aa7ded63a9b`**。annotated tag **`v1.01-carousel-image-production-phase-2d`**（tag object `935a927b20537b4c2e83c96588a3c15c1cf0fa36`／peeled commit `02f8f6c219ab01795a87c4960d126aa7ded63a9b`）をpush。
