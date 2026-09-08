@@ -54,9 +54,11 @@ const FIXTURE_DRAFT = {
 const FIXTURE_APPROVAL = { approval_decision: 'approved', published: false };
 
 function run(overrides) {
+  // Step③: planning 以降は quality 明示必須になったため、既定 fixture でも明示する
+  //   （旧実装では未指定が medium へ暗黙 fallback していた）。
   return core.runCarouselImageJobMock(Object.assign({
     caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
-    draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+    draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium',
   }, overrides || {}));
 }
 
@@ -120,7 +122,7 @@ function run(overrides) {
     assert(core.validateSlideIndex(8, 7).reason === 'slideIndex_out_of_range', '9. slideIndex 8（> length）を拒否');
     assert(core.validateSlideIndex(1.5, 7).reason === 'slideIndex_not_integer', '9. 非整数を拒否');
     assert(core.validateSlideIndex('3', 7).ok === true, '9. "3"（範囲内・整数）は ok');
-    assert(core.regenerateSlideMock(Object.assign({}, { caseId: 'case-value-1788410623', outputId: 'out_1788413020275', draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, slideIndex: 99 })).reason === 'slideIndex_out_of_range', '9. regenerate も範囲外を拒否');
+    assert(core.regenerateSlideMock(Object.assign({}, { caseId: 'case-value-1788410623', outputId: 'out_1788413020275', draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium', slideIndex: 99 })).reason === 'slideIndex_out_of_range', '9. regenerate も範囲外を拒否');
   }
 
   caseHeader('10. unapproved 拒否');
@@ -156,7 +158,7 @@ function run(overrides) {
     const prev = base.fieldsPatch.carouselAssets.map(a => Object.assign({}, a));
     const reg = core.regenerateSlideMock({
       caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
-      draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, slideIndex: 4, prevAssets: prev,
+      draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium', slideIndex: 4, prevAssets: prev,
     });
     assert(reg.ok === true, '13. slide4 再生成が成功');
     assert(reg.isolation.ok === true, '13. slide4 以外の asset が byte 不変');
@@ -171,7 +173,7 @@ function run(overrides) {
     // regen 上限
     const capped = Object.assign({}, prev[3], { regenCount: core.MAX_REGEN_PER_SLIDE });
     const prevCapped = prev.map(a => a.slideIndex === 4 ? capped : a);
-    const r2 = core.regenerateSlideMock({ caseId: 'case-value-1788410623', outputId: 'out_1788413020275', draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, slideIndex: 4, prevAssets: prevCapped });
+    const r2 = core.regenerateSlideMock({ caseId: 'case-value-1788410623', outputId: 'out_1788413020275', draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium', slideIndex: 4, prevAssets: prevCapped });
     assert(r2.reason === 'regen_limit', '13. slide あたり再生成上限（' + core.MAX_REGEN_PER_SLIDE + '回）で拒否');
   }
 
@@ -244,7 +246,7 @@ function run(overrides) {
         imagePrompts: ['bg1', 'bg2'], cta: '詳細は公式ページでご確認ください。',
       },
     };
-    const pr = core.runCarouselImageJobMock({ caseId: 'case-msr9yckye65y', outputId: 'out_x', draftRow: productDraft, approvalRow: { approval_decision: 'approved', published: false } });
+    const pr = core.runCarouselImageJobMock({ caseId: 'case-msr9yckye65y', outputId: 'out_x', draftRow: productDraft, approvalRow: { approval_decision: 'approved', published: false }, quality: 'medium' });
     assert(pr.ok === true && pr.fieldsPatch.carouselAssets.length === 2, '18. 商品投稿 fixture でも同じ経路で生成できる');
     assert(pr.fieldsPatch.carouselAssets.every(a => a.aspectRatio === '4:5' && a.width === 1080), '18. 商品投稿も 1080x1350 / 4:5');
     assert(run().ok === true && run().fieldsPatch.carouselAssets.length === 7, '18. Value Content も同じ経路で生成できる');
@@ -686,7 +688,8 @@ function run(overrides) {
     const scopeIn = {
       caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
       draftFingerprint: fp, quality: 'medium', slideCount: 7,
-      estimatedCostJpy: client.estimateImageJpy('medium', 7),
+      // Phase 2-E Gate 1 Step④: estimatedCostJpy = authorized total（output + text input reserve）
+      estimatedCostJpy: client.estimateAuthorizedTotalJpy('medium', 7),
     };
     const iss = approval.issueApprovalToken(scopeIn, { secret: TEST_SECRET });
     assert(iss.ok === true && typeof iss.token === 'string' && iss.token.split('.').length === 3,
@@ -753,7 +756,8 @@ function run(overrides) {
   {
     approval._resetNonceStore();
     const fp = core.draftFingerprint(FIXTURE_DRAFT);
-    const estJpy = client.estimateImageJpy('medium', 7);
+    // Phase 2-E Gate 1 Step④: estJpy = authorized total（output + text input reserve）。¥92.5232
+    const estJpy = client.estimateAuthorizedTotalJpy('medium', 7);
     const stale = { built_at: FIXTURE_DRAFT.built_at, updated_at: FIXTURE_DRAFT.updated_at };
     function baseCtx(over) {
       const iss = approval.issueApprovalToken({
@@ -776,8 +780,12 @@ function run(overrides) {
       'P2D-7. REAL_ENABLED=false なら他条件が全て成立していても停止');
 
     // 以降は REAL_ENABLED を一時的に true にして AND の残りを検証する（ファイルは書き換えない）
+    // Production Activation Step PA-1: REAL_ENABLED は source/env の dual-key AND になったため、
+    //   env側も一時的に立てる（終了後に必ず元へ復元・process.envを汚染しない）。
     const savedReal = client.REAL_ENABLED;
+    const savedEnvPA1 = process.env.CAROUSEL_IMAGE_REAL_ENABLED;
     client.REAL_ENABLED = true;
+    process.env.CAROUSEL_IMAGE_REAL_ENABLED = 'true';
     try {
       assert(core.assertRealCallAllowed(baseCtx()).ok === true, 'P2D-7. 全条件成立 → 許可');
       // REAL_ENABLED=true 単独では通らないこと
@@ -813,16 +821,16 @@ function run(overrides) {
         'P2D-7. token 無し → missing_token');
       assert(core.assertRealCallAllowed(baseCtx({ approvalSecret: '' })).reason === 'no_approval_secret',
         'P2D-7. secret 無し → no_approval_secret');
-      // high は 7枚で予算超過 → guard 段階で拒否（個別ハードコードではなく計算結果）
-      const highJpy = client.estimateImageJpy('high', 7);
+      // high は 7枚で予算超過 → guard 段階で拒否（個別ハードコードではなく計算結果・authorized total）
+      const highJpy = client.estimateAuthorizedTotalJpy('high', 7);
       const hiIss = approval.issueApprovalToken({
         caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
         draftFingerprint: fp, quality: 'high', slideCount: 7, estimatedCostJpy: highJpy,
       }, { secret: TEST_SECRET });
       const hiRes = core.assertRealCallAllowed(baseCtx({ quality: 'high', estimatedCostJpy: highJpy, approvalToken: hiIss.token }));
-      assert(hiRes.reason === 'budget_exceeded', 'P2D-7. high × 7 (¥216.08) → budget_exceeded');
-      assert(highJpy > 100 && client.estimateImageJpy('medium', 7) <= 100,
-        'P2D-7. 拒否理由は計算結果（high>100 / medium<=100）');
+      assert(hiRes.reason === 'budget_exceeded', 'P2D-7. high × 7 authorized total (¥255.28) → budget_exceeded');
+      assert(highJpy > 100 && client.estimateAuthorizedTotalJpy('medium', 7) <= 100,
+        'P2D-7. 拒否理由は計算結果（high authorized total>100 / medium authorized total<=100）');
       // nonce 再利用
       const ctxN = baseCtx();
       assert(core.assertRealCallAllowed(ctxN).ok === true, 'P2D-7. 初回は許可');
@@ -833,9 +841,11 @@ function run(overrides) {
       assert(core.assertRealCallAllowed(ctxN).reason === 'nonce_reused', 'P2D-7. nonce 消費後は再実行不可');
     } finally {
       client.REAL_ENABLED = savedReal;
+      if (savedEnvPA1 === undefined) delete process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+      else process.env.CAROUSEL_IMAGE_REAL_ENABLED = savedEnvPA1;
     }
     assert(client.REAL_ENABLED === false, 'P2D-7. テスト後も REAL_ENABLED=false へ復帰');
-    assert(clientSrc.indexOf('var REAL_ENABLED = false;') !== -1, 'P2D-7. ソース上の REAL_ENABLED は false のまま');
+    assert(clientSrc.indexOf('var _sourceRealEnabled = false;') !== -1, 'P2D-7. ソース上の REAL_ENABLED は false のまま');
     approval._resetNonceStore();
   }
 
@@ -872,7 +882,8 @@ function run(overrides) {
       'P2D-8. 全成果物が 1080x1350 の PNG Buffer');
     assert(okRes.realApiCalled === false && okRes.dbWritten === false && okRes.filesWritten === false,
       'P2D-8. 実 API / DB / filesystem に触れない');
-    assert(Math.abs(okRes.spentEstimatedJpy - 53.3232) < 1e-9, 'P2D-8. 累計見積り = ¥53.3232');
+    // Phase 2-E Gate 1 Step④: spentEstimatedJpy は authorized total 基準（output + reserve）
+    assert(Math.abs(okRes.spentEstimatedJpy - 92.5232) < 1e-9, 'P2D-8. 累計 authorized 見積り = ¥92.5232');
 
     // 4枚目失敗 → all-or-nothing
     const failDeps = makeDeps(4);
@@ -899,18 +910,25 @@ function run(overrides) {
     const hiRes = await core.runCarouselImageJob(Object.assign({}, jobInput, { quality: 'high' }), hiDeps.deps);
     assert(hiRes.ok === false && hiRes.reason === 'budget_exceeded', 'P2D-8. high → budget_exceeded');
     assert(hiRes.providerCalls === 0 && hiDeps.calls.length === 0, 'P2D-8. high は provider call = 0（pre-flight で停止）');
-    assert(hiRes.detail.estimatedJpy > 100 && hiRes.detail.budgetJpyPerPost === 100, 'P2D-8. 拒否は計算結果（¥216.08 > ¥100）');
+    assert(hiRes.detail.estimatedJpy > 100 && hiRes.detail.budgetJpyPerPost === 100, 'P2D-8. 拒否は計算結果（authorized total ¥255.28 > ¥100）');
 
     // medium は受理される
     assert((await core.runCarouselImageJob(jobInput, makeDeps(null).deps)).ok === true, 'P2D-8. medium は受理');
 
-    // running budget: 再生成分を含む累計で判定（枚数キャップではない）
+    // Phase 2-E Production Connection Step B: pre-flight が alreadySpentEstimatedJpy を
+    //   算入するようになったため（cumulative 込みで無償の時点で拒否し、無駄な有料 provider call を
+    //   出さない設計）、旧シナリオ（85 消費済みで1回だけ呼んでから running budget で停止）は
+    //   もはや発生しない——85+92.5232(medium7 authorized total)=177.5232>100 は pre-flight の
+    //   時点で判明するため、providerCalls は 0 のまま拒否される（4枚生成してから破棄、のような
+    //   経路が構造的に起きなくなったことの直接の証跡）。
     const runDeps = makeDeps(null);
     const runRes = await core.runCarouselImageJob(
-      Object.assign({}, jobInput, { alreadySpentEstimatedJpy: 90 }), runDeps.deps);
-    assert(runRes.ok === false && runRes.reason === 'budget_exceeded', 'P2D-8. 累計 ¥90 消費済み → 途中で budget_exceeded');
-    assert(runRes.providerCalls === 1, 'P2D-8. running check により 1回だけ呼んで停止（90+7.62=97.6 は可 / 次は 105.2 で不可）');
-    assert(runRes.detail.stage === 'running_budget', 'P2D-8. running budget 段階での停止であることを記録');
+      Object.assign({}, jobInput, { alreadySpentEstimatedJpy: 85 }), runDeps.deps);
+    assert(runRes.ok === false && runRes.reason === 'budget_exceeded', 'P2D-8. 累計 ¥85 消費済み → budget_exceeded');
+    assert(runRes.providerCalls === 0 && runDeps.calls.length === 0,
+      'P2D-8. pre-flight が cumulative(85)+totalJpy(92.5232) を算入し provider call 0 で拒否（無駄な有料呼び出しなし）');
+    assert(runRes.detail.alreadySpentEstimatedJpy === 85,
+      'P2D-8. detail に alreadySpentEstimatedJpy が記録される');
     assert(runRes.formalAssets.length === 0, 'P2D-8. 予算停止時も正式成果物 = 0');
 
     // deps 未注入は fail-closed（既定で実 provider を掴まない）
@@ -923,6 +941,802 @@ function run(overrides) {
     const realRes = await core.runCarouselImageJob(Object.assign({}, jobInput, { real: true }), makeDeps(null).deps);
     assert(realRes.ok === false && realRes.reason === 'real_api_disabled' && realRes.providerCalls === 0,
       'P2D-8. real:true は REAL_ENABLED=false により provider call = 0');
+  }
+
+  caseHeader('P2E-S3. Explicit Quality Enforcement（planning 以降の暗黙 default 撤廃）');
+  {
+    const qBase = {
+      caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+      draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+    };
+    const plan = (q) => core.planCarouselImageJob(
+      q === '__omit__' ? Object.assign({}, qBase) : Object.assign({}, qBase, { quality: q })
+    );
+
+    // Test 1〜3: undefined / null / '' はすべて missing_quality（medium へ落ちない）
+    assert(plan('__omit__').ok === false && plan('__omit__').reason === 'missing_quality',
+      'P2E-S3. quality 未指定 → missing_quality（medium へ暗黙 fallback しない）');
+    assert(plan(undefined).ok === false && plan(undefined).reason === 'missing_quality',
+      'P2E-S3. quality undefined → missing_quality');
+    assert(plan(null).ok === false && plan(null).reason === 'missing_quality',
+      'P2E-S3. quality null → missing_quality');
+    assert(plan('').ok === false && plan('').reason === 'missing_quality',
+      'P2E-S3. quality 空文字 → missing_quality');
+
+    // Test 4〜6: low / medium / high は planning 成功し、値がそのまま plan へ入る
+    ['low', 'medium', 'high'].forEach((q) => {
+      const r = plan(q);
+      assert(r.ok === true && r.quality === q,
+        'P2E-S3. quality ' + q + ' は planning 成功し plan.quality に明示値が入る');
+    });
+
+    // Test 7: enum 外は invalid_quality（新語彙を増やさず client.validateQuality の語彙を使う）
+    ['auto', 'standard', 'ultra', 'LOW', 'Medium'].forEach((q) => {
+      const r = plan(q);
+      assert(r.ok === false && r.reason === 'invalid_quality',
+        'P2E-S3. enum 外 quality "' + q + '" → invalid_quality');
+    });
+
+    // ソース検証: planning 経路に暗黙 default が残っていないこと。
+    //   ※ 「何を撤廃したか」を説明するコメント中の記述は許容し、コメント行を除いた
+    //     実コードのみを検査対象とする。
+    const coreSrcS3 = fs.readFileSync(path.join(__dirname, 'shared', 'carouselImageCore.js'), 'utf8');
+    const coreCodeS3 = coreSrcS3.split('\n')
+      .filter((ln) => !/^\s*\/\//.test(ln))
+      .join('\n');
+    assert(coreCodeS3.indexOf('input.quality || IMAGE_QUALITY_DEFAULT') === -1,
+      'P2E-S3. planCarouselImageJob の実コードから暗黙 default（|| IMAGE_QUALITY_DEFAULT）が撤廃されている');
+    assert(coreCodeS3.indexOf('input.quality ??') === -1,
+      'P2E-S3. ?? による暗黙 default も実コードに存在しない');
+    assert(coreCodeS3.indexOf('IMAGE_QUALITY_DEFAULT') !== -1,
+      'P2E-S3. 定数定義・export 自体は実コードに残っている（scope 外 cleanup をしていない）');
+
+    // IMAGE_QUALITY_DEFAULT 自体は削除しない（UI initial display 用に残す・scope 外 cleanup をしない）
+    assert(core.IMAGE_QUALITY_DEFAULT === 'medium',
+      'P2E-S3. IMAGE_QUALITY_DEFAULT 定数は残置（UI initial display 用・planning では未使用）');
+
+    // 上位経路（mock / real orchestration）でも quality 明示が必須であること
+    const mockNoQ = core.runCarouselImageJobMock(Object.assign({}, qBase));
+    assert(mockNoQ.ok === false && mockNoQ.reason === 'missing_quality',
+      'P2E-S3. runCarouselImageJobMock も quality 未指定なら missing_quality');
+    const regenNoQ = core.regenerateSlideMock(Object.assign({}, qBase, { slideIndex: 4 }));
+    assert(regenNoQ.ok === false && regenNoQ.reason === 'missing_quality',
+      'P2E-S3. regenerateSlideMock も quality 未指定なら missing_quality');
+
+    // approval payload へ暗黙 default が入らないこと（plan の quality がそのまま scope になる）
+    const planHigh = plan('high');
+    assert(planHigh.ok === true && planHigh.quality === 'high' && planHigh.quality !== core.IMAGE_QUALITY_DEFAULT,
+      'P2E-S3. plan.quality は明示値のみ（approval payload へ暗黙 medium が混入しない）');
+  }
+
+  caseHeader('P2E-S4. Conservative Reserve Cost Model（authorization reserve・実 API 0）');
+  {
+    // 1〜6: 純関数の期待値（Final Design 承認値と一致することを固定）
+    assert(Math.abs(client.estimateReservedInputJpy(1) - 5.60) < 1e-9,
+      'P2E-S4. reserve 1 slide = ¥5.60');
+    assert(Math.abs(client.estimateReservedInputJpy(7) - 39.20) < 1e-9,
+      'P2E-S4. reserve 7 slides = ¥39.20');
+    assert(Math.abs(client.estimateAuthorizedTotalJpy('low', 7) - 45.2816) < 1e-9,
+      'P2E-S4. low × 7 authorized total = ¥45.2816');
+    assert(Math.abs(client.estimateAuthorizedTotalJpy('medium', 7) - 92.5232) < 1e-9,
+      'P2E-S4. medium × 7 authorized total = ¥92.5232');
+    assert(Math.abs(client.estimateAuthorizedTotalJpy('high', 7) - 255.2816) < 1e-9,
+      'P2E-S4. high × 7 authorized total = ¥255.2816');
+    assert(Math.abs(client.estimateAuthorizedPerCallJpy('medium') - 13.2176) < 1e-9,
+      'P2E-S4. medium per-call authorized = ¥13.2176');
+
+    // estimateImageJpy() は output-only の意味を維持したまま変更されていないこと（回帰確認）
+    assert(Math.abs(client.estimateImageJpy('medium', 7) - 53.3232) < 1e-9,
+      'P2E-S4. estimateImageJpy は output-only のまま不変（¥53.3232）');
+
+    const fp = core.draftFingerprint(FIXTURE_DRAFT);
+    const stale = { built_at: FIXTURE_DRAFT.built_at, updated_at: FIXTURE_DRAFT.updated_at };
+    const s4Secret = 'phase2e-s4-test-secret-0123456789';
+
+    // 7: medium7 preflight PASS（plan 経由・全無償検証を通過して provider へ届く経路）
+    {
+      const mediumTotal = client.estimateAuthorizedTotalJpy('medium', 7);
+      const iss = approval.issueApprovalToken({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftFingerprint: fp, quality: 'medium', slideCount: 7, estimatedCostJpy: mediumTotal,
+      }, { secret: s4Secret });
+      const ctx = {
+        billingLock: false, costTrackerCanProcess: true,
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+        staleBefore: stale, staleAfter: stale,
+        quality: 'medium', slideCount: 7, estimatedCostJpy: mediumTotal,
+        draftFingerprint: fp, approvalToken: iss.token, approvalSecret: s4Secret,
+        budgetJpyPerPost: 100,
+      };
+      const savedReal = client.REAL_ENABLED;
+      const savedEnvPA1 = process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+      client.REAL_ENABLED = true;
+      process.env.CAROUSEL_IMAGE_REAL_ENABLED = 'true';
+      try {
+        assert(core.assertRealCallAllowed(ctx).ok === true,
+          'P2E-S4. medium7 は authorized total ¥92.5232 で preflight を通過する');
+      } finally {
+        client.REAL_ENABLED = savedReal;
+        if (savedEnvPA1 === undefined) delete process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+        else process.env.CAROUSEL_IMAGE_REAL_ENABLED = savedEnvPA1;
+      }
+
+      // 9〜10: approval 署名値と guard 再計算値が同一関数由来で一致すること
+      assert(approval.normalizeCostJpy(mediumTotal) === approval.normalizeCostJpy(client.estimateAuthorizedTotalJpy('medium', 7)),
+        'P2E-S4. approval 署名値と guard 再計算値（estimateAuthorizedTotalJpy）が一致する');
+    }
+
+    // 8: high7 は preflight budget_exceeded / providerCalls 0（guard 単体・個別ハードコードではない）
+    {
+      const highTotal = client.estimateAuthorizedTotalJpy('high', 7);
+      const iss = approval.issueApprovalToken({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftFingerprint: fp, quality: 'high', slideCount: 7, estimatedCostJpy: highTotal,
+      }, { secret: s4Secret });
+      const ctx = {
+        billingLock: false, costTrackerCanProcess: true,
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+        staleBefore: stale, staleAfter: stale,
+        quality: 'high', slideCount: 7, estimatedCostJpy: highTotal,
+        draftFingerprint: fp, approvalToken: iss.token, approvalSecret: s4Secret,
+        budgetJpyPerPost: 100,
+      };
+      const savedReal = client.REAL_ENABLED;
+      const savedEnvPA1 = process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+      client.REAL_ENABLED = true;
+      process.env.CAROUSEL_IMAGE_REAL_ENABLED = 'true';
+      let res;
+      try { res = core.assertRealCallAllowed(ctx); } finally {
+        client.REAL_ENABLED = savedReal;
+        if (savedEnvPA1 === undefined) delete process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+        else process.env.CAROUSEL_IMAGE_REAL_ENABLED = savedEnvPA1;
+      }
+      assert(res.ok === false && res.reason === 'budget_exceeded',
+        'P2E-S4. high7 authorized total ¥255.28 は guard で budget_exceeded');
+    }
+
+    // 14: 旧 output-only 見積りで発行した approval は estimated_cost_mismatch で失効する
+    //   （reserve 定数を将来変更した場合に旧 token が自動失効する構造と同一の検証）
+    {
+      const outputOnly = client.estimateImageJpy('medium', 7);   // ¥53.3232（authorized total ではない）
+      const iss = approval.issueApprovalToken({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftFingerprint: fp, quality: 'medium', slideCount: 7, estimatedCostJpy: outputOnly,
+      }, { secret: s4Secret });
+      const ctx = {
+        billingLock: false, costTrackerCanProcess: true,
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+        staleBefore: stale, staleAfter: stale,
+        quality: 'medium', slideCount: 7, estimatedCostJpy: outputOnly,
+        draftFingerprint: fp, approvalToken: iss.token, approvalSecret: s4Secret,
+        budgetJpyPerPost: 100,
+      };
+      const savedReal = client.REAL_ENABLED;
+      const savedEnvPA1 = process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+      client.REAL_ENABLED = true;
+      process.env.CAROUSEL_IMAGE_REAL_ENABLED = 'true';
+      let res;
+      try { res = core.assertRealCallAllowed(ctx); } finally {
+        client.REAL_ENABLED = savedReal;
+        if (savedEnvPA1 === undefined) delete process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+        else process.env.CAROUSEL_IMAGE_REAL_ENABLED = savedEnvPA1;
+      }
+      assert(res.ok === false && res.reason === 'estimated_cost_mismatch',
+        'P2E-S4. 旧 output-only 見積り（¥53.3232）で発行した approval は estimated_cost_mismatch で失効');
+    }
+
+    // 11〜13: running budget が reserve 込みで動作する／attempted failure でも保守的に消費される／
+    //   medium7 完了後は ¥100 以内での追加 medium 再生成余地が 0 になる（正式承認済み較正期間の挙動）
+    {
+      const native = await nativePng(1088, 1360);
+      function s4Deps(failAtSlide) {
+        const calls = [];
+        return {
+          calls,
+          deps: {
+            provider: async (a) => {
+              calls.push(a.slideIndex);
+              if (failAtSlide && a.slideIndex === failAtSlide) return { ok: false, reason: 'provider_failed' };
+              return { ok: true, buffer: native, usage: null };
+            },
+            normalize: (a) => normalize.normalizeBackground(a),
+            composite: (a) => compositor.compositeSlide(a),
+          },
+        };
+      }
+      const jobInputS4 = {
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium',
+      };
+
+      // 11: running budget が output-only ではなく authorized（reserve 込み）で判定する
+      const okS4 = await core.runCarouselImageJob(jobInputS4, s4Deps(null).deps);
+      assert(okS4.ok === true && okS4.providerCalls === 7,
+        'P2E-S4. medium7 は authorized total ¥92.5232 で7枚とも running budget を通過する');
+      assert(Math.abs(okS4.spentEstimatedJpy - 92.5232) < 1e-9,
+        'P2E-S4. 7枚成功後の spentEstimatedJpy は authorized total 基準 ¥92.5232');
+
+      // 12: attempted call は throw/失敗でも保守的な見積りを消費する（既存 attempted-call 会計を維持）
+      const failS4 = s4Deps(3);
+      const failResS4 = await core.runCarouselImageJob(jobInputS4, failS4.deps);
+      assert(failResS4.ok === false && failResS4.providerCalls === 3,
+        'P2E-S4. 3枚目失敗でも providerCalls=3（attempted 基準）');
+      assert(Math.abs(failResS4.spentEstimatedJpy - (3 * 13.2176)) < 1e-9,
+        'P2E-S4. 失敗を含む attempted 3回分の spentEstimatedJpy が authorized per-call で保守的に計上される（巻き戻さない）');
+
+      // 13: medium7 完了後、同一 budget 内での追加 medium 再生成は running budget で拒否される
+      //   （92.5232 + 13.2176 = 105.7408 > 100・正式に承認された較正期間中の正常動作）
+      const regenS4 = await core.runCarouselImageJob(
+        Object.assign({}, jobInputS4, { alreadySpentEstimatedJpy: okS4.spentEstimatedJpy }),
+        s4Deps(null).deps
+      );
+      assert(regenS4.ok === false && regenS4.reason === 'budget_exceeded' && regenS4.providerCalls === 0,
+        'P2E-S4. medium7 完了後の追加 medium 実行は ¥100 以内に収まらず budget_exceeded（再生成余地 0・承認済み挙動）');
+    }
+  }
+
+  caseHeader('P2E-S5. Actual Usage / Three-component Cost（post-execution observability・実 API 0）');
+  {
+    // ── 1〜4: extractActualUsage() の抽出・missing/malformed 判定 ──
+    assert(client.extractActualUsage({}) === null && client.extractActualUsage({ usage: {} }) === null,
+      'P2E-S5. usage なし → null（既存回帰）');
+
+    // 1: complete usage extraction
+    {
+      const u = client.extractActualUsage({ usage: {
+        output_tokens: 1587, total_tokens: 1987,
+        input_tokens_details: { text_tokens: 400, image_tokens: 0 },
+      } });
+      assert(u && u.completeness === 'complete' && u.textInputTokens === 400 && u.imageInputTokens === 0
+        && u.outputTokens === 1587 && u.totalTokens === 1987 && u.source === 'provider_response',
+        'P2E-S5-1. 3 component 全取得 → completeness=complete');
+    }
+
+    // 2: usage なし（object 自体が無い）
+    assert(client.extractActualUsage({ usage: null }) === null, 'P2E-S5-2. usage=null → null（unavailable）');
+
+    // 3: input_tokens_details なし → text/image は null（0 にならない）
+    {
+      const u = client.extractActualUsage({ usage: { output_tokens: 1587 } });
+      assert(u && u.textInputTokens === null && u.imageInputTokens === null && u.outputTokens === 1587
+        && u.completeness === 'partial',
+        'P2E-S5-3. input_tokens_details なし → text/image は null・completeness=partial');
+    }
+
+    // image_tokens「欠落」と「明示的な数値0」を区別する（重要・混同禁止）
+    {
+      const missing = client.extractActualUsage({ usage: { output_tokens: 1587, input_tokens_details: { text_tokens: 400 } } });
+      assert(missing.imageInputTokens === null, 'P2E-S5. image_tokens 欠落 → imageInputTokens===null（0へ推測補完しない）');
+      const explicitZero = client.extractActualUsage({ usage: { output_tokens: 1587, input_tokens_details: { text_tokens: 400, image_tokens: 0 } } });
+      assert(explicitZero.imageInputTokens === 0, 'P2E-S5. image_tokens 明示的に0 → imageInputTokens===0（actual 0として受理）');
+      const explicitNull = client.extractActualUsage({ usage: { output_tokens: 1587, input_tokens_details: { text_tokens: 400, image_tokens: null } } });
+      assert(explicitNull.imageInputTokens === null, 'P2E-S5. image_tokens が JSON null → null（Number(null)===0のバグを回避）');
+    }
+
+    // 4: malformed numbers
+    {
+      const bad = client.extractActualUsage({ usage: {
+        output_tokens: 'not-a-number', total_tokens: NaN,
+        input_tokens_details: { text_tokens: -5, image_tokens: Infinity },
+      } });
+      assert(bad === null, 'P2E-S5-4. 文字列/NaN/負値/Infinity のみ → 全component null → 取得不能でnull');
+      const partlyBad = client.extractActualUsage({ usage: {
+        output_tokens: 1587, input_tokens_details: { text_tokens: 'abc', image_tokens: true },
+      } });
+      assert(partlyBad && partlyBad.outputTokens === 1587 && partlyBad.textInputTokens === null && partlyBad.imageInputTokens === null,
+        'P2E-S5-4b. 不正値のcomponentのみnull・正常なcomponentは生存');
+    }
+
+    // 5: 3-component cost formula
+    assert(Math.abs(client.actualUsdFromUsage({ textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587 })
+      - ((400 / 1e6 * 5.00) + (100 / 1e6 * 8.00) + (1587 / 1e6 * 30.00))) < 1e-12,
+      'P2E-S5-5. 3-component cost formula（text $5/M + image $8/M + output $30/M）');
+    assert(client.actualUsdFromUsage(null) === null, 'P2E-S5-5b. usage=null → cost算出不可');
+    assert(Math.abs(client.actualUsdFromUsage({ outputTokens: 1587 }) - 0.04761) < 1e-12,
+      'P2E-S5-5c. output-onlyでも既存回帰値と一致（0.04761）');
+    assert(client.actualJpyFromUsage({ outputTokens: 1587 }) !== null
+      && Math.abs(client.actualJpyFromUsage({ outputTokens: 1587 }) - 0.04761 * 160) < 1e-9,
+      'P2E-S5-5d. actualJpyFromUsage は USD_TO_JPY_STATIC(160) 換算');
+
+    // 6: total_tokens はcost計算に使用しない
+    {
+      const withHugeTotal = client.actualUsdFromUsage({ textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, totalTokens: 999999999 });
+      const withoutTotal = client.actualUsdFromUsage({ textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587 });
+      assert(withHugeTotal === withoutTotal, 'P2E-S5-6. totalTokens が巨大値でも cost は変化しない（cost計算に不使用）');
+    }
+
+    // 17: mock 経路は usage が常に unavailable（client 関数レベルの回帰確認）
+    {
+      const mockBuf = Buffer.from([1, 2, 3, 4]);
+      const mockRes = await client.generateBackgroundRaw({
+        prompt: 'bg, no text, 4:5 ratio, vertical, 1080x1350', quality: 'medium', aspectRatio: '4:5', mockBuffer: mockBuf,
+      });
+      assert(mockRes.ok === true && mockRes.usage === null,
+        'P2E-S5-17. mock経路（generateBackgroundRaw）は usage=null（推測値を入れない）');
+    }
+
+    // ── 7〜16: job-level aggregation（shared/carouselImageCore.js の runCarouselImageJob） ──
+    const native = await nativePng(1088, 1360);
+    const jobBase = {
+      caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+      draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium',
+    };
+    function makeUsageDeps(perSlideUsage, throwAtSlide) {
+      const calls = [];
+      return {
+        calls,
+        deps: {
+          provider: async (a) => {
+            calls.push(a.slideIndex);
+            if (throwAtSlide && a.slideIndex === throwAtSlide) throw new Error('injected provider throw');
+            const u = typeof perSlideUsage === 'function' ? perSlideUsage(a.slideIndex) : perSlideUsage;
+            return { ok: true, buffer: native, usage: u };
+          },
+          normalize: (a) => normalize.normalizeBackground(a),
+          composite: (a) => compositor.compositeSlide(a),
+        },
+      };
+    }
+
+    // 7: complete job（7/7 が complete usage）
+    {
+      const usageComplete = { textInputTokens: 400, imageInputTokens: 0, outputTokens: 1587, totalTokens: 1987, source: 'provider_response', completeness: 'complete' };
+      const r = await core.runCarouselImageJob(jobBase, makeUsageDeps(usageComplete).deps);
+      assert(r.ok === true && r.usageCompleteness === 'complete',
+        'P2E-S5-7. 7/7 complete usage → job usageCompleteness=complete');
+      assert(r.actualUsage.attemptedCalls === 7 && r.actualUsage.attemptsWithCompleteUsage === 7,
+        'P2E-S5-7b. attemptedCalls=7 / attemptsWithCompleteUsage=7');
+      assert(Math.abs(r.actualCostJpy - 55.5632) < 1e-9, 'P2E-S5-7c. actualCostJpy = ¥55.5632（7枚分・text2800+image0+output11109）');
+      assert(r.knownActualCostJpy === null, 'P2E-S5-7d. complete時は knownActualCostJpy=null');
+    }
+
+    // 8: partial job（complete 4件 + unavailable 3件の混在）
+    {
+      let n = 0;
+      const usageMix8 = () => {
+        n++;
+        return n <= 4 ? { textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, completeness: 'complete' } : null;
+      };
+      const r = await core.runCarouselImageJob(jobBase, makeUsageDeps(usageMix8).deps);
+      assert(r.ok === true && r.usageCompleteness === 'partial',
+        'P2E-S5-8. complete4件+unavailable3件 → job usageCompleteness=partial');
+      assert(r.actualUsage.attemptedCalls === 7 && r.actualUsage.attemptsWithCompleteUsage === 4,
+        'P2E-S5-8b. attemptedCalls=7 / attemptsWithCompleteUsage=4');
+      assert(Math.abs(r.knownActualCostJpy - 32.2624) < 1e-9, 'P2E-S5-8c. knownActualCostJpy = ¥32.2624（観測できた4件分のみ）');
+      assert(r.actualCostJpy === null, 'P2E-S5-8d. partial時は actualCostJpy=null（推定で穴埋めしない）');
+    }
+
+    // 9: unavailable job（全attemptでusage観測0件）
+    {
+      const r = await core.runCarouselImageJob(jobBase, makeUsageDeps(null).deps);
+      assert(r.ok === true && r.usageCompleteness === 'unavailable',
+        'P2E-S5-9. 全attempt usage:null → job usageCompleteness=unavailable');
+      assert(r.actualUsage.textInputTokens === null && r.actualUsage.imageInputTokens === null && r.actualUsage.outputTokens === null,
+        'P2E-S5-9b. 全component null（0に補完しない）');
+      assert(r.actualCostJpy === null && r.knownActualCostJpy === null,
+        'P2E-S5-9c. unavailable時は actualCostJpy/knownActualCostJpy とも null');
+    }
+
+    // 10: mixed complete/partial attempts（unavailableではなく individually partial な観測が混在）
+    {
+      let n = 0;
+      const usageMix10 = () => {
+        n++;
+        return n <= 4
+          ? { textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, completeness: 'complete' }
+          : { textInputTokens: 400, imageInputTokens: null, outputTokens: 1587, completeness: 'partial' };
+      };
+      const r = await core.runCarouselImageJob(jobBase, makeUsageDeps(usageMix10).deps);
+      assert(r.ok === true && r.usageCompleteness === 'partial',
+        'P2E-S5-10. complete4件+partial3件の混在 → job usageCompleteness=partial');
+      assert(Math.abs(r.knownActualCostJpy - 56.0752) < 1e-9,
+        'P2E-S5-10b. knownActualCostJpy = ¥56.0752（partial attemptの取得できたcomponentも合算）');
+    }
+
+    // 11: provider throw（3枚目で例外・1〜2枚目のusageは保持される）
+    {
+      const usageOk = { textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, completeness: 'complete' };
+      const d = makeUsageDeps(usageOk, 3);
+      const r = await core.runCarouselImageJob(jobBase, d.deps);
+      assert(r.ok === false && r.providerCalls === 3 && r.successfulProviderCalls === 2,
+        'P2E-S5-11. 3枚目throw → providerCalls=3 / successfulProviderCalls=2');
+      assert(r.formalAssets.length === 0, 'P2E-S5-11b. all-or-nothing で formalAssets=0');
+      assert(r.usageCompleteness === 'partial' && Math.abs(r.knownActualCostJpy - 16.1312) < 1e-9,
+        'P2E-S5-11c. throwしたattempt分を除き1〜2枚目のusageのみ集計される（¥16.1312）');
+    }
+
+    // 12: ok:false + usage あり（失敗attemptでもusageは観測扱いにする）
+    {
+      const failDeps = {
+        provider: async () => ({ ok: false, reason: 'provider_failed', usage: { textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, completeness: 'complete' } }),
+        normalize: (a) => normalize.normalizeBackground(a),
+        composite: (a) => compositor.compositeSlide(a),
+      };
+      const r = await core.runCarouselImageJob(jobBase, failDeps);
+      assert(r.ok === false && r.providerCalls === 1 && r.successfulProviderCalls === 0,
+        'P2E-S5-12. ok:false でも providerCalls=1・successfulProviderCalls=0');
+      assert(r.usageCompleteness === 'complete' && Math.abs(r.actualCostJpy - 8.0656) < 1e-9,
+        'P2E-S5-12b. ok:falseのusageも集計される（¥8.0656）＝観測できたものは失わない');
+    }
+
+    // 13: formalAssets=0 でも usage が保持されること（11・12 の結果を明示的に再確認）
+    {
+      const usageOk = { textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, completeness: 'complete' };
+      const d = makeUsageDeps(usageOk, 2);
+      const r = await core.runCarouselImageJob(jobBase, d.deps);
+      assert(r.formalAssets.length === 0 && r.actualUsage !== null && r.actualUsage.attemptedCalls === 2,
+        'P2E-S5-13. formalAssets=0 でも actualUsage は破棄されない（billing observability を成果物失敗と分離）');
+    }
+
+    // 14: actual_cost_jpy は complete のときのみ（既に7,8,9で個別確認済み・ここでは横断で再確認）
+    {
+      const rComplete = await core.runCarouselImageJob(jobBase, makeUsageDeps(
+        { textInputTokens: 400, imageInputTokens: 0, outputTokens: 1587, completeness: 'complete' }).deps);
+      const rUnavail = await core.runCarouselImageJob(jobBase, makeUsageDeps(null).deps);
+      assert(rComplete.actualCostJpy !== null && rUnavail.actualCostJpy === null,
+        'P2E-S5-14. actualCostJpy は complete のときのみ数値・それ以外は null');
+    }
+
+    // 15: known_actual_cost_jpy は partial のときのみ
+    {
+      let n = 0;
+      const rPartial = await core.runCarouselImageJob(jobBase, makeUsageDeps(() => {
+        n++;
+        return n <= 3 ? { textInputTokens: 400, imageInputTokens: 100, outputTokens: 1587, completeness: 'complete' } : null;
+      }).deps);
+      const rComplete = await core.runCarouselImageJob(jobBase, makeUsageDeps(
+        { textInputTokens: 400, imageInputTokens: 0, outputTokens: 1587, completeness: 'complete' }).deps);
+      assert(rPartial.knownActualCostJpy !== null && rComplete.knownActualCostJpy === null,
+        'P2E-S5-15. knownActualCostJpy は partial のときのみ数値・complete時は null');
+    }
+
+    // 16: raw response 非保存（canonical shape 以外のキーを持たない）
+    {
+      const r = await core.runCarouselImageJob(jobBase, makeUsageDeps(
+        { textInputTokens: 400, imageInputTokens: 0, outputTokens: 1587, totalTokens: 1987, completeness: 'complete' }).deps);
+      const keys = Object.keys(r.actualUsage).sort();
+      assert(JSON.stringify(keys) === JSON.stringify(
+        ['attemptedCalls', 'attemptsWithCompleteUsage', 'imageInputTokens', 'outputTokens', 'source', 'textInputTokens', 'totalTokens'].sort()
+      ), 'P2E-S5-16. actualUsage は canonical shape のみ（raw response/prompt/exception 等を含まない）: ' + keys.join(','));
+    }
+
+    // ソース検証: raw prompt / API key / raw exception を actualUsage へ書き込むコードが無いこと
+    {
+      const coreSrcS5 = fs.readFileSync(path.join(__dirname, 'shared', 'carouselImageCore.js'), 'utf8');
+      assert(coreSrcS5.indexOf('bgPrompt') === -1 || coreSrcS5.indexOf('actualUsage') < coreSrcS5.indexOf('bgPrompt')
+        || !/actualUsage[^;]*bgPrompt/.test(coreSrcS5),
+        'P2E-S5. actualUsage 構築に bgPrompt（raw prompt）を混入させていない');
+    }
+  }
+
+  caseHeader('P2E-S6. Atomic Execution Reserve / Ledger Integration（fake executionStore・実DB/実API 0）');
+  {
+    // P2D-7/P2E-S4 と同様、AND の残りを検証するため REAL_ENABLED を一時的に true にする
+    //   （ファイルは書き換えない・try/finally で必ず false へ復帰する）。
+    const s6SavedReal = client.REAL_ENABLED;
+    const s6SavedEnvPA1 = process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+    client.REAL_ENABLED = true;
+    process.env.CAROUSEL_IMAGE_REAL_ENABLED = 'true';
+    try {
+    const s6Secret = 'phase2e-s6-test-secret-0123456789';
+    const s6Native = await nativePng(1088, 1360);
+    const s6Fp = core.draftFingerprint(FIXTURE_DRAFT);
+    const s6Stale = { built_at: FIXTURE_DRAFT.built_at, updated_at: FIXTURE_DRAFT.updated_at };
+
+    function makeS6Ctx(overrides) {
+      // 呼び出し毎に issueApprovalToken() が乱数nonceを自動発行する（opts.nonce省略時）。
+      //   同一jobでnonceを再利用したいテストは、生成した ctx オブジェクトをそのまま使い回す。
+      const quality = (overrides && overrides.quality) || 'medium';
+      const slideCount = (overrides && overrides.slideCount) || 7;
+      const estimatedCostJpy = client.estimateAuthorizedTotalJpy(quality, slideCount);
+      const iss = approval.issueApprovalToken({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftFingerprint: s6Fp, quality: quality, slideCount: slideCount, estimatedCostJpy: estimatedCostJpy,
+      }, { secret: s6Secret });
+      return Object.assign({
+        real: true,
+        billingLock: false, costTrackerCanProcess: true,
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL,
+        staleBefore: s6Stale, staleAfter: s6Stale,
+        quality: quality, slideCount: slideCount, estimatedCostJpy: estimatedCostJpy,
+        draftFingerprint: s6Fp, approvalToken: iss.token, approvalSecret: s6Secret,
+        budgetJpyPerPost: 100,
+      }, overrides || {});
+    }
+
+    // fake executionStore: reserve は in-memory Set で nonce UNIQUE を模擬する（実DB非依存）。
+    function makeFakeStore(opts) {
+      opts = opts || {};
+      const reservedNonces = new Set();
+      const calls = [];
+      return {
+        calls: calls,
+        reserve: async function (payload) {
+          calls.push({ method: 'reserve', payload: payload });
+          if (opts.forceReserveResult) return opts.forceReserveResult(payload);
+          if (reservedNonces.has(payload.nonce)) return { ok: false, reason: 'nonce_reused' };
+          reservedNonces.add(payload.nonce);
+          return { ok: true, execution: Object.assign({ status: 'in_progress' }, payload) };
+        },
+        complete: async function (payload) {
+          calls.push({ method: 'complete', payload: payload });
+          if (opts.forceCompleteResult) return opts.forceCompleteResult(payload);
+          return { ok: true, execution: Object.assign({ status: 'completed' }, payload) };
+        },
+        fail: async function (payload) {
+          calls.push({ method: 'fail', payload: payload });
+          if (opts.forceFailResult) return opts.forceFailResult(payload);
+          return { ok: true, execution: Object.assign({}, payload) };
+        },
+      };
+    }
+    function makeS6ProviderDeps(perSlideUsage, throwAtSlide, failOkAtSlide) {
+      const providerCalls = [];
+      return {
+        providerCalls: providerCalls,
+        deps: {
+          provider: async (a) => {
+            providerCalls.push(a.slideIndex);
+            if (throwAtSlide && a.slideIndex === throwAtSlide) throw new Error('injected throw');
+            if (failOkAtSlide && a.slideIndex === failOkAtSlide) {
+              return { ok: false, reason: 'provider_failed', usage: typeof perSlideUsage === 'function' ? perSlideUsage(a.slideIndex) : perSlideUsage };
+            }
+            const u = typeof perSlideUsage === 'function' ? perSlideUsage(a.slideIndex) : perSlideUsage;
+            return { ok: true, buffer: s6Native, usage: u };
+          },
+          normalize: (a) => normalize.normalizeBackground(a),
+          composite: (a) => compositor.compositeSlide(a),
+        },
+      };
+    }
+    const usageComplete = { textInputTokens: 400, imageInputTokens: 0, outputTokens: 1587, completeness: 'complete' };
+
+    // 1: reserve成功 → provider実行・complete()が呼ばれる
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(usageComplete);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(r.ok === true && pd.providerCalls.length === 7, 'P2E-S6-1. reserve成功 → 7枚とも provider実行');
+      assert(store.calls.filter(c => c.method === 'complete').length === 1, 'P2E-S6-1b. complete() が1回呼ばれる');
+      assert(r.ledgerUpdated === true && r.ledgerError === null, 'P2E-S6-1c. ledgerUpdated=true / ledgerError=null');
+    }
+
+    // 2 / 18: nonce duplicate → 2回目は provider 0（同一token再実行拒否）
+    {
+      const store = makeFakeStore();
+      const ctx = makeS6Ctx();
+      const pd1 = makeS6ProviderDeps(usageComplete);
+      const r1 = await core.runCarouselImageJob(ctx, Object.assign(pd1.deps, { executionStore: store }));
+      assert(r1.ok === true, 'P2E-S6-2a. 1回目は成功');
+      const pd2 = makeS6ProviderDeps(usageComplete);
+      const r2 = await core.runCarouselImageJob(ctx, Object.assign(pd2.deps, { executionStore: store }));
+      assert(r2.ok === false && r2.reason === 'nonce_reused' && pd2.providerCalls.length === 0,
+        'P2E-S6-2b. 同一token 2回目 → nonce_reused / provider実行0');
+    }
+
+    // 3: DB unavailable → provider 0
+    {
+      const store = makeFakeStore({ forceReserveResult: () => ({ ok: false, reason: 'reserve_unavailable' }) });
+      const pd = makeS6ProviderDeps(usageComplete);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(r.ok === false && r.reason === 'reserve_unavailable' && pd.providerCalls.length === 0,
+        'P2E-S6-3. DB unavailable（reserve失敗）→ provider実行0');
+    }
+
+    // 4: DB error（invalid_input等）→ provider 0
+    {
+      const store = makeFakeStore({ forceReserveResult: () => ({ ok: false, reason: 'invalid_input', field: 'nonce' }) });
+      const pd = makeS6ProviderDeps(usageComplete);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(r.ok === false && r.reason === 'invalid_input' && pd.providerCalls.length === 0,
+        'P2E-S6-4. DB error（invalid_input）→ provider実行0（sanitized reasonがそのまま伝播）');
+    }
+
+    // 5: reserve → provider の順序（reserveが必ず先）
+    {
+      const store = makeFakeStore();
+      const order = [];
+      const pd = makeS6ProviderDeps(usageComplete);
+      const origProvider = pd.deps.provider;
+      pd.deps.provider = async (a) => { order.push('provider:' + a.slideIndex); return origProvider(a); };
+      const origReserve = store.reserve;
+      store.reserve = async (p) => { order.push('reserve'); return origReserve(p); };
+      await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(order[0] === 'reserve' && order[1] === 'provider:1',
+        'P2E-S6-5. reserve が最初のprovider callより先に実行される: ' + order.slice(0, 2).join(','));
+    }
+
+    // 6: reserveは1jobにつき1回のみ（7枚でも1回）
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(usageComplete);
+      await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(store.calls.filter(c => c.method === 'reserve').length === 1,
+        'P2E-S6-6. 7枚のjobでも reserve は1回のみ');
+    }
+
+    // 7: budget拒否（running budget）→ reserveすら呼ばれない
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(usageComplete);
+      const ctx = makeS6Ctx({ alreadySpentEstimatedJpy: client.estimateAuthorizedTotalJpy('medium', 7) });
+      const r = await core.runCarouselImageJob(ctx, Object.assign(pd.deps, { executionStore: store }));
+      assert(r.ok === false && r.reason === 'budget_exceeded', 'P2E-S6-7a. medium7完了相当の消費済みで追加実行は budget_exceeded');
+      assert(store.calls.length === 0 && pd.providerCalls.length === 0,
+        'P2E-S6-7b. running budget拒否時は reserve/provider とも呼ばれない（nonce温存）');
+    }
+
+    // 8: completed → complete()へ正しいpayload
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(usageComplete);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      const completeCall = store.calls.find(c => c.method === 'complete');
+      assert(r.ok === true && completeCall && completeCall.payload.attemptedProviderCalls === 7
+        && completeCall.payload.successfulProviderCalls === 7,
+        'P2E-S6-8. completed: attemptedProviderCalls=7 / successfulProviderCalls=7 がcomplete()へ渡る');
+    }
+
+    // 9: provider成功後にnormalize失敗 → failed_after_charge
+    {
+      const store = makeFakeStore();
+      const badBuf = await nativePng(1024, 1024);   // native寸法と異なる → normalize失敗
+      const deps = {
+        provider: async () => ({ ok: true, buffer: badBuf, usage: usageComplete }),
+        normalize: (a) => normalize.normalizeBackground(a),
+        composite: (a) => compositor.compositeSlide(a),
+        executionStore: store,
+      };
+      const r = await core.runCarouselImageJob(makeS6Ctx(), deps);
+      const failCall = store.calls.find(c => c.method === 'fail');
+      assert(r.ok === false && failCall && failCall.payload.status === 'failed_after_charge',
+        'P2E-S6-9. provider成功後のnormalize失敗 → failed_after_charge');
+    }
+
+    // 10: provider throw（1枚目）→ unknown_billing（usage観測0）
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(null, 1);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      const failCall = store.calls.find(c => c.method === 'fail');
+      assert(r.ok === false && failCall && failCall.payload.status === 'unknown_billing',
+        'P2E-S6-10. 1枚目throw・usage観測0 → unknown_billing');
+    }
+
+    // 11: ok:false + usageあり → failed_after_charge（successfulProviderCalls=0でも観測できていれば課金確実）
+    {
+      const store = makeFakeStore();
+      const deps = {
+        provider: async () => ({ ok: false, reason: 'provider_failed', usage: usageComplete }),
+        normalize: (a) => normalize.normalizeBackground(a),
+        composite: (a) => compositor.compositeSlide(a),
+        executionStore: store,
+      };
+      const r = await core.runCarouselImageJob(makeS6Ctx(), deps);
+      const failCall = store.calls.find(c => c.method === 'fail');
+      assert(r.successfulProviderCalls === 0 && failCall && failCall.payload.status === 'failed_after_charge',
+        'P2E-S6-11. ok:false だが usage観測あり → successfulProviderCalls=0 でも failed_after_charge（unknown_billingへ誤分類しない）');
+    }
+
+    // 12〜14: usage complete/partial/unavailable のledger mapping
+    {
+      // complete
+      const storeC = makeFakeStore();
+      const pdC = makeS6ProviderDeps(usageComplete);
+      const rC = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pdC.deps, { executionStore: storeC }));
+      const cc = storeC.calls.find(c => c.method === 'complete');
+      assert(cc.payload.usageCompleteness === 'complete' && cc.payload.actualCostJpy !== null && cc.payload.knownActualCostJpy === null,
+        'P2E-S6-12. complete usage → ledger payload の usageCompleteness=complete / actualCostJpy数値 / knownActualCostJpy=null');
+
+      // partial
+      let n = 0;
+      const storeP = makeFakeStore();
+      const pdP = makeS6ProviderDeps(() => { n++; return n <= 4 ? usageComplete : null; });
+      const rP = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pdP.deps, { executionStore: storeP }));
+      const cp = storeP.calls.find(c => c.method === 'complete');
+      assert(cp.payload.usageCompleteness === 'partial' && cp.payload.actualCostJpy === null && cp.payload.knownActualCostJpy !== null,
+        'P2E-S6-13. partial usage → ledger payload の usageCompleteness=partial / actualCostJpy=null / knownActualCostJpy数値');
+
+      // unavailable
+      const storeU = makeFakeStore();
+      const pdU = makeS6ProviderDeps(null);
+      const rU = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pdU.deps, { executionStore: storeU }));
+      const cu = storeU.calls.find(c => c.method === 'complete');
+      assert(cu.payload.usageCompleteness === 'unavailable' && cu.payload.actualCostJpy === null && cu.payload.knownActualCostJpy === null,
+        'P2E-S6-14. unavailable usage → ledger payload 全て観測なしとして記録');
+    }
+
+    // 15: formalAssets=0 でも fail() payload に actualUsage が保存される
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(usageComplete, 3);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      const failCall = store.calls.find(c => c.method === 'fail');
+      assert(r.formalAssets.length === 0 && failCall && failCall.payload.actualUsage !== null
+        && failCall.payload.actualUsage.attemptedCalls === 3,
+        'P2E-S6-15. formalAssets=0 でも fail() payloadへ actualUsage(3attempt分)が渡る');
+    }
+
+    // 16: complete更新がDB失敗 → result.okは維持・ledgerUpdated=false
+    {
+      const store = makeFakeStore({ forceCompleteResult: () => ({ ok: false, reason: 'update_unavailable' }) });
+      const pd = makeS6ProviderDeps(usageComplete);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(r.ok === true && r.formalAssets.length === 7,
+        'P2E-S6-16a. complete()のDB失敗でも成果物自体の成否(result.ok)は変更しない');
+      assert(r.ledgerUpdated === false && r.ledgerError === 'update_unavailable',
+        'P2E-S6-16b. ledgerUpdated=false・ledgerErrorにsanitized reasonが入る');
+    }
+
+    // 17: fail更新がDB失敗 → result.okは維持（false）・ledgerUpdated=false
+    {
+      const store = makeFakeStore({ forceFailResult: () => ({ ok: false, reason: 'execution_not_found' }) });
+      const pd = makeS6ProviderDeps(null, 2);
+      const r = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      assert(r.ok === false && r.reason === 'provider_threw',
+        'P2E-S6-17a. fail()のDB失敗でも本来のjob失敗理由(result.reason)は変更しない');
+      assert(r.ledgerUpdated === false && r.ledgerError === 'execution_not_found',
+        'P2E-S6-17b. ledgerUpdated=false・ledgerErrorにsanitized reasonが入る（release/reclaimしない）');
+    }
+
+    // 19: nonce release/reclaim系メソッドをexecutionStoreへ要求しない（interfaceがreserve/complete/failのみ）
+    {
+      const store = makeFakeStore();
+      assert(typeof store.delete === 'undefined' && typeof store.release === 'undefined' && typeof store.reclaim === 'undefined',
+        'P2E-S6-19. fake store 自体にdelete/release/reclaimを実装していない（今回のIF不使用の確認）');
+      const coreSrcS6 = fs.readFileSync(path.join(__dirname, 'shared', 'carouselImageCore.js'), 'utf8');
+      assert(coreSrcS6.indexOf('executionStore.delete') === -1 && coreSrcS6.indexOf('executionStore.release') === -1
+        && coreSrcS6.indexOf('executionStore.reclaim') === -1,
+        'P2E-S6-19b. carouselImageCore.js は executionStore.delete/release/reclaim を一切呼ばない');
+    }
+
+    // 20: 新token/新nonce → 独立して成功する
+    {
+      const store = makeFakeStore();
+      const pd1 = makeS6ProviderDeps(usageComplete);
+      const r1 = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd1.deps, { executionStore: store }));
+      const pd2 = makeS6ProviderDeps(usageComplete);
+      const r2 = await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd2.deps, { executionStore: store }));
+      assert(r1.ok === true && r2.ok === true, 'P2E-S6-20. 新token/新nonceのjobはそれぞれ独立して成功する');
+    }
+
+    // 21: raw prompt / API key / raw exception が reserve/complete/fail payload に含まれない
+    {
+      const store = makeFakeStore();
+      const pd = makeS6ProviderDeps(usageComplete);
+      await core.runCarouselImageJob(makeS6Ctx(), Object.assign(pd.deps, { executionStore: store }));
+      const payloadsJson = JSON.stringify(store.calls.map(c => c.payload));
+      assert(payloadsJson.indexOf('bgPrompt') === -1 && payloadsJson.indexOf('Instagram carousel') === -1,
+        'P2E-S6-21a. reserve/complete payload に raw prompt が含まれない');
+      assert(payloadsJson.indexOf('OPENAI_API_KEY') === -1 && payloadsJson.indexOf('Bearer') === -1,
+        'P2E-S6-21b. API key相当の文字列が含まれない');
+      const reserveCall = store.calls.find(c => c.method === 'reserve');
+      const reserveKeys = Object.keys(reserveCall.payload).sort();
+      assert(JSON.stringify(reserveKeys) === JSON.stringify(
+        ['caseId', 'draftFingerprint', 'estimatedOutputCostJpy', 'estimatedOutputTokens', 'estimatedTotalCostJpy',
+          'model', 'nonce', 'outputId', 'quality', 'reservedInputCostJpy', 'reservedInputTokens', 'slideCount', 'workflowId'].sort()
+      ), 'P2E-S6-21c. reserve payload は既定フィールドのみ（余分なキー混入なし）: ' + reserveKeys.join(','));
+    }
+
+    // regression: mock mode は executionStore 未注入でも従来どおり動作する
+    {
+      const mockRes = core.runCarouselImageJobMock({
+        caseId: 'case-value-1788410623', outputId: 'out_1788413020275',
+        draftRow: FIXTURE_DRAFT, approvalRow: FIXTURE_APPROVAL, quality: 'medium',
+      });
+      assert(mockRes.ok === true, 'P2E-S6-reg. mock mode（executionStore未注入）は従来どおり成功する');
+    }
+    } finally {
+      client.REAL_ENABLED = s6SavedReal;
+      if (s6SavedEnvPA1 === undefined) delete process.env.CAROUSEL_IMAGE_REAL_ENABLED;
+      else process.env.CAROUSEL_IMAGE_REAL_ENABLED = s6SavedEnvPA1;
+    }
+    assert(client.REAL_ENABLED === false, 'P2E-S6. テスト後も REAL_ENABLED=false へ復帰');
+    assert(clientSrc.indexOf('var _sourceRealEnabled = false;') !== -1, 'P2E-S6. ソース上の REAL_ENABLED は false のまま');
   }
 
   caseHeader('P2D-9. compositor 非改変 / filesystem write 0 / 実 API 0');

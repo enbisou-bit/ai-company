@@ -10241,6 +10241,10 @@ async function submitLogin() {
 function logout() {
   if (!confirm('ログアウトしますか？')) return;
   localStorage.removeItem(AUTH_KEY);
+  // Phase 2-E Step C-5-pre: server側 session cookie も失効させる。
+  //   localStorage を消すだけでは server session が残り、Carousel有料routeへ到達できてしまうため。
+  //   失敗してもログアウト表示は継続する（非ブロック）。
+  fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
   const btn = document.getElementById('logout-btn');
   if (btn) btn.style.display = 'none';
   showLoginScreen();

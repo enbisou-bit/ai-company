@@ -714,3 +714,179 @@ BEGIN
   END IF;
 END
 $$;
+
+-- ══════════════════════════════════════════════════════════════
+-- Carousel Image Production — Execution Ledger（Phase 2-E Gate 1 準備・課金冪等性の正本）
+-- ══════════════════════════════════════════════════════════════
+-- ※ Phase 2-D docs/02PHASE_PROGRESS.md・docs/06HANDOVER_NEXT_CHAT.md の Phase 2-E Gate 1/Gate 2
+--   Final Designを実装する新規テーブル。実DBへは未適用（本ファイル追記のみ・Phase 2-E実装時に
+--   Supabase Dashboard > SQL Editorで実行する）。
+-- ※ nonce single-use unit = 1 承認token = 1 Carousel Image Job = 1 execution record。
+--   nonce UNIQUE制約によるatomic INSERTのみをreserve成功の正本とする（課金の冪等性の正本）。
+--   一度INSERTされた行（＝reserveされたnonce）は、いかなるstatusでも削除・release・再利用しない
+--   （release/delete系APIは意図的に実装しない）。
+-- ※ 責務分離：output_approvals（case_id PRIMARY KEYのupsert＝Mobile Approval状態の正本）・
+--   EER（Decision107・index.html/Output Draft側のユーザー記録）とは別テーブル。混在させない。
+-- ※ 保存しないもの：raw prompt全文・Output Draft本文・生成画像bytes・APIキー・provider raw exception。
+--   draft_fingerprintで対象成果物の同一性は担保できるため、prompt本文の複製保存は不要。
+-- ※ Phase 2-D時点（本追記時点）では REAL_ENABLED=false のため、本テーブルへの書き込みは0件。
+-- ※ IF NOT EXISTS / 冪等DO blockにより再実行安全。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS carousel_image_executions (
+  id                         BIGINT GENERATED ALWAYS AS IDENTITY,
+  nonce                      TEXT NOT NULL,
+  case_id                    TEXT NOT NULL,
+  workflow_id                TEXT,                    -- execution ledgerのmetadataのみ。approval scopeには含めない
+  output_id                  TEXT NOT NULL,
+  draft_fingerprint          TEXT NOT NULL,
+  model                      TEXT NOT NULL,           -- 'gpt-image-2' 等。将来のモデル価格変更に備えCHECKで固定しない
+  quality                    TEXT NOT NULL,
+  slide_count                INTEGER NOT NULL,
+  estimated_output_tokens    BIGINT NOT NULL,
+  reserved_input_tokens      BIGINT NOT NULL,         -- Conservative Reserve正式値は未確定（Gate 2 Candidate）
+  estimated_output_cost_jpy  NUMERIC(12,4) NOT NULL,
+  reserved_input_cost_jpy    NUMERIC(12,4) NOT NULL,
+  estimated_total_cost_jpy   NUMERIC(12,4) NOT NULL,
+  status                     TEXT NOT NULL DEFAULT 'in_progress',
+  attempted_provider_calls   INTEGER NOT NULL DEFAULT 0,
+  successful_provider_calls  INTEGER NOT NULL DEFAULT 0,
+  spent_estimated_jpy        NUMERIC(12,4) NOT NULL DEFAULT 0,
+  actual_usage               JSONB,                   -- 取得不能時はNULL（推測値で埋めない）
+  usage_completeness         TEXT,                    -- complete / partial / unavailable（NULL許容）
+  actual_cost_jpy            NUMERIC(12,4),            -- usage_completeness='complete'時のみ数値
+  known_actual_cost_jpy      NUMERIC(12,4),            -- 'partial'時の既知部分値
+  last_error_code            TEXT,                    -- 既存reason語彙のみ・raw exception message禁止
+  created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  consumed_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),  -- reserve成功時刻（INSERT時に自動確定）
+  completed_at               TIMESTAMPTZ,
+  CONSTRAINT carousel_image_executions_pkey
+    PRIMARY KEY (id),
+  CONSTRAINT carousel_image_executions_nonce_key
+    UNIQUE (nonce),                                   -- ★ atomic reserveの正本（single-use保証）
+  CONSTRAINT carousel_image_executions_quality_chk
+    CHECK (quality = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])),
+  CONSTRAINT carousel_image_executions_status_chk
+    CHECK (status = ANY (ARRAY[
+      'in_progress'::text, 'completed'::text, 'failed_before_charge'::text,
+      'failed_after_charge'::text, 'unknown_billing'::text
+    ])),
+  CONSTRAINT carousel_image_executions_usage_completeness_chk
+    CHECK (
+      (usage_completeness IS NULL)
+      OR (usage_completeness = ANY (ARRAY['complete'::text, 'partial'::text, 'unavailable'::text]))
+    ),
+  CONSTRAINT carousel_image_executions_slide_count_chk
+    CHECK (slide_count >= 1),
+  CONSTRAINT carousel_image_executions_est_out_tok_chk
+    CHECK (estimated_output_tokens >= 0),
+  CONSTRAINT carousel_image_executions_reserved_tok_chk
+    CHECK (reserved_input_tokens >= 0),
+  CONSTRAINT carousel_image_executions_est_out_jpy_chk
+    CHECK (estimated_output_cost_jpy >= 0::numeric),
+  CONSTRAINT carousel_image_executions_reserved_jpy_chk
+    CHECK (reserved_input_cost_jpy >= 0::numeric),
+  CONSTRAINT carousel_image_executions_est_total_jpy_chk
+    CHECK (estimated_total_cost_jpy >= 0::numeric),
+  CONSTRAINT carousel_image_executions_attempted_chk
+    CHECK (attempted_provider_calls >= 0),
+  CONSTRAINT carousel_image_executions_successful_chk
+    CHECK (successful_provider_calls >= 0),
+  CONSTRAINT carousel_image_executions_spent_chk
+    CHECK (spent_estimated_jpy >= 0::numeric),
+  CONSTRAINT carousel_image_executions_actual_cost_chk
+    CHECK ((actual_cost_jpy IS NULL) OR (actual_cost_jpy >= 0::numeric)),
+  CONSTRAINT carousel_image_executions_known_actual_cost_chk
+    CHECK ((known_actual_cost_jpy IS NULL) OR (known_actual_cost_jpy >= 0::numeric))
+);
+
+-- 検索用index（case_id / output_id / status別取得）。IF NOT EXISTS で再実行安全。
+CREATE INDEX IF NOT EXISTS idx_carousel_image_executions_case_id   ON carousel_image_executions (case_id);
+CREATE INDEX IF NOT EXISTS idx_carousel_image_executions_output_id ON carousel_image_executions (output_id);
+CREATE INDEX IF NOT EXISTS idx_carousel_image_executions_status    ON carousel_image_executions (status);
+
+-- 業務一意（Per-output execution serialization・Phase 2-E Production Connection Step B）：
+--   同一 output_id で in_progress 行は同時に1件のみ許可する。
+--   nonce UNIQUE は same-nonce の二重実行しか防げず、異なる nonce による cross-nonce の
+--   per-post cumulative budget race（同一 output_id への並行 reserve が両方成功し、
+--   BUDGET_JPY_PER_POST の累積上限を超えて authorize されてしまう）は防げない。
+--   このpartial UNIQUE indexが、その race を防ぐ唯一の DB 側直列化ポイントになる
+--   （SELECT SUM(...) による事前チェックだけでは check-then-act の race を排除できないため）。
+--   既存 uq_affiliate_eval_active_product（Decision 070・WHERE is_active の partial UNIQUE）
+--   と同型のパターンを踏襲する。
+-- ※ crash等で in_progress のまま残った行がある場合、その output_id への新規 reserve は
+--   このindexにより意図的に拒否され続ける（stale recoveryは今回実装しない・別課題）。
+--
+-- ★ Phase 2-E Production Connection Step C-1（TOCTOU fix）: predicate を
+--   WHERE status = 'in_progress' から WHERE status IN ('in_progress', 'completed') へ拡張した。
+--   旧predicateでは以下の race が形式的に成立していた：
+--     B: SELECT SUM(...) で cumulative=0 を観測
+--     A: SELECT SUM(...) で cumulative=0 を観測
+--     A: reserve（in_progress行 INSERT）→ provider 呼び出し → completeExecution
+--     A の completed 更新と同時に、旧predicateでは in_progress 行が0件になり index占有が解放される
+--     B: 古い cumulative=0 を保持したまま reserve → INSERT が成功してしまう
+--     → 同一 output_id への authorization が per-post budget ceiling を超えて成立し得る
+--   completed を predicate へ含めることで、A が completed へ遷移した後も同一 output_id の
+--   index占有が維持され、古い SUM を保持した B の INSERT は 23505（本index由来）で拒否される。
+--   現行 pricing/reserve/budget（low/medium/high 7枚・BUDGET_JPY_PER_POST=100）では、
+--   completed 1件後に同一 output_id へもう1セット分の生成を budget 内で追加実行することは
+--   そもそも不可能なため、この制約は既存の budget rule と整合する。
+--   ★ これは永久不変の制約ではない。将来 pricing/reserve/budget/slide count 等が変更され、
+--     複数 job が1 post budget 内へ収まる設計になった場合は、この predicate を再検討すること。
+--   failed_before_charge / failed_after_charge / unknown_billing は今回も predicate に含めない
+--   （lib/carouselExecutionDb.js の getCumulativeSpentJpyByOutputId が spent_estimated_jpy 経由で
+--   別途 budget 集計する既存設計を変えない）。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_carousel_exec_active_output
+  ON carousel_image_executions (output_id)
+  WHERE status IN ('in_progress', 'completed');
+
+-- ══════════════════════════════════════════════════════════════
+-- RLS / GRANT（Phase 2-E Gate 1 Server-only Trust Boundary・Decision 110）
+-- ══════════════════════════════════════════════════════════════
+-- ※ 本テーブルは billing idempotency / nonce single-use / paid execution ledger の正本であり、
+--   既存の新テーブル群（cases / customers / api_cost_* / affiliate_evaluations ...
+--   FOR ALL TO anon USING(true) WITH CHECK(true)）とは責務とリスクが異なる。同一方式を
+--   機械的に踏襲せず、**anon / authenticated からの直接CRUDを全面禁止**する。
+--
+-- ※ 最終形（Decision 110）:
+--     RLS                       : ENABLED
+--     anon SELECT/INSERT/UPDATE/DELETE policy          : 0本
+--     authenticated SELECT/INSERT/UPDATE/DELETE policy : 0本
+--     → RLS有効かつ一致policyが1本も無いため、anon / authenticated は全commandでdeny。
+--   本テーブルへアクセスできるのは、RLSをbypassする server-only privileged credential
+--   （Supabase secret key / legacy service_role key）を保持する Render server runtime のみ。
+--   privileged client は lib/carouselExecutionSupabase.js に隔離され、
+--   lib/carouselExecutionDb.js からのみ使用される（他のDB helperへ横展開しない）。
+--
+-- ※ credential が存在しない環境（Claude Code / local / test）では privileged client が null と
+--   なり、reserveExecution() は reserve_unavailable を返して provider call 0 で fail-closed する。
+--   **anon client への fallback は実装しない**（lib/carouselExecutionDb.js は lib/supabase.js を
+--   require しない）。
+--
+-- ※ Decision 070 項目10（Claude Code環境へ service_role / DATABASE_URL / pg / psql /
+--   Supabase CLI 等のDDL実行経路を追加しない）は変更しない。本Decisionはそれと両立する
+--   ——privileged credential は Render の secret 環境変数としてのみ保持し、Claude Code環境・
+--   .env.local・local・browser・Git・docs・test には secret 値を一切置かない。また
+--   supabase-js / PostgREST 経由ではDDLを実行できないため、DDL経路を新設しない。
+--
+-- ※ 冪等性: 過去に適用された可能性のある旧policy（Security Correction 以前の
+--   carousel_image_executions_all、および Security Correction 時の _insert / _update / _select）を
+--   DROP POLICY IF EXISTS で明示的に除去し、再適用しても最終的に0本へ収束させる。
+ALTER TABLE public.carousel_image_executions ENABLE ROW LEVEL SECURITY;
+
+-- 旧policyの明示的除去（未存在でもエラーにならない＝再実行安全）。
+DROP POLICY IF EXISTS "carousel_image_executions_all"    ON public.carousel_image_executions;
+DROP POLICY IF EXISTS "carousel_image_executions_insert" ON public.carousel_image_executions;
+DROP POLICY IF EXISTS "carousel_image_executions_update" ON public.carousel_image_executions;
+DROP POLICY IF EXISTS "carousel_image_executions_select" ON public.carousel_image_executions;
+
+-- ★ ここに CREATE POLICY を追加しないこと。
+--   anon / authenticated 向けpolicyを1本でも作ると server-only trust boundary が壊れる。
+--   将来 client から読ませたい要件が出た場合も、直接policyを足さず、server API経由の
+--   read endpoint を設けること（Decision 110）。
+
+-- Defense in Depth: RLS層だけでなくGRANT層でも client role を拒否する。
+--   Supabase は public schema のテーブルへ anon / authenticated へ既定GRANTを付与するため、
+--   RLSのみに依存せずGRANT自体を剥がす（将来誤ってpolicyが追加された場合の事故も防ぐ）。
+--   ※ postgres / service_role（privileged側）からはREVOKEしない。server経路を壊さないため。
+REVOKE ALL ON TABLE public.carousel_image_executions FROM anon;
+REVOKE ALL ON TABLE public.carousel_image_executions FROM authenticated;

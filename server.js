@@ -14,6 +14,9 @@ const EvidenceAcquisition = require('./shared/evidenceAcquisition'); // EEA-3: q
 const IadpIntelligenceContext = require('./shared/iadpIntelligenceContext');
 const InstagramAccountDesign = require('./shared/instagramAccountDesign');
 const InstagramAccountDesignQuality = require('./shared/instagramAccountDesignQuality');
+// Phase 2-E Production Activation Step PA-3A: public static asset boundary（allowlist）。
+//   repo root 全体の静的公開を止め、ブラウザが実際に要求する asset だけを配信する。
+const publicStatic = require('./lib/publicStatic');
 
 // Phase37: Workflow 内 agentCaller — Claude担当は Claude API、それ以外は OpenAI
 // 循環依存回避のため server.js で定義（openaiClient ↔ claudeClient の直接 import を防ぐ）
@@ -428,7 +431,17 @@ app.use(
   })
 );
 
-app.use(express.static(path.join(__dirname)));
+// Phase 2-E Production Activation Step PA-3A: static-root exposure 修正。
+//   旧: app.use(express.static(path.join(__dirname)));
+//       → repo root全体（docs/ lib/ shared/ supabase/ data/ server.js package.json
+//         node_modules *.test.js 等）が無認証・予測可能URLで配信されていた。
+//   新: lib/publicStatic.js の allowlist に一致する path のみを express.static へ委譲する。
+//       allowlist 外は next() で素通り → 既存 route が無ければ express 既定の 404。
+//   ★ 配信「対象の集合」だけを縮小する変更であり、許可された asset の配信契約
+//     （Content-Type / ETag / Range / conditional GET / '/' → index.html）は従来どおり。
+//   ★ 認証・Carousel の課金安全境界（billingLock / Approval Token / Budget / Ledger /
+//     Dual-Key / Storage trust boundary）は本変更の対象外（一切変更していない）。
+app.use(publicStatic.createPublicStaticMiddleware({ rootDir: __dirname }));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -463,15 +476,50 @@ app.get('/api/auth-required', (req, res) => {
   res.json({ required: Boolean(process.env.WEB_APP_PASSWORD) });
 });
 
+// Phase 2-E Step C-5-pre: login成功時に server-side signed session cookie を発行する。
+//   ★ 既存レスポンス契約（{ok:true} / 401 {ok:false,message}）は変更しない（既存UI互換）。
+//     追加する session フィールドは「server側sessionを実際に発行できたか」の観測用。
+//   ★ WEB_SESSION_SECRET 未設定時は cookie を発行しない（＝server権限を一切与えない）。
+//     この場合も {ok:true} は返すが、それは従来どおり **ブラウザ側UI表示ゲート**の意味しか持たない。
+//     Carousel の有料routeは session cookie 必須のため、secret未設定環境では常に401で閉じる
+//     （認証をskipして開く経路は存在しない）。
+//   ★ password / secret を cookie・レスポンス・ログのいずれにも載せない。
+function _issueWebSessionCookie(req, res) {
+  const webSession = require('./lib/webSession');
+  const issued = webSession.issueSessionToken({});
+  if (!issued.ok) return false;
+  res.setHeader('Set-Cookie', webSession.buildSetCookieHeader(issued.token, {
+    secure: webSession.isRequestSecure(req),
+    maxAgeMs: issued.ttlMs,
+  }));
+  return true;
+}
+
 app.post('/api/login', express.json(), (req, res) => {
   const serverPassword = process.env.WEB_APP_PASSWORD;
   if (!serverPassword) {
-    return res.json({ ok: true });
+    // ローカル開発（password未設定）でも、secretがあれば session を発行しておく
+    //   （Carousel routeをローカルで検証できるようにするため。secretが無ければ発行しない）。
+    const issued = _issueWebSessionCookie(req, res);
+    return res.json({ ok: true, session: issued });
   }
   const { password } = req.body || {};
   if (!password || password !== serverPassword) {
+    // 失敗時は session cookie を発行しない。
     return res.status(401).json({ ok: false, message: '合言葉が違います' });
   }
+  const issued = _issueWebSessionCookie(req, res);
+  res.json({ ok: true, session: issued });
+});
+
+// Phase 2-E Step C-5-pre: server-side session の失効。
+//   既存UIの logout() は localStorage を消すだけだったため、session cookie が残り続けると
+//   「ログアウトしたつもりでも有料routeへ到達できる」状態になる。それを防ぐ最小endpoint。
+app.post('/api/logout', express.json(), (req, res) => {
+  const webSession = require('./lib/webSession');
+  res.setHeader('Set-Cookie', webSession.buildClearCookieHeader({
+    secure: webSession.isRequestSecure(req),
+  }));
   res.json({ ok: true });
 });
 // ─────────────────────────────────────────────────
@@ -1671,6 +1719,20 @@ app.post('/api/output-drafts', async (req, res) => {
     res.json({ ok: !result.error, error: result.error });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
+// ─────────────────────────────────────────────────
+
+// ══════════════════════════════════════════════════════════════
+// Carousel Image Production API（Phase 2-E Production Connection Step C-3）
+//   POST /api/carousel-image/approval  { caseId, workflowId?, outputId, quality }
+//   POST /api/carousel-image/generate  { approvalToken }
+//   GET  /api/carousel-image/assets    ?caseId=&outputId=
+//   実処理は lib/carouselImageService.js（HTTP非依存）。本行は route登録のみ。
+//   REAL_ENABLED=false の間、generate は 'real_api_disabled' で必ず停止する
+//   （lib/carouselImageClient.js の既存gate。ここでは迂回しない）。
+// ══════════════════════════════════════════════════════════════
+require('./lib/carouselImageRoutes').registerCarouselImageRoutes(
+  app, require('./lib/carouselImageRoutes').buildProductionDeps()
+);
 // ─────────────────────────────────────────────────
 
 // ══════════════════════════════════════════════════════════════
