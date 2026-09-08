@@ -153,7 +153,11 @@ function buildCtx() {
   caseHeader('5. Source Gateを削除していないことの確認（#5）');
   {
     const src = fs.readFileSync(path.join(__dirname, 'lib', 'carouselImageClient.js'), 'utf8');
-    assert(src.indexOf('var _sourceRealEnabled = false;') !== -1, '5a. source gate（_sourceRealEnabled）は削除されていない');
+    // Production Activation Step PA-13でsource gateはtrueへ変更された（ユーザー承認済み）。
+    //   本assertionの目的は「_sourceRealEnabled という変数宣言自体が削除されていないこと」
+    //   （env gateだけで実解禁できる構造へリファクタリングされていないこと）の確認であり、
+    //   特定のboolean値への固定ではない。true/false いずれの値であっても宣言の存在を検証する。
+    assert(/var _sourceRealEnabled = (true|false);/.test(src), '5a. source gate（_sourceRealEnabled）は削除されていない');
     assert(src.indexOf("process.env['CAROUSEL_IMAGE_REAL_ENABLED']") !== -1 || src.indexOf('process.env[CAROUSEL_IMAGE_REAL_ENABLED_ENV]') !== -1,
       '5b. env gateはprocess.env経由で参照される');
     // env単独で有効化できないこと（sourceがfalseならenv=trueでも常にfalse）を実測でも再確認

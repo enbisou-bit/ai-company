@@ -845,7 +845,11 @@ function run(overrides) {
       else process.env.CAROUSEL_IMAGE_REAL_ENABLED = savedEnvPA1;
     }
     assert(client.REAL_ENABLED === false, 'P2D-7. テスト後も REAL_ENABLED=false へ復帰');
-    assert(clientSrc.indexOf('var _sourceRealEnabled = false;') !== -1, 'P2D-7. ソース上の REAL_ENABLED は false のまま');
+    // Production Activation Step PA-13でsource gate（_sourceRealEnabled）はtrueへ変更された
+    //   （ユーザー承認済み）。本テストが検証すべきなのは「このtestブロック自身のsave/restoreが
+    //   client.REAL_ENABLED（runtime値）を正しく元へ戻したか」であり、直上のassertionが
+    //   その責務を担う。source file内の固定値を直接scanする冗長な旧assertionは削除する
+    //   （PA-13以降は _sourceRealEnabled が恒常的にtrueのため、その形での検証は意味を持たない）。
     approval._resetNonceStore();
   }
 
@@ -1736,7 +1740,8 @@ function run(overrides) {
       else process.env.CAROUSEL_IMAGE_REAL_ENABLED = s6SavedEnvPA1;
     }
     assert(client.REAL_ENABLED === false, 'P2E-S6. テスト後も REAL_ENABLED=false へ復帰');
-    assert(clientSrc.indexOf('var _sourceRealEnabled = false;') !== -1, 'P2E-S6. ソース上の REAL_ENABLED は false のまま');
+    // Production Activation Step PA-13でsource gate（_sourceRealEnabled）はtrueへ変更された
+    //   （ユーザー承認済み）。理由はP2D-7の同種assertion削除コメントと同一。
   }
 
   caseHeader('P2D-9. compositor 非改変 / filesystem write 0 / 実 API 0');

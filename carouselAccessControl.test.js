@@ -519,8 +519,11 @@ async function issueApprovalToken(h) {
   // ══════════════════════════════════════════════════
   {
     assert(client.REAL_ENABLED === false, 'REAL_ENABLED は false のまま（テスト後に復元されている）');
+    // Production Activation Step PA-13でsource gate（_sourceRealEnabled）はtrueへ変更された
+    //   （ユーザー承認済み）。本テストが検証すべきは「このtestブロック自身のsave/restoreが
+    //   client.REAL_ENABLED（runtime値）を正しく元へ戻したか」であり、直上のassertionが
+    //   その責務を担う。source file内の固定値を直接scanする冗長な旧assertionは削除する。
     const clientSrc = fs.readFileSync(path.join(__dirname, 'lib', 'carouselImageClient.js'), 'utf8');
-    assert(clientSrc.indexOf('var _sourceRealEnabled = false;') !== -1, 'lib/carouselImageClient.js の source constant は false のまま（未変更）');
     // Production Activation Step PA-1: dual-key kill switch実装済み（source gate ∧ env gate）。
     //   本テストファイル自体は環境変数を汚染したまま終了していないことも確認する。
     assert(clientSrc.indexOf('CAROUSEL_IMAGE_REAL_ENABLED') !== -1, 'PA-1. kill switch（env gate）が実装されている');
