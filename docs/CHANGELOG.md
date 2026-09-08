@@ -4,6 +4,17 @@
 
 ---
 
+## Carousel Image Production ─ Infrastructure Connected ＋ Source Gate Enabled（2026-09-09・新Decision採番なし・Tagなし）
+
+- **Infrastructure（ユーザー実施）**：Supabase本番DBへ`carousel_image_executions`を適用（RLS enabled・anon/authenticated policy/privilege=0・`uq_carousel_exec_active_output`のpredicateを実測確認）。`carousel-images` Storage bucketを作成（private・32MB上限・`image/png`のみ・policy=0）。Render Environmentへ`SUPABASE_SECRET_KEY`／`CAROUSEL_APPROVAL_SECRET`／`WEB_SESSION_SECRET`／`WEB_TRUSTED_ORIGIN`を追加し再デプロイ。**`CAROUSEL_IMAGE_REAL_ENABLED`は未設定のまま**。
+- **Production Fail-Closed Verification（read-only）**：本番でPublic Static Allowlist（allowed 200／blocked internal 404）・Carousel 3route（session cookie無しで全て401 unauthorized）・privileged clientのkey優先順位を再確認。既存API無傷。
+- **Source Gate Enable（code）**：`lib/carouselImageClient.js`の`_sourceRealEnabled`を`false → true`（1行のみ）。**dual-keyのAND条件・env gate自体は無変更**。Code commit `8dee915`（`chore: enable carousel image source gate`）。回帰1074/0（PA-6基準1077から、source gate値をリテラル固定していた旧assertion3件を検証意図に沿う形へ修正した分のみ減）。
+- **重要**：本entryは「Real Image Generationが有効になった」ことを意味しない。**Render側`CAROUSEL_IMAGE_REAL_ENABLED`は引き続き未設定**であり、dual-keyのAND条件が成立しないため、**effective REAL image generationは引き続きdisabled**。正確には：**Source Gate = enabled ／ Runtime Env Gate = disabled・unset ／ Effective Real Generation = disabled**。
+- **維持**：実DB write 0・Storage write 0・OpenAI Image API call 0・paid generation 0・Publishing 0・Instagram投稿 0。新Decision追加なし（Decision 115 Dual-Key Kill Switchの実行状態変更のみ）。
+
+---
+
+
 ## Carousel Image Production ─ Production Safety / Activation Foundation **正式リリース**（2026-09-08・Tag `v1.01-carousel-image-production-safety-release`）
 
 - **Release**：Production Activation Step PA-1〜PA-6で実装した安全基盤一式（Decision 110〜116）を `main` へ確定した3 commitsをfast-forward push（`02f8f6c..341eaa7`）。**code commit `e0dadc4`（feat: connect guarded carousel image production）＋docs commit `341eaa7`（docs: formalize carousel production activation safeguards）＋その前段の `21b20330`（docs: record carousel phase 2-d release and phase 2-e preconditions）**。push前後で `HEAD = origin/main`・`ahead 0 / behind 0` を実測確認。本docs commit（CHANGELOG本entry含む）自体をAnnotated Tag `v1.01-carousel-image-production-safety-release` のtargetとする。
