@@ -168,16 +168,75 @@ function ascenderRatio(weight) {
   return f.ascender / f.unitsPerEm;
 }
 
+// ── path command の座標フィールド（opentype.js の command 形状に対応） ──────────────
+var PATH_COORD_KEYS = Object.freeze(['x', 'y', 'x1', 'y1', 'x2', 'y2']);
+
+// ── path data 内で許可しない不正トークン（serializer 由来の破損検出用） ──────────────
+//   ★ PA-16 実測: opentype.js 2.0.0 の roundDecimal() は
+//     「小数部が指数表記になるほど微小（= ほぼ整数）」な座標に対して NaN を返し、
+//     結果として文字列 "NaN" が d 属性へ混入する。
+//     librsvg（sharp）は d の解析を NaN の時点で中断し、**以降のグリフを無警告で描画しない**。
+//     すなわち従来は「エラーにならず視覚的にだけ壊れる」fail-open だった。
+var INVALID_PATH_TOKEN_RE = /NaN|Infinity|undefined|null/;
+
+// ── F-1: 直列化前の座標量子化（PA-16 Option F-1） ──────────────
+//   小数部を必ず 0.00〜0.99 の clean な値にすることで、roundDecimal() が
+//   指数表記文字列を組み立てる経路（= NaN 生成の唯一の原因）を構造的に発生させない。
+//   ★ 量子化は「壊れた値を直す」ためではない。非 finite 値は F-2 で先に fail-closed する。
+//     finite input → quantize → serialize → validate の順序を守る。
+function _quantizePathCommands(commands, places) {
+  var factor = Math.pow(10, places);
+  for (var i = 0; i < commands.length; i++) {
+    var cmd = commands[i];
+    for (var k = 0; k < PATH_COORD_KEYS.length; k++) {
+      var key = PATH_COORD_KEYS[k];
+      var v = cmd[key];
+      if (v === undefined) continue;              // 該当 command type に無いフィールドは触らない
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        // fail-closed: 量子化で誤魔化さず停止する（raw 本文は載せない）
+        throw CarouselFontError('invalid_path_coordinate', {
+          commandIndex: i,
+          commandType: String(cmd.type || '(unknown)').slice(0, 4),
+          field: key,
+        });
+      }
+      cmd[key] = Math.round(v * factor) / factor;
+    }
+  }
+  return commands;
+}
+
 // ── text → SVG path data ──────────────
 //   x, y は baseline 基準（opentype.js の仕様）。deterministic：
 //   同一 font / text / x / y / size で常に同一の d 文字列を返す。
+//
+//   fail-closed の 3 段構え:
+//     1. missing glyph / unsupported weight（従来どおり）
+//     2. F-2 pre-serialization : command 座標が非 finite なら throw
+//     3. F-2 post-serialization: 生成された d に不正トークンが残っていれば throw
+//        （serializer 側の将来的な回帰も含めて「壊れた画像を成功扱いしない」）
 function textToPathData(text, x, y, fontSizePx, weight) {
   var w = normalizeWeight(weight);                 // fail-closed（未対応 weight）
   var s = String(text == null ? '' : text);
   assertGlyphCoverage(s, w);                       // fail-closed（missing glyph）
   var f = getFont(w);
   var p = f.getPath(s, Number(x), Number(y), Number(fontSizePx), { kerning: true });
-  return p.toPathData(PATH_PRECISION);
+
+  // F-1 + F-2(pre): 非 finite は throw、finite は精度 PATH_PRECISION へ量子化
+  _quantizePathCommands(p.commands, PATH_PRECISION);
+
+  var d = p.toPathData(PATH_PRECISION);
+
+  // F-2(post): 直列化結果を防御的に検証する（NaN / Infinity / undefined / null）
+  if (typeof d !== 'string' || INVALID_PATH_TOKEN_RE.test(d)) {
+    var m = typeof d === 'string' ? d.match(INVALID_PATH_TOKEN_RE) : null;
+    throw CarouselFontError('invalid_path_data', {
+      weight: w,
+      token: m ? m[0] : '(non-string)',            // 検出トークン名のみ（本文は載せない）
+      length: typeof d === 'string' ? d.length : 0,
+    });
+  }
+  return d;
 }
 
 module.exports = {

@@ -32,6 +32,11 @@ var BUDGET_JPY_PER_POST_DEFAULT = 100;
 // ── 背景 prompt に必ず付ける安全固定句（商品 / Value Content 両対応） ──
 var SAFE_SUFFIX = [
   'no text', 'no letters', 'no words', 'no logos', 'no brand names', 'no readable labels',
+  // PA-17B(F-4): AI背景がUI風要素を描くと deterministic overlay（バッジ枠・文字）と競合するため明示禁止。
+  //   PA-15B-2 実測: Output Draft のビジュアル指示「チェックリスト風デザイン」に忠実に反応し、
+  //   slide1 の背景へチェックボックス状の図形が生成された（overlay 由来ではない）。
+  //   Output Draft 本文・imagePrompt は変更せず、SAFE_SUFFIX 側でのみ制約する。
+  'no UI elements', 'no checkboxes', 'no icons', 'no watermark', 'no frames',
   'no medical imagery', 'no clinical setting', 'no before and after', 'no skin comparison',
   'no celebrity', 'no recognizable real person', 'no prominent face', 'faces are small or absent',
   'clean minimal beauty-media background', '4:5 ratio, vertical, 1080x1350',

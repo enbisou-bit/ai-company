@@ -51,6 +51,39 @@ function slideTheme(slideIndex, totalSlides) {
     : { bg: '#FFFFFF', text: '#111111', accent: '#111111', mode: 'light' };
 }
 
+// ── F-3: dark theme 用 deterministic gradient scrim（PA-16 Option F-3） ──────────────
+//   背景（AI写真）と文字の間へ敷く固定の暗幕。AI画像の解析・動的判断は一切行わない
+//   （同一入力 → 同一 SVG を維持するため）。
+//
+//   PA-16 実測の問題: slideTheme() は S1 / 最終slide に text='#FFFFFF' を返すが、
+//   theme.bg('#111111') を塗るのは debug 用 renderSlideStandaloneSvg() だけで、
+//   本番 overlay は透過のまま。結果、白文字が明るいAI写真へ直接描かれ、
+//   slide1 では背景平均輝度 235 / コントラスト約 1.2:1 となり判読困難だった。
+//
+//   SCRIM_PEAK_ALPHA=0.55 の根拠（最悪ケース = 純白 #FFFFFF 背景で計算）:
+//     合成後の背景 = 255*(1-0.55) ≈ 114.75 → 相対輝度 ≈ 0.171
+//     白文字とのコントラスト比 = (1.0+0.05)/(0.171+0.05) ≈ 4.76:1 → WCAG AA(4.5:1) を満たす。
+//   端（0% / 100%）は 0.30 に留め、写真全体を必要以上に潰さない。
+//   強い帯（12%〜88%）はコンテンツ領域（SAFE.top 160 〜 CANVAS.height-SAFE.bottom 1190）を覆う。
+var SCRIM = Object.freeze({
+  id: 'carouselDarkScrim',
+  edgeAlpha: 0.3,
+  peakAlpha: 0.55,
+  peakStartPct: 12,
+  peakEndPct: 88,
+});
+
+function darkScrimSvg() {
+  return '<defs><linearGradient id="' + SCRIM.id + '" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0%" stop-color="#000000" stop-opacity="' + SCRIM.edgeAlpha + '"/>'
+    + '<stop offset="' + SCRIM.peakStartPct + '%" stop-color="#000000" stop-opacity="' + SCRIM.peakAlpha + '"/>'
+    + '<stop offset="' + SCRIM.peakEndPct + '%" stop-color="#000000" stop-opacity="' + SCRIM.peakAlpha + '"/>'
+    + '<stop offset="100%" stop-color="#000000" stop-opacity="' + SCRIM.edgeAlpha + '"/>'
+    + '</linearGradient></defs>'
+    + '<rect data-role="scrim" x="0" y="0" width="' + CANVAS.width + '" height="' + CANVAS.height + '" '
+    + 'fill="url(#' + SCRIM.id + ')"/>';
+}
+
 // ── 決定的な line wrapping（実グリフ幅・フォントメトリクス基準） ──────────────
 //   日本語は分かち書きがないため文字単位で折る。元本文の文字順・内容は変更しない
 //   （行を結合すると必ず元の文字列に戻る）。禁則は行頭回避のみの簡易処理。
@@ -164,6 +197,12 @@ function renderSlideOverlaySvg(slide, ctx) {
   if (ctaText) F.assertGlyphCoverage(ctaText, WEIGHT.cta);
 
   var parts = [];
+
+  // F-3: dark theme のみ、最背面（文字・バッジ・ページ番号より前）へ scrim を敷く。
+  //   light theme（S2〜S6）は文字が #111111 で明るい背景と十分なコントラストを持つため適用しない。
+  if (theme.mode === 'dark') {
+    parts.push(darkScrimSvg());
+  }
 
   // 番号バッジ（本文 slide のみ・見出しの「N.」に一致する数字を使う。①②③ は使わない）
   var badgeNum = layout.badgeNumber != null ? String(layout.badgeNumber) : null;

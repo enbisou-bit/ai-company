@@ -1759,8 +1759,219 @@ function run(overrides) {
     });
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // PA-17B — Option F（描画正当性 / fail-closed / 可読性）の回帰テスト
+  //   ★ PA-16 で実測した本番欠陥の再発防止。semantic（data-text）だけでは検出できないため、
+  //     path data / raster / geometry / contrast の各層を検証する。
+  //   ★ OCR は使わない。実 API 0・filesystem write 0・network 0。
+  // ══════════════════════════════════════════════════════════════
+  const INVALID_D_RE = /NaN|Infinity|undefined|null/;
+  const font = require('./shared/carouselFont');
+
+  // PA-16 で実際に NaN 混入が確認された本番文字列（4件）＋正常だった文字列
+  const PA16_STRINGS = [
+    { text: '毎日のスキンケア、まず見直したい5つの基本', weight: 'bold', px: 72, brokeBefore: true },
+    { text: '1. やさしく洗う', weight: 'bold', px: 72, brokeBefore: true },
+    { text: '2. 洗ったあとは早めに保湿', weight: 'bold', px: 72, brokeBefore: true },
+    { text: 'こすりすぎず、肌をやさしく洗うことを意識します。', weight: 'regular', px: 36, brokeBefore: true },
+    { text: '3. つける量を極端に減らしすぎない', weight: 'bold', px: 72, brokeBefore: false },
+    { text: '今日から見直すならこの5つ', weight: 'bold', px: 72, brokeBefore: false },
+  ];
+
+  caseHeader('PA-17B T1. path serialization に NaN 等の不正トークンが混入しない');
+  {
+    let clean = 0;
+    PA16_STRINGS.forEach(c => {
+      const d = font.textToPathData(c.text, 96, 300, c.px, c.weight);
+      const bad = INVALID_D_RE.test(d);
+      if (!bad) clean++;
+      assert(!bad, 'T1. NaN/Infinity/undefined を含まない: "' + c.text.slice(0, 14) + '"');
+    });
+    assert(clean === PA16_STRINGS.length, 'T1. PA-16 再現文字列すべてで不正トークン 0（' + clean + '/' + PA16_STRINGS.length + '）');
+
+    // x 位置を変えても再発しないこと（NaN はデータ依存のため位置掃引で確認）
+    let sweepBad = 0;
+    for (let i = 0; i <= 60; i++) {
+      const d = font.textToPathData('1. やさしく洗う', 96 + i * 3.7, 300, 72, 'bold');
+      if (INVALID_D_RE.test(d)) sweepBad++;
+    }
+    assert(sweepBad === 0, 'T1. x 位置掃引 61 パターンでも不正トークン 0');
+  }
+
+  caseHeader('PA-17B T2. 非 finite 座標は直列化前に fail-closed');
+  {
+    // production code を歪めず、量子化関数の契約のみを検証する（内部 API を直接叩かない）
+    let threw = null;
+    try { font.textToPathData('あ', NaN, 300, 72, 'bold'); } catch (e) { threw = e; }
+    assert(threw && threw.code === 'invalid_path_coordinate',
+      'T2. x=NaN は invalid_path_coordinate で throw（silent success しない）: ' + (threw && threw.code));
+
+    let threw2 = null;
+    try { font.textToPathData('あ', 96, Infinity, 72, 'bold'); } catch (e) { threw2 = e; }
+    assert(threw2 && threw2.code === 'invalid_path_coordinate', 'T2. y=Infinity も fail-closed');
+
+    // error に raw 本文が載らないこと
+    const detailStr = JSON.stringify((threw && threw.detail) || {});
+    assert(detailStr.indexOf('あ') === -1, 'T2. error detail に raw 本文を含まない');
+  }
+
+  caseHeader('PA-17B T3. 直列化後の d も防御的に検証される（二層構造）');
+  {
+    const src = fs.readFileSync(path.join(__dirname, 'shared', 'carouselFont.js'), 'utf8');
+    assert(/invalid_path_data/.test(src), 'T3. post-serialization 検証の error code が実装されている');
+    assert(/INVALID_PATH_TOKEN_RE/.test(src), 'T3. 不正トークン検査の正規表現が存在する');
+    // 実際に d を返す経路が検証を通過していること
+    const d = font.textToPathData('1. やさしく洗う', 96, 300, 72, 'bold');
+    assert(typeof d === 'string' && d.length > 0 && d[0] === 'M', 'T3. 正常系は従来どおり path data を返す');
+  }
+
+  caseHeader('PA-17B T4. raster level で途中欠落が再発しない');
+  {
+    if (!compositor.isSharpAvailable()) {
+      assert(false, 'T4. sharp が必要（未導入では検証できない）');
+    } else {
+      const sharpLib = require('sharp');
+      const slide = { slideIndex: 2, slideId: 's2', headline: '1. やさしく洗う',
+                      body: 'こすりすぎず、肌をやさしく洗うことを意識します。', layout: { badgeNumber: 1 } };
+      const svg = renderer.renderSlideOverlaySvg(slide, { totalSlides: 7 });
+      const bg = await sharpLib({ create: { width: 1080, height: 1350, channels: 3, background: { r: 255, g: 255, b: 255 } } }).png().toBuffer();
+      const res = await compositor.compositeSlide({ backgroundBuffer: bg, overlaySvg: svg, width: 1080, height: 1350 });
+      assert(res.ok === true, 'T4. composite 成功');
+      const { data, info } = await sharpLib(res.buffer).raw().toBuffer({ resolveWithObject: true });
+      const ch = info.channels, W = info.width;
+      const bandMaxX = (y0, y1) => {
+        let maxX = -1;
+        for (let y = y0; y <= y1; y++) for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * ch;
+          if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] < 100 && x > maxX) maxX = x;
+        }
+        return maxX;
+      };
+      const titleRight = bandMaxX(272, 366);
+      const advance = font.measureTextPx('1. やさしく洗う', 72, 'bold');
+      const expectedRight = 96 + advance;
+      // PA-16 の欠陥時は 348（期待 610 に対し大幅に不足）だった
+      assert(titleRight > expectedRight - 40,
+        'T4. タイトルのインクが想定右端まで到達する（実測 ' + titleRight + ' / 期待 ≈ ' + expectedRight.toFixed(0) + '）');
+      assert(titleRight > 500, 'T4. PA-16 の欠陥値（348）へ戻っていない（実測 ' + titleRight + '）');
+    }
+  }
+
+  caseHeader('PA-17B T5. geometric containment（safe area 超過なし）');
+  {
+    const SAFE = renderer.SAFE, CANVAS = renderer.CANVAS;
+    const contentWidth = CANVAS.width - SAFE.left - SAFE.right;
+    let over = 0, checked = 0;
+    PA16_STRINGS.forEach(c => {
+      const lines = renderer.wrapText(c.text, contentWidth, c.px, c.weight);
+      assert(lines.join('') === c.text, 'T5. wrapText は文字を落とさない: "' + c.text.slice(0, 12) + '"');
+      lines.forEach(ln => {
+        checked++;
+        const w = font.measureTextPx(ln, c.px, c.weight);
+        if (w > contentWidth + 0.5) over++;
+      });
+    });
+    assert(over === 0, 'T5. 全行が content 幅 ' + contentWidth + 'px 以内（超過 ' + over + ' / ' + checked + ' 行）');
+  }
+
+  caseHeader('PA-17B T6. dark theme のみに scrim が存在する');
+  {
+    const mk = (i, extra) => Object.assign({ slideIndex: i, headline: 'テスト見出し', body: 'テスト本文です。' }, extra || {});
+    const s1 = renderer.renderSlideOverlaySvg(mk(1, { layout: {} }), { totalSlides: 7 });
+    const s7 = renderer.renderSlideOverlaySvg(mk(7, { layout: {} }), { totalSlides: 7 });
+    const s3 = renderer.renderSlideOverlaySvg(mk(3, { layout: { badgeNumber: 2 } }), { totalSlides: 7 });
+    assert(s1.indexOf('data-role="scrim"') !== -1, 'T6. slide1(dark) に scrim あり');
+    assert(s7.indexOf('data-role="scrim"') !== -1, 'T6. 最終slide(dark) に scrim あり');
+    assert(s3.indexOf('data-role="scrim"') === -1, 'T6. slide3(light) に scrim なし（不用意に適用しない）');
+    assert(renderer.slideTheme(1, 7).mode === 'dark' && renderer.slideTheme(3, 7).mode === 'light',
+      'T6. slideTheme の dark/light 判定は従来どおり');
+  }
+
+  caseHeader('PA-17B T7. scrim の determinism');
+  {
+    const s = { slideIndex: 1, headline: '毎日のスキンケア、まず見直したい5つの基本', body: 'なんとなく続けているケア、いちど見直してみませんか？', layout: {} };
+    const a = renderer.renderSlideOverlaySvg(s, { totalSlides: 7 });
+    const b = renderer.renderSlideOverlaySvg(s, { totalSlides: 7 });
+    assert(a === b, 'T7. 同一入力 → 完全同一 SVG');
+    assert(/<linearGradient id="[A-Za-z0-9_-]+"/.test(a), 'T7. gradient id は固定文字列（乱数を使わない）');
+    assert(a.indexOf('Math.random') === -1 && a.indexOf('Date.now') === -1, 'T7. SVG に非決定的値が混入しない');
+  }
+
+  caseHeader('PA-17B T8. layer order（scrim → text → badge/page）');
+  {
+    const s7 = renderer.renderSlideOverlaySvg(
+      { slideIndex: 7, headline: '今日から見直すならこの5つ', body: 'まずはこの5つ。', layout: { isCta: true, ctaText: '保存してください。' } },
+      { totalSlides: 7 });
+    const iScrim = s7.indexOf('data-role="scrim"');
+    const iHead = s7.indexOf('data-role="headline"');
+    const iBody = s7.indexOf('data-role="body"');
+    const iPage = s7.indexOf('data-role="pageNumber"');
+    assert(iScrim >= 0 && iScrim < iHead, 'T8. scrim は headline より前（＝背面）');
+    assert(iHead < iBody && iBody < iPage, 'T8. headline → body → pageNumber の順序が維持される');
+  }
+
+  caseHeader('PA-17B T9. 既存 deterministic contract を壊していない');
+  {
+    const s2 = renderer.renderSlideOverlaySvg(
+      { slideIndex: 2, headline: '1. やさしく洗う', body: 'こすりすぎず、肌をやさしく洗うことを意識します。', layout: { badgeNumber: 1 } },
+      { totalSlides: 7 });
+    assert(/width="1080" height="1350"/.test(s2), 'T9. 1080×1350 維持');
+    assert(s2.indexOf('<text') === -1 && s2.indexOf('<tspan') === -1, 'T9. text/tspan 0（path 化維持）');
+    assert(s2.indexOf('font-family') === -1 && s2.indexOf('font-size') === -1, 'T9. font-family/font-size 0');
+    assert(s2.indexOf('data-weight="bold"') !== -1, 'T9. data-weight 維持');
+    const dts = [...s2.matchAll(/data-text="([^"]*)"/g)].map(m => m[1]);
+    assert(dts.indexOf('1. やさしく洗う') !== -1, 'T9. Output Draft 本文が data-text に保持される（改変なし）');
+    assert(dts.indexOf('こすりすぎず、肌をやさしく洗うことを意識します。') !== -1, 'T9. body も保持される');
+    let mg = null;
+    try { font.textToPathData('', 96, 300, 72, 'bold'); } catch (e) { mg = e; }
+    assert(mg && mg.code === 'missing_glyph', 'T9. missing glyph fail-closed 維持');
+    let uw = null;
+    try { font.textToPathData('あ', 96, 300, 72, 'thin'); } catch (e) { uw = e; }
+    assert(uw && uw.code === 'unsupported_weight', 'T9. unsupported weight fail-closed 維持');
+  }
+
+  caseHeader('PA-17B T10. SAFE_SUFFIX 強化が prompt へ反映される');
+  {
+    const prompt = core.buildBackgroundPrompt({ visualDirection: '清潔感のある洗面台', slideIndex: 1 });
+    ['no UI elements', 'no checkboxes', 'no icons', 'no watermark', 'no frames'].forEach(k => {
+      assert(String(prompt).indexOf(k) !== -1, 'T10. prompt に "' + k + '" が含まれる');
+    });
+    // 既存の禁止句を削除していない
+    ['no text', 'no letters', 'no words', 'no logos', 'no brand names', 'no readable labels',
+     'no celebrity', 'no recognizable real person', 'no prominent face'].forEach(k => {
+      assert(String(prompt).indexOf(k) !== -1, 'T10. 既存禁止句を維持: "' + k + '"');
+    });
+    assert(client.looksSafeBackgroundPrompt(prompt) === true, 'T10. 既存 prompt 安全判定を通過する');
+  }
+
+  caseHeader('PA-17B T11. dark theme の可読性（最悪ケース = 純白背景）');
+  {
+    if (!compositor.isSharpAvailable()) {
+      assert(false, 'T11. sharp が必要');
+    } else {
+      const sharpLib = require('sharp');
+      const relLum = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+      const svg = renderer.renderSlideOverlaySvg(
+        { slideIndex: 1, headline: '毎日のスキンケア、まず見直したい5つの基本', body: 'なんとなく続けているケア、いちど見直してみませんか？', layout: {} },
+        { totalSlides: 7 });
+      const bg = await sharpLib({ create: { width: 1080, height: 1350, channels: 3, background: { r: 255, g: 255, b: 255 } } }).png().toBuffer();
+      const res = await compositor.compositeSlide({ backgroundBuffer: bg, overlaySvg: svg, width: 1080, height: 1350 });
+      const { data, info } = await sharpLib(res.buffer).raw().toBuffer({ resolveWithObject: true });
+      const ch = info.channels, W = info.width;
+      let sum = 0, n = 0;
+      for (let y = 500; y <= 800; y++) for (let x = 96; x <= 984; x++) {
+        const i = (y * W + x) * ch;
+        if (data[i] > 245 && data[i + 1] > 245 && data[i + 2] > 245) continue;   // 白文字は除外
+        sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]; n++;
+      }
+      const bgMean = sum / n;
+      const cr = (1.0 + 0.05) / (relLum(bgMean) + 0.05);
+      assert(cr >= 4.5, 'T11. 白文字と背景のコントラスト ≥ 4.5:1（実測 ' + cr.toFixed(2) + ':1 / 背景輝度 ' + bgMean.toFixed(1) + '）');
+    }
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }
-  else { console.log('🟢 All Carousel Image Production cases passed (Phase 1 / 2-B / 2-C)'); }
+  else { console.log('🟢 All Carousel Image Production cases passed (Phase 1 / 2-B / 2-C / PA-17B)'); }
 })().catch(e => { console.error('TEST CRASH:', e); process.exitCode = 1; });
