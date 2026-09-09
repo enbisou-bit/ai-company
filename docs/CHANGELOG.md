@@ -4,6 +4,19 @@
 
 ---
 
+## Carousel Image Production ─ Deterministic Overlay Fix（Option F）正式リリース（2026-09-10・Decision117・Tag `v1.01-carousel-image-production-option-f`）
+
+- **First Controlled Paid Generation（PA-15B-2）**：本番で初のCarousel実課金生成を1回実施（`caseId:case-value-1788410623`／`outputId:out_1788413020275`／quality:low／7 slides／estimatedCostJpy ¥45.2816）。技術的パイプラインは成功（HTTP 200・`generated:7`・`published:false`維持）したが、目視確認でJapanese overlayの文字切れ・文字欠け・白文字×明背景の視認性不足を発見し、**Publishingを見送った**。
+- **Root Cause（PA-16・read-only investigation）**：`wrapText`は正常（文字保持100%・安全幅内）と実測確認したうえで、真因を2件特定。①`shared/carouselFont.js`が使うopentype.js 2.0.0の`roundDecimal()`が、座標の小数部が指数表記になるほど微小（ほぼ整数）な場合にNaNを返し、SVG path dへ`NaN`が混入——librsvg（sharp）はそこでpath解析を中断し**以降のグリフを無警告で描画しない**（fail-openバグ・本番9文字列中4件で発生）。②`slideTheme()`のdark theme背景色は本番overlayで塗られておらず、白文字がAI背景の明度に無防備に依存（slide1実測：背景輝度235・コントラスト約1.2:1）。
+- **Option F Fix（PA-17B）**：F-1（座標量子化・NaN混入4/10→0/10）／F-2（pre/post-serialization二層fail-closed・既存`missing_glyph`と同一error contract）／F-3（dark theme限定のdeterministic gradient scrim・固定値のみ・AI画像解析0・コントラスト1.2:1→4.60〜4.65:1実測・WCAG AA達成）／F-4（`SAFE_SUFFIX`へ`no UI elements`等5句追加・既存14句維持）。回帰テスト新規57件を含め**1,131 passed／0 failed**。
+- **Decision 117（新規採用）**：Carousel Dark-Theme Deterministic Readability Boundary。dark-theme overlayの文字可読性はAI背景の明度に依存せず、固定deterministic gradient scrimで保証するという描画正当性の契約を正式化（詳細は`docs/04DECISIONS.md`参照）。
+- **Release**：Code commit `770aa10`（`fix: harden deterministic carousel overlay rendering`・4 files）＋Docs commit `4064752`（`docs: formalize deterministic carousel readability boundary`・4 files）をmainへfast-forward push（`ea47fc4..4064752`）。**Render Auto-Deploy `4064752` Live確認済み**（Render Dashboard実画面確認・2026-09-10 06:49 JST）。本番read-only smoke PASS（`GET /`=200・`/api/auth-required`=200・Carousel 3route unauthenticated=401・Decision116 static boundary無傷）。
+- **既存7 assets（`out_1788413020275`）は無変更のまま失敗例Evidenceとして保持**（Decision112 completed lockにより再生成しない）。**重要：修正版（Option F）による実画像の再生成・目視確認はまだ実施していない。** 「実画像品質修正を本番生成で確認済み」とは記録しない。修正版の実画像trialには新Output Draft／新outputId／Runtime Env Gate再有効化／新approval発行／1回限定のcontrolled paid generationが別工程として必要。
+- **REAL_ENABLED=false維持**：Source Gate=true（無変更）・Runtime Env Gate=unset（PA-17AでRenderから`CAROUSEL_IMAGE_REAL_ENABLED`削除・再デプロイ済み）・Effective REAL=false。本リリース後もImage API call 0・paid generation 0・DB write 0・Storage write 0・Publishing 0・Instagram投稿 0を維持。
+
+---
+
+
 ## Carousel Image Production ─ Infrastructure Connected ＋ Source Gate Enabled（2026-09-09・新Decision採番なし・Tagなし）
 
 - **Infrastructure（ユーザー実施）**：Supabase本番DBへ`carousel_image_executions`を適用（RLS enabled・anon/authenticated policy/privilege=0・`uq_carousel_exec_active_output`のpredicateを実測確認）。`carousel-images` Storage bucketを作成（private・32MB上限・`image/png`のみ・policy=0）。Render Environmentへ`SUPABASE_SECRET_KEY`／`CAROUSEL_APPROVAL_SECRET`／`WEB_SESSION_SECRET`／`WEB_TRUSTED_ORIGIN`を追加し再デプロイ。**`CAROUSEL_IMAGE_REAL_ENABLED`は未設定のまま**。
