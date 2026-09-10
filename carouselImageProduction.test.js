@@ -1970,6 +1970,218 @@ function run(overrides) {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // PA-24 — Option B+C（Background Prompt Sanitizer ＋ Post-level Visual Direction）
+  //   ★ PA-22H で実測した実画像 FAIL（slide5/6/7 の UI/icon/infographic 生成）の再発防止。
+  //   ★ 実 API 0・実 network 0・実 Storage 0・paid generation 0。
+  // ══════════════════════════════════════════════════════════════
+  const bgSan = require('./shared/carouselBackgroundSanitizer');
+  const bgVd = require('./shared/carouselVisualDirection');
+
+  // PA-22G で実際に FAIL した slide5/6/7 の本番 imagePrompts（＋ slide 本文の「ビジュアル：」由来）
+  const PA22G_FIXTURES = [
+    { slide: 5,
+      imagePromptText: 'Instagramカルーセル用、顔に触りすぎないことを示す注意アイコン、やさしい表情の人物イラスト、ミニマルで清潔感のある構図、淡いベージュとホワイト基調、余白多め、見やすい情報デザイン',
+      visualDirection: '顔に触れないようにする注意アイコン、やさしい表情の人物イラスト' },
+    { slide: 6,
+      imagePromptText: 'Instagramカルーセル用、朝夜のルーティンを並べたチェックリスト風デザイン、続けやすさを感じる整ったレイアウト、シンプルなアイコン、ナチュラルカラー、保存したくなる整理感、余白多め',
+      visualDirection: '朝夜のルーティンを並べた、見返しやすいチェックリスト風デザイン' },
+    { slide: 7,
+      imagePromptText: 'Instagramカルーセル用、5項目をまとめた一覧表風レイアウト、見返しやすい構成、清潔感のある淡い色合い、ミニマルで上品な美容情報デザイン、保存したくなる整理されたビジュアル',
+      visualDirection: '5項目をまとめた一覧、保存したくなる整理されたレイアウト' },
+  ];
+  // sanitized scene（SAFE_SUFFIX / Visual Direction を除いた slide 固有部分）に残ってはいけない unsafe intent。
+  //   ★ 全 prompt を対象にすると SAFE_SUFFIX の「no checkboxes / no character illustration」等が
+  //     偽陽性になるため、sanitizer が出す scene 文字列を直接検査する。
+  const UNSAFE_RE = /注意アイコン|アイコン|チェックリスト|チェックボックス|一覧表|一覧|整ったレイアウト|配置図|見出し枠|相関図|工程図|図解|インフォグラフィック|情報デザイン|吹き出し|注釈枠|比較図|ビフォーアフター|イラスト|水彩|手描き|キャラクター|\bicon\b|\bicons\b|checklist|checkbox|\btable\b|\blayout\b|\bframe\b|\bpanel\b|infographic|flowchart|\bdiagram\b|timeline|speech bubble|watercolor|cartoon/i;
+
+  caseHeader('PA-24 T-S1. PA-22G の5つの conflict 語が final provider prompt に残らない');
+  {
+    const FIVE = ['注意アイコン', 'チェックリスト風デザイン', '整ったレイアウト', 'シンプルなアイコン', '一覧表風レイアウト'];
+    let clean = 0;
+    PA22G_FIXTURES.forEach(fx => {
+      const bp = core.buildBackgroundPrompt({ slideIndex: fx.slide, totalSlides: 7, imagePromptText: fx.imagePromptText, visualDirection: fx.visualDirection });
+      const remaining = FIVE.filter(w => bp.indexOf(w) !== -1);
+      if (remaining.length === 0) clean++;
+      assert(remaining.length === 0, 'T-S1. slide' + fx.slide + ' の final prompt に conflict 語なし（残: ' + JSON.stringify(remaining) + '）');
+    });
+    assert(clean === 3, 'T-S1. slide5/6/7 すべてで conflict 語 0（' + clean + '/3）');
+  }
+
+  caseHeader('PA-24 T-S2. slide5/6/7 の実 imagePrompt 全文で unsafe カテゴリ語 0（sanitized scene）');
+  {
+    PA22G_FIXTURES.forEach(fx => {
+      const san = bgSan.sanitizeBackgroundScene({ imagePromptText: fx.imagePromptText, visualDirection: fx.visualDirection });
+      const m = san.scene.match(UNSAFE_RE);
+      assert(m === null, 'T-S2. slide' + fx.slide + ' sanitized scene に unsafe カテゴリ語なし（検出: ' + (m ? m[0] : 'none') + '）');
+      // 参考: buildBackgroundPrompt 経由でも SAFE_SUFFIX の "no X" を除けば残らない
+      const bp = core.buildBackgroundPrompt({ slideIndex: fx.slide, totalSlides: 7, imagePromptText: fx.imagePromptText, visualDirection: fx.visualDirection });
+      const bpNoNeg = bp.replace(/no [a-z /-]+/gi, ' ');
+      assert(bpNoNeg.match(UNSAFE_RE) === null, 'T-S2. slide' + fx.slide + ' final prompt（no句除外）に unsafe 語なし');
+    });
+  }
+
+  caseHeader('PA-24 T-S3. safe replacement が期待表現へ変換される');
+  {
+    const r5 = bgSan.sanitizeBackgroundScene({ imagePromptText: '注意アイコン', visualDirection: '' });
+    assert(/gentle hand gesture near the face/.test(r5.scene), 'T-S3. 「注意アイコン」→ gentle hand gesture');
+    const r6 = bgSan.sanitizeBackgroundScene({ imagePromptText: 'チェックリスト風デザイン', visualDirection: '' });
+    assert(/clean lifestyle scene with generous negative space/.test(r6.scene), 'T-S3. 「チェックリスト風デザイン」→ clean lifestyle scene');
+    const r7 = bgSan.sanitizeBackgroundScene({ imagePromptText: '一覧表風レイアウト', visualDirection: '' });
+    assert(/minimal grouped skincare objects arranged naturally/.test(r7.scene), 'T-S3. 「一覧表風レイアウト」→ minimal grouped skincare objects');
+    assert(r5.sanitized === true && r5.replacementType === 'mapped', 'T-S3. metadata: sanitized=true / replacementType=mapped');
+  }
+
+  caseHeader('PA-24 T-S3b. ASCII/日本語 substring 誤爆なし（word boundary）');
+  {
+    // PA-25 review で発見: table→comfortable / UI→build,guide / drawing→withdrawing / 単漢字絵→絵になる の誤爆
+    const safe = [
+      'シリコン配合の下地',
+      'comfortable sustainable arrangement with soft light',
+      'a quick guide-free calm scene, fluid liquid highlight',
+      '絵になる清潔感のある洗面台',
+      'withdrawing hand gently from the jar',
+      'hybrid soft texture',
+    ];
+    let clean = 0;
+    safe.forEach(txt => {
+      const r = bgSan.sanitizeBackgroundScene({ imagePromptText: txt, visualDirection: '' });
+      const untouched = (r.scene === txt || r.matchedCategories.length === 0);
+      if (untouched) clean++;
+      assert(untouched, 'T-S3b. 安全語「' + txt.slice(0, 20) + '…」が誤爆されない（matched: ' + JSON.stringify(r.matchedCategories) + '）');
+    });
+    assert(clean === safe.length, 'T-S3b. 誤爆 0（' + clean + '/' + safe.length + '）');
+    // 一方、単語としての "table" / "grid" は正しく置換される（word として出現した場合）
+    const r2 = bgSan.sanitizeBackgroundScene({ imagePromptText: 'a soft table setting', visualDirection: '' });
+    assert(r2.matchedCategories.indexOf('table') !== -1, 'T-S3b. 単語 "table" は正しく検出される');
+  }
+
+  caseHeader('PA-24 T-S4. 無害な日本語（タオル / 洗面台 / 化粧水）は保持される');
+  {
+    const r = bgSan.sanitizeBackgroundScene({ imagePromptText: '清潔感のある洗面台、タオル、化粧水と乳液のボトル', visualDirection: '' });
+    assert(r.scene.indexOf('洗面台') !== -1, 'T-S4. 洗面台 保持');
+    assert(r.scene.indexOf('タオル') !== -1, 'T-S4. タオル 保持（既存 :205 契約）');
+    assert(r.scene.indexOf('化粧水') !== -1, 'T-S4. 化粧水 保持');
+    assert(r.sanitized === false && r.replacementType === 'none', 'T-S4. conflict 語なし → sanitized=false');
+    // buildBackgroundPrompt 経由でも保持
+    const bp = core.buildBackgroundPrompt({ slideIndex: 3, totalSlides: 7, imagePromptText: '化粧水・乳液のボトルを並べた', visualDirection: '落ち着いたトーンのイメージ' });
+    assert(bp.indexOf('化粧水') !== -1 || /moisturizer|skincare objects/i.test(bp), 'T-S4. slide固有 subject が保持される');
+  }
+
+  caseHeader('PA-24 T-S5. 変換後 unsafe 語残留 → canonical fallback');
+  {
+    // CATEGORY_REPLACEMENT の結果に別カテゴリ語が含まれないことは実装で保証されるが、
+    // 想定外入力（同義の連続）で残留した場合の fallback 挙動を検証する。
+    const r = bgSan.sanitizeBackgroundScene({ imagePromptText: 'icon icon icon dashboard button label diagram chart flowchart infographic timeline', visualDirection: 'checklist checkbox table grid frame panel' });
+    assert(!UNSAFE_RE.test(r.scene), 'T-S5. 大量 unsafe 語入力でも final scene に unsafe 語なし');
+    assert(r.sanitized === true, 'T-S5. sanitized=true');
+  }
+
+  caseHeader('PA-24 T-S6. 空文字 / 異常入力 → canonical fallback');
+  {
+    const rEmpty = bgSan.sanitizeBackgroundScene({ imagePromptText: '', visualDirection: '' });
+    assert(rEmpty.scene === bgSan.CANONICAL_FALLBACK, 'T-S6. 空文字 → CANONICAL_FALLBACK');
+    assert(rEmpty.replacementType === 'fallback', 'T-S6. replacementType=fallback');
+    const rLong = bgSan.sanitizeBackgroundScene({ imagePromptText: 'あ'.repeat(2000), visualDirection: '' });
+    assert(rLong.scene === bgSan.CANONICAL_FALLBACK, 'T-S6. 異常長 → CANONICAL_FALLBACK');
+    const rNull = bgSan.sanitizeBackgroundScene({});
+    assert(rNull.scene === bgSan.CANONICAL_FALLBACK, 'T-S6. undefined 入力 → CANONICAL_FALLBACK');
+  }
+
+  caseHeader('PA-24 T-S7. raw 本文を metadata / ledger payload へ載せない');
+  {
+    const r = bgSan.sanitizeBackgroundScene({ imagePromptText: '秘密の洗面台メモ 注意アイコン', visualDirection: '' });
+    const metaKeys = Object.keys(r).sort().join(',');
+    assert(metaKeys === 'matchedCategories,replacementType,sanitized,scene', 'T-S7. 戻り値は scene + metadata のみ（' + metaKeys + '）');
+    assert(JSON.stringify(r.matchedCategories).indexOf('秘密の洗面台メモ') === -1, 'T-S7. matchedCategories に raw 本文なし');
+    // 既存 :1717（ledger payload に bgPrompt / Instagram carousel が出ない）は別テストで担保済み。
+    const sanSrc = fs.readFileSync(path.join(__dirname, 'shared', 'carouselBackgroundSanitizer.js'), 'utf8');
+    assert(!/console\.(log|warn|error|info|debug)\s*\(/.test(sanSrc), 'T-S7. sanitizer は console 出力を持たない');
+  }
+
+  caseHeader('PA-24 T-V1. 7 slides 全ての final prompt に同一 Visual Direction が含まれる');
+  {
+    const dir = bgVd.getVisualDirection();
+    let hit = 0;
+    for (let s = 1; s <= 7; s++) {
+      const bp = core.buildBackgroundPrompt({ slideIndex: s, totalSlides: 7, imagePromptText: 'テスト' + s, visualDirection: '' });
+      if (bp.indexOf(dir) !== -1) hit++;
+      assert(bp.indexOf(dir) !== -1, 'T-V1. slide' + s + ' に Visual Direction 全文が含まれる');
+      assert(bp.indexOf(bgVd.BACKGROUND_ONLY_CONTRACT) === 0, 'T-V1. slide' + s + ' の先頭は background-only contract');
+    }
+    assert(hit === 7, 'T-V1. 7/7 slides に統一 Visual Direction（' + hit + '/7）');
+  }
+
+  caseHeader('PA-24 T-V2. photo-only 契約時、medium 相反語が sanitized scene に残らない');
+  {
+    const san = bgSan.sanitizeBackgroundScene({
+      imagePromptText: 'やさしい表情の人物イラスト、水彩画タッチ、手描き風、キャラクターイラスト',
+      visualDirection: 'watercolor illustration, cartoon character',
+    });
+    const bad = /イラスト|水彩|手描き|キャラクター|watercolor|cartoon|illustration/i.test(san.scene);
+    assert(!bad, 'T-V2. sanitized scene に medium 相反語なし（scene: ' + san.scene.slice(0, 80) + '…）');
+    assert(san.matchedCategories.indexOf('medium') !== -1, 'T-V2. matchedCategories に medium が記録される');
+    const bp = core.buildBackgroundPrompt({ slideIndex: 5, totalSlides: 7, imagePromptText: '人物イラスト、水彩画', visualDirection: '' });
+    assert(/soft editorial lifestyle photography/.test(bp), 'T-V2. photography direction は含まれる');
+  }
+
+  caseHeader('PA-24 T-V3. slide 固有の safe subject が保持される');
+  {
+    const bp2 = core.buildBackgroundPrompt({ slideIndex: 2, totalSlides: 7, imagePromptText: '泡で包むイメージ、手元のクローズアップ', visualDirection: '' });
+    assert(/泡|手元|hand|foam|skincare/i.test(bp2), 'T-V3. slide2 の subject（泡・手元）が反映される');
+    const bp3 = core.buildBackgroundPrompt({ slideIndex: 3, totalSlides: 7, imagePromptText: '化粧水・乳液のボトルを並べた', visualDirection: '' });
+    assert(/ボトル|化粧水|乳液|bottle|skincare objects/i.test(bp3), 'T-V3. slide3 の subject（ボトル）が反映される');
+  }
+
+  caseHeader('PA-24 T-V4. determinism（同一 draft → byte 一致）');
+  {
+    const mk = (s) => core.buildBackgroundPrompt({ slideIndex: s, totalSlides: 7, imagePromptText: PA22G_FIXTURES[0].imagePromptText, visualDirection: PA22G_FIXTURES[0].visualDirection });
+    for (let s = 1; s <= 7; s++) {
+      assert(mk(s) === mk(s), 'T-V4. slide' + s + ' 2回生成で byte 一致');
+    }
+    // sanitizer 単体も決定的
+    const r1 = bgSan.sanitizeBackgroundScene(PA22G_FIXTURES[1]);
+    const r2 = bgSan.sanitizeBackgroundScene(PA22G_FIXTURES[1]);
+    assert(JSON.stringify(r1) === JSON.stringify(r2), 'T-V4. sanitizer 単体も決定的');
+  }
+
+  caseHeader('PA-24 T-O1〜O4. Output Draft immutability');
+  {
+    const draft = JSON.parse(JSON.stringify(FIXTURE_DRAFT));
+    const beforeImg = JSON.stringify(draft.fields.imagePrompts);
+    const beforeSlides = JSON.stringify(draft.fields.slides);
+    const beforeAll = JSON.stringify(draft);
+
+    // buildBackgroundPrompt を各 slide 分呼んでも draft は不変
+    (draft.fields.slides || []).forEach((raw, i) => {
+      core.buildBackgroundPrompt({
+        slideIndex: i + 1, totalSlides: draft.fields.slides.length,
+        imagePromptText: (draft.fields.imagePrompts || [])[i] || '',
+        visualDirection: '',
+      });
+    });
+    assert(JSON.stringify(draft.fields.imagePrompts) === beforeImg, 'T-O1. fields.imagePrompts 不変');
+    assert(JSON.stringify(draft.fields.slides) === beforeSlides, 'T-O2. fields.slides / headline / body 不変');
+    assert(JSON.stringify(draft) === beforeAll, 'T-O3. draft 全体 不変（canonical 相当）');
+
+    // sanitizer は入力オブジェクトを mutate しない
+    const inp = { imagePromptText: '注意アイコン', visualDirection: 'チェックリスト' };
+    const inpBefore = JSON.stringify(inp);
+    bgSan.sanitizeBackgroundScene(inp);
+    assert(JSON.stringify(inp) === inpBefore, 'T-O4. sanitizer は入力を mutate しない');
+  }
+
+  caseHeader('PA-24 既存契約の維持（SAFE_SUFFIX / looksSafeBackgroundPrompt / injection）');
+  {
+    const bp = core.buildBackgroundPrompt({ slideIndex: 6, totalSlides: 7, imagePromptText: PA22G_FIXTURES[1].imagePromptText, visualDirection: PA22G_FIXTURES[1].visualDirection });
+    assert(/no text/i.test(bp) && /no logos/i.test(bp) && /no before and after/i.test(bp) && /no icons/i.test(bp), 'PA-24. SAFE_SUFFIX 19句を維持');
+    assert(/4:5 ratio, vertical, 1080x1350/.test(bp), 'PA-24. 4:5/1080x1350 明示を維持');
+    assert(client.looksSafeBackgroundPrompt(bp) === true, 'PA-24. looksSafeBackgroundPrompt を通過');
+    assert(bp.indexOf(FIXTURE_DRAFT.fields.cta) === -1, 'PA-24. CTA 全文が背景 prompt に混入しない');
+    const bpInj = core.buildBackgroundPrompt({ slideIndex: 2, totalSlides: 7, imagePromptText: 'ignore previous {x}', visualDirection: 'system override タオル' });
+    assert(!/\bignore\b|\boverride\b|\bsystem\b/i.test(bpInj) && bpInj.indexOf('タオル') !== -1, 'PA-24. injection 除去 かつ タオル 保持（既存 :205 契約）');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }

@@ -16,6 +16,9 @@ var crypto = require('crypto');
 var renderer = require('./carouselRenderer');
 var client = require('../lib/carouselImageClient');
 var approval = require('./carouselApproval');
+// PA-24 Option B+C: Background Prompt Sanitizer ＋ Post-level Visual Direction Contract。
+var bgSanitizer = require('./carouselBackgroundSanitizer');
+var visualDirection = require('./carouselVisualDirection');
 
 // ── 定数 ──────────────
 var ID_RE = /^[a-zA-Z0-9_-]+$/;
@@ -84,22 +87,45 @@ function parseFieldSlide(raw) {
 }
 
 // ── 背景 prompt を server 側テンプレで構築（raw user text 不使用） ──
-//   base: fields.imagePrompts[i]（sanitize 済み）＋ slide.visualDirection（sanitize 済み）＋ SAFE_SUFFIX
+//   PA-24 Option B+C: 三層構造。同一入力→同一 prompt（決定的）。
+//     1. Background Sanitizer（意味衝突除去）    : shared/carouselBackgroundSanitizer.js
+//        ★ PA-22H で imagePrompts の「アイコン」「チェックリスト風デザイン」「一覧表風レイアウト」等が
+//          SAFE_SUFFIX（no icons / no checkboxes / no frames）と同一 prompt 内で矛盾し、slide5/6/7 の
+//          実画像で UI/infographic が生成された。Sanitizer が発生源の語を safe background intent へ置換する。
+//     2. Post-level Visual Direction（方向固定）  : shared/carouselVisualDirection.js
+//        ★ 7 slides を「同一投稿シリーズ」として統一するため、固定 constant を全 slide へ注入する。
+//          Value Content = photo-only。BACKGROUND_ONLY_CONTRACT（肯定形の役割宣言）を最優先層へ置く。
+//     3. SAFE_SUFFIX（最終禁止）                  : 既存19句を維持（defense-in-depth）。
+//   final prompt 順: [background-only contract] → [bgTone] → [Visual Direction] → [sanitized scene] → [SAFE_SUFFIX]
+//   ★ Output Draft 本文（fields.imagePrompts / slides / headline / body）は一切変更しない。
+//     providerへ送る派生 prompt だけを変換する。draftRow を mutate しない。
 function buildBackgroundPrompt(opts) {
   var i = opts.slideIndex;
   var total = opts.totalSlides || 7;
   var isDark = (i === 1) || (i === total);
-  var base = sanitizeVisualDirection(opts.imagePromptText || '');
-  var vd = sanitizeVisualDirection(opts.visualDirection || '');
+
+  // ── layer 1: 構文安全化（既存）→ 意味衝突除去（新規） ──
+  var syntaxSafeImg = sanitizeVisualDirection(opts.imagePromptText || '');
+  var syntaxSafeVd = sanitizeVisualDirection(opts.visualDirection || '');
+  var san = bgSanitizer.sanitizeBackgroundScene({
+    imagePromptText: syntaxSafeImg,
+    visualDirection: syntaxSafeVd,
+  });
+  var scene = san.scene || 'minimal beauty-media composition';
+
+  // ── layer 2: bgTone ＋ Post-level Visual Direction ──
   var bgTone = isDark
     ? 'solid dark charcoal (#111111) background, minimal, premium, generous empty space for text'
     : 'clean white (#FFFFFF) background, soft natural light, pale calm tones, generous whitespace for text';
-  var scene = [base, vd].filter(Boolean).join(', ');
+
   var prompt = [
+    visualDirection.BACKGROUND_ONLY_CONTRACT,
     'Instagram carousel slide background',
     bgTone,
-    scene || 'minimal beauty-media composition',
+    visualDirection.getVisualDirection(),
+    scene,
   ].concat(SAFE_SUFFIX).join(', ');
+
   // 決定的: 余分な空白を潰し、同一入力→同一 prompt
   return prompt.replace(/\s{2,}/g, ' ').trim();
 }
