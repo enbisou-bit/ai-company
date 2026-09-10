@@ -6,7 +6,44 @@
 
 ---
 
-## 【現在地・最優先】Carousel Background Generation Control（Option B+C）Local Implementation Complete ＋ Decision 118（2026-09-10・PA-22F〜PA-25）
+## 【現在地・最優先】Carousel Background Control（Option B+C）正式Release Complete ＋ Release Docs Sync（2026-09-10・PA-26〜PA-28・Tag `v1.01-carousel-image-production-background-control`）
+
+- **現在Version**：**Version1 Final Complete ／ Version1.1 Connected AI Company 開発中**（Version変更なし）
+- **現在Phase**：**Phase54 Complete維持 ／ Phase55 未着手**
+
+**いま完了しているところ**：PA-26 Release Precheck PASS（判定A）→ PA-27 `git push origin main`（`e2288ea..9239e83`・fast-forward・非force）→ Render Auto-Deploy `9239e83` Live（ユーザー Dashboard 実測・service `ai-company`・Deploy succeeded・Auto-Deploy・2026-09-10 14:48:37 JST）→ production read-only smoke PASS → annotated tag `v1.01-carousel-image-production-background-control`（tag object `352c0be…` → target commit `9239e839a2eb6006fa8e210dca75fd5b125f2320`）作成・`git push origin` 済み・remote verification PASS → PA-28 で本 Release を公式 docs（01/02/06/CHANGELOG ＋ 04ヘッダ）へ同期（docs-only）。**HEAD==origin/main==`9239e839a2eb6006fa8e210dca75fd5b125f2320`・ahead0/behind0。**
+
+**Runtime 安全状態（PA-26〜PA-28 で不変）**：`Source Gate=true`・`Runtime Env Gate=unset`・`Effective REAL=false`。`CAROUSEL_IMAGE_REAL_ENABLED` 未設定。approval 0・generate POST 0・Image API 0・paid generation 0・DB write 0・Storage write 0・Publishing 0・Instagram 0・EER 0。
+
+**この工程で確定したこと**：
+- Carousel Background Control（Decision 118）は `main` へ正式 push 済み（`9239e83`）・Render production で Live・annotated tag 済み・remote verification PASS。
+- Decision 最大番号 **118 維持**（Decision 119 追加なし・Decision 118 本文無変更・Decision 117／112 維持）。
+- Protected（`cost-logs.json` `005d632c…`／`data/conversations/_meta.json` `b1f27d5f…`）は開始前から dirty の既知 Protected・PA-26〜PA-28 で内容変更なし。
+- **正確な状態**：Option B+C implementation complete ／ local safe tests PASS（8 suites・1,204 assertions・0 fail）／ **production release complete** ／ **production real-image validation pending**。
+
+**過剰主張しないこと**：「実画像で B+C PASS」「F4 完全解決」「UI/icon 生成完全防止」「Visual Consistency 完全解決」「Image Review PASS」「Publishing Ready」「Instagram 投稿済み」「monetization started」は未達。正確には "Option B+C production release complete / real-image validation pending"。
+
+**まだやっていないこと（次チャットの最優先）**：**Third Controlled Paid Generation Preparation（未着手）**。正確な順序 —
+1. new caseId
+2. new Output Draft
+3. new outputId
+4. approved Value Content 本文の content-preserving copy
+5. new Mobile Approval
+6. Runtime Gate 一時 ON
+7. new carousel approval
+8. new nonce
+9. quality=low
+10. 7 slides
+11. generate POST exactly 1
+12. retry 0
+13. Runtime Gate 再 OFF
+14. Human Image Review
+
+Decision 112 により completed 済み `out_1788413020275`／`out_1788992344384` は再利用しない。**今回（PA-28）は上記準備・生成を一切実行していない。**
+
+---
+
+## 【1つ前の現在地】Carousel Background Generation Control（Option B+C）Local Implementation Complete ＋ Decision 118（2026-09-10・PA-22F〜PA-25）
 
 **いま完了しているところ**：PA-24 で Option B+C を4ファイル限定実装 → PA-25 で code review（ASCII substring 誤爆bug ＋ raw control byte を是正）→ Code commit `8ff9f8d`（`feat: harden carousel background visual consistency`）→ Decision 118 正式化 ＋ docs 同期 → Docs commit（本工程）。**未push**（origin/main=`e2288eab…`・local main のみ ahead 2）。
 

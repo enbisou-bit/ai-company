@@ -5,6 +5,20 @@
 
 ---
 
+## Production Activation Step PA-26〜PA-28 — Carousel Background Control（Option B+C）正式Release ＋ Release Docs Sync（2026-09-10・Decision118・Tag `v1.01-carousel-image-production-background-control`）
+
+> 記録日: 2026-09-10。**Phase54 Complete維持・Phase55未着手**。**状態区分：Production Release Complete ／ production real-image validation pending。** `Source Gate=true`・`Runtime Env Gate=unset`・`Effective REAL=false`・approval 0・generate POST 0・Image API 0・paid generation 0・DB write 0・Storage write 0・Publishing 0・Instagram 0・EER 0 を維持。Decision 最大番号 **118 維持**（Decision 119 追加なし・Decision 118 本文無変更）。Version／Phase／Roadmap 変更なし。
+
+- **PA-26 Release Precheck（read-only）**：fast-forward 可能・push 対象 exactly 2 commits（`8ff9f8d` feat ＋ `9239e83` docs）／8 unique paths・Protected 0件・`git diff --check` clean・Node `v24.16.0`（lookbehind 対応）・新規モジュール require 解決・static exposure 影響なし（新規 `shared/` 2ファイルは frozen allowlist 非該当）・package 依存追加なし・DB migration 不要・新規 env 不要 → 判定 **A（Ready for explicit push authorization）**。
+- **PA-27 Release**：`git push origin main` 実行（`e2288ea..9239e83`・非force・fast-forward）→ push後 HEAD==origin/main==`9239e839a2eb6006fa8e210dca75fd5b125f2320`・ahead0/behind0。Render Auto-Deploy `9239e83` Live をユーザーが Dashboard で実測確認（service `ai-company`・Deploy succeeded・Trigger Auto-Deploy・Deployed 2026-09-10 14:48:37 JST・Manual Deploy／Environment変更なし）。production read-only smoke PASS（`GET /`=200・`/api/approvals`=200・`/api/carousel-image/assets`=401＝route mounted・`/shared/carouselImageCore.js`／`carouselBackgroundSanitizer.js`／`carouselVisualDirection.js`／`/server.js`／`/.env.local`／`/docs/04DECISIONS.md`＝404＝server-only 維持・`/shared/instagramAccountDesign.js`=200＝公開 allowlist 無傷・startup error なし）。
+- **PA-27 Tag**：annotated tag `v1.01-carousel-image-production-background-control` を `git tag -a`（tagger `enbisou-bit`・message `Carousel background generation control boundary`・tag object `352c0be75a19ca7ae719e47b70dedcf9e829b789` → target commit `9239e839a2eb6006fa8e210dca75fd5b125f2320`）で作成 → `git push origin <tag>`（`[new tag]`）→ remote verification PASS（`refs/tags/…` = `352c0be…`・`^{}` deref = `9239e839…`）。既存 tag の再作成・付け替えなし。
+- **PA-28 Release Docs Sync（本工程・docs-only）**：PA-27 Release 結果を `docs/01PROJECT_STATUS.md`・`docs/02PHASE_PROGRESS.md`・`docs/06HANDOVER_NEXT_CHAT.md`・`docs/CHANGELOG.md` へ同期。`docs/04DECISIONS.md` はヘッダ（現在地 reference）のみ最小同期・Decision 118 本文は無変更。過去工程（PA-22F〜PA-25 の未push・`e2288eab…` 現在地等）の記述は履歴として保持し、現在地のみ前進。コード変更 0・server.js 変更 0・新 Decision 0・DB／Storage／Runtime Env 変更 0。
+- **Protected**：`cost-logs.json`（`005d632cd528b2c39e0ec9801c4b8fc8`）／`data/conversations/_meta.json`（`b1f27d5f863f8fe20edc686157fbc992`）は開始前から dirty の既知 Protected。PA-26〜PA-28 による内容変更なし・stage／commit／delete なし。
+- **正確な状態**：Option B+C implementation complete ／ local safe tests PASS ／ **production release complete** ／ **production real-image validation pending**（3回目の実画像 trial 未実施）。「実画像で PASS」「F4 完全解決」「UI/icon 生成完全防止」「Visual Consistency 完全解決」「Image Review PASS」「Publishing Ready」「Instagram 投稿済み」「monetization started」は記録しない。
+- **次工程**：**Third Controlled Paid Generation Preparation（未着手）**。Decision 112 により completed 済み `out_1788413020275`／`out_1788992344384` は再利用しない。
+
+---
+
 ## Production Activation Step PA-22F〜PA-25 — Carousel Background Generation Control（Option B+C）実装 ＋ Decision 118 正式採用（2026-09-10・Decision118）
 
 > 記録日: 2026-09-10。**Phase54 Complete維持・Phase55未着手**。**状態区分：Local Implementation Complete（Code commit `8ff9f8d` ＋ Docs commit 本工程・未push・origin/main=`e2288eab…`のまま・local mainのみahead 2）**。`Source Gate=true`・`Runtime Env Gate=unset`・`Effective REAL=false`・Image API call 0・paid generation 0・DB write 0・Storage write 0・Publishing 0を維持。

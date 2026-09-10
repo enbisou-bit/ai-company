@@ -4,6 +4,21 @@
 
 ---
 
+## Carousel Image Production ─ Background Generation Control（Option B+C）正式リリース（2026-09-10・Decision118・Tag `v1.01-carousel-image-production-background-control`）
+
+- **背景（PA-22G Human Image Review FAIL）**：2回目の controlled paid generation（`out_1788992344384`・quality:low・7 slides）で技術パイプラインは成功（HTTP 200・`generated:7`・`published:false`）したが、人間 Image Review が **B — FAIL**（slide 5/6/7 の背景に UI／icon／checklist／table 様の情報構造・7枚の Visual Consistency 不足）。**この失敗例 assets（`out_1788992344384`／`out_1788413020275`）は Decision 112 completed lock により無変更で保持。**
+- **Root Cause（PA-22H・read-only）**：肯定的な日本語 `fields.imagePrompts`（「注意アイコン」「チェックリスト風デザイン」「一覧表風レイアウト」等）が同一 prompt 内の SAFE_SUFFIX（否定制約）と意味衝突。加えて 7 slides が独立生成で投稿全体の視覚方向を共有する層が不在。F1/F2/F3 は実画像 PASS・FAIL は F4（SAFE_SUFFIX 単独）のみ。
+- **Option B+C 設計（PA-23）／実装（PA-24）**：Background Prompt Sanitizer（Option C）＋ Post-level Visual Direction Contract（Option B）＋ SAFE_SUFFIX の三層 deterministic prompt control。4ファイル限定：`shared/carouselBackgroundSanitizer.js`（新規）／`shared/carouselVisualDirection.js`（新規）／`shared/carouselImageCore.js` の `buildBackgroundPrompt` 三層化／`carouselImageProduction.test.js`。**Output Draft 本文（headline／body／caption／cta／hashtags／imagePrompts／slides）は不変・`draftRow` を mutate しない。**
+- **PA-25 code review 修正**：ASCII substring 誤爆bug（`table`→"comfortable"・`UI`→"guide"/"build"・`drawing`→"withdrawing"・単漢字「絵」→「絵になる」）を boundary-aware matching（`_termRegex`：ASCII 語のみ `(?<![A-Za-z0-9])…(?![A-Za-z0-9])`）で是正。raw control byte 除去。
+- **Code commit `8ff9f8d`**（`feat: harden carousel background visual consistency`・4 files・+604/-5）。**Decision 118**「Carousel Background Generation Control Boundary」正式採用（Decision 最大 117→118・衝突なし・本文は `docs/04DECISIONS.md` 参照）。
+- **ローカル安全テスト**：8 safe suites **1,204 assertions / 0 fail**（`carouselImageProduction` 593 含む）。F1/F2/F3 回帰 PASS。**production real-image validation pending**（3回目の実画像 trial 未実施）。
+- **Release（PA-26〜PA-27）**：Release Precheck 判定 A → `git push origin main`（`e2288ea..9239e83`・fast-forward）→ **Render Auto-Deploy `9239e83` Live**（ユーザー Dashboard 実測・service `ai-company`・Deploy succeeded・2026-09-10 14:48:37 JST）→ production read-only smoke **PASS**（`GET /`=200・`/api/approvals`=200・Carousel route mounted=401・server-only ファイル 404・公開 allowlist 無傷・startup error なし）→ Annotated Tag `v1.01-carousel-image-production-background-control`（target `9239e839a2eb6006fa8e210dca75fd5b125f2320`）作成・push・remote verification PASS。
+- **REAL_ENABLED=false 維持**：Source Gate=true（無変更）・Runtime Env Gate=unset（`CAROUSEL_IMAGE_REAL_ENABLED` 未設定）・Effective REAL=false。本リリース後も approval 0・generate POST 0・Image API 0・paid generation 0・DB write 0・Storage write 0・**Publishing 0・Instagram 投稿 0**。
+- **正式Release完了 ≠ 実画像品質検証完了。** 本 entry は「Background Control が本番へ配信され、安全状態が維持されている」ことを意味し、実画像での品質 PASS・Image Review PASS・Publishing Ready・monetization 開始は含まない。
+
+---
+
+
 ## Carousel Image Production ─ Deterministic Overlay Fix（Option F）正式リリース（2026-09-10・Decision117・Tag `v1.01-carousel-image-production-option-f`）
 
 - **First Controlled Paid Generation（PA-15B-2）**：本番で初のCarousel実課金生成を1回実施（`caseId:case-value-1788410623`／`outputId:out_1788413020275`／quality:low／7 slides／estimatedCostJpy ¥45.2816）。技術的パイプラインは成功（HTTP 200・`generated:7`・`published:false`維持）したが、目視確認でJapanese overlayの文字切れ・文字欠け・白文字×明背景の視認性不足を発見し、**Publishingを見送った**。
