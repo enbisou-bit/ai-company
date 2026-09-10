@@ -41,7 +41,14 @@ var CONTENT_VALUE_STATUS_VALUES = Object.freeze(['complete', 'almost_ready', 'ne
 // semantic signal（Writer/Reviewer 由来。欠落は unclear 扱い＝FAIL）
 var REVIEWER_NOVELTY_VALUES = Object.freeze(['novel', 'restatement', 'unclear']);
 
-var CONTENT_TYPES = Object.freeze(['value', 'bridge', 'product']);
+// CV-4b: 投稿種別。★ 'unknown' は「未宣言 / 列挙外」を表す fail-closed 用の値。
+//   ★ 'value' への暗黙 fallback は廃止した（CV-4a Correction）。
+//     未宣言のまま 'value' へ倒すと、contentType を送らないだけで Product 用の
+//     productClaimGate（APFR 裏付け必須）を回避できてしまうため。
+//   ★ 投稿種別の唯一の SoT は output_drafts.content_type（canonical）。
+//     fields.intelligenceContext.product.productIdentifier は **分類に使わない**
+//     （case で商品採用済みを示すのみで、その投稿が Product Content かは示さないため）。
+var CONTENT_TYPES = Object.freeze(['value', 'bridge', 'product', 'unknown']);
 
 // ══════════════════════════════════════════════════════════════
 // 閾値（本 Core 固有。Evidence 側の閾値は contentEvidence.js の既存値を使用する）
@@ -252,10 +259,11 @@ function evaluateContentValue(draft, options) {
   var opts = _isPlainObject(options) ? options : {};
   var res = {
     version: CONTENT_VALUE_VERSION,
-    contentType: CONTENT_TYPES.indexOf(opts.contentType) !== -1 ? opts.contentType : 'value',
+    // 未指定 / null / 列挙外 → 'unknown'（'value' へは倒さない）
+    contentType: CONTENT_TYPES.indexOf(opts.contentType) !== -1 ? opts.contentType : 'unknown',
     status: 'insufficient',
     evidenceStatus: 'insufficient',
-    gates: { evidenceGrounding: false, nonGeneric: false, productClaim: true },
+    gates: { contentTypeResolved: false, evidenceGrounding: false, nonGeneric: false, productClaim: true },
     score: 0,
     axes: {
       specificity: { pass: false, score: 0, detail: {} },
@@ -265,6 +273,7 @@ function evaluateContentValue(draft, options) {
     },
     claims: [],
     evidence: null,
+    productContext: null,   // contentType==='product' のときのみ設定（整合性確認の記録・分類には使わない）
     blockingReasons: [],
     recommendations: [],
     nextActions: [],
@@ -288,6 +297,16 @@ function evaluateContentValue(draft, options) {
       res.blockingReasons.push('no_slides');
       res.nextActions.push('スライド本文が空です。Output Draft を確認してください');
       return res;
+    }
+
+    // ── 投稿種別 gate（CV-4b）: 未解決なら以降を評価しても status は insufficient のまま ──
+    //   ★ contentType の SoT は canonical な output_drafts.content_type のみ。
+    //     productIdentifier 等から推測して分類しない（CV-4a Correction）。
+    res.gates.contentTypeResolved = (res.contentType !== 'unknown');
+    if (!res.gates.contentTypeResolved) {
+      res.blockingReasons.push('content_type_unresolved');
+      res.recommendations.push('投稿種別（value / bridge / product）が未宣言です。宣言されるまで Content Value は insufficient のままです');
+      res.nextActions.push('成果物の投稿種別を明示宣言してください');
     }
 
     // ── Evidence 集計（CV-3a を再利用・重複実装しない） ──
@@ -466,8 +485,23 @@ function evaluateContentValue(draft, options) {
 
     // ══════════════════════════════════════════════════════════
     // Product Content: productClaimGate（APFR classification='fact' のみ参照・最小）
+    //   ★ contentType === 'product' のときだけ評価する。
+    //     value / bridge では productIdentifier があっても APFR を一切参照しない
+    //     （Product へ自動昇格させない・APFR 誤注入の経路を作らない）。
     // ══════════════════════════════════════════════════════════
     if (res.contentType === 'product') {
+      // Product Context 整合性確認（★分類ではない）:
+      //   product と確定した投稿に商品の宛先（productIdentifier）が無ければ、
+      //   商品事実の帰属先が特定できないため評価不能として fail-closed する。
+      var _ic = _isPlainObject(fields.intelligenceContext) ? fields.intelligenceContext : null;
+      var _prod = _ic && _isPlainObject(_ic.product) ? _ic.product : null;
+      var _prodId = _prod && _isNonEmptyString(_prod.productIdentifier) ? _prod.productIdentifier : null;
+      res.productContext = { productIdentifier: _prodId, resolved: _prodId !== null };
+      if (_prodId === null) {
+        res.gates.productClaim = false;
+        res.blockingReasons.push('product_context_missing');
+        res.recommendations.push('Product Content ですが商品（productIdentifier）が特定できません。商品を採用してから再評価してください');
+      }
       var facts = Array.isArray(opts.apfrFacts) ? opts.apfrFacts : [];
       var productClaims = res.claims.filter(function (c) { return c.claimScope === 'product'; });
       var unbacked = 0;
@@ -483,7 +517,8 @@ function evaluateContentValue(draft, options) {
         }
         if (!ok) unbacked++;
       }
-      res.gates.productClaim = (unbacked === 0);
+      // product_context_missing で既に false のときは false のまま（AND で畳む）
+      res.gates.productClaim = (res.gates.productClaim === true) && (unbacked === 0);
       if (unbacked > 0) res.blockingReasons.push('product_claim_not_backed_by_apfr_fact:' + unbacked);
     }
 
@@ -498,7 +533,7 @@ function evaluateContentValue(draft, options) {
     // ══════════════════════════════════════════════════════════
     // status 決定（既存語彙のみ・gate が false なら昇格させない）
     // ══════════════════════════════════════════════════════════
-    if (!res.gates.evidenceGrounding || !res.gates.nonGeneric || !res.gates.productClaim) {
+    if (!res.gates.contentTypeResolved || !res.gates.evidenceGrounding || !res.gates.nonGeneric || !res.gates.productClaim) {
       res.status = 'insufficient';
     } else if (ev.status === 'insufficient') {
       res.status = 'insufficient';

@@ -234,12 +234,60 @@ CREATE TABLE IF NOT EXISTS output_drafts (
   schema_version  TEXT,
   detection       JSONB,
   review_state    JSONB,          -- Phase54-2f: Mobile Review状態（statusBySlide/commentsBySlide/revisionTargetBySlide/approved）を成果物単位で永続化。nullable・既存行はNULL
+  content_type    TEXT,           -- CV-4b: 投稿種別の唯一のSoT（'value'|'bridge'|'product'）。未宣言はNULL（読み取り側が'unknown'と解釈）
+  content_value   JSONB,          -- CV-4b: server-side再計算したContent Value Quality結果。client供給値は保存しない
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   built_at        TIMESTAMPTZ
 );
 -- Phase54-2f: 既存DBへは以下のALTERで review_state を追加（非破壊・nullable・既存列/データ変更なし・既存行はNULL）
 --   ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS review_state JSONB;
+
+-- ══════════════════════════════════════════════════════════════
+-- CV-4b Migration: Content Type SoT ＋ Content Value 永続化（Evidence-Based Content Value Quality）
+--
+--   ★ 責務分離（第13条・状態軸分離）:
+--       type            = 成果物の**形式**（instagram_carousel 等）
+--       content_type    = 投稿の**種別**（value / bridge / product）★本列が唯一のSoT
+--       package_quality = 完成度（フィールドが揃っているか）
+--       quality         = Reviewer助言スコア
+--       content_value   = 情報価値（Evidence Grounding ＋ Content Value）
+--     これらは互いに上書き・混入しない。content_value を package_quality / fields /
+--     quality / review_state へ入れてはならない。
+--
+--   ★ content_type は fields の外側へ置く（成果物**本文**へ分類メタを混入させない）。
+--     content-preserving copy（本文8キーのJSON完全一致比較）の判定面を汚さないため。
+--
+--   ★ productIdentifier（fields.intelligenceContext.product）は **分類に使わない**。
+--     case で商品採用済みであることを示すのみで、その投稿が Product Content かは示さない。
+--     content_type='product' 確定後の Product Context 整合性確認にのみ用いる。
+--
+--   ★ 未宣言は NULL のまま保持する（'unknown' 文字列をDBへ書かない）。
+--     読み取り側（shared/contentValueQuality.js）が NULL → 'unknown' と解釈し fail-closed する。
+--
+--   既存DBへは以下のALTERで追加（非破壊・nullable・既存列/データ変更なし・既存行はNULL・冪等）:
+--     ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_type  TEXT;
+--     ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_value JSONB;
+-- ══════════════════════════════════════════════════════════════
+ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_type  TEXT;
+ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_value JSONB;
+
+-- content_type の許容値をDBレベルでも制約する（defense in depth）。
+--   ADD CONSTRAINT には IF NOT EXISTS が無いため、既存RLSポリシーと同じ DO ブロックで冪等化する。
+--   既存行は全て NULL のため、この制約は既存データに違反しない（NOT VALID 不要）。
+--   ★ 'unknown' は許容値に含めない（未解決は NULL で表現する契約のため）。
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'output_drafts_content_type_chk'
+      AND conrelid = 'public.output_drafts'::regclass
+  ) THEN
+    ALTER TABLE output_drafts
+      ADD CONSTRAINT output_drafts_content_type_chk
+      CHECK (content_type IS NULL OR content_type IN ('value', 'bridge', 'product'));
+  END IF;
+END $$;
 
 -- 検索用index（case_id 検索／案件別・最新1件取得 updated_at DESC）。IF NOT EXISTS で再実行安全。
 CREATE INDEX IF NOT EXISTS idx_output_drafts_case_id            ON output_drafts (case_id);

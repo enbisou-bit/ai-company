@@ -361,6 +361,8 @@ function draftOf(slides, extra) {
       { claimId: 'clm_cancel', text: '10日前までなら解約できます', claimScope: 'product', apfrFactId: 'apf_cancel' },
     ];
     const evi = buildEvidence(['clm_price', 'clm_cancel']);
+    // CV-4b: Product Content には productIdentifier（商品の宛先）が必要。分類には使わない・整合性確認のみ。
+    const PRODUCT_CTX = { intelligenceContext: { product: { caseId: CASE, productIdentifier: 'PID-TEST-1', facts: [] } } };
     const factsOk = [
       { factId: 'apf_price', classification: 'fact', field: 'price', value: 1980 },
       { factId: 'apf_cancel', classification: 'fact', field: 'cancel', value: '10日前' },
@@ -370,24 +372,24 @@ function draftOf(slides, extra) {
       { factId: 'apf_cancel', classification: 'inference', field: 'cancel', value: '10日前' },
     ];
     const rOk = cvq.evaluateContentValue(
-      draftOf(productSlides, { contentClaims: claims, contentEvidence: evi }),
+      draftOf(productSlides, Object.assign({ contentClaims: claims, contentEvidence: evi }, PRODUCT_CTX)),
       { contentType: 'product', now: NOW, reviewerNovelty: 'novel', apfrFacts: factsOk });
     assert(rOk.gates.productClaim === true, '15a. APFR classification=fact なら productClaim gate PASS');
 
     const rBad = cvq.evaluateContentValue(
-      draftOf(productSlides, { contentClaims: claims, contentEvidence: evi }),
+      draftOf(productSlides, Object.assign({ contentClaims: claims, contentEvidence: evi }, PRODUCT_CTX)),
       { contentType: 'product', now: NOW, reviewerNovelty: 'novel', apfrFacts: factsBad });
     assert(rBad.gates.productClaim === false, '15b. prediction / inference では商品 claim を PASS させない');
     assert(rBad.status === 'insufficient', '15c. status=insufficient');
     assert(rBad.blockingReasons.some(function (b) { return b.indexOf('product_claim_not_backed_by_apfr_fact') === 0; }), '15d. blockingReasons に明示');
 
     const rNoFacts = cvq.evaluateContentValue(
-      draftOf(productSlides, { contentClaims: claims, contentEvidence: evi }),
+      draftOf(productSlides, Object.assign({ contentClaims: claims, contentEvidence: evi }, PRODUCT_CTX)),
       { contentType: 'product', now: NOW, reviewerNovelty: 'novel', apfrFacts: [] });
     assert(rNoFacts.gates.productClaim === false, '15e. APFR fact 無しでは商品 claim を PASS させない');
 
     const snapshot = JSON.stringify(factsOk);
-    cvq.evaluateContentValue(draftOf(productSlides, { contentClaims: claims, contentEvidence: evi }),
+    cvq.evaluateContentValue(draftOf(productSlides, Object.assign({ contentClaims: claims, contentEvidence: evi }, PRODUCT_CTX)),
       { contentType: 'product', now: NOW, reviewerNovelty: 'novel', apfrFacts: factsOk });
     assert(JSON.stringify(factsOk) === snapshot, '15f. APFR facts を書き換えない（非破壊）');
   }
@@ -418,8 +420,11 @@ function draftOf(slides, extra) {
     const rGarbage = cvq.evaluateContentValue(
       draftOf(REAL_SLIDES, { contentEvidence: [null, 1, 'x'], contentClaims: [null, {}] }), { now: NOW });
     assert(rGarbage.status === 'insufficient', '17f. 不正要素混在でも例外なし・insufficient');
+    // CV-4b: 'value' への暗黙 fallback は廃止。未知 contentType は 'unknown' へ倒れ fail-closed。
     const rBadType = cvq.evaluateContentValue(draftOf(GOOD_SLIDES), { contentType: 'unknown_type', now: NOW });
-    assert(rBadType.contentType === 'value', '17g. 未知 contentType は既定 value へ（例外なし）');
+    assert(rBadType.contentType === 'unknown', '17g. 未知 contentType は unknown へ（value へ倒さない）: ' + rBadType.contentType);
+    assert(rBadType.gates.contentTypeResolved === false, '17g-2. gates.contentTypeResolved=false');
+    assert(rBadType.status === 'insufficient', '17g-3. status=insufficient（fail-closed）');
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -454,6 +459,89 @@ function draftOf(slides, extra) {
     assert(r.gates.nonGeneric === false, '19b. gate は false');
     assert(r.status === 'insufficient', '19c. ★score ' + r.score + ' でも gate false なら insufficient');
     assert(typeof r.gates.evidenceGrounding === 'boolean' && typeof r.gates.nonGeneric === 'boolean', '19d. gate は boolean（score に混ざらない）');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  caseHeader('20. CV-4b: contentType SoT / unknown fail-closed / Product 分類境界');
+  {
+    const PID = { intelligenceContext: { product: { caseId: CASE, productIdentifier: 'PID-1', facts: [] } } };
+    const evi = buildEvidence(GOOD_CLAIMS.map(function (c) { return c.claimId; }));
+    const full = function (extra, ct) {
+      return cvq.evaluateContentValue(
+        draftOf(GOOD_SLIDES, Object.assign({ contentClaims: GOOD_CLAIMS, contentEvidence: evi }, extra || {})),
+        { contentType: ct, now: NOW, reviewerNovelty: 'novel' });
+    };
+
+    assert(JSON.stringify(cvq.CONTENT_TYPES) === JSON.stringify(['value', 'bridge', 'product', 'unknown']),
+      '20-0. CONTENT_TYPES に unknown を追加（新語彙は unknown のみ・既存語彙）');
+
+    // 1〜3: undefined / null / invalid → unknown
+    [['undefined', undefined], ['null', null], ['invalid', 'xxx'], ["'unknown'", 'unknown']].forEach(function (p) {
+      const r = full({}, p[1]);
+      assert(r.contentType === 'unknown', '20-1. ' + p[0] + ' → contentType=unknown（value へ倒さない）');
+      assert(r.gates.contentTypeResolved === false, '20-2. ' + p[0] + ' → gates.contentTypeResolved=false');
+      assert(r.status === 'insufficient', '20-3. ' + p[0] + ' → status=insufficient（他軸が PASS でも昇格しない）');
+      assert(r.blockingReasons.indexOf('content_type_unresolved') !== -1, '20-4. ' + p[0] + ' → blockingReasons に content_type_unresolved');
+    });
+
+    // ★ unknown でも他4軸は PASS しうる＝gate だけで止めていることの確認
+    {
+      const r = full({}, undefined);
+      assert(r.axes.specificity.pass === true && r.axes.informationGain.pass === true
+        && r.axes.actionability.pass === true && r.axes.saveValue.pass === true,
+        '20-5. unknown でも 4軸は PASS（score ' + r.score + '）＝gate 単独で止めている');
+    }
+
+    // 4: value + productIdentifier → value のまま
+    {
+      const r = full(PID, 'value');
+      assert(r.contentType === 'value', '20-6. value + productIdentifier → value のまま（Product へ自動昇格しない）');
+      assert(r.gates.productClaim === true, '20-7. value では productClaimGate を評価しない');
+      assert(r.productContext === null, '20-8. value では productContext を記録しない（APFR 非注入）');
+      assert(r.status === 'almost_ready' || r.status === 'complete', '20-9. value は PASS 候補のまま: ' + r.status);
+    }
+
+    // 5: bridge + productIdentifier → bridge のまま
+    {
+      const r = full(PID, 'bridge');
+      assert(r.contentType === 'bridge', '20-10. bridge + productIdentifier → bridge のまま');
+      assert(r.productContext === null, '20-11. bridge でも APFR を参照しない');
+    }
+
+    // 6: product + productIdentifier なし → product_context_missing → insufficient
+    {
+      const r = full({}, 'product');
+      assert(r.gates.productClaim === false, '20-12. product + productIdentifier なし → productClaim=false');
+      assert(r.blockingReasons.indexOf('product_context_missing') !== -1, '20-13. blockingReasons に product_context_missing');
+      assert(r.status === 'insufficient', '20-14. status=insufficient');
+      assert(r.productContext && r.productContext.resolved === false, '20-15. productContext.resolved=false');
+    }
+
+    // 7: productIdentifier だけでは product へ自動昇格しない（分類に使わない）
+    {
+      const r = full(PID, undefined);   // 宣言なし・productIdentifier あり
+      assert(r.contentType === 'unknown', '20-16. ★productIdentifier があっても product へ自動昇格しない（unknown のまま）');
+      assert(r.productContext === null, '20-17. unknown では APFR を参照しない');
+    }
+
+    // product + productIdentifier あり → 評価可能
+    {
+      const r = full(PID, 'product');
+      assert(r.productContext && r.productContext.resolved === true && r.productContext.productIdentifier === 'PID-1',
+        '20-18. product + productIdentifier あり → productContext.resolved=true');
+      assert(r.gates.productClaim === true, '20-19. product claim が無ければ productClaimGate は PASS');
+    }
+
+    // 8: 既存 Evidence / Content Value 契約は不変
+    {
+      const r = full({}, 'value');
+      assert(r.evidenceStatus === 'sufficient' && r.gates.evidenceGrounding === true && r.gates.nonGeneric === true,
+        '20-20. 既存 Evidence / Content Value 契約は不変');
+      assert(typeof r.gates.contentTypeResolved === 'boolean' && typeof r.gates.evidenceGrounding === 'boolean'
+        && typeof r.gates.nonGeneric === 'boolean' && typeof r.gates.productClaim === 'boolean',
+        '20-21. gate は 4 つとも boolean（score に混ざらない）');
+      assert(cvq.CONTENT_VALUE_STATUS_VALUES.indexOf(r.status) !== -1, '20-22. status は既存4語彙のまま');
+    }
   }
 
   console.log('\n' + '─'.repeat(60));

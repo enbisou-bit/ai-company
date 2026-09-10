@@ -1710,13 +1710,48 @@ app.get('/api/output-drafts', async (req, res) => {
 // POST /api/output-drafts { outputId, caseId, fields, type?, status?, title?, sourceText?, quality?, packageQuality?, assignedRoles?, schemaVersion?, detection?, createdAt?, updatedAt?, builtAt?, reviewState? }
 // ※ server.js は app.use(express.json()) をグローバル設定済みのため、per-route express.json() は付けない（Phase54-1b規約に統一）
 // ※ Phase54-2f: reviewState（Mobile Review状態・JSONB）を任意受領。Draト本文保存(fields)と review_stateのみ保存 のどちらも許可。
-app.post('/api/output-drafts', async (req, res) => {
+// CV-4b: server-side authorization boundary を追加する（既存 lib/webSession.js の requireSession を再利用・
+//   新しい認証方式は作らない）。Carousel 3route と同一の session cookie（enbisou_session）を要求する。
+//   ★ fail-closed: WEB_SESSION_SECRET 未設定環境では常に 401（環境変数の有無で認証をskipする経路は作らない）。
+//   ★ browser の同一オリジン fetch は既定で cookie を送るため、login 済みなら既存保存フローはそのまま通る。
+//   ★ GET /api/output-drafts へは今回 session を付けない（復元フローを壊さないため・CV-4b 報告参照）。
+app.post('/api/output-drafts', require('./lib/webSession').requireSession(), async (req, res) => {
+  // ★ client 供給の contentValue は **意図的に受け取らない**（分解対象から除外＝そのまま破棄）。
+  //   Content Value は下で server 側が再計算した値のみを保存する
+  //   （client が status:'complete' を送っても保存されない）。
   const { outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState } = req.body || {};
+  const declaredContentType = (req.body && req.body.contentType) || null;   // 初回宣言の「候補」に過ぎない
   if (!outputId || !caseId) return res.status(400).json({ ok: false, error: 'outputId / caseId は必須です' });
   if (fields === undefined && reviewState === undefined) return res.status(400).json({ ok: false, error: 'fields または reviewState が必要です' });
   try {
-    const result = await getOutputDraftsDb().upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
-    res.json({ ok: !result.error, error: result.error });
+    const draftsDb = getOutputDraftsDb();
+    const result = await draftsDb.upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
+    if (result.error) return res.json({ ok: false, error: result.error });
+
+    // ── CV-4b: Content Value を server 側で再計算して独立列へ保存する ──
+    //   ★ fields を伴わない保存（review_state のみ）では再計算しない。
+    //   ★ 完全 fail-open: ここでの失敗は Output Draft 本体の保存結果を覆さない
+    //     （migration 未適用で content_type / content_value 列が無い環境でも既存フローが壊れない）。
+    let contentValueSummary = null;
+    if (fields !== undefined) {
+      try {
+        const cvService = require('./lib/contentValueService');
+        const resolved = await cvService.resolveContentValueForSave(
+          { outputId, caseId, type, declaredContentType, fields },
+          {
+            setContentTypeIfUnset: draftsDb.setContentTypeIfUnset,
+            getContentTypeCanonical: draftsDb.getContentTypeCanonical,
+          }
+        );
+        await draftsDb.updateContentValue({ outputId, contentValue: resolved.contentValue });
+        contentValueSummary = {
+          contentType: resolved.contentType,
+          status: resolved.contentValue && resolved.contentValue.status,
+        };
+      } catch (_cve) { /* fail-open: Content Value 側の失敗で Draft 保存を失敗にしない */ }
+    }
+
+    res.json({ ok: true, error: null, contentValue: contentValueSummary });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 // ─────────────────────────────────────────────────
