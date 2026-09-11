@@ -476,6 +476,16 @@ app.get('/api/auth-required', (req, res) => {
   res.json({ required: Boolean(process.env.WEB_APP_PASSWORD) });
 });
 
+// S2: server-side session の生存確認だけを返す read-only endpoint。
+//   ★ 目的: client 側の localStorage[AUTH_KEY]（無期限）と server session cookie（24h TTL）の
+//     乖離を検出するため。localStorage だけを認証根拠にしない。
+//   ★ 新しい認証方式・新しい session module は作らない（既存 requireSession をそのまま適用）。
+//   ★ DB read/write なし・ユーザー情報なし・secret なし。認証済みかどうかだけを返す。
+//   未認証時は requireSession 既定の 401 { ok:false, reason:'unauthorized' } が返る。
+app.get('/api/session-status', require('./lib/webSession').requireSession(), (req, res) => {
+  res.json({ ok: true });
+});
+
 // Phase 2-E Step C-5-pre: login成功時に server-side signed session cookie を発行する。
 //   ★ 既存レスポンス契約（{ok:true} / 401 {ok:false,message}）は変更しない（既存UI互換）。
 //     追加する session フィールドは「server側sessionを実際に発行できたか」の観測用。
@@ -1698,7 +1708,13 @@ app.post('/api/approvals', async (req, res) => {
 // GET /api/output-drafts?caseId=xxx                 → その案件の最新Draft1件（updated_at DESC）
 // GET /api/output-drafts?caseId=xxx&outputId=out_xx → output_id 一致の1件
 // ※ 一覧・履歴取得は今回未実装（Phase54-2e候補）。既存 /api/approvals・/api/cases は無変更。
-app.get('/api/output-drafts', async (req, res) => {
+// S2: Output Draft の read も server-side authorization boundary の内側へ入れる。
+//   ★ 既存 lib/webSession.js の requireSession を再利用（新しい認証方式は作らない）。
+//   ★ requireTrustedOrigin は **付けない**: ブラウザは same-origin GET に Origin を送らないため、
+//     付けると自アプリの復元 fetch が 403 になる。既存 GET /api/carousel-image/assets と同方針
+//     （session のみ・Cookie は SameSite=Strict のためクロスサイトでは送信されない）。
+//   ★ response shape は変更しない（既存 { ok, draft, source }）。
+app.get('/api/output-drafts', require('./lib/webSession').requireSession(), async (req, res) => {
   const { caseId, outputId } = req.query;
   if (!caseId) return res.status(400).json({ ok: false, draft: null, error: 'caseId は必須です' });
   try {

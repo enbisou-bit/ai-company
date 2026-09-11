@@ -24,7 +24,10 @@ function caseHeader(t) { console.log('\n── ' + t + ' ──'); }
 
 const CASE = 'case-value-1788410623';
 const OUT = 'out_test_cv4b';
-const NOW = Date.parse('2026-09-10T00:00:00.000Z');
+// ★ session token は実時刻で TTL 判定されるため、発行/検証に使う now は固定日付にしない
+//   （固定にすると翌日以降 token_expired で落ちる）。評価の決定性が要る箇所だけ FIXED_NOW を使う。
+const NOW = Date.parse('2026-09-10T00:00:00.000Z');   // Content Value 評価用の固定時刻（stale 判定の決定性）
+const SESSION_NOW = Date.now();                       // session 発行/検証用（実時刻）
 const TEST_SECRET = 'test-web-session-secret-32bytes-long';
 
 const SLIDES = ['【1枚目】タイトル：a / 本文：b', '【2枚目】タイトル：c / 本文：d'];
@@ -93,7 +96,7 @@ function makeFakeDb(initialContentType) {
       assert(a.res._json && a.res._json.reason === 'unauthorized', '1b. 理由詳細を漏らさない（unauthorized へ丸める）');
 
       // 認証済み（正規 cookie）→ next 到達
-      const issued = webSession.issueSessionToken({ secret: TEST_SECRET, now: NOW });
+      const issued = webSession.issueSessionToken({ secret: TEST_SECRET, now: SESSION_NOW });
       assert(issued.ok === true, '1c. session token 発行 OK');
       const b = fakeReqRes(webSession.SESSION_COOKIE_NAME + '=' + issued.token);
       let nextB = false;
@@ -135,9 +138,9 @@ function makeFakeDb(initialContentType) {
       assert(bad === false, '2e. route 内で ' + k + ' を変更していない');
     });
     assert(route.indexOf('packageQuality') !== -1, '2f. packageQuality は従来どおり素通しで保存（意味変更なし）');
-    // GET は今回 session を付けていない（報告事項）
-    assert(src.indexOf("app.get('/api/output-drafts', async (req, res)") !== -1,
-      '2g. GET /api/output-drafts は無変更（session 未適用・既存復元フロー維持）');
+    // S2: GET /api/output-drafts も requireSession 化された（CV-4b 時点の「未適用」前提は更新）。
+    assert(src.indexOf("app.get('/api/output-drafts', require('./lib/webSession').requireSession()") !== -1,
+      '2g. GET /api/output-drafts は S2 で requireSession 化済み');
   }
 
   // ══════════════════════════════════════════════════════════════

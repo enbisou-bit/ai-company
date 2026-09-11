@@ -10123,22 +10123,58 @@ function updateDeleteBtn() {
 // ── 認証 ────────────────────────────────────────
 const AUTH_KEY = 'enbisou_auth_v1';
 
+// S2: server-side session の生存確認（read-only・DB非依存）。
+//   戻り値: 'valid' | 'unauthorized' | 'unknown'
+//   ★ 'unknown'（500 / network error）は **未認証扱いにしない**（合言葉間違いと混同しない）。
+async function checkServerSession() {
+  try {
+    const res = await fetch('/api/session-status');
+    if (res.status === 401) return 'unauthorized';
+    if (res.ok) return 'valid';
+    return 'unknown';                                        // 5xx 等はサーバ側事情 → 判定保留
+  } catch (e) { return 'unknown'; }                          // network error → 判定保留
+}
+
+// S2: session が無効/期限切れと判明したときの共通処理。
+//   ★ 表示中の Output Draft を消さない（canonical を確認できていないため）。
+//   ★ AUTH_KEY を認証根拠として使い続けない（無期限フラグと 24h session の乖離を解消）。
+//   ★ silent failure を避けるため login 画面へ戻す。多重発火は1回に抑える。
+let _sessionUnauthorizedHandled = false;
+function handleSessionUnauthorized(origin) {
+  if (_sessionUnauthorizedHandled) return;
+  _sessionUnauthorizedHandled = true;
+  try { console.warn('[Session] 期限切れ/未認証のため再ログインが必要です:', origin); } catch (e) {}
+  try { localStorage.removeItem(AUTH_KEY); } catch (e) { /* 失敗しても続行 */ }
+  try { showLoginScreen(); } catch (e) { /* 表示失敗でも処理継続 */ }
+}
+
 async function initAuth() {
   try {
     const res = await fetch('/api/auth-required');
     if (!res.ok) throw new Error('endpoint not found');
     const { required } = await res.json();
     if (!required) {
-      // WEB_APP_PASSWORD 未設定 → ローカル開発用：認証スキップ
+      // WEB_APP_PASSWORD 未設定 → ローカル開発用：認証スキップ（UI表示ゲートのみ）
+      //   ★ この経路では server session cookie は発行されない。requireSession を要求する
+      //     route（Output Draft の GET/POST・Carousel）は 401 のままとなる。
+      //     ローカルで Output Draft を使う場合は server 側の session secret と app password を
+      //     両方設定してログインすること（auth bypass は作らない・env 名は server 側 docs 参照）。
       showApp(false);
       return;
     }
     const stored = localStorage.getItem(AUTH_KEY);
-    if (stored === 'true') {
-      showApp(true);
-    } else {
-      showLoginScreen();
+    if (stored !== 'true') { showLoginScreen(); return; }
+
+    // S2: localStorage[AUTH_KEY] は無期限フラグであり、server session（24h）の生存を意味しない。
+    //   AUTH_KEY だけを認証根拠にせず、server 側 session を必ず確認する。
+    const sess = await checkServerSession();
+    if (sess === 'unauthorized') {
+      handleSessionUnauthorized('initAuth');                 // AUTH_KEY を破棄して login へ
+      return;
     }
+    // 'valid' はもちろん、'unknown'（5xx/network）でも既存挙動を維持して表示する
+    //   （サーバ障害を「ログアウト」として扱わない。実際の書込は各 route が 401 で守る）。
+    showApp(true);
   } catch {
     // エンドポイントなし（静的サーバー等）またはネットワークエラー → ログイン画面
     showLoginScreen();
@@ -10223,8 +10259,12 @@ async function submitLogin() {
     if (data.ok) {
       localStorage.setItem(AUTH_KEY, 'true');
       input.value = '';
+      _sessionUnauthorizedHandled = false;        // S2: 再ログイン成功 → 次回の期限切れ検知を再び有効化
       showApp(true);
       restoreHistoryFromServer().catch(() => {}); // 再ログイン時も復元
+      // S2: login 前の startup 復元は 401 で失敗しているため、ここで1回だけ再取得する。
+      //   既存 scheduleOutputDraftRestore の多重実行防止・stale guard をそのまま使う（新機構を作らない）。
+      try { scheduleOutputDraftRestore('login'); } catch (e) { /* 復元失敗でもログインは継続 */ }
     } else {
       errEl.textContent = '認証失敗：合言葉が違います';
       input.value = '';
@@ -10629,16 +10669,21 @@ function _outputDraftFromServerRow(row) {
   return d;
 }
 
-// case の最新Draftを取得（GET・失敗時null・POSTしない）。
+// case の最新Draftを取得（GET・POSTしない）。
+// S2: 401（未認証）と 200-empty（該当Draftなし）を **区別して**返す。
+//   従来は両方 null に潰れていたため、session切れ時に「保存Draftが無い」と誤認して
+//   表示中Draftを消してしまう経路があった。呼び出し側がその2つを別扱いできるようにする。
+//   戻り値: { status: 'ok'|'empty'|'unauthorized'|'error', draft: object|null }
 async function fetchLatestOutputDraftForCase(caseId) {
-  if (!caseId) return null;
+  if (!caseId) return { status: 'error', draft: null };
   try {
     var res = await fetch('/api/output-drafts?caseId=' + encodeURIComponent(caseId));
-    if (!res.ok) return null;
+    if (res.status === 401) return { status: 'unauthorized', draft: null };   // session無効/期限切れ
+    if (!res.ok) return { status: 'error', draft: null };
     var data = await res.json();
-    if (!data || !data.ok || !data.draft) return null;
-    return data.draft;
-  } catch (e) { return null; }
+    if (!data || !data.ok || !data.draft) return { status: 'empty', draft: null };
+    return { status: 'ok', draft: data.draft };
+  } catch (e) { return { status: 'error', draft: null }; }
 }
 
 // 現在の _lastOutputDraft を復元Draftで安全に置換してよいか（未マークWorkflow Draットは保護）。
@@ -10655,13 +10700,21 @@ async function restoreOutputDraftFromServer(reqCaseId, reason) {
   try {
     if (!reqCaseId) return;
     var beforeDraft = _lastOutputDraft;                     // 開始時スナップショット（取得中のWorkflow生成検知用）
-    var row = await fetchLatestOutputDraftForCase(reqCaseId);
+    var fetched = await fetchLatestOutputDraftForCase(reqCaseId);
+    var row = fetched && fetched.draft ? fetched.draft : null;
     if (getCurrentApprovalCaseId() !== reqCaseId) return;   // stale破棄①: 応答時に案件が切替→採用しない
     if (_lastOutputDraft !== beforeDraft) return;           // stale破棄②: 取得中に_lastOutputDraftが変化→上書きしない
+    // S2: 401（session無効/期限切れ）は「保存Draftが無い」ではない。
+    //   canonicalを確認できていないため、表示中Draftを消さずにそのまま残し、再認証を促す。
+    if (fetched && fetched.status === 'unauthorized') {
+      try { handleSessionUnauthorized('outputDraftRestore'); } catch (e) { /* 失敗してもUIを止めない */ }
+      return;                                               // 消さない・POSTもしない
+    }
     if (!row) {
       // Phase54-2d fix1: 案件切替先に保存Draットが無い → 前案件の(サーバ復元済み)Draット表示を残さない。
       // 未マーク(=進行中/完成直後のWorkflow生成)Draットは保護して消さない。POSTは発生させない（Approvalは既存の案件切替リセットが正）。
-      if (reason === 'caseSwitch' && _lastOutputDraft && _lastOutputDraft._restoredFromServer === true) {
+      // S2: ここへ来るのは status==='empty' / 'error' のみ（401は上で分岐済み）。
+      if (reason === 'caseSwitch' && fetched && fetched.status === 'empty' && _lastOutputDraft && _lastOutputDraft._restoredFromServer === true) {
         _lastOutputDraft = null;                            // 安全に空へ戻す
         try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }  // 未生成(空)状態へ再描画
         try { _iadpApplyRestoredFields(null, reqCaseId); } catch (e) { /* 失敗握り潰し */ }  // Phase IG-2E: 前案件のIADPカードを残さない
