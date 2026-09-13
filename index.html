@@ -10464,6 +10464,14 @@ function _outputDraftTitle(draft) {
   } catch (e) { return null; }
 }
 
+// CV-4c-1: content_type 宣言候補の正規化（列挙外は null＝未宣言のまま送る。server 側が canonical を決定する）。
+//   ★ productIdentifier 等から推測しない。draft.contentType が明示的に 'value'/'bridge'/'product' の
+//     いずれかであるときだけ送信する（それ以外は今まで通り未送信＝server 側は unknown 扱い・fail-closed）。
+var CONTENT_TYPE_DECLARABLE_VALUES = ['value', 'bridge', 'product'];
+function _normalizeDeclaredContentTypeForPayload(v) {
+  return CONTENT_TYPE_DECLARABLE_VALUES.indexOf(v) !== -1 ? v : null;
+}
+
 // 保存payloadを組み立て（Phase54-2b確定仕様の範囲のみ）。派生キャッシュ・Approval状態・cost は含めない。
 function buildOutputDraftPayloadForServer(draft, caseId) {
   if (!draft) return null;
@@ -10476,6 +10484,9 @@ function buildOutputDraftPayloadForServer(draft, caseId) {
     sourceText:     draft.sourceText || null,
     fields:         draft.fields || null,
     quality:        draft.quality || null,
+    // CV-4c-1: 明示的に決まっている場合のみ送る「初回宣言の候補」。server 側の canonical
+    //   first-write-wins（lib/outputDraftsDb.js setContentTypeIfUnset）が正本を決める。
+    contentType:    _normalizeDeclaredContentTypeForPayload(draft.contentType),
     // STEP 6 工程2: 新DB列を作らず、既存packageQuality（JSONB）へcompletionAssessmentを同梱して保存する。
     //   completionAssessment自体はpackageQualityの意味を変更しない（別キーとして併存するのみ）。
     packageQuality: draft.packageQuality

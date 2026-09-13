@@ -334,8 +334,133 @@ function makeFakeDb(initialContentType) {
     assert(/[\x00\x7f]/.test(svcSrc) === false, '9e. 制御バイト混入なし');
   }
 
+  // ══════════════════════════════════════════════════════════════
+  caseHeader('10. CV-4c-1: reviewerNovelty canonical source（fields.contentReviewerSignal.novelty のみ）');
+  {
+    // 10a. pure function 単体: novel / restatement / unclear / missing / invalid型 / 非object
+    assert(cvService.resolveReviewerNoveltySignal({ contentReviewerSignal: { novelty: 'novel' } }) === 'novel',
+      '10a-1. novel は novel のまま通す');
+    assert(cvService.resolveReviewerNoveltySignal({ contentReviewerSignal: { novelty: 'restatement' } }) === 'restatement',
+      '10a-2. restatement は restatement のまま通す');
+    assert(cvService.resolveReviewerNoveltySignal({ contentReviewerSignal: { novelty: 'unclear' } }) === 'unclear',
+      '10a-3. 明示的 unclear は unclear');
+    assert(cvService.resolveReviewerNoveltySignal({}) === 'unclear', '10a-4. contentReviewerSignal 欠落 → unclear（fail-closed）');
+    assert(cvService.resolveReviewerNoveltySignal({ contentReviewerSignal: {} }) === 'unclear', '10a-5. novelty 欠落 → unclear');
+    assert(cvService.resolveReviewerNoveltySignal({ contentReviewerSignal: { novelty: 'positive' } }) === 'unclear',
+      '10a-6. 列挙外文字列 → unclear（雑な自由記述を受理しない）');
+    assert(cvService.resolveReviewerNoveltySignal({ contentReviewerSignal: 'novel' }) === 'unclear',
+      '10a-7. contentReviewerSignal が非object → unclear');
+    assert(cvService.resolveReviewerNoveltySignal(null) === 'unclear', '10a-8. fields 自体が null → unclear');
+    assert(cvService.resolveReviewerNoveltySignal({ reviewerNovelty: 'novel' }) === 'unclear',
+      '10a-9. ★fields直下の reviewerNovelty（誤った経路）は無視（canonical source は contentReviewerSignal のみ）');
+
+    // 10b. resolveContentValueForSave() 経由（evaluate() へ正しく渡っていることを結果から確認）
+    const dbNovel = makeFakeDb('value');
+    const rNovel = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: 'value',
+        fields: { slides: SLIDES, contentReviewerSignal: { novelty: 'novel' } } },
+      { setContentTypeIfUnset: dbNovel.setContentTypeIfUnset, getContentTypeCanonical: dbNovel.getContentTypeCanonical, now: NOW });
+    assert(rNovel.reviewerNovelty === 'novel', '10b-1. resolveContentValueForSave の戻り値に reviewerNovelty=novel');
+    assert(rNovel.contentValue.axes.informationGain.detail.reviewerNovelty === 'novel',
+      '10b-2. ★evaluateContentValue() の options.reviewerNovelty へ実際に渡っている（Core 側 detail で確認）');
+    assert(rNovel.contentValue.axes.informationGain.detail.conditions.semantic === true,
+      '10b-3. novel → informationGain の semantic 条件のみ PASS（他条件は Evidence 不足で未達のままでよい）');
+
+    const dbRestate = makeFakeDb('value');
+    const rRestate = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: 'value',
+        fields: { slides: SLIDES, contentReviewerSignal: { novelty: 'restatement' } } },
+      { setContentTypeIfUnset: dbRestate.setContentTypeIfUnset, getContentTypeCanonical: dbRestate.getContentTypeCanonical, now: NOW });
+    assert(rRestate.reviewerNovelty === 'restatement', '10c-1. restatement がそのまま伝播');
+    assert(rRestate.contentValue.axes.informationGain.detail.conditions.semantic === false,
+      '10c-2. restatement → semantic 条件 FAIL');
+
+    const dbMissing = makeFakeDb('value');
+    const rMissing = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: 'value', fields: { slides: SLIDES } },
+      { setContentTypeIfUnset: dbMissing.setContentTypeIfUnset, getContentTypeCanonical: dbMissing.getContentTypeCanonical, now: NOW });
+    assert(rMissing.reviewerNovelty === 'unclear', '10d-1. contentReviewerSignal 未指定 → unclear');
+    assert(rMissing.contentValue.axes.informationGain.detail.conditions.semantic === false,
+      '10d-2. missing → semantic 条件 FAIL（fail-closed）');
+
+    const dbInvalid = makeFakeDb('value');
+    const rInvalid = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: 'value',
+        fields: { slides: SLIDES, contentReviewerSignal: { novelty: 'super-duper-novel' } } },
+      { setContentTypeIfUnset: dbInvalid.setContentTypeIfUnset, getContentTypeCanonical: dbInvalid.getContentTypeCanonical, now: NOW });
+    assert(rInvalid.reviewerNovelty === 'unclear', '10e-1. 列挙外 novelty → unclear');
+
+    // 10f. ★client が resolveContentValueForSave() の input へ直接 reviewerNovelty:'novel' を
+    //   トップレベルで混入させても、canonical source（fields.contentReviewerSignal）を優先し無視する。
+    const dbFake = makeFakeDb('value');
+    const rFake = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: 'value', fields: { slides: SLIDES }, reviewerNovelty: 'novel' },
+      { setContentTypeIfUnset: dbFake.setContentTypeIfUnset, getContentTypeCanonical: dbFake.getContentTypeCanonical, now: NOW });
+    assert(rFake.reviewerNovelty === 'unclear',
+      '10f. ★トップレベル reviewerNovelty:"novel" の混入だけでは PASS できない（canonical source を優先）');
+
+    // 10g. REVIEWER_NOVELTY_VALUES を service 側で複製せず Core の enum を再利用していることを source で確認
+    const svcSrc2 = fs.readFileSync(path.join(__dirname, 'lib', 'contentValueService.js'), 'utf8');
+    assert(svcSrc2.indexOf('contentValueQuality.REVIEWER_NOVELTY_VALUES') !== -1,
+      '10g. service は Core の REVIEWER_NOVELTY_VALUES を再利用（新しい enum を作っていない）');
+    assert(svcSrc2.indexOf('inp.reviewerNovelty') === -1,
+      '10h. ★service は input のトップレベル reviewerNovelty を一切参照しない（該当コードが存在しない）');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  caseHeader('11. CV-4c-1: contentType 送信経路（index.html）');
+  {
+    const idxSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    const fnStart = idxSrc.indexOf('function buildOutputDraftPayloadForServer');
+    const fnBody = idxSrc.slice(fnStart, fnStart + 1500);
+    assert(fnStart !== -1 && fnBody.indexOf('contentType:') !== -1,
+      '11a. buildOutputDraftPayloadForServer() が contentType を payload へ含める');
+    assert(idxSrc.indexOf('_normalizeDeclaredContentTypeForPayload') !== -1,
+      '11b. client 側でも列挙値のみに正規化してから送信する（server 側の検証と二重防御）');
+    assert(idxSrc.indexOf("CONTENT_TYPE_DECLARABLE_VALUES = ['value', 'bridge', 'product']") !== -1,
+      '11c. 送信許容値は value/bridge/product の3値のみ（unknown/その他は送らない）');
+    // productIdentifier からの推測をしていないこと（該当変数を条件に contentType を決めるコードがない）
+    const normFnStart = idxSrc.indexOf('function _normalizeDeclaredContentTypeForPayload');
+    const normFnBody = idxSrc.slice(normFnStart, normFnStart + 300);
+    assert(normFnBody.indexOf('productIdentifier') === -1,
+      '11d. ★正規化関数は productIdentifier を一切参照しない（推測で分類しない）');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  caseHeader('12. CV-4c-1: thin Value fixture — 配線不足FAILとEvidence不足FAILの分離');
+  {
+    // 配線が無かった旧実装では contentType 未宣言のため gates.contentTypeResolved が
+    //   常に false（activation 未完了による永久 FAIL）だった。
+    //   本ラウンドで contentType='value' を正しく宣言すると、contentTypeResolved は true になり、
+    //   FAIL 理由が「Evidence 不足（evidenceGrounding）」だけへ収束することを確認する。
+    const dbThin = makeFakeDb(null);
+    const rThin = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: 'value', fields: { slides: SLIDES } },
+      { setContentTypeIfUnset: dbThin.setContentTypeIfUnset, getContentTypeCanonical: dbThin.getContentTypeCanonical, now: NOW });
+    assert(rThin.contentType === 'value', '12a. contentType が value として canonical 確定');
+    assert(rThin.contentValue.gates.contentTypeResolved === true,
+      '12b. ★gates.contentTypeResolved=true（配線不足による永久FAILは解消）');
+    assert(rThin.contentValue.status === 'insufficient', '12c. status はまだ insufficient（Evidence 未取得のため・想定どおり）');
+    assert(rThin.contentValue.gates.evidenceGrounding === false,
+      '12d. evidenceGrounding=false（Evidence 不足が理由。contentType 未解決が理由ではない）');
+    assert(rThin.contentValue.blockingReasons.indexOf('content_type_unresolved') === -1,
+      '12e. ★blockingReasons に content_type_unresolved を含まない（配線起因の理由は消えている）');
+    assert(rThin.contentValue.blockingReasons.indexOf('evidence_insufficient') !== -1,
+      '12f. blockingReasons は evidence_insufficient のみが残る（原因の分離を実測確認）');
+
+    // 対比: contentType 未宣言のまま（CV-4c-1 以前の実挙動）は今までどおり contentTypeResolved=false
+    const dbOld = makeFakeDb(null);
+    const rOld = await cvService.resolveContentValueForSave(
+      { outputId: OUT, caseId: CASE, declaredContentType: undefined, fields: { slides: SLIDES } },
+      { setContentTypeIfUnset: dbOld.setContentTypeIfUnset, getContentTypeCanonical: dbOld.getContentTypeCanonical, now: NOW });
+    assert(rOld.contentValue.gates.contentTypeResolved === false,
+      '12g. 対比: contentType 未宣言のままなら従来どおり contentTypeResolved=false（後方互換の実測）');
+    assert(rOld.contentValue.blockingReasons.indexOf('content_type_unresolved') !== -1,
+      '12h. 対比: 未宣言時は content_type_unresolved が理由に残る');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }
-  else { console.log('🟢 All contentValueWiring cases passed (CV-4b)'); }
+  else { console.log('🟢 All contentValueWiring cases passed (CV-4b + CV-4c-1)'); }
 })().catch(function (e) { console.error('TEST CRASH:', e && e.stack); process.exitCode = 1; });
