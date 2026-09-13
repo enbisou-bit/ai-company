@@ -2,8 +2,17 @@
 //   実Web Search・実OpenAI APIは一切呼ばない（axios/openaiClient.jsをrequireしない）。
 //   costTracker.jsの純関数（calculateOpenAICost/calculateWebSearchToolFee/calculateWebSearchCost）と
 //   state計上関数（addWebSearchUsage）のみを対象とする。
-const { test, afterEach } = require('node:test');
+//
+// Cost Tracker Test Isolation Safety Fix: resetCostTracker() を afterEach で呼ぶため、
+//   ./costTracker が require される前に保存先を test 専用の一時 path へ明示指定する
+//   （本番 cost-logs.json（Protected）へは絶対に書き込ませない）。
+const path = require('path');
+const os = require('os');
+process.env.COST_TRACKER_STORAGE_PATH = path.join(os.tmpdir(), 'enbisou-cost-logs-eea8-test-' + process.pid + '.json');
+
+const { test, afterEach, after } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const {
   costTracker,
   resetCostTracker,
@@ -13,10 +22,16 @@ const {
   addWebSearchUsage,
   WEB_SEARCH_TOOL_COST_PER_CALL_USD,
   MODEL_PRICES,
+  STORAGE_PATH,
 } = require('./costTracker');
 
 afterEach(() => {
   resetCostTracker();
+});
+
+after(() => {
+  // isolation storage（test専用一時ファイル）のみ削除。本番 cost-logs.json には一切触れない。
+  try { fs.unlinkSync(STORAGE_PATH); } catch (e) { /* 既に存在しない等は無視 */ }
 });
 
 // 1. toolCallCount 0 → tool fee 0

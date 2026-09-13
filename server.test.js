@@ -1,8 +1,34 @@
-const { test, afterEach } = require('node:test');
+// Cost Tracker Test Isolation Safety Fix: ./server → ./costTracker が require される前に、
+//   保存先を test 専用の一時 path へ明示指定する（本番 cost-logs.json（Protected）へは絶対に
+//   書き込ませない）。NODE_ENV 等の暗黙判定ではなく明示的な env var のみで切り替える。
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+const crypto = require('crypto');
+process.env.COST_TRACKER_STORAGE_PATH = path.join(os.tmpdir(), 'enbisou-cost-logs-test-' + process.pid + '.json');
+
+const { test, before, after, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { determineAssignee, createReplyText, shouldReplyToEvent, getReplyText, getReplyPayload, resetConversationState, isContinuationMessage } = require('./server');
 const { costTracker, resetCostTracker, calculateOpenAICost, addOpenAIUsage } = require('./costTracker');
 const { loadHistory, clearHistory, addMessage, MAX_HISTORY, getLastAssignee, setLastAssignee, clearLastAssignee } = require('./conversationHistory');
+
+// ── fail-closed regression guard: 本番 cost-logs.json が本ファイルの実行前後で不変であることを保証する ──
+const PRODUCTION_COST_LOGS_PATH = path.join(__dirname, 'cost-logs.json');
+function _md5File(p) { return crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex'); }
+let _prodCostLogsMd5Before = null;
+
+before(() => {
+  _prodCostLogsMd5Before = _md5File(PRODUCTION_COST_LOGS_PATH);
+});
+
+after(() => {
+  const md5After = _md5File(PRODUCTION_COST_LOGS_PATH);
+  assert.equal(md5After, _prodCostLogsMd5Before,
+    '本番 cost-logs.json の md5 が変化した（Test Isolation 違反・isolation storage: ' + require('./costTracker').STORAGE_PATH + '）');
+  // isolation storage（test専用一時ファイル）のみ削除。本番ファイルには一切触れない。
+  try { fs.unlinkSync(require('./costTracker').STORAGE_PATH); } catch (e) { /* 既に存在しない等は無視 */ }
+});
 
 afterEach(() => {
   resetCostTracker();

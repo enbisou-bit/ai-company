@@ -1,7 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const STORAGE_PATH = path.join(__dirname, 'cost-logs.json');
+// Cost Tracker Test Isolation Safety Fix: COST_TRACKER_STORAGE_PATH が明示指定された場合のみ
+//   保存先を切り替える（NODE_ENV 等の暗黙判定は使わない＝明示指定のない環境は常に本番既定パス）。
+//   ★ このファイルは require 時に一度だけ STORAGE_PATH を確定する（module cache のため）。
+//     テスト側は ./costTracker を require する前に process.env.COST_TRACKER_STORAGE_PATH を
+//     設定すること（server.test.js 冒頭を参照）。
+const STORAGE_PATH = process.env.COST_TRACKER_STORAGE_PATH
+  ? path.resolve(process.env.COST_TRACKER_STORAGE_PATH)
+  : path.join(__dirname, 'cost-logs.json');
 const DEFAULT_MONTHLY_LIMIT = 1000;
 const USD_TO_JPY = 160;
 const MODEL_PRICES = {
@@ -457,6 +464,9 @@ module.exports = {
   USD_TO_JPY,
   calculateOpenAICost,
   addOpenAIUsage,
+  // Cost Tracker Test Isolation Safety Fix: テストから実際の保存先を検証できるように export する
+  //   （値の再代入はできない＝read-only な参照のみ。書込み先の切替は require 前の env var 設定でのみ行う）。
+  STORAGE_PATH,
   // EEA-8
   WEB_SEARCH_TOOL_COST_PER_CALL_USD,
   calculateWebSearchToolFee,
