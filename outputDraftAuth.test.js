@@ -226,8 +226,16 @@ function extractFn(name) {
       const head = SERVER_SRC.slice(i, i + 160);
       assert(head.indexOf('requireSession') === -1, '10. ' + r + ' は今回変更していない（未認証のまま）');
     });
+    // S3-B1b: 有料AI実行 7 route ＋ 破壊的 DELETE 4 route を追加保護したため、
+    //   S2 時点の「3 route のみ」前提は更新する（S2 の 3 route は下の 10y で個別に固定し続ける）。
+    //   S3-B2 対象（上の MUST_STAY_OPEN 群）を閉じていないことは上のループが担保する。
     const n = (SERVER_SRC.match(/requireSession\(\)/g) || []).length;
-    assert(n === 3, '10z. requireSession 適用は 3 route のみ（session-status / GET / POST output-drafts）: ' + n);
+    assert(n === 14, '10z. requireSession 適用は 14 route（S2 の 3 ＋ S3-B1b の 11）: ' + n);
+    ["app.get('/api/session-status'", "app.get('/api/output-drafts'", "app.post('/api/output-drafts'"].forEach(function (d) {
+      const i = SERVER_SRC.indexOf(d);
+      assert(i !== -1 && SERVER_SRC.slice(i, i + 200).indexOf("require('./lib/webSession').requireSession()") !== -1,
+        '10y. S2 の保護は維持: ' + d);
+    });
   }
 
   caseHeader('11. Carousel / 既存境界 無変更');

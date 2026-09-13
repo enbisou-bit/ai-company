@@ -624,7 +624,7 @@ app.post('/api/admin/members', express.json(), (req, res) => {
   }
 });
 
-app.delete('/api/admin/members/:id', (req, res) => {
+app.delete('/api/admin/members/:id', require('./lib/webSession').requireSession(), (req, res) => {
   try {
     getCustomMembersDb().remove(req.params.id);
     res.json({ ok: true });
@@ -925,7 +925,7 @@ function _mergeCaseContextText(serverContextText, clientContextText) {
   return parts.join('\n\n');
 }
 
-app.post('/api/chat', express.json(), async (req, res) => {
+app.post('/api/chat', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   // Option B: caseDataContext は任意項目（省略時は既存動作と完全同一・受動パススルーのみ）。
   const { message, memberId, history, knowledgeContext = '', caseId = null, caseDataContext = '' } = req.body || {};
   if (!message || typeof message !== 'string') {
@@ -1005,7 +1005,7 @@ app.post('/api/chat', express.json(), async (req, res) => {
 
 // ── Strategy 全担当統合意見 API ───────────────────────
 // POST /api/strategy-consolidate { userMessage, memberReplies: [{id, name, reply}] }
-app.post('/api/strategy-consolidate', express.json(), async (req, res) => {
+app.post('/api/strategy-consolidate', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   const { userMessage, memberReplies, caseId = null } = req.body || {};
   if (!userMessage || !Array.isArray(memberReplies) || memberReplies.length === 0) {
     return res.json({ ok: false, error: 'userMessage と memberReplies は必須です' });
@@ -1030,7 +1030,7 @@ app.post('/api/strategy-consolidate', express.json(), async (req, res) => {
 
 // ── Leader 推奨方針サマリー API ───────────────────
 // POST /api/leader-summary { userMessage, memberReplies, strategyReply }
-app.post('/api/leader-summary', express.json(), async (req, res) => {
+app.post('/api/leader-summary', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   // Phase B-9D-5A: ruleArtifactsは任意項目。手動Leader再生成のみ送信し、Path B等の既存呼び出しは
   //   従来どおり省略する（未指定でも動作は完全に既存どおり・request/response契約の破壊的変更なし）。
   const { userMessage, memberReplies, strategyReply, ruleArtifacts, caseId = null } = req.body || {};
@@ -1055,7 +1055,7 @@ app.post('/api/leader-summary', express.json(), async (req, res) => {
 
 // ── Strategy 常時監視 API ─────────────────────────
 // POST /api/strategy-monitor { userMessage, aiReply, memberId }
-app.post('/api/strategy-monitor', express.json(), async (req, res) => {
+app.post('/api/strategy-monitor', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   const { userMessage, aiReply, memberId } = req.body || {};
   if (!userMessage || !aiReply || !memberId) {
     return res.json({ ok: false, intervene: false });
@@ -1099,7 +1099,7 @@ app.post('/api/strategy-monitor', express.json(), async (req, res) => {
 //   ・enabled: false の担当はスキップ（将来担当追加時に切り替え可能）
 //   ・provider（AIの種類）は現在 "openai" のみ。将来 "claude" 対応を予定
 // ══════════════════════════════════════════════════════════════
-app.post('/api/auto-task', express.json(), async (req, res) => {
+app.post('/api/auto-task', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   // Phase54-3b-2: caseId は任意（未指定でも従来動作＝NULL横断履歴）
   // Phase IG-2B: accountIntelligenceMode / existingIntelligenceContext は任意項目（省略時は既存動作と完全同一）
   // APFR Step C-1A: complianceContext は任意項目（省略時は既存動作と完全同一・受動パススルーのみ）
@@ -1386,7 +1386,7 @@ app.post('/api/notification-reads', express.json(), async (req, res) => {
 //   reply       : string  相談先担当の回答テキスト
 //   historyEntry: object  今回記録した taskHistory エントリ
 // ══════════════════════════════════════════════════════════════
-app.post('/api/consult', express.json(), async (req, res) => {
+app.post('/api/consult', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   // Phase54-3b-2: caseId は任意（未指定でも従来動作＝NULL横断履歴）
   const { fromAgentId, toAgentId, question, priorResult, workflowId, caseId = null, knowledgeContext = '' } = req.body || {};
 
@@ -1659,7 +1659,7 @@ app.post('/api/case-memory/:caseId', express.json(), async (req, res) => {
 // DELETE /api/cases/:id  （Phase52-12.1: 案件削除同期。id完全一致1件のみ。messages/conversationsは削除しない）
 // 不具合②-A: 物理削除 → 論理削除（softDeleteCase）へ変更。パス/メソッド/IFは不変・新規エンドポイントなし。
 //   存在しないid=404 / 既に削除済み=200（冪等）/ id未指定=400 / 行は物理削除しない（復元可）
-app.delete('/api/cases/:id', async (req, res) => {
+app.delete('/api/cases/:id', require('./lib/webSession').requireSession(), async (req, res) => {
   const { id } = req.params;
   if (!id) return res.status(400).json({ ok: false, error: 'id は必須です' });
   try {
@@ -1922,7 +1922,7 @@ app.post('/api/knowledge-library', express.json(), async (req, res) => {
 });
 
 // DELETE /api/knowledge-library/:genre/:id
-app.delete('/api/knowledge-library/:genre/:id', async (req, res) => {
+app.delete('/api/knowledge-library/:genre/:id', require('./lib/webSession').requireSession(), async (req, res) => {
   try {
     await getKnowledgeDb().deleteEntry(req.params.id);
     res.json({ ok: true });
@@ -1972,7 +1972,7 @@ app.patch('/api/customers/:id', express.json(), async (req, res) => {
 });
 
 // DELETE /api/customers/:id
-app.delete('/api/customers/:id', async (req, res) => {
+app.delete('/api/customers/:id', require('./lib/webSession').requireSession(), async (req, res) => {
   try {
     await getCustomersDb().deleteCustomer(req.params.id);
     res.json({ ok: true });
@@ -2078,7 +2078,7 @@ app.get('/api/claude-cost', (req, res) => {
   }
 });
 // GET /api/claude-test?agent=writer — Phase36-2: Claude実接続テスト
-app.get('/api/claude-test', async (req, res) => {
+app.get('/api/claude-test', require('./lib/webSession').requireSession(), async (req, res) => {
   const agentId = (req.query.agent || 'writer').trim();
   if (!['writer', 'reviewer', 'strategy'].includes(agentId)) {
     return res.status(400).json({ ok: false, error: 'agent は writer / reviewer / strategy のみ有効です' });
