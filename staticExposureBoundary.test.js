@@ -72,6 +72,10 @@ const SHARED_PUBLIC = [
   'shared/iadpIntelligenceContext.js',
   'shared/instagramAccountDesign.js',
   'shared/instagramAccountDesignQuality.js',
+  // CV-4c-3: Content Evidence Approval UI（Claim Intent / Safety Filter / Query Plan のみ
+  //   ブラウザで動作。shared/contentEvidence.js 自体は引き続き非公開のまま）。
+  'shared/contentClaimPlanning.js',
+  'shared/contentEvidenceApproval.js',
 ];
 SHARED_PUBLIC.forEach(function (rel, i) {
   assert(publicStatic.resolvePublicAsset('/' + rel) === rel, '1c-' + (i + 1) + ': /' + rel + ' 許可');
@@ -296,7 +300,7 @@ assert(threw, '9g: rootDir 未指定は throw（fail-closed）');
 // allowlist が凍結されており実行時に拡張できない
 assert(Object.isFrozen(publicStatic.PUBLIC_FILES), '9h: PUBLIC_FILES は凍結');
 assert(Object.isFrozen(publicStatic.PUBLIC_DIR_RULES), '9i: PUBLIC_DIR_RULES は凍結');
-assert(publicStatic.PUBLIC_FILES.length === 6, '9j: PUBLIC_FILES は6件（index.html + shared 5件）');
+assert(publicStatic.PUBLIC_FILES.length === 8, '9j: PUBLIC_FILES は8件（index.html + shared 7件・CV-4c-3で2件追加）');
 
 // ═══ 10. server.js 配線（ソース検証・require しない） ═══
 caseHeader('10. server.js 配線');

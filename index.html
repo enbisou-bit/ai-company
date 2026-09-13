@@ -7525,6 +7525,154 @@
 <script src="shared/agentResultNormalizer.js"></script>
 <!-- EEA-3: External Evidence Search Plan生成・query検証（純関数のみ・APIキー非依存。実HTTP通信はserver-only openaiClient.jsが担う） -->
 <script src="shared/evidenceAcquisition.js"></script>
+<!-- CV-4c-2: Claim Intent Planning + Evidence Acquisition adapter + Writer Grounding（純関数のみ。
+     ブラウザでは Claim Intent / Safety Filter / Query Plan のみ動作。evidenceAcquisition.js より後に読み込む。） -->
+<script src="shared/contentClaimPlanning.js"></script>
+<!-- CV-4c-3: Content Evidence Approval state machine（純関数のみ・依存ゼロ） -->
+<script src="shared/contentEvidenceApproval.js"></script>
+
+<!-- CV-4c-3: Content Evidence Approval UI（Evidence取得には必ずこのパネルからの明示承認が必要）。
+     既定は非表示。Auto Task / Writer / Leader / 案件読込 / ページ読込 / ログインのいずれからも
+     自動表示・自動承認・自動実行されない（_ceApproveAndExecute() だけが唯一の実行入口）。 -->
+<div id="ce-approval-panel" style="display:none;"></div>
+<script>
+// ══════════════════════════════════════════════════════════════
+// CV-4c-3: Content Evidence Approval UI
+//   ★ 唯一の実行入口は _ceApproveAndExecute()。他のどの関数（Auto Task/Writer/Leader/
+//     ページ読込/ログイン/案件読込/Output Draft復元・保存）からも呼び出さないこと。
+// ══════════════════════════════════════════════════════════════
+var _ceState = 'idle';
+var _cePlan = null;              // { queries, blocked, fingerprint, intents }
+var _ceExecutedFingerprints = []; // 二重実行防止（同一planの再実行を防ぐ）
+
+// Claim Intent配列 → plan（CV-4c-2 Coreを使用。UI側で独自ロジックを再実装しない）
+function _ceBuildPlan(intents, caseId) {
+  var built = ContentClaimPlanning.buildContentEvidenceQueries(intents || []);
+  var fingerprint = ContentEvidenceApproval.computePlanFingerprint(built.queries);
+  _cePlan = { queries: built.queries, blocked: built.blocked, fingerprint: fingerprint, intents: intents || [], caseId: caseId || null };
+  var t1 = ContentEvidenceApproval.transition(_ceState, 'build_plan');
+  if (t1.ok) _ceState = t1.state;
+  var t2 = ContentEvidenceApproval.transition(_ceState, 'show_for_approval');
+  if (t2.ok) _ceState = t2.state;
+  _ceRenderPanel();
+  return _cePlan;
+}
+
+var CE_PANEL_VISIBLE_STATES = ['awaiting_approval', 'executing', 'failed', 'completed'];
+
+function _ceRenderPanel() {
+  var el = document.getElementById('ce-approval-panel');
+  if (!el) return;
+  if (!_cePlan || CE_PANEL_VISIBLE_STATES.indexOf(_ceState) === -1) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  var disabled = ContentEvidenceApproval.shouldDisableApprovalButton(_ceState);
+  var rows = _cePlan.queries.map(function (q) {
+    return '<li>[' + q.category + '] ' + q.query + '（' + q.reason + '）</li>';
+  }).join('');
+  var retryNote = (_ceState === 'failed') ? '<p style="color:#c00;">前回の取得に失敗しました。再度「Evidence取得を実行」を押すと再承認として実行します（自動再試行はしません）。</p>' : '';
+
+  // Part G: 取得後の Evidence Candidate 表示（source name/title/URL/excerpt要約/trust/verification/紐づくintent）。
+  //   ★ ここでは表示のみ。正式contentEvidenceへの自動昇格は行わない（mapping decisionは別工程）。
+  var candidatesHtml = '';
+  if (_ceState === 'completed' && _ceLastEvidenceCandidates.length > 0) {
+    var cRows = _ceLastEvidenceCandidates.map(function (c) {
+      var excerptSummary = c.sourceExcerpt ? String(c.sourceExcerpt).slice(0, 80) + '…' : '(excerptなし)';
+      return '<li>' +
+        '<strong>' + (c.sourceTitle || c.sourceName || '(タイトルなし)') + '</strong><br>' +
+        'URL: ' + (c.sourceUrl || '(なし)') + '<br>' +
+        '要約: ' + excerptSummary + '<br>' +
+        'verificationStatus: ' + (c.verificationStatus || 'unverified') + ' ／ 紐づくintent: ' + (c.intentId || c.category || '(不明)') +
+        ' <em>※まだ正式Evidenceではありません（mapping確認前）</em>' +
+        '</li>';
+    }).join('');
+    candidatesHtml = '<h5>取得結果（Candidate・未確定）</h5><ul>' + cRows + '</ul>';
+  }
+
+  el.style.display = 'block';
+  el.innerHTML =
+    '<div style="border:1px solid #ccc;padding:12px;margin:8px 0;">' +
+    '<h4>■ Content Evidence Plan</h4>' +
+    '<p>これから<strong>外部Web Evidence取得を実行します</strong>（実行前は一切検索していません）。</p>' +
+    '<p>検索対象: ' + _cePlan.queries.length + '件 ／ 安全フィルタで除外: ' + _cePlan.blocked.length + '件</p>' +
+    '<ul>' + rows + '</ul>' +
+    retryNote +
+    '<button id="ce-approve-btn" onclick="_ceApproveAndExecute()"' + (disabled ? ' disabled' : '') + '>Evidence取得を実行</button> ' +
+    '<button id="ce-cancel-btn" onclick="_ceCancelPlan()">キャンセル</button>' +
+    candidatesHtml +
+    '</div>';
+}
+
+// ★★★ Web Evidence取得の唯一の実行入口。承認ボタンのクリックからのみ呼ばれる。★★★
+async function _ceApproveAndExecute() {
+  if (!_cePlan) return;
+  if (ContentEvidenceApproval.shouldDisableApprovalButton(_ceState)) return;   // 連打防止
+  if (_ceState !== 'awaiting_approval' && _ceState !== 'failed') return;       // 状態外からの実行を拒否
+
+  // failed → awaiting_approval（再承認要求。自動retryはしない。この関数がユーザー操作で
+  //   再度呼ばれることそのものが「明示的な再承認」にあたる）
+  if (_ceState === 'failed') {
+    var tr = ContentEvidenceApproval.transition(_ceState, 'retry');
+    if (tr.ok) _ceState = tr.state;
+  }
+
+  var tApprove = ContentEvidenceApproval.transition(_ceState, 'approve');
+  if (!tApprove.ok) return;
+  _ceState = tApprove.state;
+
+  if (ContentEvidenceApproval.isDuplicateExecution(_cePlan.fingerprint, _ceExecutedFingerprints)) {
+    _ceState = 'cancelled';
+    _ceRenderPanel();
+    return;   // 同一planは既に実行済み（二重実行防止）
+  }
+  if (!ContentEvidenceApproval.canExecuteWebSearch(_ceState)) return;
+
+  var tStart = ContentEvidenceApproval.transition(_ceState, 'execution_start');
+  if (!tStart.ok) return;
+  _ceState = tStart.state;
+  _ceExecutedFingerprints.push(_cePlan.fingerprint);
+  _ceRenderPanel();   // executing表示（button disabled）
+
+  try {
+    var res = await fetch('/api/evidence/web-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caseId: _cePlan.caseId, queries: _cePlan.queries, billingLock: false }),
+    });
+    var data = await res.json();
+    if (res.ok && data && data.ok) {
+      var tOk = ContentEvidenceApproval.transition(_ceState, 'execution_success');
+      if (tOk.ok) _ceState = tOk.state;
+      _ceLastEvidenceCandidates = (data.evidenceCandidates || []);
+    } else {
+      var tFail = ContentEvidenceApproval.transition(_ceState, 'execution_failure');
+      if (tFail.ok) _ceState = tFail.state;
+    }
+  } catch (e) {
+    var tErr = ContentEvidenceApproval.transition(_ceState, 'execution_failure');
+    if (tErr.ok) _ceState = tErr.state;
+  }
+  _ceRenderPanel();
+}
+
+function _ceCancelPlan() {
+  var t = ContentEvidenceApproval.transition(_ceState, 'cancel');
+  if (t.ok) _ceState = t.state;
+  _ceRenderPanel();
+}
+
+// 取得済み Evidence Candidate（承認前は空。正式contentEvidenceへは自動昇格しない＝表示のみ）。
+var _ceLastEvidenceCandidates = [];
+
+// Part O: reload等でstateを外部から復元する場合は必ずこの関数を経由する
+//   （approved/executingをcanonicalとして信用しない・安全側のidleへ丸める）。
+function _ceRestoreState(restored) {
+  _ceState = ContentEvidenceApproval.sanitizeRestoredState(restored);
+  _ceRenderPanel();
+}
+</script>
 <script>
 // ── Supabase DB同期ヘルパー ────────────────────────────
 // タスクをサーバー（Supabase経由）に保存。失敗してもlocalStorage側は継続

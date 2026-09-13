@@ -431,8 +431,14 @@ function draftOf(slides, extra) {
   caseHeader('18. 既存契約への影響 0');
   {
     const idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    assert(idx.indexOf('contentValueQuality') === -1 && idx.indexOf('contentEvidence') === -1,
-      '18a. index.html は本 Core を参照していない（未配線＝既存フロー無影響）');
+    // CV-4c-3: index.html は Content Evidence Approval UI（shared/contentClaimPlanning.js /
+    //   shared/contentEvidenceApproval.js という browser-safe な別モジュール）を新たに読み込むため、
+    //   「文字列 contentEvidence を一切含まない」という旧assertionはこの意図的な追加と矛盾する。
+    //   本Core（shared/contentValueQuality.js）と shared/contentEvidence.js 自体は
+    //   引き続き script として読み込まれていない（server-only のまま）ことを検証する。
+    assert(idx.indexOf('<script src="shared/contentValueQuality.js"') === -1
+      && idx.indexOf('<script src="shared/contentEvidence.js"') === -1,
+      '18a. index.html は shared/contentValueQuality.js / shared/contentEvidence.js を script として読み込んでいない（本Core・Evidence trust判定ロジックは未配線のまま）');
     assert(idx.indexOf('function evaluateQualityGate') !== -1 && idx.indexOf('function evaluateOutputPackageCompleteness') !== -1 && idx.indexOf('function evaluateOutputQuality') !== -1,
       '18b. 既存 Quality 関数は index.html に存在（無変更）');
     const src = fs.readFileSync(path.join(__dirname, 'shared', 'contentValueQuality.js'), 'utf8');

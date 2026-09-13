@@ -321,8 +321,14 @@ function makeFakeDb(initialContentType) {
     assert(JSON.stringify(deps) === JSON.stringify(['@anthropic-ai/sdk', '@supabase/supabase-js', 'axios', 'dotenv', 'express', 'opentype.js', 'sharp']),
       '9a. package.json dependencies 変更なし');
     const idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    assert(idx.indexOf('contentValueQuality') === -1 && idx.indexOf('contentEvidence') === -1,
-      '9b. index.html は無変更（本 Core を参照していない）');
+    // CV-4c-3: index.html は Content Evidence Approval UI（shared/contentClaimPlanning.js /
+    //   shared/contentEvidenceApproval.js という browser-safe な別モジュール）を新たに読み込むため、
+    //   「文字列 contentEvidence を一切含まない」という旧assertionはこの意図的な追加と矛盾する。
+    //   本Core（shared/contentValueQuality.js）と shared/contentEvidence.js 自体は
+    //   引き続き script として読み込まれていない（server-only のまま）ことを検証する。
+    assert(idx.indexOf('<script src="shared/contentValueQuality.js"') === -1
+      && idx.indexOf('<script src="shared/contentEvidence.js"') === -1,
+      '9b. index.html は shared/contentValueQuality.js / shared/contentEvidence.js を script として読み込んでいない（本Core・Evidence trust判定ロジックは未配線のまま）');
     const svcSrc = fs.readFileSync(path.join(__dirname, 'lib', 'contentValueService.js'), 'utf8');
     ['evaluateQualityGate', 'packageQuality', 'evaluateOutputQuality', 'published', 'output_approvals'].forEach(function (k) {
       assert(svcSrc.indexOf(k) === -1 || svcSrc.indexOf('非責務') !== -1, '9c. service は ' + k + ' を実行参照しない');
