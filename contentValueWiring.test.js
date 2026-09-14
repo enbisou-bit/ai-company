@@ -124,7 +124,10 @@ function makeFakeDb(initialContentType) {
   caseHeader('2. server.js の配線（source assertion・server 起動なし）');
   {
     const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-    const route = src.slice(src.indexOf("app.post('/api/output-drafts'"), src.indexOf("app.post('/api/output-drafts'") + 3000);
+    // CV-4c-3B: route本体が伸びたため、固定文字数ではなくroute終端（次の '\n});'）までを対象にする
+    //   （route自体の伸長に追随できるようにする。3000文字固定は今後も肥大化しうるため廃止）。
+    const routeStartIdx = src.indexOf("app.post('/api/output-drafts'");
+    const route = src.slice(routeStartIdx, src.indexOf('\n});', routeStartIdx) + 4);
     assert(route.indexOf("require('./lib/webSession').requireSession()") !== -1,
       '2a. POST /api/output-drafts に requireSession() が適用されている');
     assert(/const \{[^}]*\} = req\.body \|\| \{\};/.test(route) && route.match(/const \{([^}]*)\} = req\.body/)[1].indexOf('contentValue') === -1,
@@ -304,8 +307,12 @@ function makeFakeDb(initialContentType) {
 
     // review_state のみ保存（fields なし）では Content Value を計算しない設計であることを source で確認
     const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-    const route = src.slice(src.indexOf("app.post('/api/output-drafts'"), src.indexOf("app.post('/api/output-drafts'") + 3000);
-    assert(route.indexOf('if (fields !== undefined)') !== -1, '8c. fields 未指定（review_state のみ）では再計算しない');
+    const routeStartIdx2 = src.indexOf("app.post('/api/output-drafts'");
+    const route = src.slice(routeStartIdx2, src.indexOf('\n});', routeStartIdx2) + 4);
+    // CV-4c-3B: fields は contentEvidence/contentClaims 除去のため resolvedFields へ複製される。
+    //   「fields 未指定なら再計算しない」という判定自体は resolvedFields（fields由来）で行われる
+    //   （resolvedFields は fields が undefined のときは undefined のまま＝挙動は従来と同一）。
+    assert(route.indexOf('if (resolvedFields !== undefined)') !== -1, '8c. fields（resolvedFields）未指定（review_state のみ）では再計算しない');
     assert(route.indexOf('fail-open') !== -1, '8d. Content Value 側の失敗で Draft 保存を失敗にしない（fail-open）');
 
     // Core は contentValue 未指定の古い呼び出しでも壊れない

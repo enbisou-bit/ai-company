@@ -145,7 +145,7 @@ caseHeader('15. requirement未登録の既存not_checked → 従来表示維持�
 
 caseHeader('16-18. Mobile Approval Enforcement / IADP Approval / Quality Gate / READY 変更0（static検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
 
   // 16: _apfrEvaluateMobileApprovalCompliance()本体が新helperを参照していないこと
   const mapStart = src.indexOf('function _apfrEvaluateMobileApprovalCompliance(');
@@ -173,7 +173,7 @@ caseHeader('16-18. Mobile Approval Enforcement / IADP Approval / Quality Gate / 
 
 caseHeader('21-24. Detector / Assessment本体変更0（static検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
 
   const cgStart = src.indexOf('function evaluateComplianceGate(outputDraft, complianceContext) {');
   assert(cgStart !== -1, '21-1. evaluateComplianceGate()が既存シグネチャのまま存在');
@@ -199,7 +199,7 @@ caseHeader('21-24. Detector / Assessment本体変更0（static検証）');
 
 caseHeader('25-27. helper自体の純粋性・呼び出し確認（static検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrComplianceHasScannableContent(outputDraft) {');
   assert(start !== -1, '25-1. _apfrComplianceHasScannableContent()が実在する');
   const body = src.slice(start, src.indexOf('\n}\n', start));
@@ -233,7 +233,7 @@ caseHeader('28-30. server / provider 変更0（static検証）');
 
 caseHeader('31-33. fetch / DB write / AI API 参照0件（helper・buildComplianceGateHtml内）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrComplianceHasScannableContent(outputDraft) {');
   const body = src.slice(start, src.indexOf('\n}\n', start));
   assert(body.indexOf('fetch(') === -1 && body.indexOf('XMLHttpRequest') === -1, '31-1. fetch/XHR参照0件');

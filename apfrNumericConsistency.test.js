@@ -407,7 +407,7 @@ caseHeader('UI 27-31. buildFormalTruthConsistencyHtml 相当ロジックの表�
 caseHeader('static 1. _apfrEvaluateNumericConsistency() が実在し、facts直接走査・独自Correction判定をしていない');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateNumericConsistency(product) {');
   assert(start !== -1, 'static-1-1. _apfrEvaluateNumericConsistency() が実在する');
   if (start !== -1) {
@@ -426,7 +426,7 @@ caseHeader('static 1. _apfrEvaluateNumericConsistency() が実在し、facts直�
 caseHeader('static 2. buildFormalTruthConsistencyHtml() が実在し、非ブロッキング・Non-mutation');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function buildFormalTruthConsistencyHtml() {');
   assert(start !== -1, 'static-2-1. buildFormalTruthConsistencyHtml() が実在する');
   if (start !== -1) {
@@ -446,7 +446,7 @@ caseHeader('static 2. buildFormalTruthConsistencyHtml() が実在し、非ブロ
 caseHeader('static 3. _aicIntegratedScore() 本体無変更（C-2-1関連識別子への参照が0件）');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _aicIntegratedScore(c) {');
   assert(start !== -1, 'static-3-1. _aicIntegratedScore() が既存シグネチャのまま存在する');
   if (start !== -1) {
@@ -460,7 +460,7 @@ caseHeader('static 3. _aicIntegratedScore() 本体無変更（C-2-1関連識別�
 caseHeader('static 4. Output Engine配線確認: buildFormalTruthConsistencyHtmlが独立パネルとして接続されている');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf("_oeSafe(buildFormalTruthConsistencyHtml,   'FormalTruthConsistency')") !== -1,
     'static-4-1. Output Engineパネル合成リストへ接続されている');
   assert(src.indexOf("_oeSafe(buildComplianceGateHtml,           'ComplianceGate')\n    + _oeSafe(buildFormalTruthConsistencyHtml") !== -1,
@@ -470,7 +470,7 @@ caseHeader('static 4. Output Engine配線確認: buildFormalTruthConsistencyHtml
 caseHeader('static 5. APFR_FIELD_META.payout が type:"string" のまま無変更（Contract前提の確認）');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf("payout:                           { label: '報酬額',                type: 'string',  group: '成果' }") !== -1,
     'static-5-1. APFR_FIELD_META.payoutがtype:string のまま無変更（C-2-1がこの前提に依存）');
 }

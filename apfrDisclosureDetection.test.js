@@ -311,7 +311,7 @@ caseHeader('27. mutation: 実行前後でoutputDraft/complianceContextがdeep eq
 
 caseHeader('28-30. fetch / DB write / AI API 参照0件（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateDisclosureMarkers(');
   assert(start !== -1, '28-1. _apfrEvaluateDisclosureMarkers() が実在する');
   if (start !== -1) {
@@ -329,7 +329,7 @@ caseHeader('28-30. fetch / DB write / AI API 参照0件（実ソースstatic検�
 
 caseHeader('31. evaluateComplianceGate()本体変更0（listingNgWords Contract保護）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function evaluateComplianceGate(');
   assert(start !== -1, '31-1. evaluateComplianceGate() が実在する');
   const end = src.indexOf('\n}\n', start);
@@ -340,7 +340,7 @@ caseHeader('31. evaluateComplianceGate()本体変更0（listingNgWords Contract�
 
 caseHeader('32. evaluateQualityGate()変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const qgStart = src.indexOf('function evaluateQualityGate(packageQuality) {');
   assert(qgStart !== -1, '32-1. evaluateQualityGate()が既存シグネチャのまま存在');
   const qgEnd = src.indexOf('\n}\n', qgStart);
@@ -351,13 +351,13 @@ caseHeader('32. evaluateQualityGate()変更0');
 
 caseHeader('33. READY変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf("_lastOutputDraft.status    = noCompletedResults ? OUTPUT_STATUS.ERROR : OUTPUT_STATUS.READY;") !== -1, '33-1. OUTPUT_STATUS.READY判定ロジックが既存のまま');
 }
 
 caseHeader('34. User Approval変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   // C-1C-2b-1（Mobile Approval Enforcement）でcanApproveへ `!_mapCompliance.blocked` が追加された。
   //   本test（C-1C-1b）の関心は「_apfrEvaluateDisclosureMarkers()がUser Approvalを直接操作していないこと」であり、
   //   既存2条件が維持されていることを引き続き検証する（Enforcementはhelper経由でありC-1C-1bの責務外）。
@@ -411,7 +411,7 @@ caseHeader('39. stage状態に依存するgit diff型testを使用しない');
 
 caseHeader('40. 既存C-1C-1 Contract維持: Output Engine配線・独立パネルとしての接続確認');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf("_oeSafe(buildComplianceGateHtml,           'ComplianceGate')") !== -1, '40-1. buildComplianceGateHtmlのOutput Engine配線が既存のまま維持');
   const start = src.indexOf('function buildComplianceGateHtml() {');
   assert(start !== -1, '40-2. buildComplianceGateHtml()が実在する');

@@ -475,10 +475,14 @@ caseHeader('mutation 0（48）');
 // ──────────────────────────────────────────────────────────────
 // 4. 実ソースへのstatic検証
 // ──────────────────────────────────────────────────────────────
-const indexSrc  = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-const openaiSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
-const claudeSrc = fs.readFileSync(path.join(__dirname, 'claudeClient.js'), 'utf8');
+// CV-4c-3B: 一部編集ツールがLF、既存ファイルがgit core.autocrlf由来のCRLFで混在すると、
+//   '\n}\n' のような改行依存パターンマッチが関数境界を正しく検出できなくなる（実際に発生した回帰）。
+//   本ファイルのstatic検証は内容比較のみが目的で改行コードの違いに意味は無いため、
+//   読み込み直後にCRLF→LFへ正規化し、以降のすべてのindexOf/正規表現検索をCRLF非依存にする。
+const indexSrc  = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8').replace(/\r\n/g, '\n');
+const openaiSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8').replace(/\r\n/g, '\n');
+const claudeSrc = fs.readFileSync(path.join(__dirname, 'claudeClient.js'), 'utf8').replace(/\r\n/g, '\n');
 
 caseHeader('static: 共通helper（1-3）');
 {

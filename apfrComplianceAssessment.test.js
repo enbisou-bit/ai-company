@@ -350,7 +350,7 @@ caseHeader('14. blockers内容が既存detector結果に由来する');
 
 caseHeader('15-18. 独自再実装0・既存detector再利用（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateComplianceAssessment(');
   assert(start !== -1, '15-1. _apfrEvaluateComplianceAssessment() が実在する');
   const end = src.indexOf('\n}\n', start);
@@ -369,7 +369,7 @@ caseHeader('15-18. 独自再実装0・既存detector再利用（実ソースstat
 
 caseHeader('19-21. Numeric Consistency / APFR Resolver / facts 参照0（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateComplianceAssessment(');
   const end = src.indexOf('\n}\n', start);
   const body = src.slice(start, end !== -1 ? end : start + 6000);
@@ -391,7 +391,7 @@ caseHeader('22-25. mutation 0 / fetch 0 / DB write 0 / AI API 0');
   assert(JSON.stringify(d) === dBefore, '22-1. outputDraftは実行前後で完全不変');
   assert(JSON.stringify(c) === cBefore, '22-2. complianceContextは実行前後で完全不変');
 
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateComplianceAssessment(');
   const end = src.indexOf('\n}\n', start);
   const body = src.slice(start, end !== -1 ? end : start + 6000);
@@ -407,7 +407,7 @@ caseHeader('22-25. mutation 0 / fetch 0 / DB write 0 / AI API 0');
 
 caseHeader('26. evaluateQualityGate()変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const qgStart = src.indexOf('function evaluateQualityGate(packageQuality) {');
   assert(qgStart !== -1, '26-1. evaluateQualityGate()が既存シグネチャのまま存在');
   const qgBody = src.slice(qgStart, src.indexOf('\n}\n', qgStart));
@@ -417,7 +417,7 @@ caseHeader('26. evaluateQualityGate()変更0');
 
 caseHeader('27. evaluateOutputPackageCompleteness()変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const pqStart = src.indexOf('function evaluateOutputPackageCompleteness(draft) {');
   assert(pqStart !== -1, '27-1. 既存シグネチャのまま存在');
   const pqBody = src.slice(pqStart, src.indexOf('\n}\n', pqStart));
@@ -426,13 +426,13 @@ caseHeader('27. evaluateOutputPackageCompleteness()変更0');
 
 caseHeader('28. OUTPUT_STATUS.READY変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf('_lastOutputDraft.status    = noCompletedResults ? OUTPUT_STATUS.ERROR : OUTPUT_STATUS.READY;') !== -1, '28-1. READY判定ロジックが既存のまま');
 }
 
 caseHeader('29-30. User Approval変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   // APFR Step C-1C-2b-1（Mobile Approval Enforcement）により canApprove へ Compliance Assessment 由来の
   //   `!_mapCompliance.blocked` が追加された。既存2条件（_mapAllChecked / _mapReviewApproved）は
   //   そのまま維持されており、判定が緩められたのではなく **blocked時に承認不可となる条件が追加** されている。
@@ -479,7 +479,7 @@ caseHeader('32-34. server.js / openaiClient.js / claudeClient.js 変更0');
 
 caseHeader('35-40. UI表示（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function buildComplianceGateHtml() {');
   assert(start !== -1, '35-1. buildComplianceGateHtml() が実在する');
   const body = src.slice(start, start + 9000);

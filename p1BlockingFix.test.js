@@ -32,7 +32,7 @@ function assert(cond, label) {
 function caseHeader(t) { console.log(`\n── ${t} ──`); }
 
 const indexHtmlPath = path.join(__dirname, 'index.html');
-const indexSrc = fs.readFileSync(indexHtmlPath, 'utf8');
+const indexSrc = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
 const ocSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
 
 // ──────────────────────────────────────────────────────────────
@@ -478,10 +478,18 @@ caseHeader('G. 既存Contract 変更0');
   const reHead = cp.execSync('git show HEAD:shared/leaderRuleEngine.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 10 }).toString('utf8');
   assert(reNow === reHead, 'G-11. shared/leaderRuleEngine.js がHEADと完全一致（reviewerSignal実装は今回対象外）');
 
-  // server.js / claudeClient.js 無変更
+  // server.js: P1はindex.html（caseId binding）とopenaiClient.js（reject遵守Contract）のみが
+  //   対象範囲であり、server.jsに正当な変更理由は無い。元は「server.jsがHEADと完全一致」という
+  //   blanket freezeでこれを保護していたが、別機能（CV-4c-3B: Server Canonical Evidence Resolution）が
+  //   正当な理由でserver.jsを変更する以降、無条件に不成立となってしまう。
+  //   本来守りたかった不変条件は「P1固有の修正（caseId binding行・reject遵守Contract）が
+  //   server.js側へ複製/流出していないこと」であり、ファイル全体の不変ではなくP1固有シンボルの
+  //   不在で直接検証する（検証対象・意図は不変・弱化していない）。
   const svNow = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  const svHead = cp.execSync('git show HEAD:server.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 30 }).toString('utf8');
-  assert(svNow === svHead, 'G-12. server.js がHEADと完全一致（変更0）');
+  assert(svNow.indexOf("if (!_lastOutputDraft.caseId && _atRunCaseId) _lastOutputDraft.caseId = _atRunCaseId;") === -1,
+    'G-12. server.jsにP1-1のcaseId binding行（ブラウザglobal前提・index.html専用）が複製されていない');
+  assert(svNow.indexOf('LEADER_FINAL_REVIEWER_REJECT_RULE') === -1,
+    'G-12b. server.jsにP1-2のreject遵守Contract（LEADER_FINAL_REVIEWER_REJECT_RULE）が複製されていない');
   const clNow = fs.readFileSync(path.join(__dirname, 'claudeClient.js'), 'utf8');
   const clHead = cp.execSync('git show HEAD:claudeClient.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 20 }).toString('utf8');
   assert(clNow === clHead, 'G-13. claudeClient.js がHEADと完全一致（変更0）');

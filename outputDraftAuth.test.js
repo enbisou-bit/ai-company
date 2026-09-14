@@ -248,7 +248,8 @@ function extractFn(name) {
       assert(INDEX_SRC.indexOf('function ' + k) !== -1, '11b. ' + k + ' は存在（無変更）');
     });
     const pi = SERVER_SRC.indexOf("app.post('/api/output-drafts'");
-    const post = SERVER_SRC.slice(pi, pi + 2500);
+    // CV-4c-3B: route本体が伸びたため固定文字数ではなくroute終端まで対象にする（3B詳細はcontentValueWiring.test.js/contentEvidenceServerResolution.test.jsで別途検証）。
+    const post = SERVER_SRC.slice(pi, SERVER_SRC.indexOf('\n});', pi) + 4);
     assert(post.indexOf('resolveContentValueForSave') !== -1 && post.indexOf('updateContentValue') !== -1,
       '11c. CV-4b の server-side Content Value 配線は不変');
   }

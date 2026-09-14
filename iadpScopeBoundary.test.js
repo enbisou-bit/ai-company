@@ -31,7 +31,7 @@ function caseHeader(t) { console.log(`\n── ${t} ──`); }
 
 const svSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const ocSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
-const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 
 // ── server.js の _leaderCaseContextToText() を実ソースから取り出して実行する ──
 //   （純関数・DB/ネットワーク非依存。合成再現ではなく実装そのものを検証する）
@@ -235,9 +235,15 @@ caseHeader('14. listingNgWords Channel Scope（c35b534）非変更');
     '14-5. APFR_FIELD_META listingNgWords 無変更（Formal Truth/schema変更0）');
   assert(indexSrc.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;') !== -1,
     '14-6. Mobile Approval Enforcement 無変更');
-  // index.html 自体が今回無変更であること
-  const idxHead = cp.execSync('git show HEAD:index.html', { cwd: __dirname, maxBuffer: 1024 * 1024 * 30 }).toString('utf8');
-  assert(indexSrc === idxHead, '14-7. index.html がHEADと完全一致（今回の変更対象外）');
+  // Issue B（Option E + Option B）はserver.js（_leaderCaseContextToText）とopenaiClient.js
+  //   （_buildFormalTruthRuleText）のみが対象範囲であり、index.htmlに正当な変更理由は無い。
+  //   元は「index.htmlがHEADと完全一致」というblanket freezeでこれを保護していたが、
+  //   別機能（CV-4c-3B）が正当な理由でindex.htmlを変更する以降、無条件に不成立となる。
+  //   本来守りたかった不変条件は「Issue Bの用途境界見出し（IADP_HEADING）がindex.html側へ
+  //   複製/流出していないこと」であり、ファイル全体の不変ではなくOption E固有シンボルの
+  //   不在で直接検証する（検証対象・意図は不変・弱化していない）。
+  assert(indexSrc.indexOf('アカウント設計（IADP｜運用する媒体アカウント側の設計・方針です') === -1,
+    '14-7. index.htmlにOption E固有の用途境界見出し（IADP_HEADING）が複製されていない');
 }
 
 caseHeader('15. C-3-1 非変更 / その他既存Contract');

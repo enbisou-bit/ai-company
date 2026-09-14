@@ -301,7 +301,7 @@ caseHeader('7. mutation: 実行前後でproduct/factsがdeep equal');
 caseHeader('8. direct scan: 実ソース（index.html）で product.facts を直接走査していないこと');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const marker = 'function _apfrBuildComplianceContext(product) {';
   const startIdx = src.indexOf(marker);
   assert(startIdx !== -1, '8-1. index.htmlに _apfrBuildComplianceContext() が実在する');
@@ -325,7 +325,7 @@ caseHeader('9. listingPolicy: Compliance Contextへ含まれないこと');
   assert(Object.keys(ctx).length === 1, '9-2. listingNgWordsのみ含まれる（対象4fieldの原則どおり）');
 
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const constMarker = "const APFR_COMPLIANCE_CONTEXT_FIELDS = [";
   const cIdx = src.indexOf(constMarker);
   assert(cIdx !== -1, '9-3. index.htmlに APFR_COMPLIANCE_CONTEXT_FIELDS 定数が実在する');
@@ -340,7 +340,7 @@ caseHeader('9. listingPolicy: Compliance Contextへ含まれないこと');
 caseHeader('10. 配線（wiring）: atRunWorkflow / server.js / openaiClient.js への接続をstaticに確認');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const indexSrc = fs.readFileSync(indexHtmlPath, 'utf8');
+  const indexSrc = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(indexSrc.indexOf('_complianceContext = _apfrBuildComplianceContext(') !== -1, '10-1. atRunWorkflow()内でhelperが呼ばれている');
   assert(indexSrc.indexOf('complianceContext: _complianceContext') !== -1, '10-2. /api/auto-task のPOST bodyへcomplianceContextが追加されている');
   // IADPの既存経路（_iadpRequested依存）とは独立していること＝IADP判定ブロックの外側で算出されていること

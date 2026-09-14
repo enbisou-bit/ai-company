@@ -908,6 +908,49 @@ function _leaderCaseContextToText(cc) {
   return lines.join('\n');
 }
 
+// CV-4c-3B: 保存済み canonical Content Evidence / Claims から Writer Grounding text を構築する。
+//   ★ IADP Evidence（buildLeaderCaseContext）・APFR Formal Truth（client caseDataContext）とは
+//     完全に独立した責務。呼び出し側（各Writer route）はこの結果を既存 caseContext へ
+//     追加で連結するだけで、IADP/APFRのロジックには一切触れない。
+//   ★ 保存済み配列を無条件に信用しない: contentClaims の各要素は claimId/text の型だけでなく、
+//     shared/contentEvidence.js の validateContentEvidenceRecord() で個々の contentEvidence
+//     record自体も再検証し、不正・破損した保存データがあれば該当claimをgroundingから除外する
+//     （fail-closed。1件でも壊れていたら全体を諦めるのではなく、健全なclaimだけを使う）。
+//   ★ 実行前は候補（不足時）は空文字を返す＝呼び出し元のcaseContextには何も追加されない。
+async function buildContentEvidenceContextForCase(caseId) {
+  if (!caseId) return '';
+  try {
+    const result = await getOutputDraftsDb().getOutputDraft({ caseId });
+    const draft = result && result.draft;
+    if (!draft || !draft.fields) return '';
+    const fields = draft.fields;
+    const claims = Array.isArray(fields.contentClaims) ? fields.contentClaims : [];
+    const evidenceRecords = Array.isArray(fields.contentEvidence) ? fields.contentEvidence : [];
+    if (claims.length === 0) return '';
+
+    const contentEvidence = require('./shared/contentEvidence');
+    const contentClaimPlanning = require('./shared/contentClaimPlanning');
+
+    // 保存済み claim / evidence を fail-closed で再検証する（壊れたものは個別に除外）。
+    const validClaims = claims.filter((c) => c && typeof c.claimId === 'string' && c.claimId
+      && typeof c.text === 'string' && c.text.trim());
+    if (validClaims.length === 0) return '';
+
+    const evidenceByClaimId = {};
+    for (const rec of evidenceRecords) {
+      if (!rec || typeof rec.claimId !== 'string') continue;
+      const v = contentEvidence.validateContentEvidenceRecord(rec, { expectedCaseId: caseId });
+      if (!v.valid) continue;   // 破損／改竄されたrecordはgroundingへ使わない
+      if (!evidenceByClaimId[rec.claimId]) evidenceByClaimId[rec.claimId] = [];
+      evidenceByClaimId[rec.claimId].push(rec);
+    }
+
+    return contentClaimPlanning.buildContentEvidenceGroundingText(validClaims, evidenceByClaimId, {});
+  } catch (e) {
+    return '';   // fail-closed: 失敗時はgrounding無し（既存動作へ退避。Writer全体は止めない）
+  }
+}
+
 // Option B: client側で構築済みの Case Data Context（Formal Truth／Intelligence要約テキスト）を、
 //   既存 LCC Phase2 の server-side Case Context テキストへ連結する。
 //   ★server側の責務は「不透明な文字列の境界検証と連結」のみ。APFR Factの意味解釈・再構築・補完・
@@ -942,6 +985,11 @@ app.post('/api/chat', require('./lib/webSession').requireSession(), express.json
         const cc = await buildLeaderCaseContext(caseId);
         caseContext = _leaderCaseContextToText(cc);
       } catch (e) { caseContext = ''; }
+      // CV-4c-3B: Content Evidence Grounding（IADP Evidenceとは独立。保存済みcanonical値のみ使用）。
+      try {
+        const ceContext = await buildContentEvidenceContextForCase(caseId);
+        if (ceContext) caseContext = caseContext ? (caseContext + '\n\n' + ceContext) : ceContext;
+      } catch (e) { /* fail-open: 失敗してもchatを止めない */ }
     }
     // Option B: Path Aと同一契約でclient構築Contextを連結（内容解釈なし・IADP必須ガードは変更しない）。
     caseContext = _mergeCaseContextText(caseContext, caseDataContext);
@@ -1136,6 +1184,11 @@ app.post('/api/auto-task', require('./lib/webSession').requireSession(), express
         const _atcc = await buildLeaderCaseContext(caseId);
         autoTaskCaseContext = _leaderCaseContextToText(_atcc);
       } catch (e) { autoTaskCaseContext = ''; }
+      // CV-4c-3B: Content Evidence Grounding（IADP Evidenceとは独立。保存済みcanonical値のみ使用）。
+      try {
+        const _atCeContext = await buildContentEvidenceContextForCase(caseId);
+        if (_atCeContext) autoTaskCaseContext = autoTaskCaseContext ? (autoTaskCaseContext + '\n\n' + _atCeContext) : _atCeContext;
+      } catch (e) { /* fail-open: 失敗してもWorkflowを止めない */ }
     }
     // Option B: client構築のFormal Truth／Intelligence Contextを連結（内容解釈なし）。
     //   server側IADP Contextがnull（IADP未生成）でも、client側Contextがあれば caseContext は非空となり、
@@ -1458,6 +1511,11 @@ app.post('/api/consult', require('./lib/webSession').requireSession(), express.j
         const ccc = await buildLeaderCaseContext(caseId);
         consultCaseContext = _leaderCaseContextToText(ccc);
       } catch (e) { consultCaseContext = ''; }
+      // CV-4c-3B: Content Evidence Grounding（IADP Evidenceとは独立。保存済みcanonical値のみ使用）。
+      try {
+        const _consultCeContext = await buildContentEvidenceContextForCase(caseId);
+        if (_consultCeContext) consultCaseContext = consultCaseContext ? (consultCaseContext + '\n\n' + _consultCeContext) : _consultCeContext;
+      } catch (e) { /* fail-open: 失敗してもconsultを止めない */ }
     }
 
     // Phase27: Claude対象社員への相談もClaude APIへ routing
@@ -1723,7 +1781,7 @@ app.get('/api/output-drafts', require('./lib/webSession').requireSession(), asyn
   } catch (e) { res.json({ ok: false, draft: null, error: e.message }); }
 });
 
-// POST /api/output-drafts { outputId, caseId, fields, type?, status?, title?, sourceText?, quality?, packageQuality?, assignedRoles?, schemaVersion?, detection?, createdAt?, updatedAt?, builtAt?, reviewState? }
+// POST /api/output-drafts { outputId, caseId, fields, type?, status?, title?, sourceText?, quality?, packageQuality?, assignedRoles?, schemaVersion?, detection?, createdAt?, updatedAt?, builtAt?, reviewState?, contentEvidenceCandidates? }
 // ※ server.js は app.use(express.json()) をグローバル設定済みのため、per-route express.json() は付けない（Phase54-1b規約に統一）
 // ※ Phase54-2f: reviewState（Mobile Review状態・JSONB）を任意受領。Draト本文保存(fields)と review_stateのみ保存 のどちらも許可。
 // CV-4b: server-side authorization boundary を追加する（既存 lib/webSession.js の requireSession を再利用・
@@ -1731,17 +1789,55 @@ app.get('/api/output-drafts', require('./lib/webSession').requireSession(), asyn
 //   ★ fail-closed: WEB_SESSION_SECRET 未設定環境では常に 401（環境変数の有無で認証をskipする経路は作らない）。
 //   ★ browser の同一オリジン fetch は既定で cookie を送るため、login 済みなら既存保存フローはそのまま通る。
 //   ★ GET /api/output-drafts へは今回 session を付けない（復元フローを壊さないため・CV-4b 報告参照）。
+// CV-4c-3B: Content Evidence Server Canonical Resolution。
+//   ★ client 供給の fields.contentEvidence / fields.contentClaims は canonical として採用しない
+//     （常に破棄する。contentEvidenceCandidates が明示提出された場合のみ、server が
+//     lib/contentEvidenceResolutionService.js 経由で再計算した値に置き換える）。
+//   ★ contentEvidenceCandidates 未提出の通常保存は従来動作のまま（fields からこの2 field を
+//     除去するだけで、それ以外の挙動・レスポンス形状は一切変えない）。
+//   ★ Evidence-grounded 保存要求（contentEvidenceCandidates 提出）なのに canonical
+//     contentEvidence/contentClaims が 0 件なら、通常保存へ黙って fallback せず 422 で fail-closed する。
 app.post('/api/output-drafts', require('./lib/webSession').requireSession(), async (req, res) => {
   // ★ client 供給の contentValue は **意図的に受け取らない**（分解対象から除外＝そのまま破棄）。
   //   Content Value は下で server 側が再計算した値のみを保存する
   //   （client が status:'complete' を送っても保存されない）。
-  const { outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState } = req.body || {};
+  const { outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState, contentEvidenceCandidates } = req.body || {};
   const declaredContentType = (req.body && req.body.contentType) || null;   // 初回宣言の「候補」に過ぎない
   if (!outputId || !caseId) return res.status(400).json({ ok: false, error: 'outputId / caseId は必須です' });
   if (fields === undefined && reviewState === undefined) return res.status(400).json({ ok: false, error: 'fields または reviewState が必要です' });
   try {
+    // ── CV-4c-3B: fields.contentEvidence / fields.contentClaims の client値は常に破棄する ──
+    let resolvedFields = fields;
+    let contentEvidenceSummary = null;   // UI表示用（server確定件数のみ。client側で再Formal化しない）
+    if (fields !== undefined && fields !== null) {
+      resolvedFields = Object.assign({}, fields);
+      delete resolvedFields.contentEvidence;
+      delete resolvedFields.contentClaims;
+
+      if (Array.isArray(contentEvidenceCandidates) && contentEvidenceCandidates.length > 0) {
+        const evidenceService = require('./lib/contentEvidenceResolutionService');
+        const evidenceResolved = evidenceService.resolveContentEvidenceSubmission(contentEvidenceCandidates, { caseId, now: Date.now() });
+        if (evidenceResolved.contentEvidence.length === 0 || evidenceResolved.contentClaims.length === 0) {
+          // Part D: fail-closed。Evidence-grounded保存要求だったのに成立しなかった場合、
+          //   通常contentへ黙ってfallbackさせず、この保存要求自体を失敗として返す（DBへは一切書かない）。
+          return res.status(422).json({
+            ok: false,
+            error: 'content_evidence_resolution_insufficient',
+            perIntent: evidenceResolved.perIntent,
+            resolutionErrors: evidenceResolved.errors,
+          });
+        }
+        resolvedFields.contentEvidence = evidenceResolved.contentEvidence;
+        resolvedFields.contentClaims = evidenceResolved.contentClaims;
+        contentEvidenceSummary = {
+          contentEvidenceCount: evidenceResolved.contentEvidence.length,
+          contentClaimsCount: evidenceResolved.contentClaims.length,
+        };
+      }
+    }
+
     const draftsDb = getOutputDraftsDb();
-    const result = await draftsDb.upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
+    const result = await draftsDb.upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields: resolvedFields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
     if (result.error) return res.json({ ok: false, error: result.error });
 
     // ── CV-4b: Content Value を server 側で再計算して独立列へ保存する ──
@@ -1749,11 +1845,11 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
     //   ★ 完全 fail-open: ここでの失敗は Output Draft 本体の保存結果を覆さない
     //     （migration 未適用で content_type / content_value 列が無い環境でも既存フローが壊れない）。
     let contentValueSummary = null;
-    if (fields !== undefined) {
+    if (resolvedFields !== undefined) {
       try {
         const cvService = require('./lib/contentValueService');
         const resolved = await cvService.resolveContentValueForSave(
-          { outputId, caseId, type, declaredContentType, fields },
+          { outputId, caseId, type, declaredContentType, fields: resolvedFields },
           {
             setContentTypeIfUnset: draftsDb.setContentTypeIfUnset,
             getContentTypeCanonical: draftsDb.getContentTypeCanonical,
@@ -1767,7 +1863,7 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
       } catch (_cve) { /* fail-open: Content Value 側の失敗で Draft 保存を失敗にしない */ }
     }
 
-    res.json({ ok: true, error: null, contentValue: contentValueSummary });
+    res.json({ ok: true, error: null, contentValue: contentValueSummary, contentEvidenceSummary });
   } catch (e) { res.json({ ok: false, error: e.message }); }
 });
 // ─────────────────────────────────────────────────

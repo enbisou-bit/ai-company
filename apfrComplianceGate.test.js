@@ -386,7 +386,7 @@ caseHeader('12. mutation: 実行前後でoutputDraft/complianceContextがdeep eq
 caseHeader('13. direct Resolver use: 実ソースでfacts/Resolver参照0件');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function evaluateComplianceGate(');
   assert(start !== -1, '13-1. evaluateComplianceGate() が実在する');
   if (start !== -1) {
@@ -401,7 +401,7 @@ caseHeader('13. direct Resolver use: 実ソースでfacts/Resolver参照0件');
 caseHeader('14. packageQuality回帰: 既存関数が無変更');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf('function evaluateOutputPackageCompleteness(draft) {') !== -1, '14-1. evaluateOutputPackageCompleteness()が既存シグネチャのまま存在');
   const pqStart = src.indexOf('function evaluateOutputPackageCompleteness(draft) {');
   const pqEnd = src.indexOf('\n}\n', pqStart);
@@ -412,7 +412,7 @@ caseHeader('14. packageQuality回帰: 既存関数が無変更');
 caseHeader('15. evaluateQualityGate回帰: 既存関数が無変更');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const qgStart = src.indexOf('function evaluateQualityGate(packageQuality) {');
   assert(qgStart !== -1, '15-1. evaluateQualityGate()が既存シグネチャのまま存在');
   const qgEnd = src.indexOf('\n}\n', qgStart);
@@ -424,7 +424,7 @@ caseHeader('15. evaluateQualityGate回帰: 既存関数が無変更');
 caseHeader('16. User Approval非ブロック: 表示関数がUser Approval/READY関連識別子を変更していない');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function buildComplianceGateHtml() {');
   assert(start !== -1, '16-1. buildComplianceGateHtml() が実在する');
   if (start !== -1) {
@@ -440,7 +440,7 @@ caseHeader('16. User Approval非ブロック: 表示関数がUser Approval/READY
 caseHeader('17. IADP無回帰: canApprove算出ロジック・Executive Decision Engineが無変更');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   // C-1C-2b-1（Mobile Approval Enforcement）でcanApproveへ `!_mapCompliance.blocked` が追加された。
   //   本test（C-1C-1）の関心は「evaluateComplianceGate()がUser Approvalを直接操作していないこと」であり、
   //   既存2条件が維持されていることを引き続き検証する（Enforcementはhelper経由でありC-1C-1の責務外）。
@@ -452,7 +452,7 @@ caseHeader('17. IADP無回帰: canApprove算出ロジック・Executive Decision
 caseHeader('18. Output Engine配線確認: buildComplianceGateHtmlが独立パネルとして接続されている');
 {
   const indexHtmlPath = path.join(__dirname, 'index.html');
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf("_oeSafe(buildComplianceGateHtml,           'ComplianceGate')") !== -1, '18-1. Output Engineパネル合成リストへ接続されている');
   assert(src.indexOf("_oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')\n    + _oeSafe(buildComplianceGateHtml") !== -1, '18-2. Output Package Quality直後に配置されている（packageQualityとは別パネル）');
 }

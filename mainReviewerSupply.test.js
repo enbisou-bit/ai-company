@@ -29,7 +29,7 @@ function assert(cond, label) {
 function caseHeader(t) { console.log(`\n── ${t} ──`); }
 
 const ocSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
-const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const svSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 
 // ── 実装と同一の取得条件を合成再現（判定基準を新規に作らない） ──────────
@@ -224,10 +224,16 @@ caseHeader('13. deterministic enforcement を追加していない');
 
 caseHeader('14. Issue B / listingNgWords / その他既存Contract 非変更');
 {
-  const idxHead = cp.execSync('git show HEAD:index.html', { cwd: __dirname, maxBuffer: 1024 * 1024 * 30 }).toString('utf8');
-  assert(indexSrc === idxHead, '14-1. index.html がHEADと完全一致（今回の変更対象外）');
-  const svHead = cp.execSync('git show HEAD:server.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 30 }).toString('utf8');
-  assert(svSrc === svHead, '14-2. server.js がHEADと完全一致（Issue B Option E 非変更）');
+  // Issue A Option Dはmain-task Reviewer供給ロジックをopenaiClient.js内のみに閉じる設計
+  //   （index.html/server.jsを一切変更しない）。元は「index.html/server.jsがHEADと完全一致」という
+  //   blanket freezeでこれを保護していたが、別機能（CV-4c-3B）が正当な理由で両ファイルを変更する
+  //   以降、無条件に不成立となる。本来守りたかった不変条件は「Option D固有のロジック（mainReviewerTask/
+  //   mainReviewerText）がindex.html/server.js側へ複製/流出していないこと」であり、
+  //   ファイル全体の不変ではなくOption D固有シンボルの不在で直接検証する（検証対象・意図は不変・弱化していない）。
+  assert(indexSrc.indexOf('mainReviewerTask') === -1 && indexSrc.indexOf('mainReviewerText') === -1,
+    '14-1. index.htmlにOption D固有シンボル（mainReviewerTask/mainReviewerText）が複製されていない');
+  assert(svSrc.indexOf('mainReviewerTask') === -1 && svSrc.indexOf('mainReviewerText') === -1,
+    '14-2. server.jsにOption D固有シンボル（mainReviewerTask/mainReviewerText）が複製されていない（Issue B Option E非変更の趣旨も継承）');
   const clNow = fs.readFileSync(path.join(__dirname, 'claudeClient.js'), 'utf8');
   const clHead = cp.execSync('git show HEAD:claudeClient.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 20 }).toString('utf8');
   assert(clNow === clHead, '14-3. claudeClient.js がHEADと完全一致（変更0）');

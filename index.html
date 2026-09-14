@@ -7575,20 +7575,48 @@ function _ceRenderPanel() {
   var retryNote = (_ceState === 'failed') ? '<p style="color:#c00;">前回の取得に失敗しました。再度「Evidence取得を実行」を押すと再承認として実行します（自動再試行はしません）。</p>' : '';
 
   // Part G: 取得後の Evidence Candidate 表示（source name/title/URL/excerpt要約/trust/verification/紐づくintent）。
-  //   ★ ここでは表示のみ。正式contentEvidenceへの自動昇格は行わない（mapping decisionは別工程）。
+  //   ★ ここでは表示とmapping入力のみ。正式contentEvidenceへの昇格・claim確定はすべてserver側で行う
+  //     （CV-4c-3B: Server Canonical Evidence Resolution。browser側でresolveClaimEvidenceBatch()等は呼ばない）。
   var candidatesHtml = '';
   if (_ceState === 'completed' && _ceLastEvidenceCandidates.length > 0) {
-    var cRows = _ceLastEvidenceCandidates.map(function (c) {
+    var ctOptions = '<option value="">-- claimType --</option><option value="general_practice">general_practice</option><option value="law_regulation">law_regulation</option><option value="public_statistic">public_statistic</option>';
+    var stOptions = '<option value="">-- supportType --</option><option value="supports">supports</option><option value="contradicts">contradicts</option><option value="context">context</option>';
+    var cRows = _ceLastEvidenceCandidates.map(function (c, idx) {
       var excerptSummary = c.sourceExcerpt ? String(c.sourceExcerpt).slice(0, 80) + '…' : '(excerptなし)';
       return '<li>' +
         '<strong>' + (c.sourceTitle || c.sourceName || '(タイトルなし)') + '</strong><br>' +
         'URL: ' + (c.sourceUrl || '(なし)') + '<br>' +
         '要約: ' + excerptSummary + '<br>' +
         'verificationStatus: ' + (c.verificationStatus || 'unverified') + ' ／ 紐づくintent: ' + (c.intentId || c.category || '(不明)') +
-        ' <em>※まだ正式Evidenceではありません（mapping確認前）</em>' +
+        ' <em>※まだ正式Evidenceではありません（server確定前）</em><br>' +
+        'Mapping（明示選択必須・未選択はserverへの提出対象外）: ' +
+        '<select id="ce-ct-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')">' + ctOptions + '</select> ' +
+        '<select id="ce-st-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')">' + stOptions + '</select>' +
         '</li>';
     }).join('');
-    candidatesHtml = '<h5>取得結果（Candidate・未確定）</h5><ul>' + cRows + '</ul>';
+
+    var planIntentIds = (_cePlan && Array.isArray(_cePlan.intents)) ? _cePlan.intents.map(function (it) { return it.intentId; }) : [];
+    var claimTextRows = planIntentIds.map(function (intentId) {
+      return '<li>intent: ' + intentId + '　claim文言（任意・Evidenceの範囲内で入力）: ' +
+        '<input type="text" id="ce-claimtext-' + intentId + '" style="width:50%;"></li>';
+    }).join('');
+
+    var summaryHtml = '';
+    if (_ceLastResolutionResponse) {
+      if (_ceLastResolutionResponse.ok) {
+        var s = _ceLastResolutionResponse.contentEvidenceSummary;
+        summaryHtml = '<p style="color:#080;">Evidence確定成功：canonical contentEvidence ' + (s ? s.contentEvidenceCount : 0) +
+          '件／canonical contentClaims ' + (s ? s.contentClaimsCount : 0) + '件（server確定値）</p>';
+      } else {
+        summaryHtml = '<p style="color:#c00;">Evidence確定失敗：' + (_ceLastResolutionResponse.error || 'unknown_error') +
+          '（Evidence不足のため通常contentへは自動フォールバックしていません。mapping・claim文言を見直して再送信してください）</p>';
+      }
+    }
+
+    candidatesHtml = '<h5>取得結果（Candidate・server未確定）</h5><ul>' + cRows + '</ul>' +
+      (claimTextRows ? '<h5>claim文言（任意）</h5><ul>' + claimTextRows + '</ul>' : '') +
+      '<button id="ce-submit-btn" onclick="_ceSubmitEvidenceForResolution()">Evidence確定（serverへ送信）</button>' +
+      summaryHtml;
   }
 
   el.style.display = 'block';
@@ -7671,6 +7699,92 @@ var _ceLastEvidenceCandidates = [];
 function _ceRestoreState(restored) {
   _ceState = ContentEvidenceApproval.sanitizeRestoredState(restored);
   _ceRenderPanel();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CV-4c-3B: Server Canonical Evidence Resolution — browser側の責務は
+//   Candidate表示・Mapping入力・claim文言入力・既存 POST /api/output-drafts への提出まで。
+//   ★ Formal Evidence判定（trust classification／verification／promotion／resolution／
+//     grounding validation）はすべてserver側（lib/contentEvidenceResolutionService.js）が行う。
+//     browser側でresolveClaimEvidenceBatch()／finalizeContentClaim()等を呼ばない
+//     （shared/contentEvidence.jsはブラウザに公開されておらず、呼んでも
+//     content_evidence_module_unavailableになるため——CV-4c-3B初回実装で判明した反省）。
+// ══════════════════════════════════════════════════════════════
+var _ceMappingDecisions = {};        // candidate index -> { claimType, supportType }（明示選択のみ・自動推測しない）
+var _ceLastResolutionResponse = null; // server応答をそのまま保持（表示用。client側で再Formal化しない）
+
+function _ceSetMappingDecision(candidateIndex, claimType, supportType) {
+  if (!claimType || !supportType) { delete _ceMappingDecisions[candidateIndex]; return; }
+  _ceMappingDecisions[candidateIndex] = { claimType: claimType, supportType: supportType };
+}
+
+function _ceSyncMappingFromSelects(idx) {
+  var ctEl = document.getElementById('ce-ct-' + idx);
+  var stEl = document.getElementById('ce-st-' + idx);
+  _ceSetMappingDecision(idx, ctEl ? ctEl.value : '', stEl ? stEl.value : '');
+}
+
+// ★★★ Formal Evidence確定の唯一の実行入口。既存 POST /api/output-drafts をそのまま使う
+//   （新endpointを作らない）。実Web Searchはここでは一切行わない（Part K）。★★★
+async function _ceSubmitEvidenceForResolution() {
+  if (!_cePlan || _ceLastEvidenceCandidates.length === 0) return { ok: false, error: 'no_candidates' };
+  var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  if (!draft || !draft.id) { _ceLastResolutionResponse = { ok: false, error: 'no_output_draft' }; _ceRenderPanel(); return _ceLastResolutionResponse; }
+  var caseId = _cePlan.caseId;
+  if (!caseId) { _ceLastResolutionResponse = { ok: false, error: 'no_case_id' }; _ceRenderPanel(); return _ceLastResolutionResponse; }
+
+  var contentEvidenceCandidates = [];
+  _ceLastEvidenceCandidates.forEach(function (cand, idx) {
+    var decision = _ceMappingDecisions[idx];
+    if (!decision) return;   // ★ mapping未指定candidateはserverへ提出しない（自動推測しない）
+    var intentId = cand.intentId || cand.category;
+    var intent = (_cePlan.intents || []).filter(function (it) { return it.intentId === intentId; })[0];
+    var claimTextEl = document.getElementById('ce-claimtext-' + intentId);
+    contentEvidenceCandidates.push({
+      intentId: intentId,
+      caseId: caseId,
+      topic: intent ? intent.topic : undefined,
+      question: intent ? intent.question : undefined,
+      claimTypeCandidate: intent ? intent.claimTypeCandidate : decision.claimType,
+      candidate: {
+        sourceMethod: cand.sourceMethod,
+        sourceUrl: cand.sourceUrl,
+        sourceTitle: cand.sourceTitle,
+        sourceName: cand.sourceName,
+        sourceExcerpt: cand.sourceExcerpt,
+        createdBy: cand.createdBy,
+      },
+      mappingDecision: { claimType: decision.claimType, supportType: decision.supportType },
+      proposedClaimText: (claimTextEl && claimTextEl.value) ? claimTextEl.value : undefined,
+    });
+  });
+
+  if (contentEvidenceCandidates.length === 0) {
+    _ceLastResolutionResponse = { ok: false, error: 'no_mapped_candidates' };
+    _ceRenderPanel();
+    return _ceLastResolutionResponse;
+  }
+
+  try {
+    var res = await fetch('/api/output-drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outputId: draft.id,
+        caseId: caseId,
+        fields: draft.fields || {},   // 既存fieldsをそのまま送る（server側がcontentEvidence/contentClaimsのみ上書き）
+        contentEvidenceCandidates: contentEvidenceCandidates,
+      }),
+    });
+    var data = await res.json().catch(function () { return { ok: false, error: 'invalid_response' }; });
+    _ceLastResolutionResponse = data;
+    _ceRenderPanel();
+    return data;
+  } catch (e) {
+    _ceLastResolutionResponse = { ok: false, error: (e && e.message) || 'network_error' };
+    _ceRenderPanel();
+    return _ceLastResolutionResponse;
+  }
 }
 </script>
 <script>

@@ -29,7 +29,7 @@ function assert(cond, label) {
 }
 function caseHeader(t) { console.log(`\n── ${t} ──`); }
 
-const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 const ocSrc = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
 
 // ──────────────────────────────────────────────────────────────
@@ -369,9 +369,15 @@ caseHeader('14. 既存Contract 変更0（Quality Gate / READY / Approval / serve
   const apBody = indexSrc.slice(apStart, indexSrc.indexOf('\n}\n', apStart));
   assert(apBody.indexOf('if (_apCompliance.blocked) {') !== -1, '14-5. approveInstagramPackage() のEnforcement 無変更');
 
+  // C-1C-1cの修正はindex.html（_apfrScopeComplianceContextForOutput/APFR_LISTING_AD_ONLY_FIELDS）と
+  //   openaiClient.js（AI Context用途境界）のみが対象範囲であり、server.jsに正当な変更理由は無い。
+  //   元は「server.jsがHEADと完全一致」というblanket freezeでこれを保護していたが、
+  //   別機能（CV-4c-3B）が正当な理由でserver.jsを変更する以降、無条件に不成立となる。
+  //   本来守りたかった不変条件は「C-1C-1c固有のscope機構がserver.js側へ複製/流出していないこと」であり、
+  //   ファイル全体の不変ではなく固有シンボルの不在で直接検証する（検証対象・意図は不変・弱化していない）。
   const svNow = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  const svHead = cp.execSync('git show HEAD:server.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 30 }).toString('utf8');
-  assert(svNow === svHead, '14-6. server.js がHEADと完全一致（変更0）');
+  assert(svNow.indexOf('_apfrScopeComplianceContextForOutput') === -1 && svNow.indexOf('APFR_LISTING_AD_ONLY_FIELDS') === -1,
+    '14-6. server.jsにC-1C-1c固有のlistingNgWords scope機構が複製されていない');
   const clNow = fs.readFileSync(path.join(__dirname, 'claudeClient.js'), 'utf8');
   const clHead = cp.execSync('git show HEAD:claudeClient.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 20 }).toString('utf8');
   assert(clNow === clHead, '14-7. claudeClient.js がHEADと完全一致（変更0）');

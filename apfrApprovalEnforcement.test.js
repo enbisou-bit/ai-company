@@ -253,7 +253,7 @@ caseHeader('14. clear時は下流が正常に到達する（過剰ブロック�
 
 caseHeader('15-18. Assessment唯一判定源・detector再実装0（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateMobileApprovalCompliance(');
   assert(start !== -1, '15-1. _apfrEvaluateMobileApprovalCompliance() が実在する');
   const end = src.indexOf('\n}\n', start);
@@ -272,14 +272,14 @@ caseHeader('15-18. Assessment唯一判定源・detector再実装0（実ソース
 
 caseHeader('19. canApprove接続（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf('var canApprove = _mapAllChecked() && _mapReviewApproved(mai) && !_mapCompliance.blocked;') !== -1,
     '19-1. canApproveへEnforcement条件が接続され、既存2条件も維持されている');
 }
 
 caseHeader('20. submit直前再評価（実ソースstatic検証）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function approveInstagramPackage() {');
   assert(start !== -1, '20-1. approveInstagramPackage() が実在する');
   const body = src.slice(start, src.indexOf('\n}\n', start));
@@ -295,7 +295,7 @@ caseHeader('20. submit直前再評価（実ソースstatic検証）');
 
 caseHeader('21-22. Publishing Ready / markInstagramPublished 独立変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const prStart = src.indexOf('function createPublishingReadyDraft(outputDraft) {');
   const prBody = src.slice(prStart, src.indexOf('\n}\n', prStart));
   assert(prBody.indexOf('Compliance') === -1 && prBody.indexOf('compliance') === -1, '21-1. createPublishingReadyDraft()にCompliance参照0件（下流自動追従のみ）');
@@ -307,14 +307,14 @@ caseHeader('21-22. Publishing Ready / markInstagramPublished 独立変更0');
 
 caseHeader('23. OUTPUT_STATUS.READY変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf('_lastOutputDraft.status    = noCompletedResults ? OUTPUT_STATUS.ERROR : OUTPUT_STATUS.READY;') !== -1,
     '23-1. READY判定ロジックが既存のまま（AI生成完了状態として維持）');
 }
 
 caseHeader('24. Quality Gate変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const qgStart = src.indexOf('function evaluateQualityGate(packageQuality) {');
   assert(qgStart !== -1, '24-1. evaluateQualityGate()が既存シグネチャのまま存在');
   const qgBody = src.slice(qgStart, src.indexOf('\n}\n', qgStart));
@@ -333,7 +333,7 @@ caseHeader('25. accountCreationReadiness変更0（C-1C-2b-2で別途）');
 
 caseHeader('26. _iadpApproveDesign（IADP Approval）変更0（C-1C-2b-2で別途）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const iaStart = src.indexOf('function _iadpApproveDesign() {');
   const iaBody = src.slice(iaStart, src.indexOf('\n}\n', iaStart));
   assert(iaBody.indexOf('Compliance') === -1 && iaBody.indexOf('compliance') === -1, '26-1. IADP承認にCompliance Enforcement未接続（C-1C-2b-1の対象外）');
@@ -341,7 +341,7 @@ caseHeader('26. _iadpApproveDesign（IADP Approval）変更0（C-1C-2b-2で別�
 
 caseHeader('27. Executive Decision変更0');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   assert(src.indexOf("try { if (typeof _edRunDecisionEngine === 'function') _edRunDecisionEngine(inbox); }") !== -1,
     '27-1. Executive Decision Engine呼び出しが既存のまま（Compliance blockedでも止めない）');
 }
@@ -352,7 +352,7 @@ caseHeader('28-30. server.js / DB / AI API 境界');
   assert(s.indexOf('_apfrEvaluateMobileApprovalCompliance') === -1, '28-1. server.jsにEnforcement参照0件（client-only Enforcement）');
   assert(s.indexOf('_apfrEvaluateComplianceAssessment') === -1, '28-2. server.jsにAssessment参照0件（C-1A Contract維持）');
 
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function _apfrEvaluateMobileApprovalCompliance(');
   const body = src.slice(start, src.indexOf('\n}\n', start));
   assert(body.indexOf('fetch(') === -1 && body.indexOf('XMLHttpRequest') === -1, '29-1. fetch/XHR参照0件');
@@ -372,7 +372,7 @@ caseHeader('31. openaiClient.js / claudeClient.js / shared/leaderRuleEngine.js �
 
 caseHeader('32. Enforcement UI（warnings・override UI非新設）');
 {
-  const src = fs.readFileSync(indexHtmlPath, 'utf8');
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
   const start = src.indexOf('function createMobileApprovalDraft(outputDraft) {');
   const body = src.slice(start, src.indexOf('\n}\n', start));
   assert(body.indexOf('承認できません。理由：') !== -1, '32-1. blocked時に理由を表示する');

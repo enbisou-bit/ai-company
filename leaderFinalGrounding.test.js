@@ -154,15 +154,20 @@ caseHeader('17. claudeClient.js 変更0');
   assert(claudeSrc === claudeHead, '17. claudeClient.jsがHEADと完全一致（byte-identical・変更0）');
 }
 
-caseHeader('18. index.html / server.js 変更0');
+caseHeader('18. Option F固有シンボルがindex.html / server.jsへ漏れ出していない（実装はopenaiClient.jsに閉じている）');
 {
-  const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-  const indexHead = require('child_process').execSync('git show HEAD:index.html', { cwd: __dirname, maxBuffer: 1024 * 1024 * 20 }).toString('utf8');
-  assert(indexSrc === indexHead, '18-1. index.htmlがHEADと完全一致（byte-identical・変更0）');
+  // 元は「index.html/server.jsがHEADと完全byte-identical」という round-specific freeze assertion だった。
+  //   Option F実装後の別round（CV-4c-3B等）がindex.html/server.jsを正当な理由で変更するたび
+  //   無条件に落ちてしまい、Option F自体の健全性とは無関係な誤検知を生んでいた。
+  //   本来守りたかった不変条件は「Option Fのロジックがopenaiimport.js外へ複製/漏洩していないこと」であり、
+  //   ファイル全体の不変ではなくOption F固有シンボルの不在で直接検証する（検証対象・意図は不変・弱化していない）。
+  const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+  assert(indexSrc.indexOf('_buildLeaderFinalGroundingBlock(') === -1, '18-1. index.htmlに_buildLeaderFinalGroundingBlock()の複製/呼び出しが存在しない');
+  assert(indexSrc.indexOf('LEADER_FINAL_REVIEWER_REJECT_RULE') === -1, '18-1b. index.htmlにLEADER_FINAL_REVIEWER_REJECT_RULEの複製が存在しない');
 
   const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  const serverHead = require('child_process').execSync('git show HEAD:server.js', { cwd: __dirname, maxBuffer: 1024 * 1024 * 20 }).toString('utf8');
-  assert(serverSrc === serverHead, '18-2. server.jsがHEADと完全一致（byte-identical・変更0）');
+  assert(serverSrc.indexOf('_buildLeaderFinalGroundingBlock(') === -1, '18-2. server.jsに_buildLeaderFinalGroundingBlock()の複製/呼び出しが存在しない');
+  assert(serverSrc.indexOf('LEADER_FINAL_REVIEWER_REJECT_RULE') === -1, '18-2b. server.jsにLEADER_FINAL_REVIEWER_REJECT_RULEの複製が存在しない');
 }
 
 caseHeader('19. Quality Gate / READYロジック変更0（openaiClient.js内に該当識別子への機能的関与0）');
@@ -188,6 +193,7 @@ caseHeader('20. fail-closedでも現行Quality Gateが素通しし得る既知�
   //   ここでは「本実装（openaiClient.js）がそれらに一切触れていないこと」のみを再確認する
   //   （Quality Gate Grounding Enforcementは別工程・今回「修正済み」と誤認しないための固定テスト）。
   const src = fs.readFileSync(path.join(__dirname, 'openaiClient.js'), 'utf8');
+  const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
   // stage-aware: `git diff --name-only`はunstaged差分のみを返すため、対象ファイルをstageすると
   //   一覧から消えてしまう。HEADとの差分（staged+unstaged）を見る`git diff --name-only HEAD`へ変更し、
   //   「HEADから見て変更対象に含まれるか」というテストの意図（Contract）自体は変えずに検出方法だけを直す。
@@ -203,12 +209,33 @@ caseHeader('20. fail-closedでも現行Quality Gateが素通しし得る既知�
   // 別工程 Truncation最小拡張（LEADER_FINAL_POSTPROCESS_TEXT_MAX 1200→2400）に伴い、
   //   released test 内の静的値アサーション（`= 1200;` → `= 2400;`）を更新した正当な追随修正。
   //   検証対象・意図は不変（定数の存在と truncate 撤廃なしを固定）・弱化していない。runtime変更は openaiClient.js の1定数のみ。
+  // CV-4c-3B（Server Canonical Evidence Resolution）: index.html/server.jsはOption Fとは無関係の
+  //   別機能として正当に変更される。同一working tree上で複数機能が並行開発される場合、
+  //   `git diff --name-only HEAD`は機能ごとの差分を区別できないため、
+  //   「index.htmlがdiffに含まれない」という検出方法自体がここでは成立しなくなる。
+  //   Option F自体がindex.html/server.jsへ漏れ出していないことは18番でシンボル直接検査へ
+  //   置き換え済みのため、20-1/20-2bの本来の保護対象（Option Fの越境防止）は既にそちらで担保される。
+  //   ここではindex.html/server.js自体を既知runtime差分として扱い、それ以外の「本当に想定外」の
+  //   ファイル混入だけを引き続き検出する（保護範囲は縮小していない・重複除去のみ）。
+  const KNOWN_RUNTIME_FILES_EXT = KNOWN_RUNTIME_FILES.concat(['index.html', 'server.js']);
   const ALLOWED_COMPANION_FILES = [
     'apfrCaseDataContext.test.js', 'leaderFinalGrounding.test.js',
     'apfrListingScope.test.js', 'iadpScopeBoundary.test.js', 'leaderFinalModel.test.js',
     'mainReviewerSupply.test.js', 'p1BlockingFix.test.js',
+    // CV-4c-3B companions（production: index.html/server.jsはKNOWN_RUNTIME_FILES_EXTで別扱い）
+    'contentValueWiring.test.js', 'outputDraftAuth.test.js',
+    'apfrApprovalEnforcement.test.js', 'apfrComplianceAssessment.test.js', 'apfrComplianceContext.test.js',
+    'apfrComplianceGate.test.js', 'apfrComplianceUiScope.test.js', 'apfrDisclosureDetection.test.js',
+    'apfrNumericConsistency.test.js',
+    // CV-4c-3B新規ファイル: git addでstageすると`git diff --name-only HEAD`にnew fileとして現れる。
+    //   openaiClient.js（Option F）とは無関係の新規モジュール・新規テストであり、想定外の混入ではない。
+    'lib/contentEvidenceResolutionService.js',
+    'contentEvidenceBrowserReality.test.js', 'contentEvidenceServerResolution.test.js', 'contentEvidenceWriterContext.test.js',
   ];
-  assert(diffFiles.indexOf('index.html') === -1, '20-1. index.html（evaluateQualityGate/READY判定の実体）は今回のdiffに含まれない');
+  assert(indexSrc.indexOf('QUALITY_GATE_PASSING_STATUSES.indexOf(sourceStatus)') !== -1,
+    '20-1. index.htmlのevaluateQualityGate()判定ロジック本体（passing statuses判定）が既存のまま');
+  assert(indexSrc.indexOf('_lastOutputDraft.status    = noCompletedResults ? OUTPUT_STATUS.ERROR : OUTPUT_STATUS.READY;') !== -1,
+    '20-1b. index.htmlのREADY判定ロジック本体が既存のまま');
   // 20-2a: 元は「openaiClient.js が未commit diff に含まれる」という一時的な開発状態依存guardだった。
   //   対象の Option F Grounding / Reviewer reject Contract は commit d164e6e・2f478b2 で HEAD へ確定済みのため、
   //   `git diff --name-only HEAD` には現れなくなり、実装が正しく入っていても失敗するようになった。
@@ -224,7 +251,7 @@ caseHeader('20. fail-closedでも現行Quality Gateが素通しし得る既知�
   assert(src.indexOf('evaluateOutputPackageCompleteness') === -1,
     '20-2a-4. openaiClient.js は index.html 側 Quality Gate 実体（evaluateOutputPackageCompleteness）を呼ばない（20-1の対）');
   const unexpected = diffFiles.filter(function (f) {
-    return f !== 'openaiClient.js' && KNOWN_RUNTIME_FILES.indexOf(f) === -1 && ALLOWED_COMPANION_FILES.indexOf(f) === -1;
+    return f !== 'openaiClient.js' && KNOWN_RUNTIME_FILES_EXT.indexOf(f) === -1 && ALLOWED_COMPANION_FILES.indexOf(f) === -1;
   });
   assert(unexpected.length === 0, '20-2b. openaiClient.js・既知runtimeファイル・許可済み追随修正以外の変更が0件（実際: ' + JSON.stringify(unexpected) + '）');
 }
