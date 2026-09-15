@@ -309,6 +309,216 @@ const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
     assert(cea.sanitizeRestoredState('not_a_real_state') === 'idle', '33d. 不正値もidleへfail-closed');
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // CV-4c-3A Follow-up: UI Entry Point 正常系到達テスト（34〜49）
+  //   ★ CV-4c-3A では _ceBuildPlan() の呼び出し元が0件で、Approval panel へ到達できなかった。
+  //     既存テストが「禁止事項（自動実行しないこと）」しか検証しておらず、
+  //     「手動でも到達できること（正常系）」を検証していなかったため検出できなかった。
+  //     34c がその再発防止の中心（呼び出し元 >= 1 を直接固定する）。
+  //   ★ 実Web Search 0 / 実AI 0 / 実DB 0。fetch は sandbox 内の mock のみで、呼ばれないことを数える。
+  // ══════════════════════════════════════════════════════════════
+  const vm = require('vm');
+  const _idxLf = indexSrc.replace(/\r\n/g, '\n');
+
+  // index.html の Content Evidence ブロック（ce-approval-panel 直後の <script>）を抽出する。
+  const _ceBlockStart = _idxLf.indexOf('<div id="ce-approval-panel"');
+  const _ceScriptStart = _idxLf.indexOf('<script>', _ceBlockStart) + '<script>'.length;
+  const _ceScriptEnd = _idxLf.indexOf('</script>', _ceScriptStart);
+  const CE_BLOCK = _idxLf.slice(_ceScriptStart, _ceScriptEnd);
+
+  // ブラウザ相当の最小 sandbox を組み立てる（実DOM/実fetchは使わない）。
+  function buildCeSandbox(opts) {
+    const o = opts || {};
+    const ctx = { console: { log: function () {} } };
+    ctx.globalThis = ctx;
+    vm.createContext(ctx);
+    ['evidenceAcquisition', 'contentClaimPlanning', 'contentEvidenceApproval'].forEach(function (m) {
+      vm.runInContext(fs.readFileSync(path.join(__dirname, 'shared', m + '.js'), 'utf8'), ctx);
+    });
+    const els = {};
+    const mk = function (id) {
+      return {
+        id: id, value: '', style: {}, innerHTML: '',
+        getAttribute: function () { return null; },
+        insertAdjacentHTML: function (p, h) { this.innerHTML += h; },
+        querySelectorAll: function () { return []; },
+      };
+    };
+    ctx.__fetchCalls = 0;
+    Object.assign(ctx, {
+      document: { getElementById: function (id) { return els[id] || null; } },
+      fetch: function () { ctx.__fetchCalls++; return Promise.resolve({ ok: true, json: function () { return { ok: true }; } }); },
+      currentMember: o.noMember ? null : { id: 'leader' },
+      memberCaseView: { leader: o.caseView === undefined ? 'case-x' : o.caseView },
+      cases: { 'case-x': { id: 'case-x', title: 'テスト案件タイトル' } },
+      _ncActiveCaseId: function (m) { const v = ctx.memberCaseView[m]; return (v && v !== 'latest' && v !== '__caselist__') ? v : undefined; },
+      escapeHtml: function (x) { return String(x == null ? '' : x); },
+    });
+    els['ce-approval-panel'] = mk('ce-approval-panel');
+    if (o.rows && o.rows.length) {
+      const rowsEl = mk('ce-intent-rows');
+      const ns = o.rows.map(function (_, i) { return i + 1; });
+      rowsEl.querySelectorAll = function () { return ns.map(function (n) { return { getAttribute: function () { return String(n); } }; }); };
+      els['ce-intent-rows'] = rowsEl;
+      o.rows.forEach(function (r, i) {
+        const n = i + 1;
+        els['ce-intent-topic-' + n] = Object.assign(mk(), { value: r.topic });
+        els['ce-intent-question-' + n] = Object.assign(mk(), { value: r.question });
+        els['ce-intent-type-' + n] = Object.assign(mk(), { value: r.claimType || 'general_practice' });
+      });
+    }
+    vm.runInContext(CE_BLOCK, ctx);
+    ctx.__els = els;
+    return ctx;
+  }
+
+  const Q_OK = [
+    { topic: '洗浄時の摩擦', question: '公的機関や専門学会は、洗顔やタオルドライで肌をこすることについて一般的に何をすすめているか' },
+    { topic: '洗顔後の保湿', question: '公的機関や専門学会は、洗顔後の保湿について一般的に何をすすめているか' },
+    { topic: '日常の紫外線対策', question: '公的機関は、日常生活の紫外線対策として一般的にどのような方法をすすめているか' },
+  ];
+
+  caseHeader('34. entry point の存在と _ceBuildPlan() への接続（欠落の再発防止）');
+  {
+    assert(_idxLf.indexOf('function buildContentEvidenceEntryHtml(') !== -1, '34a. entry section描画関数 buildContentEvidenceEntryHtml() が存在する');
+    assert(_idxLf.indexOf('onclick="_ceStartPlanFromForm()"') !== -1, '34b. entry button の onclick が _ceStartPlanFromForm() を指している');
+    // ★ 本体（コメント行を除く）での _ceBuildPlan 呼び出しが1件以上あること。
+    const callLines = CE_BLOCK.split('\n').filter(function (l) {
+      return l.trim().indexOf('//') !== 0 && l.indexOf('_ceBuildPlan(') !== -1 && l.indexOf('function _ceBuildPlan(') === -1;
+    });
+    assert(callLines.length >= 1, '34c. ★_ceBuildPlan() の呼び出し元が1件以上ある（CV-4c-3Aの欠落=呼び出し元0 の再発防止）');
+    assert(_idxLf.indexOf("_oeSafe(buildContentEvidenceEntryHtml,     'ContentEvidence')") !== -1,
+      '34d. Output Engine パネルの合成リストへ接続されている');
+    // ★ 既存の隣接invariant（apfrNumericConsistency.test.js static-4-2:
+    //   ComplianceGate の直後に FormalTruthConsistency）を壊さない位置に置く。
+    assert(_idxLf.indexOf("_oeSafe(buildComplianceGateHtml,           'ComplianceGate')\n    + _oeSafe(buildFormalTruthConsistencyHtml") !== -1,
+      '34e. ComplianceGate→FormalTruthConsistency の既存隣接順序を維持している');
+  }
+
+  caseHeader('35〜38. valid intents → plan生成 → panel到達（fetch 0）');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    const plan = ctx._ceStartPlanFromForm();
+    assert(ctx._ceState === 'awaiting_approval', '35. valid intents で _ceState が awaiting_approval になる');
+    assert(ctx._cePlan !== null && plan !== null, '36. _cePlan !== null（Planが生成される）');
+    assert(ctx.__els['ce-approval-panel'].style.display === 'block', '37. Approval panel が表示される（display:block）');
+    assert(ctx.__fetchCalls === 0, '38. ★Plan作成だけでは fetch 0（Web Search未実行・課金なし）');
+  }
+
+  caseHeader('39〜40. caseId binding と deterministic intentId');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    const plan = ctx._ceStartPlanFromForm();
+    assert(plan.caseId === 'case-x' && plan.intents.every(function (i) { return i.caseId === 'case-x'; }),
+      '39. active case（_ncActiveCaseId由来）から caseId が bind される');
+    assert(plan.intents.map(function (i) { return i.intentId; }).join(',') === 'CI-01,CI-02,CI-03',
+      '40. intentId は CI-01 連番で deterministic に生成される');
+  }
+
+  caseHeader('41〜42. active case 無し → fail-closed');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK, caseView: 'latest' });
+    const r = ctx._ceStartPlanFromForm();
+    assert(r === null && ctx._cePlan === null, '41. ★active caseが無ければ _ceBuildPlan() を呼ばない（fail-closed）');
+    const html = ctx.buildContentEvidenceEntryHtml();
+    assert(html.indexOf('案件を選択してください') !== -1 && html.indexOf('disabled') !== -1,
+      '42. active case無しでは開始buttonがdisabledで案内が出る');
+  }
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK, noMember: true });
+    assert(ctx._ceStartPlanFromForm() === null, '42b. currentMember未設定でも例外にならず fail-closed');
+  }
+
+  caseHeader('43. blocked Claim（医療表現）の表示');
+  {
+    const rows = [{ topic: 'ニキビ', question: 'ニキビを治すにはどうすればよいか' }, Q_OK[1], Q_OK[2]];
+    const ctx = buildCeSandbox({ rows: rows });
+    const plan = ctx._ceStartPlanFromForm();
+    assert(plan.blocked.length === 1 && plan.blocked[0].reason === 'medical_therapeutic_topic_detected',
+      '43a. 医療/治療表現のClaim Intentは Safety Filter で blocked される（フォーム側で再実装していない）');
+    assert(plan.queries.length === 2, '43b. blocked分はqueryに含まれない');
+    assert(ctx.__els['ce-approval-panel'].innerHTML.indexOf('安全フィルタで除外: 1件') !== -1,
+      '43c. Plan Preview に blocked 件数が表示される');
+  }
+
+  caseHeader('44〜45. Query Truncation 防止（STOP-13・server側silent truncationに依存しない）');
+  {
+    const many = [1, 2, 3, 4, 5].map(function (n) {
+      return { topic: 'topic' + n, question: '公的機関は習慣' + n + 'について一般的に何をすすめているか' };
+    });
+    const ctx = buildCeSandbox({ rows: many });
+    ctx._ceStartPlanFromForm();
+    const html = ctx.__els['ce-approval-panel'].innerHTML;
+    assert(html.indexOf('無警告で切り捨て') !== -1 && html.indexOf('STOP-13') !== -1,
+      '44. query数が上限超過のとき truncation 警告が表示される');
+    assert(html.indexOf('_ceApproveAndExecute()" disabled') !== -1,
+      '45. ★上限超過時は「Evidence取得を実行」buttonが disabled（Web Search実行不可）');
+    assert(ctx.__fetchCalls === 0, '45b. 上限超過ケースでも fetch 0');
+  }
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx._ceStartPlanFromForm();
+    const html = ctx.__els['ce-approval-panel'].innerHTML;
+    assert(html.indexOf('無警告で切り捨て') === -1 && html.indexOf('_ceApproveAndExecute()">') !== -1,
+      '45c. 上限以内（3件）では警告なし・承認buttonは有効');
+  }
+
+  caseHeader('46〜47. Plan Preview の case binding表示と課金明示');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx._ceStartPlanFromForm();
+    const html = ctx.__els['ce-approval-panel'].innerHTML;
+    assert(html.indexOf('case-x') !== -1 && html.indexOf('テスト案件タイトル') !== -1,
+      '46. ★Plan Preview に caseId と case名が表示される（cross-case事故を人間が検知できる）');
+    assert(html.indexOf('課金が発生します') !== -1 && html.indexOf('Search が 3回実行され') !== -1,
+      '47a. ★課金が発生することと実行回数が明示される');
+    assert(html.indexOf('Plan作成の時点では課金されていません') !== -1,
+      '47b. Plan作成時点では課金されないことが区別して明示される');
+  }
+
+  caseHeader('48. entry point は自動起動しない（既存の自動実行禁止境界の維持）');
+  {
+    // entry 関数はユーザー操作（onclick）からのみ呼ばれる。page load / case load 等の
+    //   既存イベントハンドラから _ceStartPlanFromForm / _ceBuildPlan を呼んでいないこと。
+    const bodyLines = _idxLf.split('\n').filter(function (l) { return l.trim().indexOf('//') !== 0; });
+    const autoCallers = bodyLines.filter(function (l) {
+      return (l.indexOf('_ceStartPlanFromForm(') !== -1 || l.indexOf('_ceBuildPlan(') !== -1)
+        && (l.indexOf('window.onload') !== -1 || l.indexOf('DOMContentLoaded') !== -1
+          || l.indexOf('loadCase') !== -1 || l.indexOf('restoreOutputDraft') !== -1
+          || l.indexOf('runAutoTask') !== -1 || l.indexOf('atRunWorkflow') !== -1);
+    });
+    assert(autoCallers.length === 0, '48a. page load / case load / Auto Task から entry を自動起動していない');
+    assert(_idxLf.indexOf('function _ceStartPlanFromForm()') !== -1
+      && _idxLf.indexOf('_ceStartPlanFromForm()') !== -1, '48b. entry関数はonclick経由でのみ到達する');
+  }
+
+  caseHeader('49. entry追加後も Web Search の唯一の承認入口が維持されている');
+  {
+    const bodyLines = CE_BLOCK.split('\n').filter(function (l) { return l.trim().indexOf('//') !== 0; });
+    const wsLines = bodyLines.filter(function (l) { return l.indexOf('/api/evidence/web-search') !== -1; });
+    assert(wsLines.length === 1, '49a. ★Content Evidenceブロック内で /api/evidence/web-search を呼ぶ箇所は1つだけ');
+    // entry 関数本体が fetch / web-search を持たないこと
+    const entryStart = CE_BLOCK.indexOf('function _ceStartPlanFromForm()');
+    const entryEnd = CE_BLOCK.indexOf('\nfunction _ceRefreshEntrySection', entryStart);
+    const entryBody = CE_BLOCK.slice(entryStart, entryEnd !== -1 ? entryEnd : entryStart + 4000);
+    assert(entryBody.indexOf('fetch(') === -1 && entryBody.indexOf('/api/') === -1,
+      '49b. ★_ceStartPlanFromForm() 本体に fetch / API呼び出しが存在しない');
+    const buildStart = CE_BLOCK.indexOf('function buildContentEvidenceEntryHtml()');
+    const buildEnd = CE_BLOCK.indexOf('\nfunction _ceAddIntentRow', buildStart);
+    const buildBody = CE_BLOCK.slice(buildStart, buildEnd !== -1 ? buildEnd : buildStart + 4000);
+    assert(buildBody.indexOf('fetch(') === -1 && buildBody.indexOf('_ceBuildPlan(') === -1,
+      '49c. 描画関数は副作用を持たない（fetch・plan生成をしない）');
+    // entry は getCurrentApprovalCaseId() の _lastOutputDraft fallback を使わない。
+    //   ★ 責務境界を説明する自コメント内の言及は許容し、コード行での呼び出しが0件であることを見る
+    //     （lib/publicStatic.js のテスト等で既存の同一手法）。
+    const ceCodeLines = CE_BLOCK.split('\n').filter(function (l) { return l.trim().indexOf('//') !== 0; });
+    const fallbackCalls = ceCodeLines.filter(function (l) { return l.indexOf('getCurrentApprovalCaseId(') !== -1; });
+    assert(fallbackCalls.length === 0,
+      '49d. ★entryは getCurrentApprovalCaseId()（_lastOutputDraft.caseIdへfallback）を使わない（cross-case防止）');
+    assert(ceCodeLines.some(function (l) { return l.indexOf('_ncActiveCaseId(') !== -1; }),
+      '49e. entryは _ncActiveCaseId()（明示選択されたcaseのみ）を使用している');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }

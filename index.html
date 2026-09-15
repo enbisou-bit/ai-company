@@ -7619,15 +7619,45 @@ function _ceRenderPanel() {
       summaryHtml;
   }
 
+  // ── CV-4c-3A Follow-up A: Case Binding表示（どのcaseへEvidenceが束縛されるかを実行前に見せる） ──
+  var planCaseId = _cePlan.caseId || null;
+  var planCaseTitle = '';
+  try {
+    if (planCaseId && typeof cases !== 'undefined' && cases && cases[planCaseId] && cases[planCaseId].title) planCaseTitle = cases[planCaseId].title;
+  } catch (e) { planCaseTitle = ''; }
+  var caseBindingHtml = '<p>対象案件: <strong>' + _ceEntryEsc(planCaseTitle || '(名称なし)') + '</strong>'
+    + ' ／ caseId: <code>' + _ceEntryEsc(planCaseId || '(未bind)') + '</code></p>';
+
+  // ── CV-4c-3A Follow-up B: Query Truncation防止（server側のsilent truncationに依存しない） ──
+  //   MAX_QUERIES_PER_APPROVAL超過分はserver側で無警告に切り捨てられるため、
+  //   UI側で検知して承認自体を止める（STOP-13）。
+  var maxQ = (typeof EvidenceAcquisition !== 'undefined' && EvidenceAcquisition.MAX_QUERIES_PER_APPROVAL)
+    ? EvidenceAcquisition.MAX_QUERIES_PER_APPROVAL : 3;
+  var willTruncate = _cePlan.queries.length > maxQ;
+  var truncationHtml = willTruncate
+    ? '<p style="color:#c00;"><strong>⚠ Query数が上限を超えています（' + _cePlan.queries.length + '件 / 上限' + maxQ + '件）。</strong><br>'
+      + 'このまま実行するとserver側で超過分が<strong>無警告で切り捨てられ</strong>、一部のClaim Intentが検索されないまま進みます。'
+      + 'Claim Intentを' + maxQ + '件以下に減らして作り直してください（STOP-13）。</p>'
+    : '';
+  var approveDisabled = disabled || willTruncate;
+
+  // ── CV-4c-3A Follow-up C: 課金明示（Plan作成時点では課金されないことと区別する） ──
+  var execCount = Math.min(_cePlan.queries.length, maxQ);
+  var billingHtml = '<p style="color:#b45309;"><strong>この操作で OpenAI Web Search が ' + execCount + '回実行され、課金が発生します。</strong>'
+    + '（Plan作成の時点では課金されていません／DBへの保存も行われません）</p>';
+
   el.style.display = 'block';
   el.innerHTML =
     '<div style="border:1px solid #ccc;padding:12px;margin:8px 0;">' +
     '<h4>■ Content Evidence Plan</h4>' +
     '<p>これから<strong>外部Web Evidence取得を実行します</strong>（実行前は一切検索していません）。</p>' +
-    '<p>検索対象: ' + _cePlan.queries.length + '件 ／ 安全フィルタで除外: ' + _cePlan.blocked.length + '件</p>' +
+    caseBindingHtml +
+    '<p>Claim Intent: ' + (_cePlan.intents ? _cePlan.intents.length : 0) + '件 ／ 検索対象: ' + _cePlan.queries.length + '件 ／ 安全フィルタで除外: ' + _cePlan.blocked.length + '件</p>' +
     '<ul>' + rows + '</ul>' +
+    truncationHtml +
     retryNote +
-    '<button id="ce-approve-btn" onclick="_ceApproveAndExecute()"' + (disabled ? ' disabled' : '') + '>Evidence取得を実行</button> ' +
+    billingHtml +
+    '<button id="ce-approve-btn" onclick="_ceApproveAndExecute()"' + (approveDisabled ? ' disabled' : '') + '>Evidence取得を実行</button> ' +
     '<button id="ce-cancel-btn" onclick="_ceCancelPlan()">キャンセル</button>' +
     candidatesHtml +
     '</div>';
@@ -7785,6 +7815,156 @@ async function _ceSubmitEvidenceForResolution() {
     _ceRenderPanel();
     return _ceLastResolutionResponse;
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// CV-4c-3A Follow-up: Content Evidence Approval UI Entry Point
+//   ★ CV-4c-3A では _ceBuildPlan() の呼び出し元が存在せず、Approval panel へ
+//     到達する導線が無かった（人間が明示操作で Plan を開始できなかった）。
+//     ここはその欠落していた入口のみを追加する。既存 Approval 機構
+//     （state machine / Plan生成 / 承認実行 / Mapping / server提出）は一切変更しない。
+//   ★ この経路は Plan 作成までしか行わない。fetch / Web Search / DB write /
+//     Output Draft 生成 / AI API を一切実行しない（課金は承認①まで発生しない）。
+// ══════════════════════════════════════════════════════════════
+var CE_ENTRY_DEFAULT_ROWS = 3;         // 既定表示行数（第一投稿の3 Claim Intentに対応）
+var _ceEntryRowSeq = 0;                // 行のDOM id採番（intentIdとは独立。intentIdは送信時に再採番する）
+var _ceEntryMessage = null;            // 入力エラー等の表示メッセージ（fail-closed理由）
+
+// active case の canonical caseId。明示選択された case のみを返す。
+//   ★ getCurrentApprovalCaseId() は _lastOutputDraft.caseId へ fallback するため使わない
+//     （案件一覧表示中に別caseのDraftが残っていると cross-case 事故になる。
+//     同趣旨の注意は p1BlockingFix.test.js B-2 に既存）。
+function _ceActiveCaseIdForEntry() {
+  try {
+    if (typeof _ncActiveCaseId !== 'function') return null;
+    if (typeof currentMember === 'undefined' || !currentMember || !currentMember.id) return null;
+    return _ncActiveCaseId(currentMember.id) || null;
+  } catch (e) { return null; }
+}
+
+function _ceEntryEsc(s) {
+  try { if (typeof escapeHtml === 'function') return escapeHtml(s == null ? '' : String(s)); } catch (e) { /* fallthrough */ }
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// claimTypeCandidate の選択肢。既存 enum のみを使用し、新しい claimType を発明しない。
+//   'unknown' は常に昇格不可（安全側の受け皿）のため入力候補には出さない
+//   （既存 Mapping UI の claimType select と同一方針）。
+function _ceEntryClaimTypeOptions(selected) {
+  var all = (typeof ContentClaimPlanning !== 'undefined' && ContentClaimPlanning.CONTENT_CLAIM_TYPES_FALLBACK)
+    ? ContentClaimPlanning.CONTENT_CLAIM_TYPES_FALLBACK : ['general_practice', 'law_regulation', 'public_statistic', 'unknown'];
+  var sel = selected || 'general_practice';
+  var html = '';
+  for (var i = 0; i < all.length; i++) {
+    if (all[i] === 'unknown') continue;
+    html += '<option value="' + all[i] + '"' + (all[i] === sel ? ' selected' : '') + '>' + all[i] + '</option>';
+  }
+  return html;
+}
+
+function _ceEntryRowHtml(n) {
+  return '<div class="ce-intent-row" data-ce-row="' + n + '" style="margin:6px 0;padding:6px;border:1px solid rgba(255,255,255,0.12);border-radius:4px;">' +
+    '<div style="font-size:10px;opacity:0.6;">Claim Intent ' + n + '</div>' +
+    'topic: <input type="text" id="ce-intent-topic-' + n + '" style="width:30%;"> ' +
+    'claimType: <select id="ce-intent-type-' + n + '">' + _ceEntryClaimTypeOptions('general_practice') + '</select><br>' +
+    'question（この文がそのまま検索queryになります）: ' +
+    '<input type="text" id="ce-intent-question-' + n + '" style="width:80%;">' +
+    '</div>';
+}
+
+// Output Engine パネルへ差し込む Content Evidence セクション。
+//   ★ この関数は表示のみ。副作用（plan生成・fetch・保存）を一切持たない。
+function buildContentEvidenceEntryHtml() {
+  var caseId = _ceActiveCaseIdForEntry();
+  var msgHtml = _ceEntryMessage
+    ? '<div style="color:#e06060;font-size:11px;margin:4px 0;">' + _ceEntryEsc(_ceEntryMessage) + '</div>' : '';
+
+  if (!caseId) {
+    // fail-closed: active case が無い間は Plan を開始させない（cross-case事故の防止）。
+    return '<div class="oe-status-card" id="ce-entry-section">' +
+      '<div class="oe-status-title">CONTENT EVIDENCE</div>' +
+      '<div class="oe-status-sub" style="color:rgba(255,200,80,0.9);">案件を選択してください（Content Evidence Planは案件を開いた状態でのみ開始できます）</div>' +
+      msgHtml +
+      '<button id="ce-entry-start-btn" disabled>Content Evidence Planを開始</button>' +
+      '</div>';
+  }
+
+  var title = '';
+  try { if (typeof cases !== 'undefined' && cases && cases[caseId] && cases[caseId].title) title = cases[caseId].title; } catch (e) { title = ''; }
+
+  var rows = '';
+  for (var i = 1; i <= CE_ENTRY_DEFAULT_ROWS; i++) rows += _ceEntryRowHtml(i);
+  _ceEntryRowSeq = CE_ENTRY_DEFAULT_ROWS;
+
+  return '<div class="oe-status-card" id="ce-entry-section">' +
+    '<div class="oe-status-title">CONTENT EVIDENCE</div>' +
+    '<div class="oe-status-sub">対象案件: <span style="color:rgba(200,158,242,0.9);">' + _ceEntryEsc(title || '(名称なし)') + '</span></div>' +
+    '<div class="oe-status-sub" style="font-size:10px;">caseId: <code>' + _ceEntryEsc(caseId) + '</code></div>' +
+    '<div style="font-size:10px;opacity:0.6;margin-top:6px;">Planを作成する時点では検索も課金も発生しません（Web Search実行は次の承認ボタンです）。</div>' +
+    '<div id="ce-intent-rows">' + rows + '</div>' +
+    msgHtml +
+    '<button id="ce-entry-addrow-btn" onclick="_ceAddIntentRow()">＋ Claim Intentを追加</button> ' +
+    '<button id="ce-entry-start-btn" onclick="_ceStartPlanFromForm()">Content Evidence Planを開始</button>' +
+    '</div>';
+}
+
+// 行追加は DOM への append のみで行う（パネル全体を再描画すると入力済みの値が消えるため）。
+function _ceAddIntentRow() {
+  var host = document.getElementById('ce-intent-rows');
+  if (!host) return;
+  _ceEntryRowSeq++;
+  host.insertAdjacentHTML('beforeend', _ceEntryRowHtml(_ceEntryRowSeq));
+}
+
+// ★ 入口関数。フォーム → Claim Intent配列 → active case bind → _ceBuildPlan() まで。
+//   fetch / Web Search / DB write / Output Draft生成 / AI API を一切呼ばない。
+function _ceStartPlanFromForm() {
+  _ceEntryMessage = null;
+  var caseId = _ceActiveCaseIdForEntry();
+  if (!caseId) {
+    // fail-closed: caseId を取得できない場合は _ceBuildPlan() を呼ばない。
+    _ceEntryMessage = '案件が選択されていないためPlanを開始できません。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+
+  var host = document.getElementById('ce-intent-rows');
+  var rowEls = host ? host.querySelectorAll('.ce-intent-row') : [];
+  var intents = [];
+  for (var i = 0; i < rowEls.length; i++) {
+    var n = rowEls[i].getAttribute('data-ce-row');
+    var topicEl = document.getElementById('ce-intent-topic-' + n);
+    var questionEl = document.getElementById('ce-intent-question-' + n);
+    var typeEl = document.getElementById('ce-intent-type-' + n);
+    var topic = topicEl ? String(topicEl.value || '').trim() : '';
+    var question = questionEl ? String(questionEl.value || '').trim() : '';
+    if (!topic && !question) continue;   // 未入力行はスキップ（空のClaim Intentを作らない）
+    intents.push({
+      intentId: 'CI-' + (intents.length + 1 < 10 ? '0' : '') + (intents.length + 1),   // deterministic連番
+      caseId: caseId,
+      topic: topic,
+      question: question,
+      claimTypeCandidate: typeEl ? typeEl.value : 'general_practice',
+      status: 'proposed',
+    });
+  }
+
+  if (intents.length === 0) {
+    _ceEntryMessage = 'Claim Intentが入力されていません（topicとquestionを入力してください）。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+
+  // ★ Safety判定・schema検証はここで再実装しない。_ceBuildPlan() 内の
+  //   buildContentEvidenceQueries() が validateClaimIntent() / evaluateClaimIntentSafety() を通す。
+  return _ceBuildPlan(intents, caseId);
+}
+
+// entry セクションのみ再描画（メッセージ更新用）。Output Engine 全体は再描画しない。
+function _ceRefreshEntrySection() {
+  var sec = document.getElementById('ce-entry-section');
+  if (!sec || !sec.parentNode) return;
+  sec.outerHTML = buildContentEvidenceEntryHtml();
 }
 </script>
 <script>
@@ -43890,6 +44070,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
     + _oeSafe(buildComplianceGateHtml,           'ComplianceGate')
     + _oeSafe(buildFormalTruthConsistencyHtml,   'FormalTruthConsistency')
+    + _oeSafe(buildContentEvidenceEntryHtml,     'ContentEvidence')
     + _oeSafe(buildCompletionStatusHtml,         'CompletionStatus')
     + _oeSafe(buildOutputPreviewHtml,            'OutputPreview')
     + _oeSafe(buildPublishingEngineHtml,         'PublishingEngine')

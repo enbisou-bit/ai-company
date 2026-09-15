@@ -231,6 +231,7 @@ caseHeader('20. fail-closedでも現行Quality Gateが素通しし得る既知�
     //   openaiClient.js（Option F）とは無関係の新規モジュール・新規テストであり、想定外の混入ではない。
     'lib/contentEvidenceResolutionService.js',
     'contentEvidenceBrowserReality.test.js', 'contentEvidenceServerResolution.test.js', 'contentEvidenceWriterContext.test.js',
+    'contentEvidenceApproval.test.js',   // CV-4c-3A Follow-up: UI entry point追加に伴う正式companion（Option Fとは無関係）
   ];
   assert(indexSrc.indexOf('QUALITY_GATE_PASSING_STATUSES.indexOf(sourceStatus)') !== -1,
     '20-1. index.htmlのevaluateQualityGate()判定ロジック本体（passing statuses判定）が既存のまま');
