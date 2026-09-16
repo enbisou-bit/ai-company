@@ -922,10 +922,12 @@ async function buildContentEvidenceContextForCase(caseId) {
   try {
     const result = await getOutputDraftsDb().getOutputDraft({ caseId });
     const draft = result && result.draft;
-    if (!draft || !draft.fields) return '';
-    const fields = draft.fields;
-    const claims = Array.isArray(fields.contentClaims) ? fields.contentClaims : [];
-    const evidenceRecords = Array.isArray(fields.contentEvidence) ? fields.contentEvidence : [];
+    if (!draft) return '';
+    // Safety Foundation B1: canonical 列（content_evidence / content_claims）を正本とする。
+    //   列が未設定の既存 row に限り、DB 上の legacy fields を read-only で参照する（列設定済みなら fallback しない）。
+    const canonical = require('./lib/contentEvidenceCanonical').selectCanonicalContentEvidence(draft);
+    const claims = canonical.contentClaims;
+    const evidenceRecords = canonical.contentEvidence;
     if (claims.length === 0) return '';
 
     const contentEvidence = require('./shared/contentEvidence');
@@ -1797,6 +1799,11 @@ app.get('/api/output-drafts', require('./lib/webSession').requireSession(), asyn
 //     除去するだけで、それ以外の挙動・レスポンス形状は一切変えない）。
 //   ★ Evidence-grounded 保存要求（contentEvidenceCandidates 提出）なのに canonical
 //     contentEvidence/contentClaims が 0 件なら、通常保存へ黙って fallback せず 422 で fail-closed する。
+// Safety Foundation B1: Canonical Content Evidence / Claims Protected Columns。
+//   ★ canonical は fields の外側の専用列（content_evidence / content_claims / content_evidence_origin）が正本。
+//     通常保存（fields / reviewState / content_type 宣言）はこの3列を一切変更しない。
+//   ★ 3列を書き換えるのは Evidence Resolution 成功時の writeCanonicalContentEvidence() のみ。
+//   ★ 保存前に output_id の既存 row を読み、case_id 不一致は 409・読み取り失敗は 503（書き込まない）。
 app.post('/api/output-drafts', require('./lib/webSession').requireSession(), async (req, res) => {
   // ★ client 供給の contentValue は **意図的に受け取らない**（分解対象から除外＝そのまま破棄）。
   //   Content Value は下で server 側が再計算した値のみを保存する
@@ -1806,17 +1813,36 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
   if (!outputId || !caseId) return res.status(400).json({ ok: false, error: 'outputId / caseId は必須です' });
   if (fields === undefined && reviewState === undefined) return res.status(400).json({ ok: false, error: 'fields または reviewState が必要です' });
   try {
+    const draftsDb = getOutputDraftsDb();
+    const evidenceCanonical = require('./lib/contentEvidenceCanonical');
+
+    // ── Safety Foundation B1: 保存前の既存 row を server 側で読む ──
+    //   ★ 読み取り失敗時は書き込まない（legacy fields の保全・case 一致確認ができないため fail-closed）。
+    //   ★ 既存 row の case_id と request caseId が異なる場合は 409（他案件 row の乗っ取り・canonical 混入を拒否）。
+    //   ★ Supabase 未設定（ローカル fallback）は従来どおり upsert 側のエラーに委ねる。
+    const existingRead = await draftsDb.getOutputDraftRowByOutputId({ outputId });
+    if (existingRead.source === 'error') {
+      return res.status(503).json({ ok: false, error: 'output_draft_read_failed' });
+    }
+    const existingRow = existingRead.row;
+    if (existingRow && existingRow.case_id !== caseId) {
+      return res.status(409).json({ ok: false, error: 'output_case_mismatch' });
+    }
+
     // ── CV-4c-3B: fields.contentEvidence / fields.contentClaims の client値は常に破棄する ──
     let resolvedFields = fields;
     let contentEvidenceSummary = null;   // UI表示用（server確定件数のみ。client側で再Formal化しない）
+    let evidenceResolved = null;         // Evidence Resolution 成功時のみ設定（canonical 列の唯一の書込入力）
     if (fields !== undefined && fields !== null) {
       resolvedFields = Object.assign({}, fields);
       delete resolvedFields.contentEvidence;
       delete resolvedFields.contentClaims;
+      // B1: DB 上の legacy fields（B1 以前に server が書いた値・以後不変）だけを引き継ぐ。client 値は使わない。
+      resolvedFields = evidenceCanonical.preserveLegacyContentEvidenceFields(resolvedFields, existingRow);
 
       if (Array.isArray(contentEvidenceCandidates) && contentEvidenceCandidates.length > 0) {
         const evidenceService = require('./lib/contentEvidenceResolutionService');
-        const evidenceResolved = evidenceService.resolveContentEvidenceSubmission(contentEvidenceCandidates, { caseId, now: Date.now() });
+        evidenceResolved = evidenceService.resolveContentEvidenceSubmission(contentEvidenceCandidates, { caseId, now: Date.now() });
         if (evidenceResolved.contentEvidence.length === 0 || evidenceResolved.contentClaims.length === 0) {
           // Part D: fail-closed。Evidence-grounded保存要求だったのに成立しなかった場合、
           //   通常contentへ黙ってfallbackさせず、この保存要求自体を失敗として返す（DBへは一切書かない）。
@@ -1827,8 +1853,7 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
             resolutionErrors: evidenceResolved.errors,
           });
         }
-        resolvedFields.contentEvidence = evidenceResolved.contentEvidence;
-        resolvedFields.contentClaims = evidenceResolved.contentClaims;
+        // B1: canonical は fields へ入れない（専用列 content_evidence / content_claims が正本）。
         contentEvidenceSummary = {
           contentEvidenceCount: evidenceResolved.contentEvidence.length,
           contentClaimsCount: evidenceResolved.contentClaims.length,
@@ -1836,17 +1861,47 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
       }
     }
 
-    const draftsDb = getOutputDraftsDb();
+    // B1: upsertOutputDraft() は canonical 3列を受け取らない＝通常保存では canonical は変更されない。
     const result = await draftsDb.upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields: resolvedFields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
     if (result.error) return res.json({ ok: false, error: result.error });
+
+    // ── B1: Evidence Resolution 成功時のみ canonical 列を server 側で書き込む（唯一の書込経路） ──
+    //   ★ output_id と case_id の両方一致 row のみ更新（cross-case は上の 409 と DB 側条件の二重防御）。
+    //   ★ 書込失敗時は成功を偽らない。canonical 列は既存値のまま（Content Value も更新しない）。
+    if (evidenceResolved) {
+      const origin = evidenceCanonical.buildResolutionOrigin({
+        caseId, outputId,
+        contentEvidence: evidenceResolved.contentEvidence,
+        contentClaims: evidenceResolved.contentClaims,
+        resolvedAt: new Date().toISOString(),
+      });
+      const canonicalWrite = await draftsDb.writeCanonicalContentEvidence({
+        caseId, outputId,
+        contentEvidence: evidenceResolved.contentEvidence,
+        contentClaims: evidenceResolved.contentClaims,
+        origin,
+      });
+      if (!canonicalWrite.ok) {
+        return res.status(500).json({ ok: false, error: 'canonical_content_evidence_write_failed' });
+      }
+    }
 
     // ── CV-4b: Content Value を server 側で再計算して独立列へ保存する ──
     //   ★ fields を伴わない保存（review_state のみ）では再計算しない。
     //   ★ 完全 fail-open: ここでの失敗は Output Draft 本体の保存結果を覆さない
     //     （migration 未適用で content_type / content_value 列が無い環境でも既存フローが壊れない）。
+    //   ★ B1: Evidence / Claims の評価入力は canonical 列（未設定の既存 row のみ DB 上の legacy fields）。
+    //     canonical 列を読めない場合は content_value を劣化値で上書きしない（content_type の初回宣言契約は維持）。
     let contentValueSummary = null;
     if (resolvedFields !== undefined) {
       try {
+        const canonicalRead = await draftsDb.getCanonicalContentEvidence({ caseId, outputId });
+        const canonical = canonicalRead.ok
+          ? evidenceCanonical.selectCanonicalContentEvidence(Object.assign({}, canonicalRead.row || {}, {
+            fields: existingRow ? existingRow.fields : null,
+          }))
+          : null;
+        resolvedFields = evidenceCanonical.applyCanonicalForEvaluation(resolvedFields, canonical || { source: 'none' });
         const cvService = require('./lib/contentValueService');
         const resolved = await cvService.resolveContentValueForSave(
           { outputId, caseId, type, declaredContentType, fields: resolvedFields },
@@ -1855,11 +1910,15 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
             getContentTypeCanonical: draftsDb.getContentTypeCanonical,
           }
         );
-        await draftsDb.updateContentValue({ outputId, contentValue: resolved.contentValue });
-        contentValueSummary = {
-          contentType: resolved.contentType,
-          status: resolved.contentValue && resolved.contentValue.status,
-        };
+        if (canonicalRead.ok) {
+          await draftsDb.updateContentValue({ outputId, contentValue: resolved.contentValue });
+          contentValueSummary = {
+            contentType: resolved.contentType,
+            status: resolved.contentValue && resolved.contentValue.status,
+          };
+        } else {
+          console.warn('[B1] canonical content evidence read failed; content_value not updated:', outputId);
+        }
       } catch (_cve) { /* fail-open: Content Value 側の失敗で Draft 保存を失敗にしない */ }
     }
 

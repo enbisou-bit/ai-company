@@ -236,6 +236,9 @@ CREATE TABLE IF NOT EXISTS output_drafts (
   review_state    JSONB,          -- Phase54-2f: Mobile Review状態（statusBySlide/commentsBySlide/revisionTargetBySlide/approved）を成果物単位で永続化。nullable・既存行はNULL
   content_type    TEXT,           -- CV-4b: 投稿種別の唯一のSoT（'value'|'bridge'|'product'）。未宣言はNULL（読み取り側が'unknown'と解釈）
   content_value   JSONB,          -- CV-4b: server-side再計算したContent Value Quality結果。client供給値は保存しない
+  content_evidence        JSONB,  -- Safety Foundation B1: canonical contentEvidence（Evidence Resolution のみが書く・通常保存では不変）
+  content_claims          JSONB,  -- Safety Foundation B1: canonical contentClaims（同上）
+  content_evidence_origin JSONB,  -- Safety Foundation B1: canonical の origin/provenance（mode: resolution | legacy_fields_backfill）
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
   built_at        TIMESTAMPTZ
@@ -288,6 +291,25 @@ BEGIN
       CHECK (content_type IS NULL OR content_type IN ('value', 'bridge', 'product'));
   END IF;
 END $$;
+
+-- ══════════════════════════════════════════════════════════════
+-- Safety Foundation B1 Migration: Canonical Content Evidence / Claims Protected Columns
+--
+--   ★ canonical contentEvidence / contentClaims を fields（client が丸ごと送り JSONB 全置換される列）の
+--     外側へ分離する。content_type / content_value と同じ「server-owned な値は fields の外の列」方針。
+--       content_evidence        = canonical contentEvidence 配列
+--       content_claims          = canonical contentClaims 配列
+--       content_evidence_origin = origin/provenance（mode: 'resolution' | 'legacy_fields_backfill'）
+--   ★ 書き込み経路は POST /api/output-drafts の Evidence Resolution 成功時のみ
+--     （lib/outputDraftsDb.js writeCanonicalContentEvidence）。通常保存・content_type 宣言では変更しない。
+--   ★ nullable・DEFAULTなし・既存行はNULL・冪等（ADD COLUMN IF NOT EXISTS）。既存列/データは変更しない。
+--   ★ 既存 row の legacy fields.contentEvidence / fields.contentClaims からの移行は別ファイル
+--     supabase/content_evidence_canonical_backfill.sql（事前SELECT・条件付きUPDATE・rollback 手順付き）。
+--     本ファイルを再適用しても backfill は実行されない（データ移行は明示承認の別工程）。
+-- ══════════════════════════════════════════════════════════════
+ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_evidence        JSONB;
+ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_claims          JSONB;
+ALTER TABLE output_drafts ADD COLUMN IF NOT EXISTS content_evidence_origin JSONB;
 
 -- 検索用index（case_id 検索／案件別・最新1件取得 updated_at DESC）。IF NOT EXISTS で再実行安全。
 CREATE INDEX IF NOT EXISTS idx_output_drafts_case_id            ON output_drafts (case_id);
