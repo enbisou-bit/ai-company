@@ -7585,9 +7585,21 @@ function _ceRenderPanel() {
   //     （CV-4c-3B: Server Canonical Evidence Resolution。browser側でresolveClaimEvidenceBatch()等は呼ばない）。
   var candidatesHtml = '';
   if (_ceState === 'completed' && _ceLastEvidenceCandidates.length > 0) {
-    var ctOptions = '<option value="">-- claimType --</option><option value="general_practice">general_practice</option><option value="law_regulation">law_regulation</option><option value="public_statistic">public_statistic</option>';
-    var stOptions = '<option value="">-- supportType --</option><option value="supports">supports</option><option value="contradicts">contradicts</option><option value="context">context</option>';
+    // Mapping表示復元: state（_ceMappingDecisions）をSoTとし、selected属性だけを復元する。
+    //   ★ Mapping state そのものは再設計しない。再描画で「未選択に見える」だけの表示問題を直す。
+    var _ceOpt = function (values, label, selected) {
+      var h = '<option value="">-- ' + label + ' --</option>';
+      for (var i = 0; i < values.length; i++) {
+        h += '<option value="' + values[i] + '"' + (values[i] === selected ? ' selected' : '') + '>' + values[i] + '</option>';
+      }
+      return h;
+    };
+    var CE_CT_VALUES = ['general_practice', 'law_regulation', 'public_statistic'];
+    var CE_ST_VALUES = ['supports', 'contradicts', 'context'];
     var cRows = _ceLastEvidenceCandidates.map(function (c, idx) {
+      var md = _ceMappingDecisions[idx] || {};
+      var ctOptions = _ceOpt(CE_CT_VALUES, 'claimType', md.claimType);
+      var stOptions = _ceOpt(CE_ST_VALUES, 'supportType', md.supportType);
       var excerptSummary = c.sourceExcerpt ? String(c.sourceExcerpt).slice(0, 80) + '…' : '(excerptなし)';
       return '<li>' +
         '<strong>' + (c.sourceTitle || c.sourceName || '(タイトルなし)') + '</strong><br>' +
@@ -7603,8 +7615,12 @@ function _ceRenderPanel() {
 
     var planIntentIds = (_cePlan && Array.isArray(_cePlan.intents)) ? _cePlan.intents.map(function (it) { return it.intentId; }) : [];
     var claimTextRows = planIntentIds.map(function (intentId) {
+      // claim文言は再描画（Evidence確定失敗後の _ceRenderPanel() を含む）で消えないよう
+      //   caseId + intentId 単位のsessionへ控える。value属性は必ずescapeして戻す。
+      var saved = _ceGetClaimText(_cePlan ? _cePlan.caseId : null, intentId);
       return '<li>intent: ' + intentId + '　claim文言（任意・Evidenceの範囲内で入力）: ' +
-        '<input type="text" id="ce-claimtext-' + intentId + '" style="width:50%;"></li>';
+        '<input type="text" id="ce-claimtext-' + intentId + '"' +
+        ' oninput="_ceSyncClaimText()" value="' + _ceEntryAttrEsc(saved) + '" style="width:50%;"></li>';
     }).join('');
 
     var summaryHtml = '';
@@ -7749,6 +7765,35 @@ function _ceRestoreState(restored) {
 var _ceMappingDecisions = {};        // candidate index -> { claimType, supportType }（明示選択のみ・自動推測しない）
 var _ceLastResolutionResponse = null; // server応答をそのまま保持（表示用。client側で再Formal化しない）
 
+// ── Evidence Resolution の claim文言（同一ページセッション中のみ・caseId + intentId単位） ──
+//   ★ これまで claim文言は DOM のみに存在し、_ceRenderPanel() の再描画
+//     （Evidence確定失敗後を含む）で失われていた。値を控えて復元する。
+//   ★ Claim Intent Draft（_ceIntentDraftByCase: topic/question/claimType）とは
+//     別のstateとして扱う。混同しない。
+//   ★ 永続化しない（localStorage / sessionStorage / server / DB へ書かない）。
+var _ceClaimTextByCase = {};         // caseId -> { intentId: claimText }
+
+function _ceGetClaimText(caseId, intentId) {
+  if (!caseId || !intentId) return '';
+  var m = _ceClaimTextByCase[caseId];
+  return (m && typeof m[intentId] === 'string') ? m[intentId] : '';
+}
+
+// 表示中の claim文言入力をすべて読み取り、active planのcaseId単位で控える。
+//   ★ 値を控えるだけ。Plan生成 / 承認実行 / server提出 / fetch / DB write を一切呼ばない。
+function _ceSyncClaimText() {
+  var caseId = _cePlan ? _cePlan.caseId : null;
+  if (!caseId) return;                       // caseId未特定時は控えない（cross-case防止）
+  var intentIds = (_cePlan && Array.isArray(_cePlan.intents))
+    ? _cePlan.intents.map(function (it) { return it.intentId; }) : [];
+  var m = _ceClaimTextByCase[caseId] || {};
+  for (var i = 0; i < intentIds.length; i++) {
+    var el = document.getElementById('ce-claimtext-' + intentIds[i]);
+    if (el) m[intentIds[i]] = String(el.value || '');
+  }
+  _ceClaimTextByCase[caseId] = m;
+}
+
 function _ceSetMappingDecision(candidateIndex, claimType, supportType) {
   if (!claimType || !supportType) { delete _ceMappingDecisions[candidateIndex]; return; }
   _ceMappingDecisions[candidateIndex] = { claimType: claimType, supportType: supportType };
@@ -7768,6 +7813,8 @@ async function _ceSubmitEvidenceForResolution() {
   if (!draft || !draft.id) { _ceLastResolutionResponse = { ok: false, error: 'no_output_draft' }; _ceRenderPanel(); return _ceLastResolutionResponse; }
   var caseId = _cePlan.caseId;
   if (!caseId) { _ceLastResolutionResponse = { ok: false, error: 'no_case_id' }; _ceRenderPanel(); return _ceLastResolutionResponse; }
+
+  _ceSyncClaimText();   // 送信直前にDOM→stateを同期（失敗応答後の再描画でも値を失わない）
 
   var contentEvidenceCandidates = [];
   _ceLastEvidenceCandidates.forEach(function (cand, idx) {
@@ -7791,7 +7838,10 @@ async function _ceSubmitEvidenceForResolution() {
         createdBy: cand.createdBy,
       },
       mappingDecision: { claimType: decision.claimType, supportType: decision.supportType },
-      proposedClaimText: (claimTextEl && claimTextEl.value) ? claimTextEl.value : undefined,
+      // DOMを優先し、取得できない場合は控えたstateから補う（どちらも無ければ undefined）。
+      proposedClaimText: (claimTextEl && claimTextEl.value)
+        ? claimTextEl.value
+        : (_ceGetClaimText(caseId, intentId) || undefined),
     });
   });
 

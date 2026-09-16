@@ -90,11 +90,18 @@
         var q = s && s.query;
         var v = validateSearchQuery(q);
         if (v.ok) {
-          valid.push({
+          var item = {
             category: (s && s.category != null) ? str(s.category) : null,
             query: str(q),
             reason: (s && s.reason != null) ? str(s.reason) : null,
-          });
+          };
+          // Content Evidence: query が属する Claim Intent（CI-01等）を維持する。
+          //   ★ ここで落とすと Web Search 応答の candidate 側で intent を復元できず、
+          //     全candidateが category（content_claim固定）へ集約されてしまう。
+          //   ★ 既存呼び出し元（IADP等）は intentId を持たないため、その場合は付与しない
+          //     （キー自体を増やさない＝既存契約を壊さない）。
+          if (s && s.intentId != null && str(s.intentId)) item.intentId = str(s.intentId);
+          valid.push(item);
         } else {
           out.rejected.push({ query: (q != null ? str(q) : null), reason: v.reason });
         }

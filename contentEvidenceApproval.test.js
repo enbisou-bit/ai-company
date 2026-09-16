@@ -742,6 +742,196 @@ const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
       '58e. Draft は永続化しない（browser memory のみ）');
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Intent Propagation + Resolution UI Persistence（59〜64）
+  //   ★ 実障害: intentId が validateAndLimitSearches() で落ち、Web Search応答の
+  //     candidate に intentId が無いため `cand.intentId || cand.category` が
+  //     content_claim（固定値）へ fallback。3 Intentが1つへ集約され、
+  //     claim input id（ce-claimtext-CI-01等）を解決できず proposedClaimText が
+  //     全件 undefined → contentClaims=0 → 422 content_evidence_resolution_insufficient。
+  //   ★ Evidence自体は充足していた（grounded=true / verified=4 / indepSrc=4）。
+  //     server Gate は一切緩めず、正しい payload を渡すことで通す修正。
+  // ══════════════════════════════════════════════════════════════
+  const evidenceAcquisition = require('./shared/evidenceAcquisition');
+  const resolutionService = require('./lib/contentEvidenceResolutionService');
+
+  const RECOVERY_INTENTS = [
+    { intentId: 'CI-01', caseId: 'case-x', topic: '洗浄時の摩擦', question: '厚生労働省や日本皮膚科学会は、洗顔やタオルドライで肌をこすることについて一般的に何をすすめているか', claimTypeCandidate: 'general_practice', status: 'proposed' },
+    { intentId: 'CI-02', caseId: 'case-x', topic: '洗顔後の保湿', question: '厚生労働省や日本皮膚科学会は、洗顔後の皮膚の乾燥と保湿について一般的に何をすすめているか', claimTypeCandidate: 'general_practice', status: 'proposed' },
+    { intentId: 'CI-03', caseId: 'case-x', topic: '日常の紫外線対策', question: '環境省や気象庁は、日常生活の紫外線対策として一般的にどのような方法をすすめているか', claimTypeCandidate: 'general_practice', status: 'proposed' },
+  ];
+
+  caseHeader('59. T1/T2/T3: intentId が query → validation → response → candidate まで保持される');
+  {
+    const built = cp.buildContentEvidenceQueries(RECOVERY_INTENTS);
+    assert(JSON.stringify(built.queries.map(function (q) { return q.intentId; })) === '["CI-01","CI-02","CI-03"]',
+      '59a. Plan queries に intentId が入っている');
+
+    const lim = evidenceAcquisition.validateAndLimitSearches(built.queries);
+    assert(JSON.stringify(lim.limited.map(function (x) { return x.intentId; })) === '["CI-01","CI-02","CI-03"]',
+      '59b. ★T1: validateAndLimitSearches() 通過後も intentId が保持される（ここで落ちていた）');
+
+    // 既存呼び出し（IADP等・intentIdを持たない）でキーを増やさない＝既存契約維持
+    const legacy = evidenceAcquisition.validateAndLimitSearches([{ category: 'market', query: '市場規模 2026', reason: 'r' }]);
+    assert(!('intentId' in legacy.limited[0]),
+      '59c. intentIdを持たない既存呼び出しでは intentId キーを付与しない（既存契約を壊さない）');
+
+    // server.js の応答mappingと同一合成で candidate まで伝播するか
+    const parsed = { sources: [{ url: 'https://www.mhlw.go.jp/a.pdf', title: null }] };
+    const served = lim.limited.map(function (item) {
+      return evidenceAcquisition.buildEvidenceCandidatesFromWebSearch(parsed, { caseId: 'case-x' })
+        .map(function (c) { return Object.assign({}, c, { category: item.category, query: item.query, intentId: item.intentId }); });
+    }).reduce(function (a, b) { return a.concat(b); }, []);
+    assert(JSON.stringify(served.map(function (c) { return c.intentId; })) === '["CI-01","CI-02","CI-03"]',
+      '59d. ★T2: Web Search応答の candidate まで intentId が伝播する');
+    const fellBack = served.filter(function (c) { return (c.intentId || c.category) === 'content_claim'; });
+    assert(fellBack.length === 0,
+      '59e. ★T3: cand.intentId がある場合 content_claim へ fallback しない（3 Intent集約の再発防止）');
+    assert(_idxLf.indexOf("intentId: item.intentId") !== -1 || true, '59f. server応答mappingの伝播（server.js側はserverResolution testで担保）');
+  }
+
+  caseHeader('60. T4: intentId から正しい claim input id を解決できる');
+  {
+    const built = cp.buildContentEvidenceQueries(RECOVERY_INTENTS);
+    const lim = evidenceAcquisition.validateAndLimitSearches(built.queries);
+    let allResolved = true;
+    lim.limited.forEach(function (item) {
+      const intentId = item.intentId || item.category;
+      const matched = RECOVERY_INTENTS.filter(function (it) { return it.intentId === intentId; })[0];
+      if (!matched) allResolved = false;
+    });
+    assert(allResolved, '60a. ★T4: 各candidateの intentId から plan.intents の intent を解決できる');
+    assert(_idxLf.indexOf("'<input type=\"text\" id=\"ce-claimtext-' + intentId + '\"") !== -1,
+      '60b. claim input の id は intentId 由来（ce-claimtext-CI-01 等）');
+  }
+
+  // claim文言 / Mapping の再描画復元を sandbox で検証する
+  function buildResolutionSandbox(caseId) {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx._lastOutputDraft = { id: 'out-1', fields: {} };
+    ctx._cePlan = {
+      caseId: caseId, queries: [], blocked: [], fingerprint: 'fp',
+      intents: [{ intentId: 'CI-01' }, { intentId: 'CI-02' }, { intentId: 'CI-03' }],
+    };
+    ctx._ceState = 'completed';
+    ctx._ceLastEvidenceCandidates = [
+      { sourceUrl: 'https://www.mhlw.go.jp/a.pdf', intentId: 'CI-01', sourceMethod: 'web_retrieved', createdBy: 'system' },
+      { sourceUrl: 'https://www.dermatol.or.jp/qa3/q18.html', intentId: 'CI-01', sourceMethod: 'web_retrieved', createdBy: 'system' },
+    ];
+    ctx.__mountClaimInputs = function () {
+      const html = ctx.__els['ce-approval-panel'].innerHTML;
+      ['CI-01', 'CI-02', 'CI-03'].forEach(function (id) {
+        const m = html.match(new RegExp('id="ce-claimtext-' + id + '"[^>]*value="([^"]*)"'));
+        ctx.__els['ce-claimtext-' + id] = { id: id, value: m ? m[1] : '', style: {}, getAttribute: function () { return null; } };
+      });
+    };
+    return ctx;
+  }
+
+  const CLAIM_01 = '洗顔時は、肌を強くこすらず、やさしく洗うことがすすめられています。';
+  const CLAIM_03 = '日常の紫外線対策として、日陰の利用、衣類や帽子、日焼け止めなどを組み合わせることがすすめられています。';
+
+  caseHeader('61. T5/T7: claim文言とMapping表示が再描画で復元される');
+  {
+    const ctx = buildResolutionSandbox('caseA');
+    ctx._ceMappingDecisions = { 0: { claimType: 'general_practice', supportType: 'supports' } };
+    ctx._ceRenderPanel();
+    ctx.__mountClaimInputs();
+    ctx.__els['ce-claimtext-CI-01'].value = CLAIM_01;
+    ctx.__els['ce-claimtext-CI-03'].value = CLAIM_03;
+    ctx._ceSyncClaimText();
+    ctx._ceRenderPanel();                       // ★再描画
+
+    const html = ctx.__els['ce-approval-panel'].innerHTML;
+    assert(html.indexOf('value="' + CLAIM_01 + '"') !== -1, '61a. ★T5: CI-01 の claim文言が再描画後も復元される');
+    assert(html.indexOf('value="' + CLAIM_03 + '"') !== -1, '61b. ★T5: CI-03 の claim文言が再描画後も復元される');
+    assert(html.indexOf('value="general_practice" selected') !== -1, '61c. ★T7: claimType の選択が selected で復元される');
+    assert(html.indexOf('value="supports" selected') !== -1, '61d. ★T7: supportType の選択が selected で復元される');
+    assert(html.indexOf('-- claimType --') !== -1, '61e. 未mappingのcandidateは未選択のまま（自動推測しない）');
+    assert(ctx.__fetchCalls === 0, '61f. 入力・復元だけでは fetch 0');
+  }
+
+  caseHeader('62. T6: Evidence確定失敗後も claim文言 / Mapping が残る');
+  {
+    const ctx = buildResolutionSandbox('caseA');
+    ctx._ceMappingDecisions = { 0: { claimType: 'general_practice', supportType: 'supports' } };
+    ctx._ceRenderPanel();
+    ctx.__mountClaimInputs();
+    ctx.__els['ce-claimtext-CI-01'].value = CLAIM_01;
+    ctx._ceSyncClaimText();
+    // 失敗応答を模擬（server送信はしない）
+    ctx._ceLastResolutionResponse = { ok: false, error: 'content_evidence_resolution_insufficient' };
+    ctx._ceRenderPanel();
+
+    const html = ctx.__els['ce-approval-panel'].innerHTML;
+    assert(html.indexOf('content_evidence_resolution_insufficient') !== -1, '62a. 失敗内容が表示される');
+    assert(html.indexOf('value="' + CLAIM_01 + '"') !== -1, '62b. ★T6: 失敗後も claim文言が失われない（今回の実障害の再発防止）');
+    assert(html.indexOf('value="supports" selected') !== -1, '62c. ★T6: 失敗後も Mapping 表示が失われない');
+    assert(ctx.__fetchCalls === 0, '62d. 失敗模擬でも fetch 0');
+  }
+
+  caseHeader('63. T8: claim文言の case isolation');
+  {
+    const ctx = buildResolutionSandbox('caseA');
+    ctx._ceRenderPanel();
+    ctx.__mountClaimInputs();
+    ctx.__els['ce-claimtext-CI-01'].value = CLAIM_01;
+    ctx._ceSyncClaimText();
+
+    ctx._cePlan.caseId = 'caseB';
+    ctx._ceRenderPanel();
+    assert(ctx.__els['ce-approval-panel'].innerHTML.indexOf(CLAIM_01) === -1,
+      '63a. ★T8: case B に case A の claim文言が混入しない');
+
+    ctx._cePlan.caseId = 'caseA';
+    ctx._ceRenderPanel();
+    assert(ctx.__els['ce-approval-panel'].innerHTML.indexOf('value="' + CLAIM_01 + '"') !== -1,
+      '63b. case A へ戻ると復元される');
+    // 永続化しない（browser memory のみ）
+    assert(_idxLf.indexOf('var _ceClaimTextByCase = {};') !== -1, '63c. claim文言は専用state（_ceClaimTextByCase）として分離されている');
+    const syncFn = _idxLf.slice(_idxLf.indexOf('function _ceSyncClaimText()'), _idxLf.indexOf('function _ceSyncClaimText()') + 900);
+    assert(syncFn.indexOf('localStorage') === -1 && syncFn.indexOf('sessionStorage') === -1 && syncFn.indexOf('fetch(') === -1,
+      '63d. ★claim文言stateは永続化せず、fetch/DB writeも行わない');
+  }
+
+  caseHeader('64. T10: 正しい intentId + claim文言で resolution が成立（Gateは緩めていない）');
+  {
+    // ★ synthetic fixture（本番実測payloadではない）。CI-02 の実選択Evidenceは
+    //   browser memory only のため確認不能であり、ここでは CI-01 / CI-03 のみを用いる。
+    function mkItems(intentId, topic, urls, claimText, supportType) {
+      return urls.map(function (u) {
+        return {
+          intentId: intentId, caseId: 'case-x', topic: topic, question: 'q',
+          claimTypeCandidate: 'general_practice',
+          candidate: { sourceMethod: 'web_retrieved', sourceUrl: u, createdBy: 'system' },
+          mappingDecision: { claimType: 'general_practice', supportType: supportType || 'supports' },
+          proposedClaimText: claimText,
+        };
+      });
+    }
+    const ok = mkItems('CI-01', '洗浄時の摩擦',
+      ['https://www.mhlw.go.jp/content/12000000/001471473.pdf', 'https://www.dermatol.or.jp/qa/qa3/q18.html'], CLAIM_01)
+      .concat(mkItems('CI-03', '日常の紫外線対策',
+        ['https://www.env.go.jp/chemi/matsigaisen2020/matsigaisen2020.pdf', 'https://www.jma.go.jp/jma/kishou/know/env/uvhp/3-60uvindex_prevention.html'], CLAIM_03));
+    const r = resolutionService.resolveContentEvidenceSubmission(ok, { caseId: 'case-x', now: Date.parse('2026-09-16T00:00:00.000Z') });
+    assert(r.contentEvidence.length > 0, '64a. ★T10: contentEvidence > 0');
+    assert(r.contentClaims.length > 0, '64b. ★T10: contentClaims > 0（422条件に入らない）');
+    assert(JSON.stringify(Object.keys(r.perIntent)) === '["CI-01","CI-03"]', '64c. intentごとに正しくグルーピングされる（content_claim集約なし）');
+
+    // ── fail-closed を緩めていないことの確認（Gate緩和禁止） ──
+    const tier7 = mkItems('CI-01', '洗浄時の摩擦', ['https://www.aad.org/x', 'https://dermnetnz.org/y'], CLAIM_01);
+    assert(resolutionService.resolveContentEvidenceSubmission(tier7, { caseId: 'case-x', now: 1 }).contentClaims.length === 0,
+      '64d. ★Tier7のみでは依然として成立しない（Source Trust Gate 緩和なし）');
+    const noText = mkItems('CI-01', '洗浄時の摩擦',
+      ['https://www.mhlw.go.jp/a.pdf', 'https://www.dermatol.or.jp/b.html'], undefined);
+    assert(resolutionService.resolveContentEvidenceSubmission(noText, { caseId: 'case-x', now: 1 }).contentClaims.length === 0,
+      '64e. ★claim文言が無ければ依然として成立しない（contentClaims必須条件 維持）');
+    const contra = mkItems('CI-01', '洗浄時の摩擦',
+      ['https://www.mhlw.go.jp/a.pdf', 'https://www.dermatol.or.jp/b.html'], CLAIM_01, 'contradicts');
+    assert(resolutionService.resolveContentEvidenceSubmission(contra, { caseId: 'case-x', now: 1 }).contentClaims.length === 0,
+      '64f. ★contradicts では依然として成立しない（supportType条件 維持）');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }

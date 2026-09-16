@@ -1911,7 +1911,11 @@ app.post('/api/evidence/web-search', async (req, res) => {
       searches.push({
         category: item.category, query: item.query, reason: item.reason,
         ok: r.ok, reasonCode: r.reason || null, toolCallCount: r.toolCallCount || 0,
-        evidenceCandidates: (r.evidenceCandidates || []).map((c) => Object.assign({}, c, { category: item.category, query: item.query })),
+        // Content Evidence: candidate が属する Claim Intent（CI-01等）を伝播する。
+        //   ★ これが無いと client 側で intent を復元できず、全candidateが category
+        //     （content_claim固定）へ集約され、claim文言の取得に失敗する。
+        //   ★ intentId を持たない既存呼び出し（IADP等）では undefined のまま＝既存挙動を変えない。
+        evidenceCandidates: (r.evidenceCandidates || []).map((c) => Object.assign({}, c, { category: item.category, query: item.query, intentId: item.intentId })),
       });
     }
     const evidenceCandidates = searches.reduce((acc, s) => acc.concat(s.evidenceCandidates), []);
