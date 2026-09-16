@@ -7836,6 +7836,55 @@ var CE_ENTRY_DEFAULT_ROWS = 3;         // 既定表示行数（第一投稿の3 
 var _ceEntryRowSeq = 0;                // 行のDOM id採番（intentIdとは独立。intentIdは送信時に再採番する）
 var _ceEntryMessage = null;            // 入力エラー等の表示メッセージ（fail-closed理由）
 
+// ── Claim Intent 入力Draft（同一ページセッション中のみ・caseId単位） ──────────
+//   ★ 目的は「入力途中の値が Output Engine 再描画で消えないこと」だけ。
+//     renderOutputEnginePanel() は #oe-body の innerHTML を再代入するため入力DOMが毎回破棄される。
+//     入力値がDOMにしか無いと再描画のたびに失われるので、browser memory上へ控えを持つ。
+//   ★ これは Formal Evidence でも Plan でも Candidate でも Mapping でも Output Draft でもない。
+//     保持するのは topic / question / claimType の3項目のみ。
+//   ★ 永続化しない（localStorage / sessionStorage / server / DB へ書かない）。reloadで消えてよい。
+//   ★ Draftは値を覚えるだけで実行権限を持たない（Plan作成・Web Search・保存を誘発しない）。
+var _ceIntentDraftByCase = {};         // caseId -> [{ topic, question, claimType }, ...]
+
+// HTML属性値へ戻すためのescape。
+//   ★ 既存 escapeHtml() は & < > のみで " を落とさないため、属性値にそのまま使うと
+//     value="..." を閉じられてしまう。属性へ入れる値は必ずこちらを使う。
+function _ceEntryAttrEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// active case のDraft配列を返す（無ければ空配列）。caseId未取得時は読み書きしない＝fail-closed。
+function _ceGetIntentDraft(caseId) {
+  if (!caseId) return [];
+  var rows = _ceIntentDraftByCase[caseId];
+  return Array.isArray(rows) ? rows : [];
+}
+
+// 入力中のDOM全行を読み取り、active caseのDraftへ同期する。
+//   ★ この関数は値を控えるだけ。Plan生成 / 承認実行 / server提出 / fetch / DB write を一切呼ばない。
+function _ceSyncIntentDraft() {
+  var caseId = _ceActiveCaseIdForEntry();
+  if (!caseId) return;                       // case未選択時はDraftを持たない（cross-case防止）
+  var host = document.getElementById('ce-intent-rows');
+  if (!host) return;
+  var rowEls = host.querySelectorAll('.ce-intent-row');
+  var rows = [];
+  for (var i = 0; i < rowEls.length; i++) {
+    var n = rowEls[i].getAttribute('data-ce-row');
+    var topicEl = document.getElementById('ce-intent-topic-' + n);
+    var questionEl = document.getElementById('ce-intent-question-' + n);
+    var typeEl = document.getElementById('ce-intent-type-' + n);
+    rows.push({
+      topic: topicEl ? String(topicEl.value || '') : '',
+      question: questionEl ? String(questionEl.value || '') : '',
+      claimType: typeEl ? String(typeEl.value || 'general_practice') : 'general_practice',
+    });
+  }
+  _ceIntentDraftByCase[caseId] = rows;
+}
+
 // active case の canonical caseId。明示選択された case のみを返す。
 //   ★ getCurrentApprovalCaseId() は _lastOutputDraft.caseId へ fallback するため使わない
 //     （案件一覧表示中に別caseのDraftが残っていると cross-case 事故になる。
@@ -7868,13 +7917,16 @@ function _ceEntryClaimTypeOptions(selected) {
   return html;
 }
 
-function _ceEntryRowHtml(n) {
+// draft: { topic, question, claimType } を渡すと入力値を復元する（省略時は空欄）。
+//   ★ 値は必ず _ceEntryAttrEsc() を通す（" ' < > & を含む入力でHTML構造を壊さない）。
+function _ceEntryRowHtml(n, draft) {
+  var d = (draft && typeof draft === 'object') ? draft : {};
   return '<div class="ce-intent-row" data-ce-row="' + n + '" style="margin:6px 0;padding:6px;border:1px solid rgba(255,255,255,0.12);border-radius:4px;">' +
     '<div style="font-size:10px;opacity:0.6;">Claim Intent ' + n + '</div>' +
-    'topic: <input type="text" id="ce-intent-topic-' + n + '" style="width:30%;"> ' +
-    'claimType: <select id="ce-intent-type-' + n + '">' + _ceEntryClaimTypeOptions('general_practice') + '</select><br>' +
+    'topic: <input type="text" id="ce-intent-topic-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.topic) + '" style="width:30%;"> ' +
+    'claimType: <select id="ce-intent-type-' + n + '" oninput="_ceSyncIntentDraft()" onchange="_ceSyncIntentDraft()">' + _ceEntryClaimTypeOptions(d.claimType || 'general_practice') + '</select><br>' +
     'question（この文がそのまま検索queryになります）: ' +
-    '<input type="text" id="ce-intent-question-' + n + '" style="width:80%;">' +
+    '<input type="text" id="ce-intent-question-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.question) + '" style="width:80%;">' +
     '</div>';
 }
 
@@ -7898,9 +7950,13 @@ function buildContentEvidenceEntryHtml() {
   var title = '';
   try { if (typeof cases !== 'undefined' && cases && cases[caseId] && cases[caseId].title) title = cases[caseId].title; } catch (e) { title = ''; }
 
+  // Draft（同一ページセッション中・caseId単位）から行数と入力値を復元する。
+  //   ★ 行数は「既定3行」と「Draftの行数」の大きい方（＝追加した4行目以降も復元される）。
+  var draftRows = _ceGetIntentDraft(caseId);
+  var rowCount = Math.max(CE_ENTRY_DEFAULT_ROWS, draftRows.length);
   var rows = '';
-  for (var i = 1; i <= CE_ENTRY_DEFAULT_ROWS; i++) rows += _ceEntryRowHtml(i);
-  _ceEntryRowSeq = CE_ENTRY_DEFAULT_ROWS;
+  for (var i = 1; i <= rowCount; i++) rows += _ceEntryRowHtml(i, draftRows[i - 1]);
+  _ceEntryRowSeq = rowCount;
 
   return '<div class="oe-status-card" id="ce-entry-section">' +
     '<div class="oe-status-title">CONTENT EVIDENCE</div>' +
@@ -7920,6 +7976,7 @@ function _ceAddIntentRow() {
   if (!host) return;
   _ceEntryRowSeq++;
   host.insertAdjacentHTML('beforeend', _ceEntryRowHtml(_ceEntryRowSeq));
+  _ceSyncIntentDraft();   // 追加行もDraftへ反映（再描画をまたいで行数が戻らないように）
 }
 
 // ★ 入口関数。フォーム → Claim Intent配列 → active case bind → _ceBuildPlan() まで。

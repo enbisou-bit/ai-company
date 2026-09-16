@@ -575,6 +575,173 @@ const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
     assert(ctx.__fetchCalls === 0, '52d. ★本ケースでも fetch 0（Web Search未実行）');
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Claim Intent Draft Persistence（53〜58）
+  //   ★ renderOutputEnginePanel() は #oe-body の innerHTML を再代入するため入力DOMが毎回破棄される。
+  //     入力値がDOMにしか無いと再描画（Output Engine開閉 / case切替 / Workflow完了 等27経路）の
+  //     たびに失われるため、browser memory上へ caseId単位のDraftを持つ。
+  //   ★ Draftは値を控えるだけで実行権限を持たない（Plan作成・Web Search・保存を誘発しない）。
+  // ══════════════════════════════════════════════════════════════
+
+  // 描画HTMLから行DOMを組み立て直し、実ブラウザの「再描画」を sandbox 上で再現する。
+  function mountRowsFromHtml(ctx, html) {
+    const els = ctx.__els;
+    const mk = function (id) {
+      return {
+        id: id, value: '', style: {}, innerHTML: '', _a: {},
+        getAttribute: function (k) { return this._a[k]; },
+        setAttribute: function (k, v) { this._a[k] = v; },
+        insertAdjacentHTML: function (p, h) { this.innerHTML += h; },
+        querySelectorAll: function () { return []; },
+      };
+    };
+    const rowsEl = mk('ce-intent-rows');
+    els['ce-intent-rows'] = rowsEl;
+    const ns = [];
+    const re = /data-ce-row="(\d+)"/g;
+    let m;
+    while ((m = re.exec(html)) !== null) ns.push(m[1]);
+    rowsEl.querySelectorAll = function () {
+      return ns.map(function (n) { return { getAttribute: function () { return n; } }; });
+    };
+    ns.forEach(function (n) {
+      const grab = function (pattern) { const mm = html.match(pattern); return mm ? mm[1] : ''; };
+      els['ce-intent-topic-' + n] = Object.assign(mk(), { value: grab(new RegExp('id="ce-intent-topic-' + n + '"[^>]*value="([^"]*)"')) });
+      els['ce-intent-question-' + n] = Object.assign(mk(), { value: grab(new RegExp('id="ce-intent-question-' + n + '"[^>]*value="([^"]*)"')) });
+      const selBlock = (html.split('id="ce-intent-type-' + n + '"')[1] || '').split('</select>')[0];
+      const selM = selBlock.match(/value="([^"]*)" selected/);
+      els['ce-intent-type-' + n] = Object.assign(mk(), { value: selM ? selM[1] : 'general_practice' });
+    });
+    return ns;
+  }
+
+  caseHeader('53. 入力 → Output Engine再render → Draft保持');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx.cases = { 'case-x': { id: 'case-x', title: 'テスト案件タイトル' } };
+    let html = ctx.buildContentEvidenceEntryHtml();
+    mountRowsFromHtml(ctx, html);
+    ctx.__els['ce-intent-topic-1'].value = '洗浄時の摩擦';
+    ctx.__els['ce-intent-question-1'].value = '厚生労働省や日本皮膚科学会は、洗顔やタオルドライで肌をこすることについて一般的に何をすすめているか';
+    ctx.__els['ce-intent-type-1'].value = 'public_statistic';
+    ctx.__els['ce-intent-topic-2'].value = '洗顔後の保湿';
+    ctx._ceSyncIntentDraft();
+
+    const rendered = ctx.buildContentEvidenceEntryHtml();   // ★再render
+    assert(rendered.indexOf('value="洗浄時の摩擦"') !== -1, '53a. ★topic が再render後も保持される');
+    assert(rendered.indexOf('value="厚生労働省や日本皮膚科学会は、洗顔やタオルドライで肌をこすることについて一般的に何をすすめているか"') !== -1,
+      '53b. ★question（長文）が再render後も保持される');
+    assert(rendered.indexOf('value="public_statistic" selected') !== -1, '53c. ★claimType の選択が再render後も保持される');
+    assert(rendered.indexOf('value="洗顔後の保湿"') !== -1, '53d. 2行目以降も保持される（3行すべて対象）');
+    assert(ctx.__fetchCalls === 0, '53e. ★Draft入力・復元だけでは fetch 0（Web Search・DB write 0）');
+  }
+
+  caseHeader('54. Add Row（4行目以降）も保持');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx.cases = { 'case-x': { id: 'case-x', title: 'T' } };
+    mountRowsFromHtml(ctx, ctx.buildContentEvidenceEntryHtml());
+    ctx._ceAddIntentRow();
+    // 追加された4行目をDOMへ反映してから同期
+    const els = ctx.__els;
+    ['4'].forEach(function (n) {
+      els['ce-intent-topic-' + n] = Object.assign({ value: '追加行トピック', style: {}, getAttribute: function () { return null; } });
+      els['ce-intent-question-' + n] = Object.assign({ value: '追加行の質問', style: {}, getAttribute: function () { return null; } });
+      els['ce-intent-type-' + n] = Object.assign({ value: 'general_practice', style: {}, getAttribute: function () { return null; } });
+    });
+    els['ce-intent-rows'].querySelectorAll = function () {
+      return ['1', '2', '3', '4'].map(function (n) { return { getAttribute: function () { return n; } }; });
+    };
+    ctx._ceSyncIntentDraft();
+
+    const rendered = ctx.buildContentEvidenceEntryHtml();
+    assert((rendered.match(/class="ce-intent-row"/g) || []).length === 4, '54a. ★追加した4行目が再render後も行数として維持される');
+    assert(rendered.indexOf('value="追加行トピック"') !== -1, '54b. ★追加行の入力値も保持される');
+    assert(ctx.__fetchCalls === 0, '54c. Add Row でも fetch 0');
+  }
+
+  caseHeader('55. case isolation（cross-case汚染の防止）');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx.cases = { caseA: { id: 'caseA', title: '案件A' }, caseB: { id: 'caseB', title: '案件B' } };
+    ctx.memberCaseView = { leader: 'caseA' };
+    mountRowsFromHtml(ctx, ctx.buildContentEvidenceEntryHtml());
+    ctx.__els['ce-intent-topic-1'].value = 'caseA専用トピック';
+    ctx._ceSyncIntentDraft();
+
+    ctx.memberCaseView = { leader: 'caseB' };
+    const htmlB = ctx.buildContentEvidenceEntryHtml();
+    assert(htmlB.indexOf('caseA専用トピック') === -1, '55a. ★case B に case A の Draft が表示されない（cross-case汚染なし）');
+    assert((htmlB.match(/class="ce-intent-row"/g) || []).length === 3, '55b. case B は既定3行から開始する');
+
+    ctx.memberCaseView = { leader: 'caseA' };
+    const htmlA = ctx.buildContentEvidenceEntryHtml();
+    assert(htmlA.indexOf('value="caseA専用トピック"') !== -1, '55c. ★case A へ戻ると case A の Draft が復元される');
+
+    // case未選択（latest）ではDraftを読み書きしない＝fail-closed
+    ctx.memberCaseView = { leader: 'latest' };
+    ctx._ceSyncIntentDraft();
+    ctx.memberCaseView = { leader: 'caseA' };
+    assert(ctx.buildContentEvidenceEntryHtml().indexOf('value="caseA専用トピック"') !== -1,
+      '55d. ★case未選択時の同期はDraftを破壊しない（fail-closed）');
+  }
+
+  caseHeader('56. HTML escape（特殊文字でHTML構造を壊さない）');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx.cases = { 'case-x': { id: 'case-x', title: 'T' } };
+    mountRowsFromHtml(ctx, ctx.buildContentEvidenceEntryHtml());
+    ctx.__els['ce-intent-topic-1'].value = '" onerror="alert(1)" x="';
+    ctx.__els['ce-intent-question-1'].value = "<script>alert('x')</script> & <b>";
+    ctx._ceSyncIntentDraft();
+
+    const rendered = ctx.buildContentEvidenceEntryHtml();
+    assert(rendered.indexOf('value="" onerror=') === -1, '56a. ★生の " が属性を閉じていない（属性脱出なし）');
+    assert(rendered.indexOf('&quot; onerror=&quot;alert(1)&quot;') !== -1, '56b. ★" が &quot; へescapeされている');
+    assert(rendered.indexOf('&lt;script&gt;') !== -1, '56c. ★< > がescapeされている');
+    assert(rendered.indexOf('&amp;') !== -1, '56d. & がescapeされている');
+    assert((rendered.match(/class="ce-intent-row"/g) || []).length === 3, '56e. 特殊文字を含んでも行構造が壊れない');
+  }
+
+  caseHeader('57. Draftは実行権限を持たない（Approval①/②非干渉）');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx.cases = { 'case-x': { id: 'case-x', title: 'T' } };
+    mountRowsFromHtml(ctx, ctx.buildContentEvidenceEntryHtml());
+    ctx.__els['ce-intent-topic-1'].value = 'x';
+    ctx._ceSyncIntentDraft();
+    ctx.buildContentEvidenceEntryHtml();   // Draft復元も実行
+
+    assert(ctx._cePlan === null, '57a. ★Draft入力・復元だけでは _ceBuildPlan() が実行されない（_cePlan は null のまま）');
+    assert(ctx._ceState === 'idle', '57b. ★state は idle のまま（Approval①へ遷移しない）');
+    assert(ctx.__fetchCalls === 0, '57c. ★fetch 0（Web Search・POST /api/output-drafts いずれも未実行）');
+    assert(JSON.stringify(ctx._ceLastEvidenceCandidates) === '[]', '57d. ★Candidate state 不変');
+    assert(JSON.stringify(ctx._ceMappingDecisions) === '{}', '57e. ★Mapping state 不変');
+    assert(JSON.stringify(ctx._ceExecutedFingerprints) === '[]', '57f. execution fingerprint 不変');
+  }
+
+  caseHeader('58. Plan作成後もDraftを自動clearしない');
+  {
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx.cases = { 'case-x': { id: 'case-x', title: 'T' } };
+    mountRowsFromHtml(ctx, ctx.buildContentEvidenceEntryHtml());
+    ctx.__els['ce-intent-topic-1'].value = Q_OK[0].topic;
+    ctx.__els['ce-intent-question-1'].value = Q_OK[0].question;
+    ctx._ceSyncIntentDraft();
+    const plan = ctx._ceStartPlanFromForm();
+
+    assert(plan !== null && ctx._cePlan !== null, '58a. Plan は正常に作成される（既存挙動を壊していない）');
+    const rendered = ctx.buildContentEvidenceEntryHtml();
+    assert(rendered.indexOf('value="' + Q_OK[0].topic + '"') !== -1,
+      '58b. ★Plan作成後も Draft は自動clearされない（再入力負担を生まない）');
+    assert(ctx.__fetchCalls === 0, '58c. ★Plan作成までは fetch 0（課金は承認①まで発生しない）');
+    // Draft state は既存 state とは別変数であること
+    assert(_idxLf.indexOf('var _ceIntentDraftByCase = {};') !== -1,
+      '58d. Draft は専用state（_ceIntentDraftByCase）として分離されている');
+    assert(_idxLf.indexOf('localStorage') === -1 || _idxLf.indexOf('_ceIntentDraftByCase') < _idxLf.indexOf('var _ceIntentDraftByCase = {};') + 4000,
+      '58e. Draft は永続化しない（browser memory のみ）');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }
