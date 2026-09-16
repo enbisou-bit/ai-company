@@ -519,6 +519,62 @@ const indexSrc = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
       '49e. entryは _ncActiveCaseId()（明示選択されたcaseのみ）を使用している');
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // CV-4c-3A Follow-up: Content Evidence Plan スクロール到達性（50〜52）
+  //   ★ 本番で Candidate/Mapping が viewport を超えた際、#ce-approval-panel に
+  //     scroll container が無く（専用CSSルールが0件だった）、body{overflow:hidden} に
+  //     clip されて下部（Approval②の ce-submit-btn 等）へ到達できなかった回帰の再発防止。
+  //   ★ 検証は静的（CSSルールの存在・値）＋ VM render（DOM上に全件残ること）。
+  // ══════════════════════════════════════════════════════════════
+  caseHeader('50. #ce-approval-panel に scroll container が定義されている');
+  {
+    const ruleIdx = _idxLf.indexOf('#ce-approval-panel {');
+    assert(ruleIdx !== -1, '50a. ★#ce-approval-panel のCSSルールが存在する（不在が本不具合の原因だった）');
+    const rule = ruleIdx !== -1 ? _idxLf.slice(ruleIdx, _idxLf.indexOf('}', ruleIdx) + 1) : '';
+    assert(/overflow-y\s*:\s*auto/.test(rule), '50b. ★overflow-y: auto（スクロール可能）');
+    assert(/min-height\s*:\s*0/.test(rule), '50c. ★min-height: 0（flex item の縮小許可・#oe-body と同方式）');
+    assert(/max-height\s*:/.test(rule), '50d. ★max-height が指定されている（高さ上限の明示）');
+  }
+
+  caseHeader('51. 既存レイアウト契約を壊していない');
+  {
+    // body の固定レイアウトは維持する（スクロール責務は panel 側へ持たせる方針のため）。
+    const bodyIdx = _idxLf.indexOf('\n  body {');
+    const bodyRule = bodyIdx !== -1 ? _idxLf.slice(bodyIdx, _idxLf.indexOf('}', bodyIdx) + 1) : '';
+    assert(/overflow\s*:\s*hidden/.test(bodyRule), '51a. ★body { overflow: hidden } は変更されていない');
+    assert(/height\s*:\s*100dvh/.test(bodyRule), '51b. body の height:100dvh も維持されている');
+    // Output Engine 側の既存スクロール挙動は無変更。
+    assert(_idxLf.indexOf('#oe-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }') !== -1,
+      '51c. ★#oe-body の既存スクロール設定は完全に無変更');
+  }
+
+  caseHeader('52. Candidate多数でも全件と ce-submit-btn が DOM 上に残る');
+  {
+    // Candidate を多数（20件）与えても、描画結果から欠落・打ち切りが起きないことを確認する。
+    //   ★ Web Search は実行しない。_ceLastEvidenceCandidates へ fixture を直接置いて描画のみ行う。
+    const ctx = buildCeSandbox({ rows: Q_OK });
+    ctx._ceStartPlanFromForm();
+    const many = [];
+    for (let i = 0; i < 20; i++) {
+      many.push({
+        sourceUrl: 'https://example' + i + '.go.jp/a', sourceTitle: 'title-' + i,
+        sourceMethod: 'web_retrieved', verificationStatus: 'unverified', intentId: 'CI-01', createdBy: 'system',
+      });
+    }
+    ctx._ceLastEvidenceCandidates = many;
+    ctx._ceState = 'completed';
+    ctx._ceRenderPanel();
+    const html = ctx.__els['ce-approval-panel'].innerHTML;
+    let missing = 0;
+    for (let i = 0; i < 20; i++) if (html.indexOf('https://example' + i + '.go.jp/a') === -1) missing++;
+    assert(missing === 0, '52a. ★Candidate 20件すべてが DOM 上に描画される（clip・打ち切りなし）');
+    const ctCount = (html.match(/id="ce-ct-/g) || []).length;
+    const stCount = (html.match(/id="ce-st-/g) || []).length;
+    assert(ctCount === 20 && stCount === 20, '52b. ★Mapping select が全Candidate分（claimType/supportType 各20）存在する');
+    assert(html.indexOf('id="ce-submit-btn"') !== -1, '52c. ★Approval②の ce-submit-btn が DOM 上に存在する（最下部まで到達可能）');
+    assert(ctx.__fetchCalls === 0, '52d. ★本ケースでも fetch 0（Web Search未実行）');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }

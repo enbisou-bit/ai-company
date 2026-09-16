@@ -1436,6 +1436,12 @@
   #oe-close { background: none; border: none; color: #666; font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
   #oe-close:hover { color: #aaa; background: rgba(255,255,255,0.07); }
   #oe-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  /* CV-4c-3A Follow-up: Content Evidence Approval panel のスクロール到達性。
+     #ce-approval-panel は body 直下（body は height:100dvh / display:flex / overflow:hidden）に置かれるため、
+     Candidate/Mapping が viewport を超えると clip されて下部（Approval②のce-submit-btn等）へ到達できなかった。
+     スクロール担当を panel 自身へ持たせる。方式は既存 #oe-body と同一（overflow-y:auto + min-height:0）。
+     ★ body{overflow:hidden} および #oe-body の既存挙動は変更しない。 */
+  #ce-approval-panel { max-height: 100dvh; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
   .oe-status-card {
     background: linear-gradient(135deg, rgba(20,40,30,0.9), rgba(10,20,15,0.95));
     border: 1px solid rgba(80,220,120,0.3);
