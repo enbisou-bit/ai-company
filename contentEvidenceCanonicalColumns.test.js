@@ -188,10 +188,21 @@ function makeFakeSupabase(options) {
   function from(table) {
     if (table !== 'output_drafts') { violations.push('fake_unexpected_table:' + table); throw new Error('unexpected table ' + table); }
     const q = { op: null, payload: null, cols: null, filters: [] };
+    // PostgREST の JSON path（col->>key）を text として評価する（キー欠落・非 object は NULL）
+    function valueOf(row, key) {
+      const idx = String(key).indexOf('->>');
+      if (idx === -1) return row[key];
+      const col = row[key.slice(0, idx)];
+      const prop = key.slice(idx + 3);
+      if (!col || typeof col !== 'object' || Array.isArray(col) || !Object.prototype.hasOwnProperty.call(col, prop)) return null;
+      const v = col[prop];
+      return (v === null || v === undefined) ? null : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+    }
     function match(row) {
       return q.filters.every(function (f) {
-        if (f[0] === 'eq') return row[f[1]] === f[2];
-        if (f[0] === 'is') return f[2] === null ? (row[f[1]] === null || row[f[1]] === undefined) : row[f[1]] === f[2];
+        const v = valueOf(row, f[1]);
+        if (f[0] === 'eq') return v === f[2];
+        if (f[0] === 'is') return f[2] === null ? (v === null || v === undefined) : v === f[2];
         return false;
       });
     }
@@ -276,7 +287,7 @@ const backfillSrc = fs.readFileSync(path.join(ROOT, 'supabase', 'content_evidenc
 // sandbox 内 require は allowlist のみ
 const SANDBOX_REQUIRE_ALLOW = new Set([
   './lib/contentEvidenceCanonical', './lib/contentEvidenceResolutionService', './lib/contentValueService',
-  './shared/contentEvidence', './shared/contentClaimPlanning',
+  './shared/contentEvidence', './shared/contentClaimPlanning', './lib/contentEvidenceResolutionGuard',
 ]);
 function sandboxRequire(id) {
   if (!SANDBOX_REQUIRE_ALLOW.has(id)) {
@@ -461,7 +472,7 @@ function useFake(options) { currentFake = makeFakeSupabase(options); return curr
     const r3 = await post({ outputId: OUT, caseId: CASE_B, reviewState: { approved: true } });
     assert(r3.statusCode === 409 && writes(fake) === 0, 'B1-4e. reviewState のみ保存でも cross-case は 409・write 0');
 
-    const direct = await draftsDb.writeCanonicalContentEvidence({ caseId: CASE_B, outputId: OUT, contentEvidence: CANONICAL_EVIDENCE, contentClaims: CANONICAL_CLAIMS, origin: { mode: 'resolution' } });
+    const direct = await draftsDb.writeCanonicalContentEvidence({ caseId: CASE_B, outputId: OUT, contentEvidence: CANONICAL_EVIDENCE, contentClaims: CANONICAL_CLAIMS, origin: { mode: 'resolution', revision: 'rev-' + 'c'.repeat(32) }, expectedRevision: null });
     assert(direct.applied === false && same(fake.state.rows[OUT], rowBefore), 'B1-4f. DB 層でも case_id 不一致は 0 行更新（二重防御）');
   }
 
@@ -529,7 +540,8 @@ function useFake(options) { currentFake = makeFakeSupabase(options); return curr
   {
     const fake = useFake();
     seed(fake, { output_id: OUT, case_id: CASE_A, type: 'instagram_carousel', fields: { slides: SLIDES }, content_value: { sentinel: 'before' } });
-    const r = await post({ outputId: OUT, caseId: CASE_A, fields: { slides: SLIDES }, contentEvidenceCandidates: candidates(CASE_A) });
+    const r = await post({ outputId: OUT, caseId: CASE_A, fields: { slides: SLIDES }, contentEvidenceCandidates: candidates(CASE_A),
+      resolutionMode: 'full_replace', targetClaimIds: ['CI-01', 'CI-02', 'CI-03'], expectedRevision: null });
     const row = fake.state.rows[OUT];
     assert(r.statusCode === 200 && r.body.ok === true, 'B1-8a. Resolution 保存は成功');
     assert(r.body.contentEvidenceSummary && r.body.contentEvidenceSummary.contentEvidenceCount === 6 && r.body.contentEvidenceSummary.contentClaimsCount === 3, 'B1-8b. response summary 6 / 3（既存 shape 維持）');
@@ -550,7 +562,8 @@ function useFake(options) { currentFake = makeFakeSupabase(options); return curr
     seedCanonical(fake2);
     const before2 = canonicalSnapshot(fake2);
     const tier7 = candidates(CASE_A, ['CI-01']).map(function (c, i) { return Object.assign({}, c, { candidate: Object.assign({}, c.candidate, { sourceUrl: 'https://general-blog-' + i + '.example.com/a' }) }); });
-    const r2 = await post({ outputId: OUT, caseId: CASE_A, fields: { slides: SLIDES }, contentEvidenceCandidates: tier7 });
+    const r2 = await post({ outputId: OUT, caseId: CASE_A, fields: { slides: SLIDES }, contentEvidenceCandidates: tier7,
+      resolutionMode: 'partial_update', targetClaimIds: ['CI-01'], expectedRevision: null });
     assert(r2.statusCode === 422 && r2.body.error === 'content_evidence_resolution_insufficient', 'B1-8m. Resolution 不成立は既存どおり 422');
     assert(writes(fake2) === 0 && same(canonicalSnapshot(fake2), before2), 'B1-8n. 422 時は write 0・既存 canonical 不変');
 
@@ -559,7 +572,8 @@ function useFake(options) { currentFake = makeFakeSupabase(options); return curr
     seedCanonical(fake3);
     const before3 = canonicalSnapshot(fake3);
     fake3.state.fail.update = function (q) { return q.payload && Object.prototype.hasOwnProperty.call(q.payload, 'content_evidence'); };
-    const r3 = await post({ outputId: OUT, caseId: CASE_A, fields: { slides: SLIDES }, contentEvidenceCandidates: candidates(CASE_A, ['CI-01']) });
+    const r3 = await post({ outputId: OUT, caseId: CASE_A, fields: { slides: SLIDES }, contentEvidenceCandidates: candidates(CASE_A, ['CI-01']),
+      resolutionMode: 'partial_update', targetClaimIds: ['CI-01'], expectedRevision: null });
     assert(r3.statusCode === 500 && r3.body.ok === false && r3.body.error === 'canonical_content_evidence_write_failed', 'B1-8o. canonical write 失敗は 500 で明示（成功を偽らない）');
     assert(same(canonicalSnapshot(fake3), before3) && same(fake3.state.rows[OUT].content_value, { sentinel: 'before' }), 'B1-8p. canonical 列・content_value とも不変');
   }
@@ -631,7 +645,7 @@ function useFake(options) { currentFake = makeFakeSupabase(options); return curr
     const rowBefore = clone(fake.state.rows[OUT]);
     const readB = await draftsDb.getCanonicalContentEvidence({ caseId: CASE_B, outputId: OUT });
     assert(readB.ok === true && readB.row === null, 'X-1a. 別 caseId からの canonical read は row 無し');
-    const writeB = await draftsDb.writeCanonicalContentEvidence({ caseId: CASE_B, outputId: OUT, contentEvidence: CANONICAL_EVIDENCE, contentClaims: CANONICAL_CLAIMS, origin: { mode: 'resolution' } });
+    const writeB = await draftsDb.writeCanonicalContentEvidence({ caseId: CASE_B, outputId: OUT, contentEvidence: CANONICAL_EVIDENCE, contentClaims: CANONICAL_CLAIMS, origin: { mode: 'resolution', revision: 'rev-' + 'c'.repeat(32) }, expectedRevision: null });
     assert(writeB.applied === false, 'X-1b. 別 caseId からの canonical write は 0 行');
     const writerB = await sandbox.buildContentEvidenceContextForCase(CASE_B);
     assert(writerB === '', 'X-1c. 別 case の Writer context は空（Evidence 混入 0）');

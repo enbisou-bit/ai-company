@@ -1804,6 +1804,10 @@ app.get('/api/output-drafts', require('./lib/webSession').requireSession(), asyn
 //     通常保存（fields / reviewState / content_type 宣言）はこの3列を一切変更しない。
 //   ★ 3列を書き換えるのは Evidence Resolution 成功時の writeCanonicalContentEvidence() のみ。
 //   ★ 保存前に output_id の既存 row を読み、case_id 不一致は 409・読み取り失敗は 503（書き込まない）。
+// Partial Resolution Replacement Guard:
+//   ★ Evidence Resolution は resolutionMode（full_replace | partial_update）/ targetClaimIds / expectedRevision を必須とし、
+//     完全に成立した場合だけ lib/contentEvidenceResolutionGuard.js が次 canonical を計算する。
+//   ★ canonical 書込は content_evidence_origin.revision による CAS（stale / 競合は 409 canonical_revision_conflict）。
 app.post('/api/output-drafts', require('./lib/webSession').requireSession(), async (req, res) => {
   // ★ client 供給の contentValue は **意図的に受け取らない**（分解対象から除外＝そのまま破棄）。
   //   Content Value は下で server 側が再計算した値のみを保存する
@@ -1833,6 +1837,7 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
     let resolvedFields = fields;
     let contentEvidenceSummary = null;   // UI表示用（server確定件数のみ。client側で再Formal化しない）
     let evidenceResolved = null;         // Evidence Resolution 成功時のみ設定（canonical 列の唯一の書込入力）
+    let resolutionPlan = null;           // Partial Resolution Replacement Guard が計算した次 canonical（完全成立時のみ）
     if (fields !== undefined && fields !== null) {
       resolvedFields = Object.assign({}, fields);
       delete resolvedFields.contentEvidence;
@@ -1841,6 +1846,14 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
       resolvedFields = evidenceCanonical.preserveLegacyContentEvidenceFields(resolvedFields, existingRow);
 
       if (Array.isArray(contentEvidenceCandidates) && contentEvidenceCandidates.length > 0) {
+        // ── Partial Resolution Replacement Guard: 更新契約の検証（service 実行前・書込前・fail-closed） ──
+        //   resolutionMode（full_replace | partial_update）/ targetClaimIds / expectedRevision を必須とし、
+        //   candidate の caseId・mapping・対象範囲を検証する。client の宣言は server 再構築値との照合にのみ使う。
+        const resolutionGuard = require('./lib/contentEvidenceResolutionGuard');
+        const resolutionContract = resolutionGuard.validateResolutionRequest({ caseId, body: req.body });
+        if (!resolutionContract.ok) {
+          return res.status(resolutionContract.httpStatus).json({ ok: false, error: resolutionContract.error });
+        }
         const evidenceService = require('./lib/contentEvidenceResolutionService');
         evidenceResolved = evidenceService.resolveContentEvidenceSubmission(contentEvidenceCandidates, { caseId, now: Date.now() });
         if (evidenceResolved.contentEvidence.length === 0 || evidenceResolved.contentClaims.length === 0) {
@@ -1853,38 +1866,62 @@ app.post('/api/output-drafts', require('./lib/webSession').requireSession(), asy
             resolutionErrors: evidenceResolved.errors,
           });
         }
+        // ── Partial Resolution Replacement Guard: 完全性検証 + 次 canonical の計算（書込前・fail-closed） ──
+        //   部分成功・Safety block・未確定 claim・反証・Claim を伴わない Evidence・cross-case・stale revision・
+        //   full_replace による既存 Claim の削除はすべて request 全体を拒否する（canonical write 0）。
+        resolutionPlan = resolutionGuard.planCanonicalResolution({
+          caseId, outputId,
+          contract: resolutionContract.value,
+          existingRow,
+          resolved: evidenceResolved,
+          resolvedAt: new Date().toISOString(),
+        });
+        if (!resolutionPlan.ok) {
+          return res.status(resolutionPlan.httpStatus).json({
+            ok: false,
+            error: resolutionPlan.error,
+            details: resolutionPlan.details || null,
+            perIntent: evidenceResolved.perIntent,
+            resolutionErrors: evidenceResolved.errors,
+          });
+        }
         // B1: canonical は fields へ入れない（専用列 content_evidence / content_claims が正本）。
         contentEvidenceSummary = {
-          contentEvidenceCount: evidenceResolved.contentEvidence.length,
-          contentClaimsCount: evidenceResolved.contentClaims.length,
+          contentEvidenceCount: resolutionPlan.nextEvidence.length,
+          contentClaimsCount: resolutionPlan.nextClaims.length,
+          resolutionMode: resolutionPlan.mode,
+          revision: resolutionPlan.origin.revision,
         };
+      }
+    }
+
+    // ── B1: Evidence Resolution 成功時のみ canonical 列を server 側で書き込む（唯一の書込経路） ──
+    //   ★ output_id と case_id の両方一致 row のみ更新（cross-case は上の 409 と DB 側条件の二重防御）。
+    //   ★ Partial Resolution Replacement Guard: revision CAS（1 行 = 成功 / 0 行 = 409 / 2 行以上 = invariant 違反）。
+    //     fields 保存より前に実行し、CAS 失敗時は fields / content_value を含め何も書き込まない。
+    //   ★ 書込失敗時は成功を偽らない。canonical 列は既存値のまま（Content Value も更新しない）。
+    if (evidenceResolved) {
+      const canonicalWrite = await draftsDb.writeCanonicalContentEvidence({
+        caseId, outputId,
+        contentEvidence: resolutionPlan.nextEvidence,
+        contentClaims: resolutionPlan.nextClaims,
+        origin: resolutionPlan.origin,
+        expectedRevision: resolutionPlan.expectedRevision,
+      });
+      if (!canonicalWrite.ok) {
+        if (canonicalWrite.reason === 'cas_conflict') {
+          return res.status(409).json({ ok: false, error: 'canonical_revision_conflict' });
+        }
+        if (canonicalWrite.reason === 'invariant_multiple_rows') {
+          return res.status(500).json({ ok: false, error: 'canonical_write_invariant_violation' });
+        }
+        return res.status(500).json({ ok: false, error: 'canonical_content_evidence_write_failed' });
       }
     }
 
     // B1: upsertOutputDraft() は canonical 3列を受け取らない＝通常保存では canonical は変更されない。
     const result = await draftsDb.upsertOutputDraft({ outputId, caseId, type, status, title, sourceText, fields: resolvedFields, quality, packageQuality, assignedRoles, schemaVersion, detection, createdAt, updatedAt, builtAt, reviewState });
     if (result.error) return res.json({ ok: false, error: result.error });
-
-    // ── B1: Evidence Resolution 成功時のみ canonical 列を server 側で書き込む（唯一の書込経路） ──
-    //   ★ output_id と case_id の両方一致 row のみ更新（cross-case は上の 409 と DB 側条件の二重防御）。
-    //   ★ 書込失敗時は成功を偽らない。canonical 列は既存値のまま（Content Value も更新しない）。
-    if (evidenceResolved) {
-      const origin = evidenceCanonical.buildResolutionOrigin({
-        caseId, outputId,
-        contentEvidence: evidenceResolved.contentEvidence,
-        contentClaims: evidenceResolved.contentClaims,
-        resolvedAt: new Date().toISOString(),
-      });
-      const canonicalWrite = await draftsDb.writeCanonicalContentEvidence({
-        caseId, outputId,
-        contentEvidence: evidenceResolved.contentEvidence,
-        contentClaims: evidenceResolved.contentClaims,
-        origin,
-      });
-      if (!canonicalWrite.ok) {
-        return res.status(500).json({ ok: false, error: 'canonical_content_evidence_write_failed' });
-      }
-    }
 
     // ── CV-4b: Content Value を server 側で再計算して独立列へ保存する ──
     //   ★ fields を伴わない保存（review_state のみ）では再計算しない。

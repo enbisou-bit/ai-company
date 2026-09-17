@@ -7628,10 +7628,20 @@ function _ceRenderPanel() {
       if (_ceLastResolutionResponse.ok) {
         var s = _ceLastResolutionResponse.contentEvidenceSummary;
         summaryHtml = '<p style="color:#080;">Evidence確定成功：canonical contentEvidence ' + (s ? s.contentEvidenceCount : 0) +
-          '件／canonical contentClaims ' + (s ? s.contentClaimsCount : 0) + '件（server確定値）</p>';
+          '件／canonical contentClaims ' + (s ? s.contentClaimsCount : 0) + '件（server確定値）' +
+          (s && s.resolutionMode ? '（' + _ceEntryEsc(s.resolutionMode) + '）' : '') + '</p>';
       } else {
-        summaryHtml = '<p style="color:#c00;">Evidence確定失敗：' + (_ceLastResolutionResponse.error || 'unknown_error') +
-          '（Evidence不足のため通常contentへは自動フォールバックしていません。mapping・claim文言を見直して再送信してください）</p>';
+        // PRG UI Contract Wiring: error code ごとに意味を出し分ける（すべてを「Evidence不足」と表示しない）。
+        //   ★ 表示するのは code / 対象 claimId / error 名のみ（Evidence 本文・URL は表示しない）。
+        var ceErrCode = _ceLastResolutionResponse.error || 'unknown_error';
+        var ceDetails = Array.isArray(_ceLastResolutionResponse.details) ? _ceLastResolutionResponse.details : [];
+        var ceDetailHtml = ceDetails.length
+          ? '<br><span style="font-size:10px;">対象: ' + ceDetails.map(function (d) {
+            return _ceEntryEsc((d && d.intentId) || '-') + '=' + _ceEntryEsc((d && d.error) || '-');
+          }).join(', ') + '</span>'
+          : '';
+        summaryHtml = '<p style="color:#c00;">Evidence確定失敗：' + _ceEntryEsc(_ceResolutionErrorMessage(ceErrCode)) +
+          '（code: ' + _ceEntryEsc(ceErrCode) + '）' + ceDetailHtml + '</p>';
       }
     }
 
@@ -7809,18 +7819,45 @@ function _ceSyncMappingFromSelects(idx) {
 //   （新endpointを作らない）。実Web Searchはここでは一切行わない（Part K）。★★★
 async function _ceSubmitEvidenceForResolution() {
   if (!_cePlan || _ceLastEvidenceCandidates.length === 0) return { ok: false, error: 'no_candidates' };
+  if (_ceSubmitInFlight) return { ok: false, error: 'submit_in_flight' };   // 1操作につき POST 最大1回（連打防止）
   var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
   if (!draft || !draft.id) { _ceLastResolutionResponse = { ok: false, error: 'no_output_draft' }; _ceRenderPanel(); return _ceLastResolutionResponse; }
   var caseId = _cePlan.caseId;
   if (!caseId) { _ceLastResolutionResponse = { ok: false, error: 'no_case_id' }; _ceRenderPanel(); return _ceLastResolutionResponse; }
 
+  // PRG UI Contract Wiring: Plan 作成時に確定した resolution scope（new | existing）が無ければ送信しない。
+  //   ★ scope を後から推測しない。existing scope は選択時の outputId と一致する Draft にのみ送る。
+  var scope = _cePlan.resolutionScope;
+  if (!scope || (scope.kind !== 'new' && scope.kind !== 'existing')
+      || (scope.kind === 'existing' && scope.outputId !== draft.id)) {
+    _ceLastResolutionResponse = { ok: false, error: scope && scope.kind === 'existing' ? 'canonical_changed_since_selection' : 'resolution_scope_unknown' };
+    _ceRenderPanel();
+    return _ceLastResolutionResponse;
+  }
+  // canonical が stale（409 / 成功 / 変化検出の後）なら送信しない。existing scope は選択時に読んだ
+  //   canonical（loadSeq）と現在の確認結果が同一でなければ送信しない（再読み込み・再選択を要求）。
+  var ceCanonNow = _ceCanonicalByCase[caseId];
+  if ((ceCanonNow && ceCanonNow.status === 'stale')
+      || (scope.kind === 'existing' && !(ceCanonNow && ceCanonNow.status === 'loaded' && ceCanonNow.loadSeq === scope.canonicalLoadSeq))) {
+    _ceLastResolutionResponse = { ok: false, error: 'canonical_changed_since_selection' };
+    _ceRenderPanel();
+    return _ceLastResolutionResponse;
+  }
+  var ceTargetSet = {};
+  (Array.isArray(scope.targetClaimIds) ? scope.targetClaimIds : []).forEach(function (id) { ceTargetSet[id] = true; });
+
   _ceSyncClaimText();   // 送信直前にDOM→stateを同期（失敗応答後の再描画でも値を失わない）
 
   var contentEvidenceCandidates = [];
+  var ceUnresolvedIntent = false;
+  var ceMappedIntents = {};
   _ceLastEvidenceCandidates.forEach(function (cand, idx) {
     var decision = _ceMappingDecisions[idx];
     if (!decision) return;   // ★ mapping未指定candidateはserverへ提出しない（自動推測しない）
-    var intentId = cand.intentId || cand.category;
+    // ★ claimId は candidate が保持する intentId のみを使う（category・順番・topic から推測しない）。
+    var intentId = cand.intentId;
+    if (typeof intentId !== 'string' || !ceTargetSet[intentId]) { ceUnresolvedIntent = true; return; }
+    ceMappedIntents[intentId] = true;
     var intent = (_cePlan.intents || []).filter(function (it) { return it.intentId === intentId; })[0];
     var claimTextEl = document.getElementById('ce-claimtext-' + intentId);
     contentEvidenceCandidates.push({
@@ -7845,13 +7882,39 @@ async function _ceSubmitEvidenceForResolution() {
     });
   });
 
+  if (ceUnresolvedIntent) {
+    _ceLastResolutionResponse = { ok: false, error: 'candidate_intent_unresolved' };
+    _ceRenderPanel();
+    return _ceLastResolutionResponse;
+  }
   if (contentEvidenceCandidates.length === 0) {
     _ceLastResolutionResponse = { ok: false, error: 'no_mapped_candidates' };
     _ceRenderPanel();
     return _ceLastResolutionResponse;
   }
+  var ceTargetsWithoutCandidates = Object.keys(ceTargetSet).filter(function (id) { return !ceMappedIntents[id]; });
+  if (ceTargetsWithoutCandidates.length > 0) {
+    _ceLastResolutionResponse = { ok: false, error: 'target_without_candidates',
+      details: ceTargetsWithoutCandidates.map(function (id) { return { intentId: id, error: 'no_mapped_candidate' }; }) };
+    _ceRenderPanel();
+    return _ceLastResolutionResponse;
+  }
 
+  _ceSubmitInFlight = true;
   try {
+    // ── POST 直前に canonical を再取得し、resolutionMode / targetClaimIds / expectedRevision を決定する ──
+    //   ★ expectedRevision は server から読んだ content_evidence_origin.revision のみ（client で生成しない）。
+    //   ★ 選択時から Claim 集合 / revision が変わっていれば POST しない（stale・自動再選択しない）。
+    var ceFresh = await _ceFetchCanonicalState(caseId, draft.id);
+    var ceContract = _ceDecideResolutionContract(scope, ceFresh);
+    if (!ceContract.ok) {
+      if (ceContract.error === 'canonical_changed_since_selection' || ceContract.error === 'existing_canonical_requires_claim_selection') {
+        _ceMarkCanonicalStale(caseId, ceContract.error);
+      }
+      _ceLastResolutionResponse = { ok: false, error: ceContract.error };
+      _ceRenderPanel();
+      return _ceLastResolutionResponse;
+    }
     var res = await fetch('/api/output-drafts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -7860,16 +7923,27 @@ async function _ceSubmitEvidenceForResolution() {
         caseId: caseId,
         fields: draft.fields || {},   // 既存fieldsをそのまま送る（server側がcontentEvidence/contentClaimsのみ上書き）
         contentEvidenceCandidates: contentEvidenceCandidates,
+        // PRG 契約（申告値のみ。canonical の次状態と新 revision は server が決定する）
+        resolutionMode: ceContract.resolutionMode,
+        targetClaimIds: ceContract.targetClaimIds,
+        expectedRevision: ceContract.expectedRevision,
       }),
     });
     var data = await res.json().catch(function () { return { ok: false, error: 'invalid_response' }; });
-    _ceLastResolutionResponse = data;
+    var ceResult = Object.assign({}, data || {}, { httpStatus: res.status });
+    // ★ 409 canonical_revision_conflict は自動 retry しない・revision を差し替えて再送しない。
+    //   成功時も canonical が変わったため、次の操作の前に再確認を要求する。
+    if (ceResult.error === 'canonical_revision_conflict') _ceMarkCanonicalStale(caseId, ceResult.error);
+    else if (ceResult.ok === true) _ceMarkCanonicalStale(caseId, 'resolution_succeeded');
+    _ceLastResolutionResponse = ceResult;
     _ceRenderPanel();
-    return data;
+    return ceResult;
   } catch (e) {
     _ceLastResolutionResponse = { ok: false, error: (e && e.message) || 'network_error' };
     _ceRenderPanel();
     return _ceLastResolutionResponse;
+  } finally {
+    _ceSubmitInFlight = false;
   }
 }
 
@@ -8008,15 +8082,22 @@ function buildContentEvidenceEntryHtml() {
   for (var i = 1; i <= rowCount; i++) rows += _ceEntryRowHtml(i, draftRows[i - 1]);
   _ceEntryRowSeq = rowCount;
 
+  // PRG UI Contract Wiring（U2）: 既存 canonical Claim を確認済みで1件以上ある場合、
+  //   新規 Claim Intent フォームは使用不可（新規 Claim 追加は別工程）。既存 Claim の明示選択のみ。
+  var ceCanonState = _ceCanonicalByCase[caseId];
+  var ceExistingMode = !!(ceCanonState && ceCanonState.status === 'loaded' && ceCanonState.hasCanonical);
+
   return '<div class="oe-status-card" id="ce-entry-section">' +
     '<div class="oe-status-title">CONTENT EVIDENCE</div>' +
     '<div class="oe-status-sub">対象案件: <span style="color:rgba(200,158,242,0.9);">' + _ceEntryEsc(title || '(名称なし)') + '</span></div>' +
     '<div class="oe-status-sub" style="font-size:10px;">caseId: <code>' + _ceEntryEsc(caseId) + '</code></div>' +
     '<div style="font-size:10px;opacity:0.6;margin-top:6px;">Planを作成する時点では検索も課金も発生しません（Web Search実行は次の承認ボタンです）。</div>' +
-    '<div id="ce-intent-rows">' + rows + '</div>' +
+    '<div id="ce-intent-rows"' + (ceExistingMode ? ' style="display:none;"' : '') + '>' + rows + '</div>' +
+    (ceExistingMode ? '<div style="font-size:10px;color:rgba(255,200,80,0.9);">既存canonical Claimがあるため、新規Claim Intentの追加・新規Planは使用できません（下で更新対象Claimを選択してください）。</div>' : '') +
     msgHtml +
-    '<button id="ce-entry-addrow-btn" onclick="_ceAddIntentRow()">＋ Claim Intentを追加</button> ' +
-    '<button id="ce-entry-start-btn" onclick="_ceStartPlanFromForm()">Content Evidence Planを開始</button>' +
+    '<button id="ce-entry-addrow-btn" onclick="_ceAddIntentRow()"' + (ceExistingMode ? ' disabled' : '') + '>＋ Claim Intentを追加</button> ' +
+    '<button id="ce-entry-start-btn" onclick="_ceStartPlanFromForm()"' + (ceExistingMode ? ' disabled' : '') + '>Content Evidence Planを開始</button>' +
+    _ceBuildCanonicalSectionHtml(caseId) +
     '</div>';
 }
 
@@ -8037,6 +8118,14 @@ function _ceStartPlanFromForm() {
   if (!caseId) {
     // fail-closed: caseId を取得できない場合は _ceBuildPlan() を呼ばない。
     _ceEntryMessage = '案件が選択されていないためPlanを開始できません。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+  // PRG UI Contract Wiring（U2）: 既存 canonical Claim を確認済みの場合、行番号採番の新規 Plan は作らない。
+  //   （未確認の場合は送信直前の再取得で既存 canonical を検出し、POST せず停止する）
+  var ceCanonForForm = _ceCanonicalByCase[caseId];
+  if (ceCanonForForm && ceCanonForForm.status === 'loaded' && ceCanonForForm.hasCanonical) {
+    _ceEntryMessage = '既存Evidence（canonical Claim）があるため、新規Claim Intentは使用できません。更新対象Claimを選択してください。';
     _ceRefreshEntrySection();
     return null;
   }
@@ -8070,7 +8159,18 @@ function _ceStartPlanFromForm() {
 
   // ★ Safety判定・schema検証はここで再実装しない。_ceBuildPlan() 内の
   //   buildContentEvidenceQueries() が validateClaimIntent() / evaluateClaimIntentSafety() を通す。
-  return _ceBuildPlan(intents, caseId);
+  var plan = _ceBuildPlan(intents, caseId);
+  // PRG UI Contract Wiring: 新規作成 scope（canonical 無しの場合のみ送信可能・送信直前に再検証する）。
+  if (plan) {
+    plan.resolutionScope = {
+      kind: 'new',
+      targetClaimIds: intents.map(function (it) { return it.intentId; }),
+      baseClaimIds: [],
+      baseRevision: null,
+      outputId: null,
+    };
+  }
+  return plan;
 }
 
 // entry セクションのみ再描画（メッセージ更新用）。Output Engine 全体は再描画しない。
@@ -8078,6 +8178,328 @@ function _ceRefreshEntrySection() {
   var sec = document.getElementById('ce-entry-section');
   if (!sec || !sec.parentNode) return;
   sec.outerHTML = buildContentEvidenceEntryHtml();
+}
+
+// ══════════════════════════════════════════════════════════════
+// PRG UI Contract Wiring（U2: 既存 canonical Claim の明示選択）
+//   ★ 既存 canonical Claim は GET /api/output-drafts の server 確定値（content_claims /
+//     content_evidence / content_evidence_origin）を読むだけ。UI は Claim 内容・次 canonical・
+//     revision を生成しない（Formal Truth を作らない）。
+//   ★ 既存 canonical がある場合、Resolution 対象はユーザーが明示選択した canonical claimId のみ。
+//     行番号・topic・question から claimId を推測しない。新規 Claim 追加は許可しない（別工程）。
+//   ★ resolutionMode / targetClaimIds / expectedRevision は POST 直前の再取得と照合して決定する。
+//   ★ 自動実行しない（既存 canonical の確認・Plan 作成・送信はすべてボタン操作から）。
+// ══════════════════════════════════════════════════════════════
+var CE_CLAIM_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+var CE_SELECTABLE_CLAIM_TYPES = ['general_practice', 'law_regulation', 'public_statistic'];
+var _ceCanonicalByCase = {};           // caseId -> { status, outputId, claims, claimIds, revision, questionByClaim, hasCanonical, message }
+var _ceClaimSelectionByCase = {};      // caseId -> { claimId: true }（明示選択のみ）
+var _ceCanonicalQuestionByCase = {};   // caseId -> { claimId: question }（再取得時の検索 query 入力）
+var _ceSubmitInFlight = false;         // 1操作につき Resolution POST 最大1回
+var _ceCanonicalLoadSeq = 0;           // canonical 確認ごとに増える識別子（選択時の確認結果と送信時の状態を照合する）
+
+// server row → canonical 状態（純関数）。row の case / output が要求と一致しなければ使わない（fail-closed）。
+function _ceParseCanonicalRow(row, caseId, outputId) {
+  var out = { ok: false, error: null, hasCanonical: false, claims: [], claimIds: [], revision: null, questionByClaim: {} };
+  if (!row || typeof row !== 'object') { out.error = 'canonical_row_not_found'; return out; }
+  if (row.case_id !== caseId || row.output_id !== outputId) { out.error = 'canonical_row_mismatch'; return out; }
+  var claims = row.content_claims;
+  var evidence = row.content_evidence;
+  var origin = row.content_evidence_origin;
+  var has = (claims !== null && claims !== undefined) || (evidence !== null && evidence !== undefined);
+  if (has && (!Array.isArray(claims) || !Array.isArray(evidence))) { out.error = 'canonical_state_invalid'; return out; }
+  if (origin !== null && origin !== undefined && (typeof origin !== 'object' || Array.isArray(origin))) { out.error = 'canonical_state_invalid'; return out; }
+  var rev = (origin && Object.prototype.hasOwnProperty.call(origin, 'revision')) ? origin.revision : null;
+  if (rev !== null && typeof rev !== 'string') { out.error = 'canonical_state_invalid'; return out; }
+  var seen = {};
+  var list = has ? claims : [];
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i];
+    if (!c || typeof c !== 'object' || typeof c.claimId !== 'string' || !CE_CLAIM_ID_PATTERN.test(c.claimId) || seen[c.claimId]) {
+      out.error = 'canonical_state_invalid'; return out;
+    }
+    seen[c.claimId] = true;
+    out.claims.push({
+      claimId: c.claimId,
+      topic: typeof c.topic === 'string' ? c.topic : '',
+      text: typeof c.text === 'string' ? c.text : '',
+      claimType: typeof c.claimType === 'string' ? c.claimType : '',
+    });
+    out.claimIds.push(c.claimId);
+  }
+  var evs = has ? evidence : [];
+  for (var j = 0; j < evs.length; j++) {
+    var e = evs[j];
+    if (e && typeof e.claimId === 'string' && typeof e.claim === 'string' && !out.questionByClaim[e.claimId]) out.questionByClaim[e.claimId] = e.claim;
+  }
+  out.hasCanonical = out.claimIds.length > 0;
+  out.revision = rev;
+  out.ok = true;
+  return out;
+}
+
+// canonical 状態の取得（GET のみ・書込なし）。
+async function _ceFetchCanonicalState(caseId, outputId) {
+  if (!caseId || !outputId) return { ok: false, error: 'canonical_target_missing' };
+  try {
+    var res = await fetch('/api/output-drafts?caseId=' + encodeURIComponent(caseId) + '&outputId=' + encodeURIComponent(outputId), { credentials: 'same-origin' });
+    if (!res || !res.ok) return { ok: false, error: 'canonical_read_failed' };
+    var data = await res.json();
+    if (!data || data.ok !== true) return { ok: false, error: 'canonical_read_failed' };
+    var parsed = _ceParseCanonicalRow(data.draft, caseId, outputId);
+    if (!parsed.ok) return { ok: false, error: parsed.error };
+    parsed.outputId = outputId;
+    return parsed;
+  } catch (e) {
+    return { ok: false, error: 'canonical_read_failed' };
+  }
+}
+
+// resolution scope（Plan 作成時に確定）と POST 直前の canonical から PRG 契約値を決める（純関数）。
+//   ★ mode は選択数と canonical Claim 総数からのみ決定する（topic 等から推測しない）。
+function _ceDecideResolutionContract(scope, fresh) {
+  if (!scope || typeof scope !== 'object') return { ok: false, error: 'resolution_scope_unknown' };
+  if (!fresh || fresh.ok !== true) return { ok: false, error: (fresh && fresh.error) || 'canonical_read_failed' };
+  var targets = Array.isArray(scope.targetClaimIds) ? scope.targetClaimIds.slice() : [];
+  if (targets.length === 0) return { ok: false, error: 'target_claim_ids_empty' };
+  var seen = {};
+  for (var i = 0; i < targets.length; i++) {
+    if (typeof targets[i] !== 'string' || !CE_CLAIM_ID_PATTERN.test(targets[i]) || seen[targets[i]]) return { ok: false, error: 'target_claim_ids_invalid' };
+    seen[targets[i]] = true;
+  }
+  if (scope.kind === 'new') {
+    // 新規作成は canonical が無い場合のみ（既存 canonical があれば Claim の明示選択が必要）
+    if (fresh.hasCanonical) return { ok: false, error: 'existing_canonical_requires_claim_selection' };
+    return { ok: true, resolutionMode: 'full_replace', targetClaimIds: targets, expectedRevision: fresh.revision };
+  }
+  if (scope.kind === 'existing') {
+    var base = Array.isArray(scope.baseClaimIds) ? scope.baseClaimIds : [];
+    var baseRevision = (scope.baseRevision === undefined) ? null : scope.baseRevision;
+    if (!fresh.hasCanonical || base.join('\u0000') !== fresh.claimIds.join('\u0000') || baseRevision !== fresh.revision) {
+      return { ok: false, error: 'canonical_changed_since_selection' };
+    }
+    for (var j = 0; j < targets.length; j++) {
+      if (fresh.claimIds.indexOf(targets[j]) === -1) return { ok: false, error: 'target_claim_not_in_canonical' };
+    }
+    return {
+      ok: true,
+      resolutionMode: targets.length === fresh.claimIds.length ? 'full_replace' : 'partial_update',
+      targetClaimIds: targets,
+      expectedRevision: fresh.revision,
+    };
+  }
+  return { ok: false, error: 'resolution_scope_unknown' };
+}
+
+// canonical が変わった（または変わった可能性がある）→ 選択を破棄し再確認を要求する。自動再取得しない。
+function _ceMarkCanonicalStale(caseId, reason) {
+  if (!caseId) return;
+  _ceCanonicalByCase[caseId] = {
+    status: 'stale',
+    message: reason === 'resolution_succeeded'
+      ? 'Evidenceを更新しました。次の操作の前に既存Evidenceを再確認してください。'
+      : 'Evidenceの状態が更新されています。再読み込みして、更新対象Claimをもう一度確認してください。',
+  };
+  _ceClaimSelectionByCase[caseId] = {};
+  _ceCanonicalQuestionByCase[caseId] = {};
+  _ceRefreshEntrySection();
+}
+
+// error code → 表示文言（code 自体も併記して表示する）。
+function _ceResolutionErrorMessage(code) {
+  var m = {
+    canonical_revision_conflict: 'Evidenceの状態が更新されています。再読み込みして、更新対象Claimをもう一度確認してください。',
+    canonical_changed_since_selection: 'Evidenceの状態が更新されています。再読み込みして、更新対象Claimをもう一度確認してください。',
+    existing_canonical_requires_claim_selection: '既存Evidence（canonical Claim）があります。既存Evidenceを確認し、更新対象Claimを選択してPlanを作り直してください。',
+    resolution_scope_unknown: '更新対象の範囲が確定していないため送信していません。Planを作り直してください。',
+    resolution_mode_required: 'Resolution方式（全体更新／一部更新）が指定されていません。',
+    resolution_mode_invalid: 'Resolution方式（全体更新／一部更新）が不正です。',
+    target_claim_ids_required: '更新対象Claimが指定されていません。',
+    target_claim_ids_empty: '更新対象Claimが選択されていません。',
+    target_claim_ids_invalid: '更新対象ClaimのIDが不正です。',
+    target_claim_ids_duplicate: '更新対象Claimが重複しています。',
+    target_claim_not_in_canonical: '既存Evidenceに存在しないClaimは更新対象にできません（新規Claim追加は未対応です）。',
+    target_without_candidates: '候補（Mapping選択済み）が無い更新対象Claimがあります。',
+    candidate_outside_target: '更新対象外のClaimの候補が含まれています。',
+    candidate_intent_unresolved: '候補の対象Claimを特定できないため送信していません。',
+    candidate_mapping_missing: 'Mapping未選択の候補が含まれています。',
+    candidate_case_mismatch: '別案件のデータが含まれるため更新していません。',
+    output_case_mismatch: '別案件のOutput Draftのため更新していません。',
+    existing_canonical_case_mismatch: '既存Evidenceに別案件のデータが含まれるため更新していません。',
+    expected_revision_required: 'Evidenceの版情報が確認できないため更新していません。',
+    expected_revision_invalid: 'Evidenceの版情報が不正なため更新していません。',
+    resolution_incomplete: '対象Claimの一部が確定できなかったため、Evidenceは更新していません（部分的な更新は行いません）。',
+    incomplete_resolution: '対象Claimの一部が確定できなかったため、Evidenceは更新していません（部分的な更新は行いません）。',
+    resolution_contradicted: '反証Evidenceが含まれるため更新していません。',
+    claim_without_evidence: 'Evidenceの無いClaimがあるため更新していません。',
+    evidence_without_claim: '対象Claimに対応しないEvidenceが含まれるため更新していません。',
+    full_replace_would_drop_claims: '既存Claimを削除する全体更新はできません。',
+    partial_update_requires_canonical: '既存Evidenceが無いため一部更新はできません。',
+    resolution_requires_saved_output_draft: 'Output Draftが保存されていないためEvidenceを確定できません。',
+    canonical_read_failed: '既存Evidenceを確認できなかったため送信していません。',
+    canonical_row_not_found: '対象のOutput Draftが見つからないため送信していません。',
+    canonical_row_mismatch: '対象のOutput Draftが一致しないため送信していません。',
+    canonical_state_invalid: '既存Evidenceの状態が不正なため送信していません。',
+    canonical_write_invariant_violation: 'Evidence更新で異常を検出しました（成功扱いにしていません）。',
+    canonical_content_evidence_write_failed: 'Evidenceの保存に失敗しました。',
+    content_evidence_resolution_insufficient: 'Evidence不足のため確定できませんでした（通常contentへは自動フォールバックしていません。mapping・claim文言を見直して再送信してください）。',
+    no_mapped_candidates: 'Mapping選択済みの候補がありません。',
+  };
+  return m[code] || 'Evidence確定に失敗しました。';
+}
+
+// 既存 canonical の確認（ボタン操作のみ・GET のみ）。対象は active case の開いている Output Draft だけ。
+async function _ceLoadCanonicalForEntry() {
+  var caseId = _ceActiveCaseIdForEntry();
+  if (!caseId) {
+    _ceEntryMessage = '案件が選択されていないため既存Evidenceを確認できません。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+  var draft = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  if (!draft || !draft.id || draft.caseId !== caseId) {
+    _ceCanonicalByCase[caseId] = { status: 'error', message: '対象案件のOutput Draftが開かれていないため既存Evidenceを確認できません。' };
+    _ceRefreshEntrySection();
+    return _ceCanonicalByCase[caseId];
+  }
+  _ceCanonicalByCase[caseId] = { status: 'loading' };
+  _ceRefreshEntrySection();
+  var fresh = await _ceFetchCanonicalState(caseId, draft.id);
+  if (fresh.ok) {
+    _ceCanonicalLoadSeq++;
+    _ceCanonicalByCase[caseId] = {
+      status: 'loaded', outputId: fresh.outputId, claims: fresh.claims, claimIds: fresh.claimIds,
+      revision: fresh.revision, questionByClaim: fresh.questionByClaim, hasCanonical: fresh.hasCanonical,
+      loadSeq: _ceCanonicalLoadSeq,
+    };
+  } else {
+    _ceCanonicalByCase[caseId] = { status: 'error', message: '既存Evidenceを確認できませんでした（code: ' + fresh.error + '）。' };
+  }
+  _ceClaimSelectionByCase[caseId] = {};
+  _ceCanonicalQuestionByCase[caseId] = {};
+  _ceRefreshEntrySection();
+  return _ceCanonicalByCase[caseId];
+}
+
+// 既存 Claim の選択（canonical に存在する claimId のみ受け付ける）。
+function _ceToggleCanonicalClaim(claimId, checked) {
+  var caseId = _ceActiveCaseIdForEntry();
+  var canon = caseId ? _ceCanonicalByCase[caseId] : null;
+  if (!canon || canon.status !== 'loaded' || !Array.isArray(canon.claimIds) || canon.claimIds.indexOf(claimId) === -1) return false;
+  var sel = _ceClaimSelectionByCase[caseId] || {};
+  if (checked) sel[claimId] = true; else delete sel[claimId];
+  _ceClaimSelectionByCase[caseId] = sel;
+  return true;
+}
+
+// 再取得時の検索 query 入力を控える（Claim 内容は変更しない）。
+function _ceSyncCanonicalQuestion(claimId) {
+  var caseId = _ceActiveCaseIdForEntry();
+  var canon = caseId ? _ceCanonicalByCase[caseId] : null;
+  if (!canon || canon.status !== 'loaded' || !Array.isArray(canon.claimIds) || canon.claimIds.indexOf(claimId) === -1) return;
+  var el = document.getElementById('ce-canon-question-' + claimId);
+  if (!el) return;
+  var qm = _ceCanonicalQuestionByCase[caseId] || {};
+  qm[claimId] = String(el.value || '');
+  _ceCanonicalQuestionByCase[caseId] = qm;
+}
+
+// 既存 canonical Claim 表示（表示のみ・副作用なし）。
+function _ceBuildCanonicalSectionHtml(caseId) {
+  var c = _ceCanonicalByCase[caseId] || { status: 'unknown' };
+  var head = '<div id="ce-canon-section" style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">' +
+    '<div style="font-size:11px;">既存Evidence（canonical Claim・server確定値）</div>';
+  var loadBtn = '<button id="ce-canon-load-btn" onclick="_ceLoadCanonicalForEntry()">既存Evidenceを確認</button>';
+  if (c.status === 'loading') return head + '<div style="font-size:10px;">確認中…</div></div>';
+  if (c.status === 'error' || c.status === 'stale') {
+    return head + '<div style="color:#e06060;font-size:11px;">' + _ceEntryEsc(c.message || '') + '</div>' + loadBtn + '</div>';
+  }
+  if (c.status !== 'loaded') {
+    return head + '<div style="font-size:10px;opacity:0.7;">未確認です。既存Evidenceがある案件では、更新対象Claimを選択してからPlanを作成します。</div>' + loadBtn + '</div>';
+  }
+  if (!c.hasCanonical) {
+    return head + '<div style="font-size:10px;">既存canonical Claimはありません（上のフォームで新規作成できます）。</div>' + loadBtn + '</div>';
+  }
+  var sel = _ceClaimSelectionByCase[caseId] || {};
+  var qm = _ceCanonicalQuestionByCase[caseId] || {};
+  var items = c.claims.map(function (cl) {
+    var id = cl.claimId;   // CE_CLAIM_ID_PATTERN 検証済み（引用符を含まない）
+    var q = (qm[id] !== undefined) ? qm[id] : (c.questionByClaim[id] || '');
+    return '<div class="ce-canon-claim" data-claim-id="' + _ceEntryAttrEsc(id) + '" style="margin:4px 0;padding:4px;border:1px solid rgba(255,255,255,0.1);">' +
+      '<label><input type="checkbox" id="ce-canon-select-' + _ceEntryAttrEsc(id) + '" onchange="_ceToggleCanonicalClaim(\'' + _ceEntryAttrEsc(id) + '\', this.checked)"' + (sel[id] ? ' checked' : '') + '> このClaimを取り直す</label> ' +
+      '<code>' + _ceEntryEsc(id) + '</code> ' + _ceEntryEsc(cl.topic) + '<br>' +
+      '<span style="font-size:10px;opacity:0.8;">現在のclaim: ' + _ceEntryEsc(cl.text) + '</span><br>' +
+      'question（再取得時の検索query）: <input type="text" id="ce-canon-question-' + _ceEntryAttrEsc(id) + '" oninput="_ceSyncCanonicalQuestion(\'' + _ceEntryAttrEsc(id) + '\')" value="' + _ceEntryAttrEsc(q) + '" style="width:80%;">' +
+      '</div>';
+  }).join('');
+  return head +
+    '<div style="font-size:10px;">revision: <code>' + _ceEntryEsc(c.revision === null ? '(なし)' : c.revision) + '</code>' +
+    ' ／ 選択したClaimだけが更新対象です（全Claimを選択した場合のみ全体更新）。新規Claimの追加はできません。</div>' +
+    items +
+    '<button id="ce-canon-plan-btn" onclick="_ceStartPlanFromSelection()">選択したClaimでPlanを作成</button> ' + loadBtn +
+    '</div>';
+}
+
+// ★ 既存 canonical 更新用の入口。選択された canonical claimId をそのまま intentId に使う（再採番しない）。
+//   fetch / Web Search / DB write を一切呼ばない（Plan 作成まで）。
+function _ceStartPlanFromSelection() {
+  _ceEntryMessage = null;
+  var caseId = _ceActiveCaseIdForEntry();
+  if (!caseId) {
+    _ceEntryMessage = '案件が選択されていないためPlanを開始できません。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+  var canon = _ceCanonicalByCase[caseId];
+  if (!canon || canon.status !== 'loaded' || !canon.hasCanonical) {
+    _ceEntryMessage = '既存Evidenceを確認してから更新対象Claimを選択してください。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+  var sel = _ceClaimSelectionByCase[caseId] || {};
+  var selected = canon.claimIds.filter(function (id) { return sel[id] === true; });
+  if (selected.length === 0) {
+    _ceEntryMessage = '更新対象のClaimが選択されていません。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+  var qm = _ceCanonicalQuestionByCase[caseId] || {};
+  var intents = [];
+  for (var i = 0; i < selected.length; i++) {
+    var id = selected[i];
+    var claim = canon.claims.filter(function (cl) { return cl.claimId === id; })[0];
+    var question = String((qm[id] !== undefined) ? qm[id] : (canon.questionByClaim[id] || '')).trim();
+    if (!claim || !question) {
+      _ceEntryMessage = id + ' の検索questionが空です。';
+      _ceRefreshEntrySection();
+      return null;
+    }
+    if (CE_SELECTABLE_CLAIM_TYPES.indexOf(claim.claimType) === -1) {
+      _ceEntryMessage = id + ' のclaimTypeが既存Evidence上で確認できないためPlanを作成できません。';
+      _ceRefreshEntrySection();
+      return null;
+    }
+    intents.push({
+      intentId: id,                          // ★ canonical claimId をそのまま使う
+      caseId: caseId,
+      topic: claim.topic || id,
+      question: question,
+      claimTypeCandidate: claim.claimType,   // canonical 値のみ
+      status: 'proposed',
+    });
+  }
+  var plan = _ceBuildPlan(intents, caseId);
+  if (plan) {
+    plan.resolutionScope = {
+      kind: 'existing',
+      targetClaimIds: selected.slice(),
+      baseClaimIds: canon.claimIds.slice(),
+      baseRevision: canon.revision,
+      outputId: canon.outputId,
+      canonicalLoadSeq: canon.loadSeq,
+    };
+  }
+  return plan;
 }
 </script>
 <script>
