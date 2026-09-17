@@ -4,6 +4,17 @@
 
 ---
 
+## Evidence-Based Content Value Quality ＋ Output Draft 認可境界 ＋ Safety Foundation B1（canonical Content Evidence）─ 本番反映済み（2026-09-10〜09-17・origin/main `e5ce21a`・Decision119で事後正式化・Tagなし）
+
+- **Content Value Quality（CV-3a/CV-3b/CV-4b/CV-4c-1・`df99437`／`07d7027`／`d4ad96a`）**：Evidence 成立と本文の情報価値の**両方**が揃って初めて高品質と判定する独立 Core を追加。6軸（evidenceGrounding／specificity／informationGain／actionability／saveValue／nonGeneric）で gate と score を分離し、presence-only の `packageQuality` で薄い一般論が score 100 / complete を通過する状態を解消。`content_value` は **server 側で再計算した値のみ**保存し client 供給値は採用しない。投稿種別の唯一の SoT は `output_drafts.content_type`（`value`／`bridge`／`product`・atomic first-write-wins・downgrade 不可・NULL は `unknown` として fail-closed・DB CHECK 制約あり）。
+- **Evidence Grounding（CV-4c-2/4c-3/4c-3B・`1a81d9b`／`201cc17`／`edd096d` ＋ UI 修正 `6dfc335`／`50ca7de`／`5644449`／`4ec5249`）**：Claim Intent（問い）→ Evidence 取得 → Evidence が支持する範囲でのみ claim 確定、という順序を強制。medical／treatment 等は fail-closed。**Web Search 実行は常に独立した明示承認が必須**（Auto Task 実行・Writer 実行・Output Draft 保存・Case 開始は承認として扱わない／自動 retry なし）。`claimType`／`supportType`／`verificationStatus`／`reliability`／`sourceTier`／`grounded` は client 値を採用せずルールベース関数の出力のみ。
+- **認可境界・Test Isolation（`79161b8`／`2e3fde7`／`72bb578`）**：`GET /api/output-drafts` の `requireSession()` 化（401 と 200-empty を区別）、有料AI実行・破壊的 route の認証境界、`server.test.js` が Protected の本番 `cost-logs.json` へ書き込まないための storage path 分離。
+- **Safety Foundation B1（`e5ce21a`）**：canonical `content_evidence` / `content_claims` / `content_evidence_origin` を `fields`（client が全置換する JSONB）の外側の専用列へ分離。**通常保存では canonical を変更しない**／canonical write は Evidence Resolution 成功経路のみ／cross-case は `output_id` ＋ `case_id` 両一致で二重防御／列未追加DBでも fail-safe／legacy fields は削除しない。
+- **本番実績（ユーザー実測）**：canonical 3列 migration 適用済み。第一投稿（`case-value-1788410623` / `out_1788413020275`）へ controlled backfill＝**Evidence 6件（verified 6）／Claims 3件（CI-01・CI-02・CI-03）**・`origin.mode='legacy_fields_backfill'`。**Post-Deploy Controlled Save Verification COMPLETE**（通常保存後も canonical・origin・fields 不変、`content_type` NULL 維持、変化は `content_value.evaluatedAt` と `updated_at` のみ）。CAS 方式 R-a は read-only production verification PASS（production SELECT のみ・write 0・migration 0・backfill 0）。
+- **本エントリの対象外**：**Partial Resolution Guard Core ＋ PRG UI Contract U2（`da24cf2`）は Code Commit Complete だが未push・未Render・本番未反映**。release 後に別エントリとして記録する。Tag はこの範囲では作成していない。
+
+---
+
 ## Carousel Image Production ─ Background Generation Control（Option B+C）正式リリース（2026-09-10・Decision118・Tag `v1.01-carousel-image-production-background-control`）
 
 - **背景（PA-22G Human Image Review FAIL）**：2回目の controlled paid generation（`out_1788992344384`・quality:low・7 slides）で技術パイプラインは成功（HTTP 200・`generated:7`・`published:false`）したが、人間 Image Review が **B — FAIL**（slide 5/6/7 の背景に UI／icon／checklist／table 様の情報構造・7枚の Visual Consistency 不足）。**この失敗例 assets（`out_1788992344384`／`out_1788413020275`）は Decision 112 completed lock により無変更で保持。**
