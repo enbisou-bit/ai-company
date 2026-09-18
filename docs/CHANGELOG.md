@@ -4,6 +4,19 @@
 
 ---
 
+## PRG Core ＋ PRG UI Contract U2 ─ 本番反映済み ＋ Controlled Production Verification（Level 1／Level 2）（2026-09-18〜19・origin/main `9fef9dc8`・Decision119追記・Tag未作成）
+
+- **本番反映**：`git push origin main`（`e5ce21a..9fef9dc8`・fast-forward・force 無し）。push対象は Code commit `da24cf29`（`feat: guard partial evidence resolution updates`・`server.js`／`lib/outputDraftsDb.js`／`lib/contentEvidenceResolutionGuard.js`（新規）／`index.html` ＋テスト3件）と docs commit `9fef9dc8`（`docs: sync evidence safety and resolution guard status`）。Render Auto-Deploy は commit `9fef9dc` で Live（**ユーザーが Render Dashboard で実測**：service `ai-company`・`node server.js`・port 10000・`Your service is live`）。Production Read-only Smoke（Claude Code 実行・GET 3回）：`GET /` 200／`GET /api/auth-required` 200／未認証 `GET /api/session-status` 401。
+- **内容（Decision 119）**：Evidence Resolution に `resolutionMode`（`full_replace`／`partial_update`）・`targetClaimIds`・`expectedRevision` を必須化し、完全に成立した場合だけ canonical を更新。canonical write は `content_evidence_origin->>revision` の CAS（更新行数 1＝成功／0＝409 `canonical_revision_conflict`／2以上＝500）。UI（U2）は既存 canonical Claim を明示選択し、claimId を推測せず、POST 直前に canonical を再GET して stale なら送信しない・409 は自動 retry しない。
+- **Controlled Production Verification（ユーザー実測・実施日 `2026-09-18〜19`）**：
+  - **Level 1（本番UI）**：canonical GET・Claim CI-01／CI-02／CI-03 の表示・Claim 選択 UI（1/3・3/3）を確認。Plan／Submit は押していない（POST 0）。
+  - **Level 2（専用 disposable scope `case-prg-verification-20260918` ／ `out-prg-verification-20260918`・ブラウザ Console から 3 POST）**：行作成／`full_replace`（revision `rev-eeffa38d4820371bf05ca41cacce6cab`・CAS 述語 `IS NULL`）／`partial_update`（revision `rev-e8ab5c08e1ebb6b8c34ac008f505965c`・CAS 述語 `= rev-eeffa38d…`）がすべて `200`／`ok:true`（Evidence 2・Claims 2）。**実 Supabase/PostgREST 上で CAS write の両分岐が成立。**
+- **検証の範囲（正確な表現）**：**PRG Core ＝ Production Verified。** **U2 ＝ Production Verified は表示・canonical GET・Claim 選択 UI まで。送信側ブラウザ挙動は `deterministic test verified / production POST未実証`。** DB の読み戻しと本番の negative 経路は未実施。第一投稿（`case-value-1788410623` ／ `out_1788413020275`）は変更していない（Level 2 でアクセス 0）。disposable scope は削除せず検証用データとして残置。
+- **テスト（release 前・実測）**：New Regression Gate 12ファイル・1,010 / 1,010 PASS（旧「11スイート／991件」は repository の記録から復元不能と判定し使用しない）。本反映では paid provider／AI API／Web Evidence 到達 0。
+- **Decision／Tag**：Decision 最大番号 119（Decision 120 は追加していない）。**Tag は作成していない。**
+
+---
+
 ## Evidence-Based Content Value Quality ＋ Output Draft 認可境界 ＋ Safety Foundation B1（canonical Content Evidence）─ 本番反映済み（2026-09-10〜09-17・origin/main `e5ce21a`・Decision119で事後正式化・Tagなし）
 
 - **Content Value Quality（CV-3a/CV-3b/CV-4b/CV-4c-1・`df99437`／`07d7027`／`d4ad96a`）**：Evidence 成立と本文の情報価値の**両方**が揃って初めて高品質と判定する独立 Core を追加。6軸（evidenceGrounding／specificity／informationGain／actionability／saveValue／nonGeneric）で gate と score を分離し、presence-only の `packageQuality` で薄い一般論が score 100 / complete を通過する状態を解消。`content_value` は **server 側で再計算した値のみ**保存し client 供給値は採用しない。投稿種別の唯一の SoT は `output_drafts.content_type`（`value`／`bridge`／`product`・atomic first-write-wins・downgrade 不可・NULL は `unknown` として fail-closed・DB CHECK 制約あり）。
@@ -11,7 +24,7 @@
 - **認可境界・Test Isolation（`79161b8`／`2e3fde7`／`72bb578`）**：`GET /api/output-drafts` の `requireSession()` 化（401 と 200-empty を区別）、有料AI実行・破壊的 route の認証境界、`server.test.js` が Protected の本番 `cost-logs.json` へ書き込まないための storage path 分離。
 - **Safety Foundation B1（`e5ce21a`）**：canonical `content_evidence` / `content_claims` / `content_evidence_origin` を `fields`（client が全置換する JSONB）の外側の専用列へ分離。**通常保存では canonical を変更しない**／canonical write は Evidence Resolution 成功経路のみ／cross-case は `output_id` ＋ `case_id` 両一致で二重防御／列未追加DBでも fail-safe／legacy fields は削除しない。
 - **本番実績（ユーザー実測）**：canonical 3列 migration 適用済み。第一投稿（`case-value-1788410623` / `out_1788413020275`）へ controlled backfill＝**Evidence 6件（verified 6）／Claims 3件（CI-01・CI-02・CI-03）**・`origin.mode='legacy_fields_backfill'`。**Post-Deploy Controlled Save Verification COMPLETE**（通常保存後も canonical・origin・fields 不変、`content_type` NULL 維持、変化は `content_value.evaluatedAt` と `updated_at` のみ）。CAS 方式 R-a は read-only production verification PASS（production SELECT のみ・write 0・migration 0・backfill 0）。
-- **本エントリの対象外**：**Partial Resolution Guard Core ＋ PRG UI Contract U2（`da24cf2`）は Code Commit Complete だが未push・未Render・本番未反映**。release 後に別エントリとして記録する。Tag はこの範囲では作成していない。
+- **本エントリの対象外**：Partial Resolution Guard Core ＋ PRG UI Contract U2（`da24cf2`）は、本エントリ作成時点では Code Commit Complete だが未push・未Render・本番未反映だった。**その後の本番反映と検証は、直上の別エントリ「PRG Core ＋ PRG UI Contract U2 ─ 本番反映済み」に記録した。** Tag はこの範囲では作成していない。
 
 ---
 
