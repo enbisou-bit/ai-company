@@ -39603,6 +39603,338 @@ function buildCarouselImageProductionHtml(outputDraft) {
     + '<div class="oe-status-sub">確認は読み取りのみで、課金は発生しません。金額を確認してから生成へ進みます。</div>');
 }
 
+// ══════════════════════════════════════════════════════════════
+// Stage 1b: Image Review（7枚プレビュー ＋ OK/NG・Carousel Image Production の直後・追加のみ）
+// 目的: DevTools Console / Supabase の手動オープン / JavaScript 貼付なしで、
+//   生成済み7枚の目視確認と OK/NG 記録を AI COMPANY 画面内で完結させる。
+//
+// ★ 新 API・新 DB 列・migration を作らない:
+//   - 画像取得は既存 GET /api/carousel-image/assets（署名URL・既定300秒）のみ。
+//   - OK/NG の正本は既存 fields.carouselAssets[i].imageReviewOk。
+//   - 保存は既存 POST /api/output-drafts（outputId / caseId / fields のみ送る）。
+// ★ whole-fields data loss 防止: 保存直前に必ず GET /api/output-drafts で最新 Draft を取得し、
+//   **最新の fields を基準**に imageReviewOk だけを変更して保存する。client snapshot は基準にしない。
+// ★ stale 防止: 表示時に記録した nonce / 件数 / slideIndex / sha256 / storagePath と
+//   保存直前の最新 Draft が一致しない場合は書き込まず停止する（古いレビューを新 asset へ適用しない）。
+// ★ 署名URLはブラウザのメモリ（_irState.urls）だけに置く。localStorage・DB・fields・log へ出さない。
+//   innerHTML へも入れず、描画後に img.src（DOM property）へ代入する（_irApplyImageSrc）。
+// ★ 再生成ボタンを置かない（Decision 112 / ledger 制約は変更しない）。
+// ★ Publishing 非接触: published / published_at / approval row / canonical 3列に触れない。
+// ══════════════════════════════════════════════════════════════
+var IMAGE_REVIEW_VERSION = '1.0.0';
+
+// UI 状態はメモリ保持のみ（DB・localStorage へ書かない）。urls は署名URLのため特に保存しない。
+var _irState = { outputId: null, phase: 'idle', urls: null, snapshot: null, zoom: null, message: null, reason: null };
+var _irInFlight = false;   // 保存・取得の多重実行防止
+
+var IR_REASON_TEXT = {
+  assets_not_ready:     'この成果物にはまだ画像がありません。',
+  asset_scope_mismatch: '画像の保存先が想定と一致しません。',
+  asset_access_failed:  '画像URLを取得できませんでした。時間をおいて再度お試しください。',
+  storage_unavailable:  '画像ストレージへ接続できませんでした。',
+  unauthorized:         'ログインが必要です。ログインし直してください。',
+  not_found:            '対象の成果物が見つかりません。',
+  output_case_mismatch: '案件と成果物の対応が一致しません。',
+  stale_assets:         '画像情報が更新されています。再読み込みしてください。',
+  save_failed:          '保存できませんでした。もう一度お試しください。',
+  read_failed:          '最新の成果物を取得できませんでした。保存していません。',
+};
+function _irReasonText(r) { return IR_REASON_TEXT[r] || ('処理できませんでした（' + String(r) + '）。'); }
+
+function _irRerender() {
+  try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }
+}
+function _irSyncTarget(outputId) {
+  if (_irState.outputId !== outputId) {
+    _irState = { outputId: outputId, phase: 'idle', urls: null, snapshot: null, zoom: null, message: null, reason: null };
+  }
+}
+
+// assets の同一性スナップショット（stale 判定用）。署名URLは含めない。
+function _irSnapshotOf(fields) {
+  var list = (fields && Array.isArray(fields.carouselAssets)) ? fields.carouselAssets : [];
+  return {
+    count: list.length,
+    nonce: (fields && fields.carouselGeneration && fields.carouselGeneration.nonce) ? String(fields.carouselGeneration.nonce) : null,
+    items: list.map(function (a) {
+      return { slideIndex: Number(a && a.slideIndex), sha256: String((a && a.sha256) || ''), storagePath: String((a && a.storagePath) || '') };
+    }),
+  };
+}
+// 表示時と保存直前が同一 asset 集合か（1つでも違えば false）
+function _irSnapshotEquals(a, b) {
+  if (!a || !b) return false;
+  if (a.count !== b.count || a.nonce !== b.nonce) return false;
+  if (!Array.isArray(a.items) || !Array.isArray(b.items) || a.items.length !== b.items.length) return false;
+  for (var i = 0; i < a.items.length; i++) {
+    if (a.items[i].slideIndex !== b.items[i].slideIndex) return false;
+    if (a.items[i].sha256 !== b.items[i].sha256) return false;
+    if (a.items[i].storagePath !== b.items[i].storagePath) return false;
+  }
+  return true;
+}
+
+// 描画後に署名URLを img.src（DOM property）へ代入する。★innerHTML へURLを入れない。
+function _irApplyImageSrc() {
+  try {
+    if (!_irState.urls || typeof document === 'undefined' || !document.querySelectorAll) return;
+    var nodes = document.querySelectorAll('img[data-ir-slide]');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var u = _irState.urls[String(n.getAttribute('data-ir-slide'))];
+      if (typeof u === 'string' && u.indexOf('https://') === 0) n.src = u;   // https のみ許可
+    }
+  } catch (e) { /* 画像が出なくてもUIを止めない */ }
+}
+
+// 「プレビューを表示」/「画像URLを更新」= GET のみ（課金 0・書き込み 0・画像再生成ではない）
+async function irLoadPreview() {
+  if (_irInFlight) return;
+  var caseId = getCurrentApprovalCaseId();
+  var outputId = getCurrentApprovalOutputId();
+  if (!caseId || !outputId) { _irState.phase = 'error'; _irState.reason = 'not_found'; _irRerender(); return; }
+  _irSyncTarget(outputId);
+  _irInFlight = true;
+  _irState.phase = 'loading';
+  _irRerender();
+  try {
+    var q = 'caseId=' + encodeURIComponent(caseId) + '&outputId=' + encodeURIComponent(outputId);
+    // 最新 Draft（メタデータ・imageReviewOk の正本）と 署名URL を両方取り直す
+    var dres = await fetch('/api/output-drafts?' + q, { method: 'GET', credentials: 'same-origin' });
+    if (dres.status === 401) { _irState.phase = 'error'; _irState.reason = 'unauthorized'; return; }
+    var ddata = await dres.json().catch(function () { return null; });
+    if (!dres.ok || !ddata || ddata.ok !== true || !ddata.draft) { _irState.phase = 'error'; _irState.reason = 'read_failed'; return; }
+    var latestFields = ddata.draft.fields || {};
+    var snap = _irSnapshotOf(latestFields);
+    if (snap.count === 0) { _irState.phase = 'error'; _irState.reason = 'assets_not_ready'; return; }
+
+    var ares = await fetch('/api/carousel-image/assets?' + q, { method: 'GET', credentials: 'same-origin' });
+    var adata = await ares.json().catch(function () { return null; });
+    if (ares.status === 401) { _irState.phase = 'error'; _irState.reason = 'unauthorized'; return; }
+    if (!ares.ok || !adata || adata.ok !== true || !Array.isArray(adata.assets)) {
+      _irState.phase = 'error';
+      _irState.reason = (adata && adata.reason) || 'asset_access_failed';
+      return;
+    }
+    var urls = {};
+    adata.assets.forEach(function (a) {
+      if (a && typeof a.url === 'string' && a.url.indexOf('https://') === 0) urls[String(a.slideIndex)] = a.url;
+    });
+    _irState.urls = urls;            // ★ メモリのみ。保存・log しない
+    _irState.snapshot = snap;
+    _irState.phase = 'ready';
+    _irState.reason = null;
+    // 表示メタデータを最新 Draft に合わせる（client snapshot の古い imageReviewOk を使わない）
+    try { if (_lastOutputDraft && _lastOutputDraft.id === outputId) _lastOutputDraft.fields = latestFields; } catch (e) {}
+  } catch (e) {
+    _irState.phase = 'error';
+    _irState.reason = 'asset_access_failed';
+  } finally {
+    _irInFlight = false;
+    _irRerender();
+  }
+}
+
+// OK/NG の保存。★最新 Draft の fields を基準に imageReviewOk だけを変更する（whole-fields data loss 防止）
+//   slideIndexes: 対象 slideIndex の配列（1枚 or 全7枚）、ok: true|false
+async function _irSaveReview(slideIndexes, ok) {
+  if (_irInFlight) return;
+  if (_irState.phase !== 'ready' || !_irState.snapshot) return;
+  var caseId = getCurrentApprovalCaseId();
+  var outputId = getCurrentApprovalOutputId();
+  if (!caseId || !outputId || outputId !== _irState.outputId) {
+    _irState.phase = 'error'; _irState.reason = 'not_found'; _irRerender(); return;
+  }
+  _irInFlight = true;
+  _irState.phase = 'saving';
+  _irRerender();
+  try {
+    var q = 'caseId=' + encodeURIComponent(caseId) + '&outputId=' + encodeURIComponent(outputId);
+    // ── 1. 最新 Draft を取得（client snapshot を基準にしない） ──
+    var res = await fetch('/api/output-drafts?' + q, { method: 'GET', credentials: 'same-origin' });
+    if (res.status === 401) { _irState.phase = 'error'; _irState.reason = 'unauthorized'; return; }
+    var data = await res.json().catch(function () { return null; });
+    if (!res.ok || !data || data.ok !== true || !data.draft) { _irState.phase = 'error'; _irState.reason = 'read_failed'; return; }
+    var row = data.draft;
+    if (row.output_id !== outputId || row.case_id !== caseId) { _irState.phase = 'error'; _irState.reason = 'output_case_mismatch'; return; }
+    var latestFields = row.fields || {};
+
+    // ── 2. stale 判定（表示時と同一 asset 集合か） ──
+    var fresh = _irSnapshotOf(latestFields);
+    var dup = {};
+    var hasDup = fresh.items.some(function (it) {
+      if (!Number.isInteger(it.slideIndex) || dup[it.slideIndex]) return true;
+      dup[it.slideIndex] = true; return false;
+    });
+    if (hasDup || !_irSnapshotEquals(_irState.snapshot, fresh)) {
+      _irState.phase = 'stale'; _irState.reason = 'stale_assets'; return;   // ★ 書き込まない
+    }
+
+    // ── 3. merge: 最新 fields をそのまま基準にし、imageReviewOk だけ変更 ──
+    var nextFields = Object.assign({}, latestFields);
+    var targets = {};
+    slideIndexes.forEach(function (n) { targets[Number(n)] = true; });
+    nextFields.carouselAssets = latestFields.carouselAssets.map(function (a) {
+      if (!targets[Number(a.slideIndex)]) return a;                 // 対象外は同一参照のまま
+      return Object.assign({}, a, { imageReviewOk: ok === true });  // ★ 変更は imageReviewOk のみ
+    });
+
+    // ── 4. 保存（outputId / caseId / fields のみ。canonical・approval・published には触れない） ──
+    var post = await fetch('/api/output-drafts', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outputId: outputId, caseId: caseId, fields: nextFields }),
+    });
+    var pdata = await post.json().catch(function () { return null; });
+    if (!post.ok || !pdata || pdata.ok !== true) {
+      _irState.phase = 'error';
+      _irState.reason = (pdata && pdata.error) ? 'save_failed' : 'save_failed';
+      return;
+    }
+    // ── 5. 画面へ反映（保存した内容と同じものを client state へ） ──
+    try { if (_lastOutputDraft && _lastOutputDraft.id === outputId) _lastOutputDraft.fields = nextFields; } catch (e) {}
+    _irState.phase = 'ready';
+    _irState.reason = null;
+  } catch (e) {
+    _irState.phase = 'error';
+    _irState.reason = 'save_failed';
+  } finally {
+    _irInFlight = false;
+    _irRerender();
+  }
+}
+
+function irSetOk(slideIndex) { return _irSaveReview([slideIndex], true); }
+function irSetNg(slideIndex) { return _irSaveReview([slideIndex], false); }
+function irSetAllOk() {
+  var list = (_irState.snapshot && _irState.snapshot.items) ? _irState.snapshot.items.map(function (i) { return i.slideIndex; }) : [];
+  if (!list.length) return;
+  return _irSaveReview(list, true);   // ★ 7 asset を確認したうえで imageReviewOk だけ変更（Publishing へは進めない）
+}
+function irZoom(n)      { _irState.zoom = Number(n); _irRerender(); }
+function irZoomClose()  { _irState.zoom = null; _irRerender(); }
+function irZoomStep(d) {
+  var items = (_irState.snapshot && _irState.snapshot.items) ? _irState.snapshot.items : [];
+  if (!items.length || _irState.zoom === null) return;
+  var idx = items.map(function (i) { return i.slideIndex; }).indexOf(Number(_irState.zoom));
+  if (idx === -1) return;
+  var next = idx + Number(d);
+  if (next < 0 || next >= items.length) return;
+  _irState.zoom = items[next].slideIndex;
+  _irRerender();
+}
+
+// Stage 1b: Image Review HTML（データ不足でも安全に空文字を返す）
+function buildImageReviewHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  if (normalizeOutputType(outputDraft.type) !== OUTPUT_TYPES.INSTAGRAM_CAROUSEL) return '';
+  var esc = escapeHtml;
+  _irSyncTarget(outputDraft.id || null);
+
+  var head = '<div class="oe-quality-title">🔍 Image Review '
+    + '<span style="font-weight:400;opacity:.5;">v' + IMAGE_REVIEW_VERSION + '</span></div>';
+  var wrap = function (inner) { return '<div class="oe-quality-section">' + head + inner + '</div>'; };
+
+  var fields = outputDraft.fields || {};
+  var assets = Array.isArray(fields.carouselAssets) ? fields.carouselAssets.slice() : [];
+  if (assets.length === 0) {
+    return wrap('<div class="oe-field-val">画像生成後に利用できます。</div>');
+  }
+  assets.sort(function (a, b) { return (Number(a.slideIndex) || 0) - (Number(b.slideIndex) || 0); });
+
+  // ★ imageReviewOk は生成時に false で初期化される2値のため、「NG」と「未評価」を保存データから
+  //   区別できない。事実に忠実な「未OK」という表記にする（新しい DB 列・field を足さない）。
+  var okCount = assets.filter(function (a) { return a.imageReviewOk === true; }).length;
+  var ngCount = assets.length - okCount;
+  var allOk = (okCount === assets.length);
+  var statusHtml = '<div class="oe-quality-overall">'
+    + '<span class="oe-quality-badge" style="' + (allOk
+        ? 'background:#5ddb8e22;color:#5ddb8e;border:1px solid #5ddb8e55;'
+        : 'background:#f0b84022;color:#f0b840;border:1px solid #f0b84055;')
+    + '">' + (allOk ? '画像レビュー完了' : '画像レビュー未完了') + ' ' + okCount + ' / ' + assets.length + '</span>'
+    + (ngCount > 0 ? '<span class="oe-field-val">未OK ' + ngCount + '件</span>' : '')
+    + '</div>';
+
+  // ── 未取得 / 取得中 / エラー / stale ──
+  if (_irState.phase === 'loading') {
+    return wrap(statusHtml + '<div class="oe-field-val">画像を読み込んでいます…</div>');
+  }
+  if (_irState.phase === 'saving') {
+    return wrap(statusHtml + '<div class="oe-field-val">レビュー結果を保存しています…</div>');
+  }
+  if (_irState.phase === 'stale') {
+    return wrap(statusHtml
+      + '<div class="oe-field-val">' + esc(_irReasonText('stale_assets')) + '</div>'
+      + '<div class="oe-status-sub">古いレビューを新しい画像へ適用しないため、保存していません。</div>'
+      + '<button class="oe-mrc-btn" onclick="irLoadPreview()">再読み込み</button>');
+  }
+  if (_irState.phase === 'error') {
+    return wrap(statusHtml
+      + '<div class="oe-field-val">' + esc(_irReasonText(_irState.reason)) + '</div>'
+      + '<button class="oe-mrc-btn" onclick="irLoadPreview()">再読み込み</button>');
+  }
+  if (_irState.phase !== 'ready' || !_irState.urls) {
+    return wrap(statusHtml
+      + '<div class="oe-field-val">' + assets.length + '枚の画像があります。</div>'
+      + '<button class="oe-mrc-btn" onclick="irLoadPreview()">プレビューを表示</button>'
+      + '<div class="oe-status-sub">画像の取得は読み取りのみで、課金は発生しません。</div>');
+  }
+
+  // ── 拡大表示 ──
+  if (_irState.zoom !== null) {
+    var cur = assets.filter(function (a) { return Number(a.slideIndex) === Number(_irState.zoom); })[0];
+    if (cur) {
+      var mark = cur.imageReviewOk === true ? 'OK' : '未OK';   // 2値のため NG と未評価を区別しない
+      return wrap(statusHtml
+        + '<div class="oe-field-val">Slide ' + esc(String(cur.slideIndex)) + ' ／ '
+        +   esc(String(cur.width) + '×' + String(cur.height)) + ' ' + esc(String(cur.format || '')) + ' ／ ' + esc(mark) + '</div>'
+        // ★ src は innerHTML へ入れず、描画後に DOM property で代入する
+        + '<img data-ir-slide="' + esc(String(cur.slideIndex)) + '" alt="" style="width:100%;max-width:360px;border-radius:8px;display:block;margin:6px 0;">'
+        + '<div class="oe-mrc-nav">'
+        +   '<button class="oe-mrc-navbtn" onclick="irZoomStep(-1)">‹ 前へ</button>'
+        +   '<button class="oe-mrc-navbtn" onclick="irZoomStep(1)">次へ ›</button>'
+        + '</div>'
+        + '<div class="oe-map-actions">'
+        +   '<button class="oe-mrc-actionbtn oe-mrc-ok" onclick="irSetOk(' + Number(cur.slideIndex) + ')">✅ OK</button>'
+        +   '<button class="oe-mrc-actionbtn oe-mrc-rev" onclick="irSetNg(' + Number(cur.slideIndex) + ')">✏️ NG</button>'
+        +   '<button class="oe-mrc-btn" onclick="irZoomClose()">閉じる</button>'
+        + '</div>');
+    }
+    _irState.zoom = null;
+  }
+
+  // ── 一覧（サムネイル ＋ OK/NG） ──
+  var rows = assets.map(function (a) {
+    var n = Number(a.slideIndex);
+    var mark = a.imageReviewOk === true ? '✅ OK' : '⬜ 未OK';   // 2値のため NG と未評価を区別しない
+    return '<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">'
+      // ★ src は innerHTML へ入れない（_irApplyImageSrc が DOM property で代入）
+      + '<img data-ir-slide="' + esc(String(n)) + '" alt="" onclick="irZoom(' + n + ')" style="width:56px;height:70px;object-fit:cover;border-radius:6px;background:rgba(255,255,255,0.06);cursor:pointer;">'
+      + '<div style="flex:1;min-width:0;">'
+      +   '<div class="oe-field-val">Slide ' + esc(String(n)) + ' ／ ' + esc(mark) + '</div>'
+      +   '<div class="oe-status-sub">' + esc(String(a.width) + '×' + String(a.height) + ' ' + String(a.format || '') + ' ／ ' + String(a.bytes || 0) + ' bytes ／ ' + String(a.status || '')) + '</div>'
+      + '</div>'
+      + '<button class="oe-mrc-actionbtn oe-mrc-ok" onclick="irSetOk(' + n + ')">OK</button>'
+      + '<button class="oe-mrc-actionbtn oe-mrc-rev" onclick="irSetNg(' + n + ')">NG</button>'
+      + '</div>';
+  }).join('');
+
+  var ngHtml = ngCount > 0
+    ? '<div class="oe-status-sub">この成果物は投稿候補として不採用にできます。修正する場合は新しい Output Draft を作成してください（同じ成果物の再生成は行いません）。</div>'
+    : '';
+
+  return wrap(statusHtml
+    + rows
+    + '<div class="oe-map-actions">'
+    +   '<button class="oe-mrc-btn" onclick="irSetAllOk()">すべてOK</button>'
+    +   '<button class="oe-mrc-btn" onclick="irLoadPreview()">画像URLを更新</button>'
+    + '</div>'
+    + ngHtml
+    + '<div class="oe-status-sub">画像URLは約5分で失効します。表示されない場合は「画像URLを更新」（読み取りのみ・課金なし）を押してください。</div>');
+}
+
 // Phase50-7: Publishing Ready Center HTML生成（Mobile Approvalの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
 function buildPublishingReadyHtml(outputDraft) {
   outputDraft = outputDraft || _lastOutputDraft;
@@ -45050,6 +45382,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildContentValueDiagnosisHtml,    'ContentValueDiagnosis')
     + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
     + _oeSafe(buildCarouselImageProductionHtml,  'CarouselImageProduction')
+    + _oeSafe(buildImageReviewHtml,              'ImageReview')
     + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
     + _oeSafe(buildInstagramLearningHtml,        'InstagramLearningCenter')
     + _oeSafe(buildAssetLibrarySaveHtml,         'AssetLibrarySaveCenter')
@@ -45082,6 +45415,9 @@ function renderOutputEnginePanel() {
     + '<div class="oe-status-grid">' + statusChips + '</div>'
     + '</div>';
   console.log('[OE-FINAL] body.innerHTML.length=', body.innerHTML.length, 'hasClq=', body.innerHTML.includes('Compare Learning Queue'));
+  // Stage 1b: 署名URLを innerHTML へ入れず、描画後に img.src（DOM property）へ代入する。
+  //   描画のたびに実行する（他パネルの再描画で img が作り直されても画像が消えないようにするため）。
+  try { _irApplyImageSrc(); } catch (_irE) { /* 画像が出なくてもUIを止めない */ }
   // Phase47-1 debug: DOM直接診断
   try {
     var _clqSect = body.querySelector('#oe-clq-section');

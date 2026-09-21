@@ -469,17 +469,33 @@ const EXPECTED_LOW_7 = client.estimateAuthorizedTotalJpy('low', 7);
 
     assert(!/_publishingReadyState\s*\.\s*\w+\s*=|markInstagramPublished|published\s*=\s*true/.test(uiBlock),
       '24a. UI が Publishing 状態を書き換えない');
-    assert(/_oeSafe\(buildMobileApprovalHtml,[\s\S]{0,90}_oeSafe\(buildCarouselImageProductionHtml,[\s\S]{0,90}_oeSafe\(buildPublishingReadyHtml,/.test(idxSrc),
-      '24b. 描画順 MobileApproval → CarouselImageProduction → PublishingReady');
+    // 描画順の不変条件: MobileApproval < CarouselImageProduction < PublishingReady。
+    //   間に別パネル（Stage 1b の ImageReview 等）が入ってもよい＝後続工程で壊れない判定にする。
+    const oIdx = function (name) { return idxSrc.indexOf('_oeSafe(' + name + ','); };
+    assert(oIdx('buildMobileApprovalHtml') !== -1 && oIdx('buildCarouselImageProductionHtml') !== -1 && oIdx('buildPublishingReadyHtml') !== -1
+      && oIdx('buildMobileApprovalHtml') < oIdx('buildCarouselImageProductionHtml')
+      && oIdx('buildCarouselImageProductionHtml') < oIdx('buildPublishingReadyHtml'),
+      '24b. 描画順 MobileApproval → CarouselImageProduction → …… → PublishingReady');
 
     // Security Core の無変更（git 差分で確認）
     const changed = require('child_process')
       .execSync('git diff --name-only HEAD -- shared server.js supabase lib/carouselImageClient.js lib/carouselExecutionDb.js lib/carouselAssetStorage.js lib/webSession.js', { encoding: 'utf8' })
       .trim();
     assert(changed === '', '26a. Security Core（shared / server.js / schema / client / ledger / storage / session）無変更 | ' + (changed || 'なし'));
-    const libChanged = require('child_process').execSync('git diff --name-only HEAD -- lib', { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
-    assert(JSON.stringify(libChanged) === JSON.stringify(['lib/carouselImageRoutes.js', 'lib/carouselImageService.js']),
-      '26b. lib の変更は service / routes の2ファイルのみ | ' + libChanged.join(', '));
+    // ★ commit 済みかどうかに依存しない「内容の不変条件」で scope 封じ込めを判定する。
+    //   quote / produce の実装は service と routes の2ファイルの中だけに存在すること。
+    const libFiles = fs.readdirSync(path.join(__dirname, 'lib')).filter(function (f) { return f.endsWith('.js'); });
+    const owners = libFiles.filter(function (f) {
+      const t = fs.readFileSync(path.join(__dirname, 'lib', f), 'utf8');
+      return /handleQuoteRequest|handleProduceRequest|createQuoteHandler|createProduceHandler/.test(t);
+    }).sort();
+    assert(JSON.stringify(owners) === JSON.stringify(['carouselImageRoutes.js', 'carouselImageService.js']),
+      '26b. quote / produce の実装は service / routes の2ファイルのみ | ' + owners.join(', '));
+    const securityCore = ['carouselImageClient.js', 'carouselExecutionDb.js', 'carouselAssetStorage.js', 'carouselAssetAccess.js', 'webSession.js', 'carouselExecutionStore.js'];
+    assert(securityCore.every(function (f) {
+      const t = fs.readFileSync(path.join(__dirname, 'lib', f), 'utf8');
+      return !/handleQuoteRequest|handleProduceRequest|confirmedCostJpy/.test(t);
+    }), '26c. Security Core の各ファイルに Stage 1a の追加が混入していない');
   }
 
   console.log('\n=== ' + _passed + ' passed / ' + _failed + ' failed ===');
