@@ -11647,6 +11647,10 @@ function _outputDraftFromServerRow(row) {
     createdAt:      row.created_at || null,
     updatedAt:      row.updated_at || null,
     builtAt:        row.built_at || null,
+    // Stage 0 Content Value Diagnosis: server が保存時に再計算した content_value（JSONB）を
+    //   表示専用で復元する。★ 保存payload（buildOutputDraftPayloadForServer）には含めない
+    //   （client供給のcontentValueはserver側で意図的に破棄される契約＝CV-4b を維持する）。
+    contentValue:   row.content_value || null,
   });
   if (d) d._restoredFromServer = true;   // 復元由来マーク（次回の安全な置換判定用・保存payloadには含めない）
   // STEP 6 工程2: packageQuality（JSONB）に同梱保存されたcompletionAssessmentをトップレベルへ復元する
@@ -38744,6 +38748,174 @@ function copyMobileApprovalField(type) {
   _mapCopyToClipboard(text);
 }
 
+// ══════════════════════════════════════════════════════════════
+// Stage 0: Content Value Diagnosis（表示専用・Mobile Approvalの直前・追加のみ）
+// 目的: server が保存時に再計算して output_drafts.content_value へ保存済みの評価結果を、
+//   ユーザーが承認／画像生成へ進む前に確認できるようにする（¥課金前の内容判断）。
+// ★ 表示専用（display-only）。gate 化しない:
+//   Mobile Approval / Output Draft / Carousel Generate / Publishing のいずれの可否条件にも
+//   影響を与えない（canonical Evidence と Reviewer novelty の配線が未完のため、
+//   現段階の hard gate 化は誤ブロックを生む）。
+// ★ 非接触: shared/contentValueQuality.js の評価ロジック・閾値／canonical Evidence／Reviewer／
+//   Carousel Approval・Generate・billingLock・ledger・token／DB schema／Publishing／
+//   Mobile Approval の判定条件（createMobileApprovalDraft の canApprove）は一切変更しない。
+// ★ 副作用 0: fetch・state 変更・保存を行わない純粋な文字列生成のみ（server write は発生しない）。
+// ★ 値の正本は DB の content_value（_outputDraftFromServerRow で復元）。client 側で再計算しない。
+// ══════════════════════════════════════════════════════════════
+var CONTENT_VALUE_DIAGNOSIS_VERSION = '1.0.0';
+
+// 既存語彙（shared/contentValueQuality.js の CONTENT_VALUE_STATUS_VALUES）に対応する表示ラベル。
+var CVD_STATUS_META = {
+  complete:     { label: 'Complete（十分）',         color: '#5ddb8e' },
+  almost_ready: { label: 'Almost Ready（あと少し）', color: '#9ad36a' },
+  needs_work:   { label: 'Needs Work（要改善）',     color: '#f0b840' },
+  insufficient: { label: 'Insufficient（不足）',     color: '#e06060' },
+};
+
+var CVD_AXIS_ORDER  = ['specificity', 'informationGain', 'actionability', 'saveValue'];
+var CVD_AXIS_LABELS = {
+  specificity:     '具体性（判断基準・条件・手順）',
+  informationGain: '新しい判断材料',
+  actionability:   '実行できる行動',
+  saveValue:       '保存する価値',
+};
+
+var CVD_GATE_ORDER  = ['contentTypeResolved', 'evidenceGrounding', 'nonGeneric', 'productClaim'];
+var CVD_GATE_LABELS = {
+  contentTypeResolved: '投稿種別の宣言',
+  evidenceGrounding:   'Evidence の裏付け',
+  nonGeneric:          '一般論だけではない',
+  productClaim:        '商品主張の裏付け',
+};
+
+// blockingReasons の既存キーに対応する日本語表示（未知キーはそのまま escape して表示）。
+var CVD_REASON_LABELS = {
+  evidence_insufficient:     '検証済み Evidence が不足しています',
+  generic_gate_failed:       '一般論の言い換えが中心で、新しい判断材料が不足しています',
+  content_type_unresolved:   '投稿種別（value / bridge / product）が未宣言です',
+  product_claim_unsupported: '商品に関する主張の裏付け（APFR Fact）が不足しています',
+};
+
+// PASS / FAIL の1行（color は本関数内のリテラルのみ＝属性へ外部データを入れない）。
+function _cvdRow(label, pass) {
+  var ok = (pass === true);
+  var color = ok ? '#5ddb8e' : '#e06060';
+  return '<div class="oe-field-val" style="display:flex;justify-content:space-between;gap:10px;">'
+    + '<span>' + escapeHtml(label) + '</span>'
+    + '<span style="color:' + color + ';font-weight:700;">' + (ok ? 'PASS' : 'FAIL') + '</span>'
+    + '</div>';
+}
+
+// detail オブジェクトを「key: value」の短い1行へ（配列・入れ子は JSON 化して長さを切る）。
+function _cvdDetailText(detail) {
+  if (!detail || typeof detail !== 'object') return '';
+  var parts = [];
+  Object.keys(detail).forEach(function (k) {
+    var v = detail[k];
+    if (v === null || v === undefined) return;
+    var s = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+    if (typeof v === 'number' && !Number.isInteger(v)) s = String(Math.round(v * 1000) / 1000);
+    if (s.length > 60) s = s.slice(0, 60) + '…';
+    parts.push(k + ': ' + s);
+  });
+  return parts.join(' / ');
+}
+
+// Stage 0: Content Value 診断 HTML（表示専用・データ不足でも例外を投げない）
+function buildContentValueDiagnosisHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft) return '';
+  var esc = escapeHtml;
+  var head = '<div class="oe-quality-title">🎯 Content Value 診断 '
+    + '<span style="font-weight:400;opacity:.5;">v' + CONTENT_VALUE_DIAGNOSIS_VERSION + ' / 表示のみ</span></div>';
+
+  var cv = outputDraft.contentValue;
+  if (!cv || typeof cv !== 'object' || Array.isArray(cv)) {
+    // 診断未取得（生成直後の未保存Draft／保存前／旧Draft等）。UIを壊さず理由だけ示す。
+    return '<div class="oe-quality-section">' + head
+      + '<div class="oe-field-val">診断未取得です。成果物を保存したあとページを再読み込みすると表示されます。</div>'
+      + '<div class="oe-status-sub">この診断は表示専用です。承認・画像生成・投稿をブロックしません。</div>'
+      + '</div>';
+  }
+
+  var meta = CVD_STATUS_META[cv.status] || { label: String(cv.status || 'unknown'), color: 'rgba(255,255,255,0.5)' };
+  var hasScore = (typeof cv.score === 'number') && isFinite(cv.score);
+  var badgeHtml = '<div class="oe-quality-overall">'
+    + '<span class="oe-quality-badge" style="background:' + meta.color + '22;color:' + meta.color + ';border:1px solid ' + meta.color + '55;">'
+    +   esc(meta.label) + '</span>'
+    + '<span class="oe-field-val">Score: ' + (hasScore ? esc(String(Math.round(cv.score))) : '—') + ' / 100</span>'
+    + '</div>';
+
+  // ══ 通常表示は「弱い点」と「直すべきところ」だけに絞る（5〜10秒で判断できる情報量） ══
+  // ── 評価軸: FAIL のものだけ通常表示（PASS 軸は詳細へ） ──
+  var axes = (cv.axes && typeof cv.axes === 'object') ? cv.axes : {};
+  var axisKeys = CVD_AXIS_ORDER.filter(function (k) { return axes[k] && typeof axes[k] === 'object'; });
+  var failKeys = axisKeys.filter(function (k) { return axes[k].pass !== true; });
+  var axisHtml = failKeys.length
+    ? '<div class="oe-pkg-label">弱い点</div>'
+      + failKeys.map(function (k) { return _cvdRow(CVD_AXIS_LABELS[k] || k, false); }).join('')
+    : (axisKeys.length ? '<div class="oe-field-val">弱い評価軸はありません。</div>' : '');
+
+  // ── 改善ポイント: 上位3件のみ通常表示（4件目以降は詳細へ） ──
+  var recs = (Array.isArray(cv.recommendations) ? cv.recommendations : [])
+    .filter(function (r) { return typeof r === 'string' && r.trim(); });
+  var recHead = recs.slice(0, 3);
+  var recRest = recs.slice(3);
+  var recHtml = recHead.length
+    ? '<div class="oe-pkg-label">直すべきところ</div>'
+      + recHead.map(function (r) { return '<div class="oe-field-val">・' + esc(r) + '</div>'; }).join('')
+    : '';
+
+  // ── 詳細（折りたたみ・既定は閉じる。native <details> のため JS・CSS 追加なし） ──
+  //   前提条件（全件）／ブロック理由（全件）／残りの改善ポイント／evidence／evaluatedAt／各軸の実測値。
+  var gates = (cv.gates && typeof cv.gates === 'object') ? cv.gates : {};
+  var gateRows = CVD_GATE_ORDER.filter(function (k) { return typeof gates[k] === 'boolean'; })
+    .map(function (k) { return _cvdRow(CVD_GATE_LABELS[k] || k, gates[k]); }).join('');
+  var gateHtml = gateRows ? '<div class="oe-pkg-label">前提条件</div>' + gateRows : '';
+
+  var reasons = Array.isArray(cv.blockingReasons) ? cv.blockingReasons : [];
+  var reasonHtml = reasons.length
+    ? '<div class="oe-pkg-label">不足している理由</div>'
+      + reasons.map(function (r) {
+          return '<div class="oe-field-val">・' + esc(CVD_REASON_LABELS[r] || String(r)) + '</div>';
+        }).join('')
+    : '';
+
+  var metaLines = [];
+  if (cv.contentType)    metaLines.push('投稿種別: ' + String(cv.contentType));
+  if (cv.evidenceStatus) metaLines.push('Evidence: ' + String(cv.evidenceStatus));
+  if (cv.evaluatedAt)    metaLines.push('評価時刻: ' + String(cv.evaluatedAt));
+  if (cv.evidence && typeof cv.evidence === 'object') {
+    var evText = _cvdDetailText(cv.evidence);
+    if (evText) metaLines.push('Evidence 実測: ' + evText);
+  }
+  var axisDetailLines = axisKeys.map(function (k) {
+    var d = _cvdDetailText(axes[k].detail);
+    return (CVD_AXIS_LABELS[k] || k) + '（' + (axes[k].pass === true ? 'PASS' : 'FAIL') + '）'
+      + (d ? ' → ' + d : '');
+  });
+  var restRecLines = recRest.map(function (r) { return '改善: ' + r; });
+  var detailLines = metaLines.concat(axisDetailLines, restRecLines);
+  var hasDetails = !!(gateHtml || reasonHtml || detailLines.length);
+  var detailsHtml = hasDetails
+    ? '<details style="margin-top:8px;"><summary class="oe-pkg-label" style="cursor:pointer;">詳細を表示</summary>'
+      + gateHtml
+      + reasonHtml
+      + (detailLines.length ? '<div class="oe-pkg-label">実測値</div>'
+          + detailLines.map(function (l) { return '<div class="oe-field-val">' + esc(l) + '</div>'; }).join('') : '')
+      + '</details>'
+    : '';
+
+  return '<div class="oe-quality-section">'
+    + head
+    + badgeHtml
+    + axisHtml
+    + recHtml
+    + detailsHtml
+    + '<div class="oe-status-sub">表示専用です。承認はブロックしません。</div>'
+    + '</div>';
+}
+
 // Phase50-6: Mobile Approval HTML生成（Mobile Review Centerの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
 function buildMobileApprovalHtml(outputDraft) {
   outputDraft = outputDraft || _lastOutputDraft;
@@ -44620,6 +44792,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildInstagramCarouselBuilderHtml, 'InstagramCarouselBuilder')
     + _oeSafe(buildInstagramDesignHtml,          'InstagramDesignSystem')
     + _oeSafe(buildMobileReviewHtml,             'MobileReviewCenter')
+    + _oeSafe(buildContentValueDiagnosisHtml,    'ContentValueDiagnosis')
     + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
     + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
     + _oeSafe(buildInstagramLearningHtml,        'InstagramLearningCenter')
