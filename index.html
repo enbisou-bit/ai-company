@@ -45065,6 +45065,538 @@ function _apfrRegisterFromUi() {
 
 // Phase53: Affiliate Intelligence Core HTML生成
 // _lastOutputDraftに依存しない会社レベルの案件判断ツール（常時表示）。
+// ══════════════════════════════════════════════════════════════
+// Phase P0: Daily Candidate Board（今日の投稿候補ボード・追加のみ）
+// 目的: Auto Task を実行する「前」に、商品 × テーマ型 × 必要な具体 Fact × Evidence 準備度 ×
+//   表現リスクを見て、価値の低い投稿企画（一般論の言い換え・基本動作だけの投稿・根拠のない数値フック・
+//   効果断定が前提の企画）を候補から除外し、今日出すべき候補を最大3案に絞る。
+//
+// ★ 決定論のみ: AI（OpenAI / Claude）・Web Search・Web Evidence を一切呼ばない。fetch も行わない。
+// ★ 既存データのみ使用: _affiliateCases（buildAffiliateIntelligenceRanking）／_aicIntegratedScore（無変更）／
+//   APFR（_apfrCurrentAdoptedProduct・_apfrResolveCurrentFacts）／cases（現在案件）。新 API・DB・一覧取得なし。
+// ★ Content Value の status は候補選定に使わない（novelty 未配線のため全投稿が insufficient になる）。
+//   specificity／actionability／saveValue の「考え方」だけを、必要 Fact の設計（比較・条件・数値・使い分け・
+//   判断基準・例外・注意点）として決定論で反映する。shared/contentValueQuality.js は変更しない。
+// ★ content_type は「選択中の候補の状態」としてのみ保持し、Output Draft へは書き込まない。
+//   理由: server の content_type は初回宣言のみ有効（first-write-wins・後から変更不可）であり、
+//   選んだ候補は「次に作る新しい投稿」のためのもの。現在表示中の Draft（別の投稿）へ書くと、
+//   誤った種別が恒久的に確定してしまうため。新しい Draft への反映は次工程で扱う。
+// ★ Auto Task は実行しない。依頼文の下書きとコピーまで（実行は既存の Auto Task から、有料・要承認）。
+// ★ 既存 Content Planning（ICP_THEME_ARCHETYPES）は無変更で残す。本ボードは上位判断レイヤー。
+//   テーマ型の語彙は Content Planning より細かい独立の分類（比較／選び方／誤解訂正 等）であり、
+//   既存テンプレートの数値フック（「〜7選」「9割が〜」）は再利用しない。
+// ══════════════════════════════════════════════════════════════
+var DAILY_CANDIDATE_BOARD_VERSION = '1.0.0';
+var DCB_MAX_CANDIDATES = 3;
+var DCB_MAX_PRODUCTS = 3;          // 候補生成に使う上位商品数（ランキング順・既存 integratedScore 順）
+var DCB_MIN_KNOWN_FACTORS = 3;     // これ未満の既知項目数では商品スコアを信用せず neutral 扱い
+//   理由: _aicIntegratedScore は未入力項目を 50 で補完するため、既知項目が少ないと
+//   「入力していないのに 50 点前後」になる。値が無いのに高スコアを与えないよう、ボード側で neutral に倒す。
+
+// 具体性の次元（一般論防止ルール）。各候補の必要 Fact はこのいずれかを必ず持つ。
+var DCB_SPECIFICITY_DIMS = ['比較', '条件', '数値', '使い分け', '判断基準', '例外', '注意点'];
+
+// テーマ型（固定の決定論スコア・0〜1）。
+//   方向性: 比較・選び方・誤解訂正は「判断材料」を提示する型で、保存価値と購入導線が強く、
+//   Evidence（公式値・公的基準）で支えやすく、一般論の言い換えになりにくい → 高。
+//   悩み解決・使用シーン・ターゲット別・失敗回避は条件次第で具体化できる → 中。
+//   チェックリストは「基本動作の羅列」に崩れやすい（第一投稿の失敗型）→ 低〜中・条件付き。
+//   初心者向け導入は情報の新規性が最も出にくい → 低・候補から除外（既存テンプレートは削除しない）。
+var DCB_THEME_TYPES = [
+  {
+    key: 'comparison', label: '比較型', tier: 'priority', score: 0.95, rank: 1,
+    titleFn: function (s) { return s + '：違いが出る条件と、向いている人の選び分け'; },
+    targetFn: function (s) { return s + 'を比較検討していて、自分に合う方を決めたい人'; },
+    reason: '2つ以上の対象を条件の差で比べる型で、保存価値と購入導線が最も強い',
+    facts: [
+      { text: '比較対象A・Bの明確な違い（成分・仕様・価格帯など）', dims: ['比較'] },
+      { text: '違いが生じる数値または条件の差（公式値・公的基準）', dims: ['数値', '条件'] },
+      { text: 'どんな人・状況にどちらが向くか（使い分けの基準）', dims: ['使い分け', '判断基準'] },
+    ],
+    whyNotThin: '対象を数値・条件の差で比べるため、「〜が大切」という一般論で終わらない',
+  },
+  {
+    key: 'selection', label: '選び方型', tier: 'priority', score: 0.92, rank: 2,
+    titleFn: function (s) { return s + 'の選び方：判断基準と、当てはまらない例外'; },
+    targetFn: function (s) { return s + 'を選ぶ前に、失敗しない判断基準を知りたい人'; },
+    reason: '読者が自分で判断できる基準を渡す型で、保存されやすく購入前の検討に直結する',
+    facts: [
+      { text: '選定基準（何を見て選ぶか）', dims: ['判断基準'] },
+      { text: '判断に使える数値または条件（表示の読み方・目安）', dims: ['数値', '条件'] },
+      { text: '例外・注意点（基準が当てはまらないケース）', dims: ['例外', '注意点'] },
+    ],
+    whyNotThin: '判断基準と例外を示すため、読後に「自分はどれを選ぶか」が決まる',
+  },
+  {
+    key: 'misconception', label: '誤解訂正型', tier: 'priority', score: 0.85, rank: 3,
+    titleFn: function (s) { return s + 'のよくある誤解と、正しい判断条件'; },
+    targetFn: function (s) { return s + 'について、聞いた情報が正しいか確かめたい人'; },
+    reason: '誤解を公的な根拠で正す型で、保存価値が高く一般論との差別化がしやすい',
+    facts: [
+      { text: 'よくある誤解の具体的な内容（どう信じられているか）', dims: ['注意点'] },
+      { text: '公式・公的 Evidence による裏付け', dims: ['判断基準'] },
+      { text: '正しい判断条件（どの条件なら当てはまるか）', dims: ['条件', '判断基準'] },
+    ],
+    whyNotThin: '誤解と正しい条件の差を示すため、既知情報の繰り返しにならない',
+  },
+  {
+    key: 'failure', label: '失敗回避型', tier: 'usable', score: 0.75, rank: 4,
+    titleFn: function (s) { return s + 'で失敗しやすい条件と、事前の確認手順'; },
+    targetFn: function (s) { return s + 'で以前うまくいかなかった、または失敗を避けたい人'; },
+    reason: '失敗が起きる条件を具体化できれば、保存価値のある確認手順になる',
+    facts: [
+      { text: '失敗が起きる具体的な条件', dims: ['条件'] },
+      { text: '回避のための確認手順（HOW / CHECK）', dims: ['判断基準'] },
+      { text: '失敗かどうかの判定基準・注意点', dims: ['判断基準', '注意点'] },
+    ],
+    whyNotThin: '失敗条件と確認手順をセットで示すため、心構えだけの投稿にならない',
+  },
+  {
+    key: 'scene', label: '使用シーン型', tier: 'usable', score: 0.70, rank: 5,
+    titleFn: function (s) { return s + 'の使い分け：シーン別の判断条件'; },
+    targetFn: function (s) { return '場面によって' + s + 'を使い分けたい人'; },
+    reason: 'シーンごとの条件差を示せば、使い分けの判断材料になる',
+    facts: [
+      { text: 'シーンごとの条件の差（時間・環境・目的など）', dims: ['条件', '比較'] },
+      { text: '各シーンで重視すべき仕様の判断基準', dims: ['判断基準'] },
+      { text: '併用・切り替え時の注意点', dims: ['注意点', '使い分け'] },
+    ],
+    whyNotThin: 'シーン別の条件差で使い分けを示すため、一律の推奨にならない',
+  },
+  {
+    key: 'target', label: 'ターゲット別型', tier: 'usable', score: 0.70, rank: 6,
+    titleFn: function (s) { return s + '：肌状態・生活条件別の選び分け'; },
+    targetFn: function (s) { return '自分の肌状態や生活条件に合う' + s + 'を知りたい人'; },
+    reason: '読者を条件で分けて示せば、自分に当てはまる判断がしやすい',
+    facts: [
+      { text: 'ターゲットの分け方（肌状態・生活条件）', dims: ['条件'] },
+      { text: '各ターゲットで重視すべき基準', dims: ['判断基準', '使い分け'] },
+      { text: '例外（当てはまらない人）', dims: ['例外'] },
+    ],
+    whyNotThin: '読者の条件ごとに基準を分けるため、万人向けの一般論にならない',
+  },
+  {
+    key: 'problem', label: '悩み解決型', tier: 'usable', score: 0.68, rank: 7,
+    titleFn: function (s) { return s + 'の悩み：原因の見分け方と、対処の判断基準'; },
+    targetFn: function (s) { return s + 'に関する悩みの原因を見分けたい人'; },
+    reason: '原因の見分け方と判断基準に絞れば具体化できるが、効果の断定に注意が必要',
+    facts: [
+      { text: '悩みの原因の見分け方（条件）', dims: ['条件'] },
+      { text: '対処の判断基準', dims: ['判断基準'] },
+      { text: '専門家への相談が必要な例外', dims: ['例外', '注意点'] },
+    ],
+    whyNotThin: '原因の見分け方と例外を示すため、「〜しましょう」だけで完結しない',
+  },
+  {
+    key: 'checklist', label: 'チェックリスト型', tier: 'conditional', score: 0.55, rank: 8,
+    titleFn: function (s) { return s + 'を選ぶ前の確認項目と、それぞれの判定条件'; },
+    targetFn: function (s) { return s + 'を選ぶ前に確認すべき点を整理したい人'; },
+    reason: '各項目に判定条件を付ける場合のみ有効（基本動作の羅列になりやすいため条件付き）',
+    facts: [
+      { text: '確認項目ごとの具体的な判定条件', dims: ['条件', '判断基準'] },
+      { text: '各項目の根拠（公式・公的情報）', dims: ['判断基準'] },
+      { text: 'チェック結果ごとの次の行動（どれを選ぶか）', dims: ['使い分け'] },
+    ],
+    whyNotThin: '項目ごとに判定条件と次の行動を付けるため、「〜を確認しよう」の羅列にならない',
+  },
+  {
+    key: 'beginner', label: '初心者向け導入型', tier: 'excluded', score: 0.30, rank: 9,
+    titleFn: function (s) { return s + 'の始め方'; },
+    targetFn: function (s) { return s + 'をこれから始める人'; },
+    reason: '情報の新規性が最も出にくい型',
+    facts: [],
+    whyNotThin: '',
+  },
+];
+
+// 基本動作だけのテーマ領域（第一投稿の失敗型）。この領域では比較・選び方・誤解訂正以外を出さない。
+var DCB_BASIC_ACTION_RE = /^(毎日の|日々の|今日からの|今日から)?(スキンケア|洗顔|保湿|紫外線対策|UV対策|睡眠|食事|水分補給)(の基本|の習慣|習慣|を見直す|を見直したい|しましょう|を大切に)?$/;
+var DCB_BASIC_ONLY_TYPES = ['comparison', 'selection', 'misconception'];
+// 根拠のない数値フック・断定表現（タイトルに含まれたら除外）
+var DCB_UNSUPPORTED_HOOK_RE = /[0-9０-９]+ *(割|%|％|倍|秒|日で|選)|No\.? *1|ナンバーワン|最強|絶対|必ず|誰でも|100%|１００％/;
+// 医療そのものの領域 → 候補から除外（High）
+var DCB_MEDICAL_MARKET_RE = /医薬品|医療|処方|治療|診断|疾患|アトピー/;
+// 表現に注意が要る領域 → 少なくとも Medium
+var DCB_SENSITIVE_MARKET_RE = /サプリ|健康食品|ダイエット|痩身|育毛|発毛|美白|シミ|ニキビ|シワ|エイジング/;
+
+// UI 状態（メモリ保持のみ・DB／localStorage へ書かない）
+var _dcbState = { caseId: null, subject: '', subjectTouched: false, selection: null, candidates: [], copyMsg: '' };
+
+function _dcbAttr(s) {
+  // 属性値用: escapeHtml（& < >）に加えて引用符も escape する（escapeHtml は引用符を escape しないため）
+  return escapeHtml(String(s == null ? '' : s)).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function _dcbRerender() { try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ } }
+
+function _dcbSyncCase(caseId) {
+  if (_dcbState.caseId !== caseId) {
+    _dcbState = { caseId: caseId, subject: '', subjectTouched: false, selection: null, candidates: [], copyMsg: '' };
+  }
+}
+
+// 商品スコア: 既存 _aicIntegratedScore（ランキング値）をそのまま使う。新しい計算式は作らない。
+function _dcbProductScore(r) {
+  if (!r) return { value: 0.5, status: 'neutral', label: 'neutral（value 投稿・商品なし）' };
+  var known = Number(r.knownFactors) || 0;
+  var total = Number(r.totalFactors) || 0;
+  if (known < DCB_MIN_KNOWN_FACTORS) {
+    return { value: 0.5, status: 'insufficient_data', label: 'insufficient_data（既知 ' + known + '/' + total + ' 項目・neutral 扱い）' };
+  }
+  var sc = Math.max(0, Math.min(100, Number(r.integratedScore) || 0));
+  return { value: sc / 100, status: 'ok', label: sc + '/100（既知 ' + known + '/' + total + ' 項目）' };
+}
+
+// Evidence 準備度（Ready / Partial / Missing）。判定不能は Missing。推測で Ready にしない。
+//   Ready は「この商品の Formal Fact（APFR・fact・user_verified）が3件以上、現在の成果物に登録済み」の場合のみ。
+//   比較対象・一般論部分の Evidence は別途 Content Evidence で取得が必要（詳細欄に明記する）。
+function _dcbEvidenceReadiness(productRec) {
+  if (!productRec) {
+    return { level: 'Missing', detail: 'value 投稿のため Evidence は未取得です。候補選択後に Content Evidence（有料・承認制）で取得が必要です。' };
+  }
+  try {
+    var adopted = (typeof _apfrCurrentAdoptedProduct === 'function') ? _apfrCurrentAdoptedProduct() : null;
+    if (!adopted || !productRec.productIdentifier || String(adopted.productIdentifier) !== String(productRec.productIdentifier)) {
+      return { level: 'Missing', detail: 'この商品の Formal Fact（APFR）が現在の成果物で未採用、または未登録です。' };
+    }
+    var res = (typeof _apfrResolveCurrentFacts === 'function') ? _apfrResolveCurrentFacts(adopted) : { resolved: {} };
+    var compliance = (typeof APFR_COMPLIANCE_CONTEXT_FIELDS !== 'undefined') ? APFR_COMPLIANCE_CONTEXT_FIELDS : [];
+    var facts = 0, verified = 0;
+    Object.keys(res.resolved || {}).forEach(function (f) {
+      var cf = res.resolved[f];
+      if (compliance.indexOf(f) !== -1 || !cf || cf.classification !== 'fact') return;
+      facts++;
+      if (cf.verificationStatus === 'user_verified') verified++;
+    });
+    if (verified >= 3) return { level: 'Ready', detail: '商品の Formal Fact（検証済み）が ' + verified + ' 件あります。比較対象・一般論部分の Evidence は別途必要です。' };
+    if (facts >= 1) return { level: 'Partial', detail: '商品の Formal Fact が ' + facts + ' 件（うち検証済み ' + verified + ' 件）。3件以上の検証済み Fact が必要です。' };
+    return { level: 'Missing', detail: '商品の Formal Fact（fact 分類）が登録されていません。' };
+  } catch (e) {
+    return { level: 'Missing', detail: 'Evidence 準備度を判定できませんでした（Missing として扱います）。' };
+  }
+}
+
+// リスクの予備判定（Low / Medium / High）。既存 Compliance Gate を置き換えない（候補選択前の予備判定のみ）。
+function _dcbRisk(type, productRec, subject) {
+  var level = 0;
+  var reasons = [];
+  var market = String((productRec && productRec.market) || '') + ' ' + String(subject || '');
+  if (productRec && type.key === 'problem') {
+    level = 2;
+    reasons.push('商品 × 悩み解決は「この商品で悩みが解決する」という効果断定が前提になりやすい（薬機表現）');
+  } else if (productRec) {
+    level = Math.max(level, 1);
+    reasons.push('商品に言及するため、効果の断定・最上級表現に注意');
+  }
+  if (type.key === 'misconception' || type.key === 'problem') {
+    level = Math.max(level, 1);
+    reasons.push('肌・健康の判断を扱うため、公式・公的 Evidence による裏付けが必須');
+  }
+  if (DCB_MEDICAL_MARKET_RE.test(market)) {
+    level = 2;
+    reasons.push('医療そのものに関わる領域のため、候補から除外');
+  } else if (DCB_SENSITIVE_MARKET_RE.test(market)) {
+    level = Math.max(level, 1);
+    reasons.push('医薬部外品・健康食品に近い領域のため、効能表現に注意');
+  }
+  if (!reasons.length) reasons.push('効果の断定を必要としない構成');
+  return { level: ['Low', 'Medium', 'High'][level], rank: level, reasons: reasons };
+}
+
+// 一般論防止: 必要 Fact が3件あり、各 Fact が具体性の次元を持ち、全体で2次元以上あること。
+function _dcbFactsAreSpecific(facts) {
+  if (!Array.isArray(facts) || facts.length !== 3) return false;
+  var dims = {};
+  var ok = facts.every(function (f) {
+    var d = (f && Array.isArray(f.dims)) ? f.dims.filter(function (x) { return DCB_SPECIFICITY_DIMS.indexOf(x) !== -1; }) : [];
+    d.forEach(function (x) { dims[x] = true; });
+    return !!(f && typeof f.text === 'string' && f.text.trim()) && d.length >= 1;
+  });
+  return ok && Object.keys(dims).length >= 2;
+}
+
+// 1候補を評価（除外理由があれば excluded として返す）
+function _dcbEvaluate(type, productRec, subject) {
+  var subj = String(subject || '').trim();
+  var hasProduct = !!productRec;
+  var productLabel = hasProduct ? ('「' + String(productRec.name || '商品') + '」') : '';
+  var topic = hasProduct ? (productLabel + (productRec.market ? '（' + productRec.market + '）' : '')) : subj;
+  var c = {
+    themeKey: type.key, themeLabel: type.label, tier: type.tier, rank: type.rank,
+    product: hasProduct ? {
+      id: productRec.id != null ? String(productRec.id) : null,
+      name: String(productRec.name || ''),
+      productIdentifier: productRec.productIdentifier || null,
+      market: productRec.market || '', asp: productRec.asp || '',
+    } : null,
+    subject: topic,
+    contentTypeDefault: hasProduct ? 'bridge' : 'value',
+    title: type.titleFn(topic), target: type.targetFn(hasProduct ? (productRec.market || productRec.name || topic) : topic),
+    requiredFacts: (type.facts || []).map(function (f) { return { text: f.text, dims: f.dims.slice(), needs: hasProduct ? 'Formal Fact（APFR）または Evidence' : 'Evidence' }; }),
+    whyNotThin: type.whyNotThin,
+    excluded: false, excludeReason: null,
+  };
+  if (type.tier === 'excluded') { c.excluded = true; c.excludeReason = '低優先の型（' + type.label + '）は候補に出さない'; return c; }
+  if (!topic) { c.excluded = true; c.excludeReason = 'テーマ領域が未設定'; return c; }
+  if (!hasProduct && DCB_BASIC_ACTION_RE.test(subj) && DCB_BASIC_ONLY_TYPES.indexOf(type.key) === -1) {
+    c.excluded = true;
+    c.excludeReason = '基本動作だけのテーマ領域（「' + subj + '」）では、比較・選び方・誤解訂正以外は一般論の言い換えになる';
+    return c;
+  }
+  if (!_dcbFactsAreSpecific(type.facts)) { c.excluded = true; c.excludeReason = '具体 Fact を3件定義できない'; return c; }
+  if (DCB_UNSUPPORTED_HOOK_RE.test(c.title)) { c.excluded = true; c.excludeReason = '根拠のない数値・断定表現を前提にしている'; return c; }
+  var risk = _dcbRisk(type, productRec, subj);
+  c.risk = risk;
+  if (risk.level === 'High') { c.excluded = true; c.excludeReason = '表現リスクが高い（' + risk.reasons[0] + '）'; return c; }
+  var ps = _dcbProductScore(productRec);
+  var ev = _dcbEvidenceReadiness(productRec);
+  var evFactor = ev.level === 'Ready' ? 1.0 : (ev.level === 'Partial' ? 0.85 : 0.7);
+  var riskFactor = risk.level === 'Low' ? 1.0 : 0.85;
+  c.evidence = ev;
+  c.productScore = ps;
+  c.score = Math.round(ps.value * type.score * evFactor * riskFactor * 1000) / 1000;
+  c.scoreBreakdown = { product: ps.value, theme: type.score, evidence: evFactor, risk: riskFactor };
+  var dimSet = {};
+  c.requiredFacts.forEach(function (f) { f.dims.forEach(function (d) { dimSet[d] = true; }); });
+  c.dims = Object.keys(dimSet);
+  c.reason = (hasProduct ? ('商品スコア ' + ps.label + '。') : 'value 投稿（商品なし）。') + type.label + 'は' + type.reason + '。'
+    + (type.tier === 'conditional' ? '（条件付き：各項目に判定条件を付ける場合のみ）' : '');
+  return c;
+}
+
+var DCB_EVIDENCE_RANK = { Ready: 0, Partial: 1, Missing: 2 };
+function _dcbCompare(a, b) {
+  if (b.score !== a.score) return b.score - a.score;                                   // 1. 候補スコア
+  var ea = DCB_EVIDENCE_RANK[a.evidence.level], eb = DCB_EVIDENCE_RANK[b.evidence.level];
+  if (ea !== eb) return ea - eb;                                                         // 2. Evidence 準備度
+  if (a.risk.rank !== b.risk.rank) return a.risk.rank - b.risk.rank;                     // 3. リスク
+  return a.rank - b.rank;                                                                // 同点: 薄くなりにくい型を優先
+}
+
+// 候補生成（商品 × テーマ型、商品0件でも value 候補）。副作用なし・fetch なし。
+function buildDailyCandidates(opts) {
+  opts = opts || {};
+  var ranked = Array.isArray(opts.ranked) ? opts.ranked
+    : ((typeof buildAffiliateIntelligenceRanking === 'function') ? buildAffiliateIntelligenceRanking() : []);
+  var subject = String(opts.subject == null ? '' : opts.subject).trim();
+  var all = [];
+  ranked.slice(0, DCB_MAX_PRODUCTS).forEach(function (r) {
+    DCB_THEME_TYPES.forEach(function (t) { all.push(_dcbEvaluate(t, r, subject)); });
+  });
+  if (subject) {
+    DCB_THEME_TYPES.forEach(function (t) { all.push(_dcbEvaluate(t, null, subject)); });
+  }
+  var pool = all.filter(function (c) { return !c.excluded; }).sort(_dcbCompare);
+  var top = pool.slice(0, DCB_MAX_CANDIDATES);
+  // 比較型・選び方型が成立するのに上位へ入っていない場合は、最後の枠へ優先表示する
+  var isCore = function (c) { return c.themeKey === 'comparison' || c.themeKey === 'selection'; };
+  if (top.length && !top.some(isCore)) {
+    var alt = pool.filter(isCore)[0];
+    if (alt) { if (top.length < DCB_MAX_CANDIDATES) top.push(alt); else top[top.length - 1] = alt; }
+  }
+  top.forEach(function (c, i) { c.no = i + 1; c.id = 'dcb-' + (i + 1) + '-' + c.themeKey + (c.product ? '-p' : '-v'); });
+  return {
+    candidates: top,
+    excluded: all.filter(function (c) { return c.excluded; }),
+    poolSize: pool.length,
+    productCount: ranked.length,
+    subject: subject,
+  };
+}
+
+// Auto Task へ渡す依頼文（下書き）。★この関数は文字列を作るだけで Auto Task を実行しない。
+function buildDailyCandidateAutoTaskDraft(sel) {
+  if (!sel) return '';
+  var ctLabel = { value: 'value（価値提供）', bridge: 'bridge（価値提供から商品へつなぐ）', product: 'product（商品紹介）' }[sel.contentType] || sel.contentType;
+  var L = [];
+  L.push('【Instagram カルーセル作成依頼（Daily Candidate Board 由来）】');
+  L.push('投稿タイプ: ' + sel.themeLabel + '（content_type: ' + ctLabel + '）');
+  L.push('対象商品: ' + (sel.productName ? sel.productName : 'なし（value 投稿）'));
+  L.push('投稿テーマ: ' + sel.title);
+  L.push('想定ターゲット: ' + sel.target);
+  L.push('作成するもの: Instagram カルーセル（7枚構成）・キャプション・CTA・ハッシュタグ');
+  L.push('');
+  L.push('■ 必ず Evidence / Formal Fact で確認してから書く具体 Fact（3件）');
+  (sel.requiredFacts || []).forEach(function (f, i) {
+    L.push((i + 1) + '. ' + f.text + '（' + f.needs + ' が必要）');
+  });
+  L.push('');
+  L.push('■ 書き方の指示');
+  L.push('- 一般論（誰でも知っている基本動作の言い換え）で終わらせない');
+  L.push('- 各本文スライドに、比較・条件・数値・使い分け・判断基準・例外・注意点のいずれかを入れる');
+  L.push('- 比較と判断基準を優先し、読者が自分で選べる材料を先に示す');
+  L.push('- HOW（手順）または CHECK（判断のチェック項目）を最低1つ入れる');
+  L.push('- 根拠のない数値表現（「9割が」「No.1」「最強」など）は使わない');
+  L.push('- 効果・効能を断定しない（医薬品的な表現・誇大表現を避ける）');
+  L.push('- 商品の押し売りをしない（判断基準を先に示し、商品は選択肢の一つとして扱う）');
+  L.push('- 上記3件の Fact を Evidence で確認できない場合は、その内容を書かない');
+  return L.join('\n');
+}
+
+function dcbSetSubject(v) {
+  _dcbState.subject = String(v == null ? '' : v).slice(0, 60);
+  _dcbState.subjectTouched = true;
+  _dcbState.selection = null;
+  _dcbRerender();
+}
+function dcbSelect(idx) {
+  var c = _dcbState.candidates[Number(idx)];
+  if (!c) return;
+  _dcbState.selection = {
+    candidateId: c.id,
+    themeType: c.themeKey, themeLabel: c.themeLabel,
+    productId: c.product ? (c.product.productIdentifier || c.product.id) : null,
+    productName: c.product ? c.product.name : null,
+    title: c.title, target: c.target,
+    requiredFacts: c.requiredFacts.map(function (f) { return { text: f.text, dims: f.dims.slice(), needs: f.needs }; }),
+    evidenceReadiness: c.evidence.level,
+    risk: c.risk.level,
+    candidateScore: c.score,
+    contentType: c.contentTypeDefault,   // 既定値。ユーザーが明示的に変更できる
+    contentTypeConfirmed: false,
+    selectedAt: new Date().toISOString(),
+  };
+  _dcbState.copyMsg = '';
+  _dcbRerender();
+}
+function dcbSetContentType(t) {
+  if (!_dcbState.selection) return;
+  if (['value', 'bridge', 'product'].indexOf(t) === -1) return;
+  _dcbState.selection.contentType = t;
+  _dcbState.selection.contentTypeConfirmed = true;   // ユーザーが明示的に宣言した
+  _dcbRerender();
+}
+function dcbClearSelection() { _dcbState.selection = null; _dcbState.copyMsg = ''; _dcbRerender(); }
+function dcbCopyDraft() {
+  var text = buildDailyCandidateAutoTaskDraft(_dcbState.selection);
+  if (!text) return;
+  var done = function (ok) { _dcbState.copyMsg = ok ? '依頼文をコピーしました（Auto Task は実行していません）' : 'コピーできませんでした。依頼文を選択してコピーしてください'; _dcbRerender(); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); return; }
+  } catch (e) { /* fallback へ */ }
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    done(!!ok);
+  } catch (e2) { done(false); }
+}
+
+// Phase P0: Daily Candidate Board HTML（データ不足でも安全に表示・副作用なし）
+function buildDailyCandidateBoardHtml() {
+  var caseId = (typeof _aicCurrentCaseId === 'function') ? _aicCurrentCaseId() : null;
+  if (!caseId) return '';   // 案件未選択（商品評価が案件単位のため）
+  var d = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  if (d && d.type && [OUTPUT_TYPES.INSTAGRAM_CAROUSEL, OUTPUT_TYPES.INSTAGRAM_POST].indexOf(normalizeOutputType(d.type)) === -1) return '';
+  _dcbSyncCase(caseId);
+  var esc = escapeHtml;
+
+  var ranked = (typeof buildAffiliateIntelligenceRanking === 'function') ? buildAffiliateIntelligenceRanking() : [];
+  // テーマ領域の既定値: 商品のカテゴリ（market）。ユーザーが入力したら上書きしない。
+  if (!_dcbState.subjectTouched && !_dcbState.subject) {
+    var firstMarket = ranked.map(function (r) { return String(r.market || '').trim(); }).filter(Boolean)[0];
+    if (firstMarket) _dcbState.subject = firstMarket.slice(0, 60);
+  }
+  var result = buildDailyCandidates({ ranked: ranked, subject: _dcbState.subject });
+  _dcbState.candidates = result.candidates;
+
+  var head = '<div class="oe-quality-title">🗓 Daily Candidate Board '
+    + '<span style="font-weight:400;opacity:.5;">v' + DAILY_CANDIDATE_BOARD_VERSION + ' / 候補選択まで（Auto Task は実行しません）</span></div>';
+  var badge = function (text, color) {
+    return '<span class="oe-quality-badge" style="background:' + color + '22;color:' + color + ';border:1px solid ' + color + '55;">' + esc(text) + '</span>';
+  };
+  var EV_COLOR = { Ready: '#5ddb8e', Partial: '#f0b840', Missing: '#e06060' };
+  var RISK_COLOR = { Low: '#5ddb8e', Medium: '#f0b840', High: '#e06060' };
+
+  var subjectHtml = '<div class="oe-pkg-label">テーマ領域（value 候補用・例：日焼け止め／敏感肌の洗顔料）</div>'
+    + '<div style="display:flex;gap:6px;align-items:center;">'
+    +   '<input type="text" maxlength="60" value="' + _dcbAttr(_dcbState.subject) + '" onchange="dcbSetSubject(this.value)" '
+    +     'placeholder="具体的な製品カテゴリや成分で入力" style="flex:1;min-width:0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;padding:6px 8px;font-size:12px;">'
+    + '</div>'
+    + '<div class="oe-status-sub">商品評価: ' + result.productCount + ' 件（案件内・既存データのみ）／ AI・Web検索は使いません</div>';
+
+  if (DCB_BASIC_ACTION_RE.test(String(_dcbState.subject || '').trim())) {
+    subjectHtml += '<div class="oe-status-sub" style="color:#f0b840;">基本動作だけのテーマ領域です。比較・選び方・誤解訂正のみ候補にします。具体的な製品カテゴリや成分へ絞ると候補が増えます。</div>';
+  }
+
+  var cardsHtml;
+  if (!result.candidates.length) {
+    cardsHtml = '<div class="oe-field-val">' + (result.productCount === 0 && !result.subject
+      ? '商品評価がまだありません。テーマ領域を入力すると、value 投稿の候補を最大3案出します。'
+      : '条件を満たす候補がありません（除外理由は下の「除外した候補」を参照）。') + '</div>';
+  } else {
+    cardsHtml = result.candidates.map(function (c, i) {
+      var sel = _dcbState.selection && _dcbState.selection.candidateId === c.id;
+      var facts = c.requiredFacts.map(function (f, j) {
+        return '<div class="oe-field-val">' + (j + 1) + '. ' + esc(f.text)
+          + ' <span style="opacity:.6;">〔' + esc(f.dims.join('・')) + '〕— ' + esc(f.needs) + ' が必要</span></div>';
+      }).join('');
+      return '<div style="border:1px solid ' + (sel ? 'rgba(93,219,142,0.6)' : 'rgba(255,255,255,0.12)') + ';border-radius:10px;padding:10px;margin:8px 0;">'
+        + '<div class="oe-field-val" style="font-weight:700;">Candidate #' + c.no + '　' + esc(c.themeLabel)
+        +   (c.product ? '　／ 商品: ' + esc(c.product.name) : '　／ value 投稿') + '</div>'
+        + '<div class="oe-field-val">テーマ: ' + esc(c.title) + '</div>'
+        + '<div class="oe-quality-overall">'
+        +   badge('Evidence: ' + c.evidence.level, EV_COLOR[c.evidence.level])
+        +   badge('Risk: ' + c.risk.level, RISK_COLOR[c.risk.level])
+        +   '<span class="oe-field-val">スコア ' + esc(String(c.score)) + '</span>'
+        + '</div>'
+        + '<div class="oe-pkg-label">必要な具体 Fact（3件）</div>' + facts
+        + '<details style="margin-top:6px;"><summary class="oe-pkg-label" style="cursor:pointer;">詳細（採用理由・スコア内訳・リスク）</summary>'
+        +   '<div class="oe-field-val">想定ターゲット: ' + esc(c.target) + '</div>'
+        +   '<div class="oe-field-val">採用理由: ' + esc(c.reason) + '</div>'
+        +   '<div class="oe-field-val">なぜ薄くなりにくいか: ' + esc(c.whyNotThin) + '</div>'
+        +   '<div class="oe-field-val">スコア内訳: 商品 ' + esc(String(c.scoreBreakdown.product)) + ' × 型 ' + esc(String(c.scoreBreakdown.theme))
+        +     ' × Evidence ' + esc(String(c.scoreBreakdown.evidence)) + ' × リスク ' + esc(String(c.scoreBreakdown.risk)) + '</div>'
+        +   '<div class="oe-field-val">商品スコア: ' + esc(c.productScore.label) + '</div>'
+        +   '<div class="oe-field-val">Evidence: ' + esc(c.evidence.detail) + '</div>'
+        +   '<div class="oe-field-val">リスク: ' + esc(c.risk.reasons.join('／')) + '</div>'
+        +   '<div class="oe-field-val">content_type（既定）: ' + esc(c.contentTypeDefault) + '</div>'
+        + '</details>'
+        + '<button class="oe-mrc-btn" onclick="dcbSelect(' + i + ')">' + (sel ? '✅ 選択中' : 'この候補を選ぶ') + '</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  var excludedHtml = result.excluded.length
+    ? '<details style="margin-top:6px;"><summary class="oe-pkg-label" style="cursor:pointer;">除外した候補（' + result.excluded.length + ' 件）</summary>'
+      + result.excluded.map(function (c) {
+          return '<div class="oe-status-sub">・' + esc(c.themeLabel) + (c.product ? '（' + esc(c.product.name) + '）' : '（value）') + '：' + esc(c.excludeReason) + '</div>';
+        }).join('')
+      + '</details>'
+    : '';
+
+  // 候補選択後: content_type 宣言 ＋ Auto Task 依頼文（下書き）
+  var selHtml = '';
+  var s = _dcbState.selection;
+  if (s) {
+    var ctBtn = function (t, label) {
+      var on = s.contentType === t;
+      return '<button class="oe-mrc-btn" onclick="dcbSetContentType(\'' + t + '\')" style="' + (on ? 'border-color:rgba(93,219,142,0.9);' : 'opacity:.7;') + '">' + (on ? '● ' : '') + label + '</button>';
+    };
+    selHtml = '<div style="border-top:1px solid rgba(255,255,255,0.12);margin-top:10px;padding-top:10px;">'
+      + '<div class="oe-pkg-label">選択中の候補</div>'
+      + '<div class="oe-field-val">' + esc(s.themeLabel) + '：' + esc(s.title) + '</div>'
+      + '<div class="oe-pkg-label">content_type（投稿種別）の宣言</div>'
+      + '<div class="oe-map-actions">' + ctBtn('value', 'value') + ctBtn('bridge', 'bridge') + ctBtn('product', 'product') + '</div>'
+      + '<div class="oe-status-sub">' + (s.contentTypeConfirmed ? '宣言済み: ' : '既定値（未確定）: ') + esc(s.contentType)
+      +   '。value=価値提供／bridge=価値提供から商品へつなぐ／product=商品紹介（商品の主張すべてに APFR の Formal Fact が必要）。</div>'
+      + '<div class="oe-status-sub">この宣言は選択中の候補にのみ保持し、保存しません。次に作る新しい投稿への反映は次工程で行います（サーバ側の投稿種別は初回宣言のみ有効で後から変更できないため、現在の成果物へは書き込みません）。</div>'
+      + '<div class="oe-pkg-label">Auto Task 依頼文（下書き）</div>'
+      + '<textarea readonly style="width:100%;min-height:180px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;font-size:11px;padding:8px;">'
+      +   esc(buildDailyCandidateAutoTaskDraft(s)) + '</textarea>'
+      + '<div class="oe-map-actions">'
+      +   '<button class="oe-mrc-btn" onclick="dcbCopyDraft()">依頼文をコピー</button>'
+      +   '<button class="oe-mrc-btn" onclick="dcbClearSelection()">選択を解除</button>'
+      + '</div>'
+      + (_dcbState.copyMsg ? '<div class="oe-status-sub">' + esc(_dcbState.copyMsg) + '</div>' : '')
+      + '<div class="oe-status-sub">Auto Task はこの画面から実行しません。依頼文をコピーして、通常の Auto Task から実行してください（有料・要承認）。</div>'
+      + '</div>';
+  }
+
+  return '<div class="oe-quality-section">' + head + subjectHtml + cardsHtml + excludedHtml + selHtml + '</div>';
+}
+
 function buildAffiliateIntelligenceCoreHtml() {
   var esc = escapeHtml;
   var ranked = buildAffiliateIntelligenceRanking();
@@ -45359,6 +45891,7 @@ function renderOutputEnginePanel() {
     + schemaHtml
     + '</div>'
     + detectionHtml
+    + _oeSafe(buildDailyCandidateBoardHtml,     'DailyCandidateBoard')   // Phase P0: Auto Task 前の候補選択（決定論・保存なし）
     + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
