@@ -403,13 +403,20 @@ function mkUi(o) {
     const changed = require('child_process')
       .execSync('git diff --name-only HEAD -- shared server.js supabase lib', { encoding: 'utf8' }).trim();
     assert(changed === '', '33a. ★ server.js / shared / lib / schema 無変更 | ' + (changed || 'なし'));
-    // Stage 1b の本体変更は index.html のみ。
-    //   除外: data/conversations/_meta.json（開始時点からの既知 Protected dirty・今回未変更）
-    //         *.test.js（Stage 1b 追加に伴う既存テストの期待値更新は本体変更ではない）
-    const all = require('child_process').execSync('git diff --name-only HEAD', { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
-    const prodChanged = all.filter(function (f) { return f !== 'data/conversations/_meta.json' && !/\.test\.js$/.test(f); });
-    assert(JSON.stringify(prodChanged) === JSON.stringify(['index.html']),
-      '33b. Stage 1b の本体変更は index.html のみ | ' + (prodChanged.join(', ') || 'なし') + '（全差分: ' + all.join(', ') + '）');
+    // ★ commit 済みかどうかに依存しない「内容の不変条件」で scope 封じ込めを判定する。
+    //   Image Review の実装は index.html の中だけに存在し、server / shared / lib には一切入らないこと。
+    const IR_SYMBOLS = /buildImageReviewHtml|_irSaveReview|_irApplyImageSrc|_irSnapshotEquals|imageReviewOk\s*:/;
+    const serverSide = ['server.js'].concat(
+      fs.readdirSync(path.join(__dirname, 'lib')).filter(function (f) { return f.endsWith('.js'); }).map(function (f) { return 'lib/' + f; }),
+      fs.readdirSync(path.join(__dirname, 'shared')).filter(function (f) { return f.endsWith('.js'); }).map(function (f) { return 'shared/' + f; })
+    );
+    const leaked = serverSide.filter(function (rel) {
+      // imageReviewOk は生成時に server が初期値 false を書く既存箇所があるため、UI 実装記号のみで判定する
+      const t = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+      return /buildImageReviewHtml|_irSaveReview|_irApplyImageSrc|_irSnapshotEquals/.test(t);
+    });
+    assert(leaked.length === 0, '33b. Image Review の実装が server / shared / lib へ漏れていない | ' + (leaked.join(', ') || 'なし'));
+    assert(IR_SYMBOLS.test(SRC) && SRC.indexOf('function buildImageReviewHtml(') !== -1, '33c. Image Review の実装は index.html に存在する');
   }
 
   console.log('\n=== ' + _passed + ' passed / ' + _failed + ' failed ===');
