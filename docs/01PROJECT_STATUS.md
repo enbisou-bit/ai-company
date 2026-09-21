@@ -25,7 +25,9 @@
 - **Production 安全状態**：`CAROUSEL_IMAGE_REAL_ENABLED` は Render から削除済み（ユーザー実施）。dual-key の env gate が不成立のため、**本 release 後も Effective REAL Generation = false**。本工程で Render は一切変更していない。
 - **既存の生成成果（変更しない）**：`case-value-1788410623` ／ `out_1789809676034`（`generated=7`・`published=false`）。**これは production pipeline の実証成果であり、Instagram 実投稿には使用しない**（内容が一般常識中心のため不採用）。Content Value 評価器にかけた実測は `status: insufficient` ／ `score: 11 / 100`。
 - **新 Decision**：**追加していない**（最大番号 119 のまま）。本工程は既存 Decision 111／112／115 の契約を一切変更せず、既存関数の合成と UI 接続のみのため。
-- **本 docs commit 時点で未実施**：`git push origin main` ／ Render Auto-Deploy ／ Render Live 確認 ／ Production 実機確認 ／ Tag 作成 ／ Image Review の本番保存 POST。
+- **本番反映（push 後に追記・実測）**：`git push origin main` = **`a31bd04..f7134d9`**（fast-forward・force 無し・1回・retry 0）。push 後 HEAD ＝ origin/main ＝ `f7134d9e7aebecb383d7edbe42b7267381fe982b`／ahead-behind 0/0。push 対象は Code commit 3件 ＋ docs commit 1件 ＋ test 修正 commit 1件（`f7134d9` = `test: make image review scope assertion state-independent`。commit 済み Stage 1b テストの scope 判定を commit 状態に依存しない内容判定へ修正したもの。実装は無変更）。
+- **Production Read-only Smoke（Claude Code 実行・未認証 GET 4回・副作用 0）**：`GET /` 200（配信 index.html に `Content Value 診断`／`Carousel Image Production`／`Image Review`／`buildImageReviewHtml`／`carousel-image/quote`／`carousel-image/produce` がすべて存在＝Stage 0〜1b の UI が配信済み）／`GET /api/auth-required` 200（`{"required":true}`）／**未認証 `GET /api/carousel-image/quote` 401**（`{"ok":false,"reason":"unauthorized"}`＝新 route が登録され session で fail-closed）／対照の存在しない `/api/carousel-image/nonexistent` 404。**新 route が deploy 済みかつ認証境界が有効であることを確認。**
+- **本項記録時点で未実施**：Render Dashboard 上の deploy status／deployed commit の目視確認（Claude Code から Render を read-only 確認する手段が無いため**ユーザー実測が必要**）／Production 実機 UI 確認 ／ Tag 作成 ／ Image Review の本番保存 POST ／ REAL flag 再有効化（**しない**）。
 
 ---
 

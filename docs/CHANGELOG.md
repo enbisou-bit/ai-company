@@ -14,7 +14,9 @@
 - **テスト（ローカル実測）**：新規2スイート（`imageReviewPanel` 89/0・`carouselImageProduceRoute` 98/0）＋既存回帰8スイート（`carouselImageProduction` 593/0 ほか）。**合計 1,433 assertions / 0 failed**。provider は fake 注入のみで実 Image API・実 DB・実 Storage への到達 0。
 - **Production 安全状態**：`CAROUSEL_IMAGE_REAL_ENABLED` は Render から削除済み（ユーザー実施）。dual-key の env gate 不成立のため **本 release 後も Effective REAL Generation = false**。本工程で Render は変更していない。
 - **既存生成成果（変更しない）**：`case-value-1788410623` ／ `out_1789809676034`（`generated=7`・`published=false`）は **production pipeline 実証成果**であり、**Instagram 実投稿には使用しない**（Content Value 評価器の実測 `insufficient` ／ `11 / 100`）。
-- **本エントリ記録時点で未実施**：push ／ Render Auto-Deploy ／ Render Live 確認 ／ Production 実機確認 ／ Tag ／ Image Review の本番保存 POST ／ 新 Decision（最大番号 119 のまま）。
+- **本番反映（実測）**：`git push origin main` = **`a31bd04..f7134d9`**（fast-forward・force 無し・1回・retry 0）。push 後 HEAD ＝ origin/main ＝ `f7134d9`／ahead-behind 0/0。push 対象 5 commit（Stage 0 `2a27c12`／Stage 1a `b738e82`／Stage 1b `01d31bc`／docs `713a8ad`／test 修正 `f7134d9`）。**Tag 未作成。**
+- **Production Read-only Smoke（未認証 GET 4回・POST 0・副作用 0）**：`GET /` 200（配信 index.html に Stage 0〜1b の全パネルと新 route 参照が存在）／`GET /api/auth-required` 200／**未認証 `GET /api/carousel-image/quote` 401**（新 route 登録済み・session で fail-closed）／対照 `/api/carousel-image/nonexistent` 404。
+- **未実施**：Render Dashboard の deploy status 目視確認（**ユーザー実測が必要**）／Production 実機 UI 確認 ／ Tag ／ Image Review の本番保存 POST ／ 新 Decision（最大番号 119 のまま）／ `CAROUSEL_IMAGE_REAL_ENABLED` の再有効化（**行わない**）。
 
 ---
 

@@ -20,7 +20,9 @@
 - `b738e82cd22da1589672a9edf018f7babb2a3ad2` `feat: add server-side carousel production flow`
 - `01d31bc10725983de8998b011cbe3572a7345f6b` `feat: add carousel image review panel`
 
-**Git（記録時点の実測・次セッションでも必ず再実測すること）**：branch `main`／ahead 3・behind 0（push 前）／staged 0／Protected baseline 正常。
+**Git（push 後の実測・次セッションでも必ず再実測すること）**：branch `main`／HEAD ＝ origin/main ＝ `f7134d9e7aebecb383d7edbe42b7267381fe982b`／ahead-behind 0/0／staged 0／Protected baseline 正常。Push `a31bd04..f7134d9`（fast-forward・force 無し・1回）。**Tag 未作成。**
+
+**本番反映の確認（Claude Code 実行・未認証 GET 4回・POST 0・副作用 0）**：配信 index.html に Stage 0〜1b の全パネル（`Content Value 診断`／`Carousel Image Production`／`Image Review`）が存在／`GET /api/auth-required` 200／**未認証 `GET /api/carousel-image/quote` 401**（新 route 登録済み・session で fail-closed）／対照の存在しない route は 404。**Render Dashboard の deploy status／deployed commit の目視確認はユーザー実測が必要**（Claude Code から Render を read-only 確認する手段が無い＝CLI 未インストール・`RENDER_API_KEY` 未設定）。
 
 **Production 安全状態**：`CAROUSEL_IMAGE_REAL_ENABLED` は Render から削除済み。dual-key の env gate が不成立のため **Effective REAL Generation = false**。**Claude Code から Render を変更しない。再追加しない。**
 

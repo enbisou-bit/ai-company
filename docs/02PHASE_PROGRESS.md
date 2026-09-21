@@ -58,9 +58,25 @@ Carousel Image Production（Phase 2-B〜2-E）は backend/API としては完成
 
 **合計 1,433 assertions / 0 failed。** provider は fake 注入のみで、実 OpenAI Image API・実 DB・実 Storage・実 HTTP には一度も到達していない（本工程の paid execution 0・AI API 0・DB write 0）。
 
-### 本 docs commit 時点で未実施
+### 本番反映（push 後に追記・すべて実測値）
 
-`git push origin main` ／ Render Auto-Deploy ／ Render Live 確認 ／ Production 実機確認 ／ Tag 作成 ／ Image Review の本番保存 POST ／ 新 Decision の追加（最大番号 119 のまま）。
+- **Push**：`git push origin main` = **`a31bd04..f7134d9`**（fast-forward・force 無し・1回・retry 0）。push 後 HEAD ＝ origin/main ＝ `f7134d9e7aebecb383d7edbe42b7267381fe982b`／ahead-behind 0/0／staged 0。Protected baseline 変化なし。**Tag は作成していない。**
+- **push 対象 5 commit**：`2a27c12`（Stage 0）／`b738e82`（Stage 1a）／`01d31bc`（Stage 1b）／`713a8ad`（docs）／`f7134d9`（`test: make image review scope assertion state-independent`）。最後の1件は、commit 済み Stage 1b テストの scope 判定が「未 commit 前提」で書かれていて docs commit 後に FAIL したため、**commit 状態に依存しない内容判定（Image Review の実装が server／shared／lib へ漏れていないこと）へ修正**したもの。**実装コードは無変更。**
+- **Production Read-only Smoke（Claude Code 実行・未認証 GET 4回・POST 0・副作用 0）**：
+
+  | 確認 | 結果 |
+  |---|---|
+  | `GET /` | 200。配信 index.html に `Content Value 診断`／`Carousel Image Production`／`Image Review`／`buildImageReviewHtml`／`carousel-image/quote`／`carousel-image/produce` がすべて存在 |
+  | `GET /api/auth-required` | 200（`{"required":true}`） |
+  | 未認証 `GET /api/carousel-image/quote` | **401**（`{"ok":false,"reason":"unauthorized"}`）＝新 route が登録済み・session で fail-closed |
+  | 未認証 `GET /api/carousel-image/assets`（既存・対照） | 401（同上） |
+  | `GET /api/carousel-image/nonexistent`（対照） | 404 |
+
+  → **Stage 0〜1b の UI と Stage 1a の新 route が本番へ反映済み**であり、認証境界が有効であることを確認した。
+
+### 本項記録時点で未実施
+
+Render Dashboard 上の deploy status／deployed commit の**目視確認**（Claude Code から Render を read-only 確認する手段が無いため**ユーザー実測が必要**）／Production 実機 UI 確認 ／ Tag 作成 ／ Image Review の本番保存 POST ／ 新 Decision の追加（最大番号 119 のまま）／ `CAROUSEL_IMAGE_REAL_ENABLED` の再有効化（**行わない**）。
 
 ---
 
