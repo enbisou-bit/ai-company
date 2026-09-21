@@ -16868,6 +16868,18 @@ async function atRunWorkflow(options) {
   // 前半工程 修正1・5: 実行開始時点の案件を捕捉し、Task接続・チャットcaseId付与に一貫して使用する
   //   （完了時点で別案件へ画面切替されていても、実行開始案件へ保存・表示されるようにする）
   const _atRunCaseId = getCurrentApprovalCaseId() || null;
+  // Phase P0.7: Candidate Handoff の案件照合（副作用が起きる前・API call 0）。block 0件なら従来と完全に同一。
+  //   不一致・曖昧・不正値は Auto Task を開始しない（fail-closed）。一致時のみ新規 Draft へ contentType を設定する。
+  let _atHandoffContentType = null;
+  if (typeof evaluateCandidateHandoffForRun === 'function') {
+    const _atHandoff = evaluateCandidateHandoffForRun(userMessage, _atRunCaseId);
+    if (_atHandoff.action === 'refuse') {
+      console.warn('[P0.7 Candidate Handoff] Auto Task を開始しません:', _atHandoff.reason);
+      alert(_atHandoff.message);
+      return;
+    }
+    _atHandoffContentType = _atHandoff.contentType;
+  }
   _atLinkDispatchTasksToWorkflow(_atRunCaseId, _atCurrentWorkflowId, tasks.map(t => t.agentId), _atDispatchTaskIdsByWorkflow[_atCurrentWorkflowId]);
 
   // STEP6工程2 FAIL対応: Case Restore Race Condition safety-net。
@@ -17031,6 +17043,9 @@ async function atRunWorkflow(options) {
     //   Cross-case安全性: 値は既存carry-forwardと同一の _atRunCaseId のみを使用し、他案件のIDへfallbackしない。
     //   既存値がある場合は上書きしない（冪等・復元Draftのcase_idを壊さない）。
     if (!_lastOutputDraft.caseId && _atRunCaseId) _lastOutputDraft.caseId = _atRunCaseId;
+    // Phase P0.7: 今回 createOutputDraft() で新規生成した Draft にだけ、照合済み Candidate Handoff の content_type を設定する。
+    //   既存 Draft へは書かない。最初の保存（既存 pushOutputDraftToServer）で server の初回宣言として確定する。
+    if (_atHandoffContentType && !_lastOutputDraft.contentType) _lastOutputDraft.contentType = _atHandoffContentType;
     if (!_lastOutputDraft.fields) _lastOutputDraft.fields = {};
     Object.keys(_formalFieldsCarryForward).forEach(function (k) {
       _lastOutputDraft.fields[k] = _formalFieldsCarryForward[k];
@@ -45644,6 +45659,8 @@ function buildDailyCandidateHandoffRequest(pkg) {
   L.push('');
   L.push('[CANDIDATE_HANDOFF_V1]');
   L.push('version: ' + pkg.version);
+  // P0.7: 候補を選んだ案件の正式 case ID（_dcbState.caseId ＝ _aicCurrentCaseId() 由来）。Auto Task 実行時の案件照合に使う。
+  L.push('case_id: ' + (pkg.caseId ? _dcbHandoffLine(pkg.caseId) : 'none'));
   L.push('candidate_id: ' + _dcbHandoffLine(pkg.candidateId));
   L.push('content_type: ' + _dcbHandoffLine(pkg.contentType));
   L.push('theme_type: ' + _dcbHandoffLine(pkg.themeType));
@@ -45658,6 +45675,79 @@ function buildDailyCandidateHandoffRequest(pkg) {
   L.push('selected_at: ' + _dcbHandoffLine(pkg.selectedAt));
   L.push('[/CANDIDATE_HANDOFF_V1]');
   return L.join('\n');
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase P0.7: Content Type Handoff Wiring（Auto Task 実行入口での handoff block 読取・案件照合）
+//   ★ 依頼文に [CANDIDATE_HANDOFF_V1] が「ちょうど1件」あり、case_id が実行案件と一致し、
+//     content_type が許可値のときだけ、atRunWorkflow が今回新しく作る Draft に contentType を設定する。
+//   ★ 既存 Draft へは書かない。保存は既存 pushOutputDraftToServer → buildOutputDraftPayloadForServer →
+//     server setContentTypeIfUnset（初回宣言のみ有効）の経路をそのまま使う（POST・API call は増やさない）。
+//   ★ block 0件 → 従来の Auto Task と完全に同一（何もしない）。
+//   ★ 決定論・純関数（fetch／DB／AI なし）。部分一致・推測・current case による補完はしない。
+// ══════════════════════════════════════════════════════════════
+var DCB_HANDOFF_OPEN_TAG = '[CANDIDATE_HANDOFF_V1]';
+var DCB_HANDOFF_CLOSE_TAG = '[/CANDIDATE_HANDOFF_V1]';
+var DCB_HANDOFF_CASE_MISMATCH_MESSAGE = '選択した投稿候補の案件と現在の案件が一致しません。候補をもう一度選択してください。';
+
+function _dcbCountOccurrences(text, needle) {
+  var n = 0, i = 0;
+  while ((i = text.indexOf(needle, i)) !== -1) { n++; i += needle.length; }
+  return n;
+}
+// handoff block の parser。戻り値: { status:'none'|'ok'|'ambiguous'|'malformed', fields, reason }
+function parseCandidateHandoffBlock(text) {
+  var t = String(text == null ? '' : text);
+  var opens = _dcbCountOccurrences(t, DCB_HANDOFF_OPEN_TAG);
+  var closes = _dcbCountOccurrences(t, DCB_HANDOFF_CLOSE_TAG);
+  if (opens === 0 && closes === 0) return { status: 'none', fields: null, reason: null };
+  if (opens > 1 || closes > 1) return { status: 'ambiguous', fields: null, reason: 'multiple_blocks' };   // 最後の block を勝手に採用しない
+  var s = t.indexOf(DCB_HANDOFF_OPEN_TAG), e = t.indexOf(DCB_HANDOFF_CLOSE_TAG);
+  if (opens !== 1 || closes !== 1 || e < s) return { status: 'malformed', fields: null, reason: 'unbalanced_block' };
+  var body = t.slice(s + DCB_HANDOFF_OPEN_TAG.length, e);
+  var fields = {};
+  var lines = body.split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    var m = line.match(/^([a-z][a-z0-9_]*):[ \t]*(.*)$/);
+    if (!m) return { status: 'malformed', fields: null, reason: 'invalid_line' };
+    if (Object.prototype.hasOwnProperty.call(fields, m[1])) return { status: 'malformed', fields: null, reason: 'duplicate_key:' + m[1] };
+    fields[m[1]] = m[2].trim();
+  }
+  return { status: 'ok', fields: fields, reason: null };
+}
+
+// Auto Task 実行前の判定（純関数）。runCaseId は atRunWorkflow が捕捉した実行案件（_atRunCaseId）。
+//   戻り値: { action:'proceed'|'refuse', contentType:string|null, reason, message }
+//     proceed + contentType=null … 従来どおり（Formal Wiring なし）
+//     proceed + contentType=値  … 新規 Draft へ contentType を設定する
+//     refuse                     … Auto Task を開始しない（API call 0）
+function evaluateCandidateHandoffForRun(userMessage, runCaseId) {
+  var refuse = function (reason, message) { return { action: 'refuse', contentType: null, reason: reason, message: message }; };
+  var p = parseCandidateHandoffBlock(userMessage);
+  if (p.status === 'none') return { action: 'proceed', contentType: null, reason: 'no_handoff', message: null };
+  if (p.status !== 'ok') {
+    return refuse('handoff_' + p.status, '依頼文の投稿候補情報（CANDIDATE_HANDOFF_V1）が複数あるか壊れています。候補をもう一度選択し、依頼文を反映し直してください。');
+  }
+  var f = p.fields;
+  var caseId = f.case_id;
+  // case_id の無い古い block は Formal Wiring しない（current case で補完しない）。依頼文としては従来どおり実行可。
+  if (!caseId || caseId === 'none') return { action: 'proceed', contentType: null, reason: 'handoff_without_case_id', message: null };
+  if (!runCaseId || String(runCaseId) !== caseId) return refuse('case_mismatch', DCB_HANDOFF_CASE_MISMATCH_MESSAGE);
+  var declarable = (typeof CONTENT_TYPE_DECLARABLE_VALUES !== 'undefined') ? CONTENT_TYPE_DECLARABLE_VALUES : ['value', 'bridge', 'product'];
+  var ct = f.content_type;
+  if (!ct || declarable.indexOf(ct) === -1) {
+    return refuse('invalid_content_type', '投稿候補の content_type が不正です（value／bridge／product のみ）。候補をもう一度選択してください。');
+  }
+  if (!f.candidate_id || !f.theme_type) {
+    return refuse('handoff_incomplete', '投稿候補情報が不足しています（candidate_id／theme_type）。候補をもう一度選択してください。');
+  }
+  var hasProduct = !!(f.product_id && f.product_id !== 'none') || !!(f.product_name && f.product_name !== 'none');
+  if (!hasProduct && ct !== 'value') {   // P0.5 の検証と同じ規則（defense in depth）
+    return refuse('no_product_content_type', '商品なしの投稿候補では content_type は value のみです。候補をもう一度選択してください。');
+  }
+  return { action: 'proceed', contentType: ct, reason: 'handoff_wired', message: null };
 }
 
 function _dcbCopyText(text, okMsg) {
