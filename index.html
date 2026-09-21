@@ -39348,6 +39348,261 @@ function copyPublishingReadyField(type) {
   _prcCopyToClipboard(text);
 }
 
+// ══════════════════════════════════════════════════════════════
+// Stage 1a-3: Carousel Image Production パネル（Mobile Approval の直後・追加のみ）
+// 目的: 通常運用から DevTools Console を廃止する。Output Engine 上の操作だけで
+//   「見積り確認 → ユーザーの明示承認 → 画像生成 → 生成状態表示」まで到達できるようにする。
+//
+// ★ approvalToken をブラウザで扱わない: 承認と生成の連結は server の
+//   POST /api/carousel-image/produce が内部で行う。本 UI は token を受け取らない・保持しない。
+// ★ billingLock を UI から送らない（produce route 内部で既存契約どおり false 固定）。
+// ★ 二重生成防止: 送信直後の disable ＋ _cipInFlight ＋ phase 管理。ただし正本は server の
+//   execution ledger（nonce UNIQUE / uq_carousel_exec_active_output）。client ロックは補助。
+// ★ 自動 retry を一切持たない。成否不明（通信断・timeout）でも produce を自動再送しない。
+// ★ 非接触: shared/carouselApproval.js / fingerprint 契約 / budget enforcement / ledger /
+//   nonce / published validation / approval validation / session / trusted origin /
+//   provider client / REAL flag 評価 / DB schema は一切変更しない。
+// ══════════════════════════════════════════════════════════════
+var CAROUSEL_IMAGE_PRODUCTION_VERSION = '1.0.0';
+var CIP_QUALITY = 'low';   // Stage 1a は low 固定（quality/枚数/金額の正本は server 側）
+
+// UI 状態はメモリ保持のみ（DB・localStorage へ書かない）
+var _cipState = { outputId: null, phase: 'idle', quote: null, result: null, errorReason: null };
+var _cipInFlight = false;   // 送信中ロック（補助。最終防御は server ledger）
+
+// server の reason（既存語彙）をユーザー向け文言へ変換する。未知語は安全に escape して併記。
+var CIP_REASON_TEXT = {
+  no_approval:                'Mobile Approval が未承認です。先に承認してください。',
+  not_approved:               'Mobile Approval が未承認です。先に承認してください。',
+  already_published:          '投稿済みとして記録されているため、画像生成はできません。',
+  already_generated:          'この成果物の画像は生成済みです。',
+  not_enough_slides:          'スライドが不足しています。',
+  cross_case:                 '対象の案件と成果物が一致しません。',
+  output_mismatch:            '対象の成果物が一致しません。',
+  not_found:                  '対象の成果物が見つかりません。',
+  missing_quality:            '画質の指定がありません。',
+  invalid_quality:            '画質の指定が不正です。',
+  budget_exceeded:            '生成前見積りが、1投稿あたりの認可上限を超えています。',
+  estimated_cost_mismatch:    '金額が変わりました。もう一度「生成内容を確認」からやり直してください。',
+  real_api_disabled:          '画像生成が現在無効になっています（サーバ設定）。課金は発生していません。',
+  billing_locked:             '課金ロックにより停止しました。課金は発生していません。',
+  unauthorized:               'ログインが必要です。ログインし直してください。',
+  forbidden_origin:           'この画面からは実行できません。',
+  token_expired:              '承認の有効期限が切れました。もう一度やり直してください。課金は発生していません。',
+  scope_mismatch:             '承認の内容と現在の成果物が一致しません。もう一度やり直してください。',
+  draft_fingerprint_mismatch: '承認後に成果物が変更されました。もう一度やり直してください。課金は発生していません。',
+  stale_built_at:             '生成中に成果物が変更されました。状態を確認してください。',
+  stale_updated_at:           '生成中に成果物が変更されました。状態を確認してください。',
+  nonce_reused:               '既に実行済みの可能性があります。状態を確認してください。',
+  post_execution_in_progress: 'この成果物の生成は実行中または実行済みです。状態を確認してください。',
+  cost_limit_stopped:         '月額上限に達しているため実行できません。',
+  provider_failed:            '画像生成に失敗しました。課金が発生している可能性があります。状態を確認してください。',
+  provider_threw:             '画像生成に失敗しました。課金が発生している可能性があります。状態を確認してください。',
+  api_error:                  '画像生成に失敗しました。課金が発生している可能性があります。状態を確認してください。',
+  generation_failed:          '画像生成に失敗しました。状態を確認してください。',
+  generation_unavailable:     '画像生成を開始できませんでした。課金は発生していません。',
+  asset_persistence_failed:   '画像は生成されましたが保存に失敗しました。課金済みです。状態を確認してください。',
+  asset_metadata_write_failed:'画像は保存されましたが成果物への登録に失敗しました。課金済みです。状態を確認してください。',
+  draft_read_unavailable:     'サーバ側の確認ができませんでした。時間をおいて再度お試しください。',
+  approval_read_unavailable:  'サーバ側の確認ができませんでした。時間をおいて再度お試しください。',
+  budget_read_unavailable:    'サーバ側の確認ができませんでした。時間をおいて再度お試しください。',
+  reserve_unavailable:        '実行の記録ができませんでした。課金は発生していません。',
+  estimate_unavailable:       '見積りを計算できませんでした。',
+  approval_secret_unavailable:'サーバ設定が未完了のため実行できません。',
+};
+function _cipReasonText(reason) {
+  if (!reason) return '実行できませんでした。';
+  return CIP_REASON_TEXT[reason] || ('実行できませんでした（' + String(reason) + '）。');
+}
+
+// 金額表示。★「予算上限」「課金上限」とは書かない（Decision 111: 実行前の認可額であり課金保証ではない）。
+function _cipJpy(v) {
+  var n = Number(v);
+  if (!isFinite(n)) return '—';
+  return '¥' + n.toFixed(2);
+}
+
+function _cipRerender() {
+  try { renderOutputEnginePanel(); } catch (e) { /* 描画失敗でもUI維持 */ }
+}
+
+// 対象成果物が変わったら UI 状態を初期化（別成果物の見積り・結果を持ち越さない）
+function _cipSyncTarget(outputId) {
+  if (_cipState.outputId !== outputId) {
+    _cipState = { outputId: outputId, phase: 'idle', quote: null, result: null, errorReason: null };
+  }
+}
+
+// 「生成内容を確認」= GET /api/carousel-image/quote（read-only・課金 0・token 発行 0）
+async function cipLoadQuote() {
+  if (_cipInFlight) return;
+  var caseId = getCurrentApprovalCaseId();
+  var outputId = getCurrentApprovalOutputId();
+  if (!caseId || !outputId) { _cipState.phase = 'error'; _cipState.errorReason = 'not_found'; _cipRerender(); return; }
+  _cipSyncTarget(outputId);   // ★ 描画順に依存せず対象を確定（描画前に走っても state を失わない）
+  _cipInFlight = true;
+  _cipState.phase = 'quoting';
+  _cipRerender();
+  try {
+    var url = '/api/carousel-image/quote?caseId=' + encodeURIComponent(caseId)
+      + '&outputId=' + encodeURIComponent(outputId) + '&quality=' + encodeURIComponent(CIP_QUALITY);
+    var res = await fetch(url, { method: 'GET', credentials: 'same-origin' });
+    var data = await res.json().catch(function () { return null; });
+    if (res.status === 401) { _cipState.phase = 'error'; _cipState.errorReason = 'unauthorized'; }
+    else if (!res.ok || !data || data.ok !== true) {
+      _cipState.phase = 'error';
+      _cipState.errorReason = (data && data.reason) || 'draft_read_unavailable';
+    } else {
+      _cipState.quote = data;
+      _cipState.phase = 'quoted';
+      _cipState.errorReason = null;
+    }
+  } catch (e) {
+    _cipState.phase = 'error';
+    _cipState.errorReason = 'draft_read_unavailable';
+  } finally {
+    _cipInFlight = false;
+    _cipRerender();
+  }
+}
+
+// 「この内容で画像を生成」= POST /api/carousel-image/produce（有料・1回のみ・retry なし）
+//   ★ quote を表示済み（phase==='quoted'）のときだけ実行できる＝ユーザーの明示確認を必須にする。
+async function cipGenerate() {
+  if (_cipInFlight) return;                                   // 二重押下防止（補助）
+  var caseId = getCurrentApprovalCaseId();
+  var outputId = getCurrentApprovalOutputId();
+  if (!caseId || !outputId) { _cipState.phase = 'error'; _cipState.errorReason = 'not_found'; _cipRerender(); return; }
+  _cipSyncTarget(outputId);   // ★ 対象が変わっていれば state は初期化され、直後の phase 判定で送信されない
+  if (_cipState.phase !== 'quoted' || !_cipState.quote) return;  // 明示確認前は絶対に送らない
+  var q = _cipState.quote;
+  if (q.eligible !== true) return;
+  if (caseId !== q.caseId || outputId !== q.outputId) {
+    _cipState.phase = 'error'; _cipState.errorReason = 'output_mismatch'; _cipRerender(); return;
+  }
+  _cipInFlight = true;
+  _cipState.phase = 'generating';
+  _cipRerender();
+  try {
+    var res = await fetch('/api/carousel-image/produce', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      // ★ billingLock は送らない（server 内部で固定）。approvalToken も送らない・受け取らない。
+      body: JSON.stringify({ caseId: caseId, outputId: outputId, quality: q.quality, confirmedCostJpy: q.estimatedTotalCostJpy }),
+    });
+    var data = await res.json().catch(function () { return null; });
+    if (res.status === 200 && data && data.ok === true) {
+      _cipState.result = data;
+      _cipState.phase = 'done';
+      _cipState.errorReason = null;
+    } else {
+      _cipState.phase = 'error';
+      _cipState.errorReason = (data && data.reason) || (res.status === 401 ? 'unauthorized' : 'generation_failed');
+    }
+  } catch (e) {
+    // ★ 成否不明。自動再送しない（server 側で処理が継続・完了している可能性がある）。
+    _cipState.phase = 'unknown';
+    _cipState.errorReason = null;
+  } finally {
+    _cipInFlight = false;
+    _cipRerender();
+  }
+}
+
+// Stage 1a-3: Carousel Image Production HTML（データ不足でも安全に空文字を返す）
+function buildCarouselImageProductionHtml(outputDraft) {
+  outputDraft = outputDraft || _lastOutputDraft;
+  if (!outputDraft || !outputDraft.fields) return '';
+  if (normalizeOutputType(outputDraft.type) !== OUTPUT_TYPES.INSTAGRAM_CAROUSEL) return '';
+  var esc = escapeHtml;
+  var outputId = outputDraft.id || null;
+  _cipSyncTarget(outputId);
+
+  var head = '<div class="oe-quality-title">🖼 Carousel Image Production '
+    + '<span style="font-weight:400;opacity:.5;">v' + CAROUSEL_IMAGE_PRODUCTION_VERSION + '</span></div>';
+  var wrap = function (inner) { return '<div class="oe-quality-section">' + head + inner + '</div>'; };
+
+  var fields = outputDraft.fields || {};
+  var existingAssets = Array.isArray(fields.carouselAssets) ? fields.carouselAssets : [];
+
+  // ── 既に生成済み（Decision 112: 同一成果物の再生成はしない）──
+  if (existingAssets.length > 0 && _cipState.phase !== 'done') {
+    return wrap('<div class="oe-field-val">画像生成済みです（' + existingAssets.length + '枚）。</div>'
+      + '<div class="oe-status-sub">同じ成果物の再生成は行いません。作り直す場合は新しい成果物を作成してください。</div>');
+  }
+
+  // ── 生成成功 ──
+  if (_cipState.phase === 'done' && _cipState.result) {
+    var r = _cipState.result;
+    return wrap('<div class="oe-field-val">' + esc(String(r.generated)) + '枚の画像生成が完了しました。</div>'
+      + '<div class="oe-field-val">今回の認可額: ' + esc(_cipJpy(r.estimatedTotalCostJpy)) + '（生成前見積り）</div>'
+      + '<div class="oe-field-val">投稿状態: ' + (r.published === false ? '未投稿（published=false）' : esc(String(r.published))) + '</div>'
+      + '<div class="oe-status-sub">画像の確認機能は次工程（Stage 1b）で追加します。</div>');
+  }
+
+  // ── 成否不明（通信断・timeout）: 自動再送しない ──
+  if (_cipState.phase === 'unknown') {
+    return wrap('<div class="oe-field-val">通信が中断したため、生成の成否が確認できませんでした。</div>'
+      + '<div class="oe-field-val">サーバ側で処理が続いている可能性があります。<b>同じ操作を繰り返さないでください。</b></div>'
+      + '<button class="oe-mrc-btn" onclick="cipLoadQuote()">生成状態を確認する</button>'
+      + '<div class="oe-status-sub">この確認は読み取りのみで、課金は発生しません。</div>');
+  }
+
+  // ── Mobile Approval 未承認 ──
+  var approved = (_mobileApprovalState && _mobileApprovalState.decision === 'approved');
+  if (!approved) {
+    return wrap('<div class="oe-field-val">Mobile Approval を完了してください。</div>'
+      + '<div class="oe-status-sub">承認後に画像生成へ進めます。</div>');
+  }
+
+  // ── 生成中 ──
+  if (_cipState.phase === 'generating') {
+    return wrap('<div class="oe-field-val">画像を生成しています（最大で数分かかります）。</div>'
+      + '<div class="oe-field-val"><b>このまま待機してください。</b>再読み込み・画面操作・再送はしないでください。</div>'
+      + '<button class="oe-map-approvebtn" disabled>生成中…</button>');
+  }
+
+  // ── 見積り取得中 ──
+  if (_cipState.phase === 'quoting') {
+    return wrap('<div class="oe-field-val">生成内容を確認しています…</div>'
+      + '<button class="oe-mrc-btn" disabled>確認中…</button>');
+  }
+
+  // ── エラー（自動 retry しない。read-only の再確認のみ案内）──
+  if (_cipState.phase === 'error') {
+    return wrap('<div class="oe-field-val">' + esc(_cipReasonText(_cipState.errorReason)) + '</div>'
+      + '<button class="oe-mrc-btn" onclick="cipLoadQuote()">生成状態を確認する</button>'
+      + '<div class="oe-status-sub">この確認は読み取りのみで、課金は発生しません。自動的な再実行は行いません。</div>');
+  }
+
+  // ── 見積り表示（ユーザーの明示確認）──
+  if (_cipState.phase === 'quoted' && _cipState.quote) {
+    var q = _cipState.quote;
+    var rows = '<div class="oe-field-val">生成枚数: ' + esc(String(q.slideCount)) + '枚</div>'
+      + '<div class="oe-field-val">画質: ' + esc(String(q.quality)) + '</div>'
+      + '<div class="oe-field-val">今回の認可額（生成前見積り）: <b>' + esc(_cipJpy(q.estimatedTotalCostJpy)) + '</b></div>'
+      + '<div class="oe-field-val">この成果物のこれまでの認可累計: ' + esc(_cipJpy(q.cumulativeSpentJpy)) + '</div>'
+      + '<div class="oe-field-val">1投稿あたりの認可上限: ' + esc(_cipJpy(q.budgetJpyPerPost)) + '（実際の課金額を保証する値ではありません）</div>';
+    if (q.eligible !== true) {
+      return wrap(rows
+        + '<div class="oe-field-val">' + esc(_cipReasonText(q.reason)) + '</div>'
+        + '<button class="oe-mrc-btn" onclick="cipLoadQuote()">再確認</button>');
+    }
+    return wrap(rows
+      + '<div class="oe-map-actions">'
+      +   '<button class="oe-map-approvebtn" onclick="cipGenerate()">この内容で画像を生成</button>'
+      +   '<button class="oe-mrc-btn" onclick="cipLoadQuote()">再確認</button>'
+      + '</div>'
+      + '<div class="oe-status-sub">押すと有料の画像生成が1回だけ実行されます。実行中は画面を操作しないでください。</div>');
+  }
+
+  // ── 承認済み・未生成（初期表示）──
+  return wrap('<div class="oe-field-val">画像生成の準備ができています。</div>'
+    + '<button class="oe-mrc-btn" onclick="cipLoadQuote()">生成内容を確認</button>'
+    + '<div class="oe-status-sub">確認は読み取りのみで、課金は発生しません。金額を確認してから生成へ進みます。</div>');
+}
+
 // Phase50-7: Publishing Ready Center HTML生成（Mobile Approvalの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
 function buildPublishingReadyHtml(outputDraft) {
   outputDraft = outputDraft || _lastOutputDraft;
@@ -44794,6 +45049,7 @@ function renderOutputEnginePanel() {
     + _oeSafe(buildMobileReviewHtml,             'MobileReviewCenter')
     + _oeSafe(buildContentValueDiagnosisHtml,    'ContentValueDiagnosis')
     + _oeSafe(buildMobileApprovalHtml,           'MobileApproval')
+    + _oeSafe(buildCarouselImageProductionHtml,  'CarouselImageProduction')
     + _oeSafe(buildPublishingReadyHtml,          'PublishingReadyCenter')
     + _oeSafe(buildInstagramLearningHtml,        'InstagramLearningCenter')
     + _oeSafe(buildAssetLibrarySaveHtml,         'AssetLibrarySaveCenter')
