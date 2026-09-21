@@ -45435,6 +45435,7 @@ function buildDailyCandidateAutoTaskDraft(sel) {
 function dcbSetSubject(v) {
   _dcbState.subject = String(v == null ? '' : v).slice(0, 60);
   _dcbState.subjectTouched = true;
+  if (_dcbState.selection) _dcbState.staleNotice = true;   // P0.5: テーマ領域変更で選択を無効化したことを表示
   _dcbState.selection = null;
   _dcbRerender();
 }
@@ -45454,7 +45455,12 @@ function dcbSelect(idx) {
     contentType: c.contentTypeDefault,   // 既定値。ユーザーが明示的に変更できる
     contentTypeConfirmed: false,
     selectedAt: new Date().toISOString(),
+    // P0.5: stale 判定用 snapshot（選択時点の案件・入力・候補内容）
+    caseId: _dcbState.caseId,
+    inputsFingerprint: _dcbState.inputsFingerprint || null,
+    candidateFingerprint: _dcbCandidateFingerprint(c),
   };
+  _dcbState.staleNotice = false;
   _dcbState.copyMsg = '';
   _dcbRerender();
 }
@@ -45483,6 +45489,271 @@ function dcbCopyDraft() {
   } catch (e2) { done(false); }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase P0.5: Daily Candidate Handoff（選択候補 → 次の新規投稿の依頼内容へ引き継ぐ・追加のみ）
+// 目的: P0 で選んだ候補（商品・テーマ型・target・必要 Fact 3件・Evidence 準備度・Risk・スコア・content_type）を、
+//   画面表示だけでなく「次の投稿作成に渡す一時パッケージ」として決定論で組み立て、Auto Task 依頼文へ欠落なく反映する。
+//
+// ★ 保存しない: パッケージは _dcbState.selection から都度組み立てる（二重 state を作らない）。DB／localStorage へ書かない。
+// ★ 実行しない: Auto Task の起動・自動クリックはしない。「Auto Task 入力欄へ反映」は空欄のときだけ値をセットする。
+// ★ content_type: 許可値は既存正式契約（CONTENT_TYPE_DECLARABLE_VALUES = value/bridge/product・
+//   server の lib/contentValueService.js DECLARABLE_CONTENT_TYPES と同一）。現在表示中の Output Draft へは書かない
+//   （server 側 first-write-wins を破らない）。今回は依頼文と機械可読ブロックへ明示するところまで。
+// ★ stale 対策: 選択時の案件・入力（テーマ領域・上位商品評価）・候補内容の fingerprint を保持し、
+//   現在の再計算結果と一致しない場合は引き継がない。
+// ★ requiredFacts は Evidence Acquisition／Writer への要求仕様であり、確定事実として扱わない。
+// ★ 機械可読ブロック [CANDIDATE_HANDOFF_V1] は通常テキストとして安全（既存コードに角括弧タグの parser は無い）。
+//   依頼文には「カルーセル」を含むため Account Intelligence 専用判定（除外パターン）に入らず、既存 Workflow のまま動く。
+// ══════════════════════════════════════════════════════════════
+var DCB_HANDOFF_VERSION = 1;
+var DCB_HANDOFF_STALE_MESSAGE = '候補条件が変わったため、もう一度候補を選択してください';
+var DCB_HANDOFF_HIGH_RISK_MESSAGE = 'High Risk候補は投稿作成へ進めません';
+
+// 入力 snapshot（案件・テーマ領域・候補生成に使う上位商品評価）。順序固定の JSON 文字列＝決定論。
+function _dcbInputsFingerprint(caseId, ranked, subject) {
+  var rows = (Array.isArray(ranked) ? ranked : []).slice(0, DCB_MAX_PRODUCTS).map(function (r) {
+    r = r || {};
+    return [r.id == null ? null : String(r.id), r.productIdentifier || null, String(r.name || ''), String(r.market || ''),
+      Number(r.integratedScore) || 0, Number(r.knownFactors) || 0, Number(r.totalFactors) || 0];
+  });
+  return JSON.stringify([caseId || null, String(subject || '').trim(), rows]);
+}
+// 候補内容の fingerprint（同じ id でも中身が変わったら別候補として扱う）
+function _dcbCandidateFingerprint(c) {
+  if (!c) return null;
+  return JSON.stringify([c.id || null, c.themeKey || null, c.product ? (c.product.productIdentifier || c.product.id || null) : null,
+    c.title || '', c.target || '', (c.requiredFacts || []).map(function (f) { return f && f.text; }),
+    c.evidence ? c.evidence.level : null, c.risk ? c.risk.level : null, c.score]);
+}
+// 現在の状態から候補を再計算した snapshot（副作用なし・fetch なし）
+function _dcbCurrentSnapshot() {
+  var caseId = (typeof _aicCurrentCaseId === 'function') ? _aicCurrentCaseId() : null;
+  var ranked = (typeof buildAffiliateIntelligenceRanking === 'function') ? buildAffiliateIntelligenceRanking() : [];
+  var result = buildDailyCandidates({ ranked: ranked, subject: _dcbState.subject });
+  return { caseId: caseId, inputsFingerprint: _dcbInputsFingerprint(caseId, ranked, _dcbState.subject), candidates: result.candidates };
+}
+function _dcbSelectionIsStale(sel, snap) {
+  if (!sel || !snap) return true;
+  if (!sel.caseId || sel.caseId !== snap.caseId) return true;
+  if (!sel.inputsFingerprint || sel.inputsFingerprint !== snap.inputsFingerprint) return true;
+  var cur = (snap.candidates || []).filter(function (c) { return c.id === sel.candidateId; })[0];
+  return !cur || _dcbCandidateFingerprint(cur) !== sel.candidateFingerprint;
+}
+
+// Candidate Handoff Package を組み立てる（純粋関数: sel と snapshot のみに依存）。
+//   戻り値: { ok:true, package, warnings } または { ok:false, reason, message }
+function buildDailyCandidateHandoff(sel, snap) {
+  var fail = function (reason, message) { return { ok: false, reason: reason, message: message }; };
+  if (!sel) return fail('no_selection', '候補が選択されていません');
+  if (_dcbSelectionIsStale(sel, snap)) return fail('stale', DCB_HANDOFF_STALE_MESSAGE);
+  if (sel.risk === 'High') return fail('risk_high', DCB_HANDOFF_HIGH_RISK_MESSAGE);   // defense in depth（P0 でも除外済み）
+  if (sel.risk !== 'Low' && sel.risk !== 'Medium') return fail('invalid_risk', 'Risk を判定できないため引き継げません');
+  var declarable = (typeof CONTENT_TYPE_DECLARABLE_VALUES !== 'undefined') ? CONTENT_TYPE_DECLARABLE_VALUES : ['value', 'bridge', 'product'];
+  if (declarable.indexOf(sel.contentType) === -1) return fail('invalid_content_type', 'content_type が許可値（value／bridge／product）ではありません');
+  if (!sel.contentTypeConfirmed) return fail('content_type_unconfirmed', 'content_type を選んで宣言してください（既定値のままでは引き継ぎません）');
+  var hasProduct = !!(sel.productId || sel.productName);
+  if (!hasProduct && sel.contentType !== 'value') return fail('no_product_content_type', '商品なしの候補では content_type は value のみ選べます');
+  var facts = Array.isArray(sel.requiredFacts) ? sel.requiredFacts : [];
+  if (facts.length !== 3 || !facts.every(function (f) { return f && typeof f.text === 'string' && f.text.trim(); })) {
+    return fail('invalid_required_facts', '必要 Fact がちょうど3件そろっていないため引き継げません');
+  }
+  var req = { candidateId: sel.candidateId, themeType: sel.themeType, target: sel.target, theme: sel.title };
+  var missing = Object.keys(req).filter(function (k) { return !(typeof req[k] === 'string' && req[k].trim()); });
+  if (missing.length) return fail('missing_field', '引き継ぎに必要な項目が不足しています（' + missing.join(', ') + '）');
+  if (['Ready', 'Partial', 'Missing'].indexOf(sel.evidenceReadiness) === -1) return fail('invalid_evidence', 'Evidence 準備度を判定できないため引き継げません');
+  var warnings = [];
+  if (sel.risk === 'Medium') warnings.push('Risk Medium：効果の断定・最上級表現を避け、Claim ごとに Evidence を確認してください');
+  return {
+    ok: true,
+    warnings: warnings,
+    package: {
+      version: DCB_HANDOFF_VERSION,
+      candidateId: sel.candidateId,
+      caseId: sel.caseId,
+      selectedAt: sel.selectedAt,
+      contentType: sel.contentType,
+      themeType: sel.themeType,
+      themeLabel: sel.themeLabel,
+      productId: hasProduct ? (sel.productId || null) : null,
+      productName: hasProduct ? (sel.productName || null) : null,
+      target: sel.target,
+      theme: sel.title,
+      requiredFacts: facts.map(function (f) { return { text: f.text, dims: (f.dims || []).slice(), needs: f.needs }; }),
+      evidenceReadiness: sel.evidenceReadiness,
+      risk: sel.risk,
+      candidateScore: sel.candidateScore,
+      candidateFingerprint: sel.candidateFingerprint,
+    },
+  };
+}
+function _dcbCurrentHandoff() { return buildDailyCandidateHandoff(_dcbState.selection, _dcbCurrentSnapshot()); }
+
+// 機械可読ブロック用: 1行化し、ブロック区切りと紛らわしい角括弧を全角へ置換（通常テキストとして安全）
+function _dcbHandoffLine(v) {
+  return String(v == null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/\[/g, '［').replace(/\]/g, '］').trim().slice(0, 200);
+}
+
+// Auto Task 依頼文（Handoff 版）。★文字列を作るだけで Auto Task を実行しない。
+function buildDailyCandidateHandoffRequest(pkg) {
+  if (!pkg) return '';
+  var ctLabel = { value: 'value（価値提供）', bridge: 'bridge（価値提供から商品へつなぐ）', product: 'product（商品紹介）' }[pkg.contentType] || pkg.contentType;
+  var hasProduct = !!(pkg.productId || pkg.productName);
+  var L = [];
+  L.push('【Instagram カルーセル作成依頼（Daily Candidate Handoff）】');
+  L.push('投稿対象商品: ' + (hasProduct ? _dcbHandoffLine(pkg.productName || pkg.productId) : '商品なし（value 投稿。商品名・商品情報は書かない）'));
+  L.push('想定ターゲット: ' + _dcbHandoffLine(pkg.target));
+  L.push('投稿タイプ（theme type）: ' + pkg.themeLabel + '（' + pkg.themeType + '）');
+  L.push('content_type: ' + ctLabel);
+  L.push('投稿テーマ: ' + _dcbHandoffLine(pkg.theme));
+  // 「スライド」「投稿画像」を含めるのは既存 detectOutputType で instagram_carousel と判定させるため（キーワード比率方式）
+  L.push('作成するもの: Instagram カルーセル（スライド形式の投稿画像）・キャプション・CTA・ハッシュタグ');
+  L.push('');
+  L.push('■ 必要な具体 Fact（3件）');
+  L.push('※ 以下は「確認すべき要求仕様」であり、確定した事実ではありません。Evidence で確認できた内容だけを本文に使ってください。');
+  pkg.requiredFacts.forEach(function (f, i) {
+    L.push((i + 1) + '. ' + f.text + '（' + f.needs + ' が必要）');
+  });
+  L.push('');
+  L.push('■ Evidence 条件（準備度: ' + pkg.evidenceReadiness + '）');
+  if (pkg.evidenceReadiness === 'Missing') {
+    L.push('- 必要Factは未確認。生成時にEvidence Acquisitionを先に行い、確認できないFactは本文に使用しない');
+  } else if (pkg.evidenceReadiness === 'Partial') {
+    L.push('- 商品の Formal Fact（APFR）は一部のみ確認済み。確認済みの Fact と未確認の事項を混同しない');
+    L.push('- 未確認の事項は Evidence Acquisition で確認できた場合だけ使用し、確認できなければ本文に使用しない');
+  } else {
+    L.push('- 商品の Formal Fact（APFR）は存在するが、今回の Claim をすべて支えられるとは限らない');
+    L.push('- Claim ごとに対応する Fact / Evidence を確認し、支えられない Claim は書かない');
+  }
+  L.push('- APFR（商品の Formal Fact）／Formal Truth／canonical Evidence を最優先の根拠とする');
+  L.push('- Evidence で確認できない商品事実（成分・価格・効果・仕様など）を作らない');
+  if (pkg.risk === 'Medium') L.push('- Risk Medium：効果の断定・最上級表現・医薬品的な表現を避け、Claim ごとに根拠を確認する');
+  L.push('');
+  L.push('■ 品質契約（禁止）');
+  L.push('- 一般常識の言い換えだけの内容');
+  L.push('- 「○○しましょう」で終わる内容');
+  L.push('- 根拠のない割合・根拠のないランキング');
+  L.push('- 「9割が知らない」「知らないと損」「最強」「絶対」などの表現');
+  L.push('- 商品効果の断定');
+  L.push('- 商品の押し売り（判断基準を先に示し、商品は選択肢の一つとして扱う）');
+  L.push('');
+  L.push('■ 品質契約（必須）');
+  L.push('- 比較・条件・数値・判断基準・使い分け・例外・注意点・HOW・CHECK のうち、最低2種類以上を本文に含める');
+  L.push('- 比較と判断基準を優先し、読者が自分で選べる材料を先に示す');
+  L.push('- HOW（手順）または CHECK（判断のチェック項目）を最低1つ入れる');
+  L.push('- 数値は Evidence で確認できたものだけを使い、根拠のない数値フックは使わない');
+  L.push('');
+  L.push('[CANDIDATE_HANDOFF_V1]');
+  L.push('version: ' + pkg.version);
+  L.push('candidate_id: ' + _dcbHandoffLine(pkg.candidateId));
+  L.push('content_type: ' + _dcbHandoffLine(pkg.contentType));
+  L.push('theme_type: ' + _dcbHandoffLine(pkg.themeType));
+  L.push('product_id: ' + (hasProduct && pkg.productId ? _dcbHandoffLine(pkg.productId) : 'none'));
+  L.push('product_name: ' + (hasProduct && pkg.productName ? _dcbHandoffLine(pkg.productName) : 'none'));
+  L.push('target: ' + _dcbHandoffLine(pkg.target));
+  L.push('theme: ' + _dcbHandoffLine(pkg.theme));
+  pkg.requiredFacts.forEach(function (f, i) { L.push('required_fact_' + (i + 1) + ': ' + _dcbHandoffLine(f.text)); });
+  L.push('evidence_readiness: ' + _dcbHandoffLine(pkg.evidenceReadiness));
+  L.push('risk: ' + _dcbHandoffLine(pkg.risk));
+  L.push('candidate_score: ' + _dcbHandoffLine(pkg.candidateScore));
+  L.push('selected_at: ' + _dcbHandoffLine(pkg.selectedAt));
+  L.push('[/CANDIDATE_HANDOFF_V1]');
+  return L.join('\n');
+}
+
+function _dcbCopyText(text, okMsg) {
+  var done = function (ok) { _dcbState.copyMsg = ok ? okMsg : 'コピーできませんでした。依頼文を選択してコピーしてください'; _dcbRerender(); };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); return; }
+  } catch (e) { /* fallback へ */ }
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    done(!!ok);
+  } catch (e2) { done(false); }
+}
+// 引き継ぎ不可のときの共通処理（stale なら選択を無効化して再選択を促す）
+function _dcbHandoffRejected(h) {
+  if (h.reason === 'stale') { _dcbState.selection = null; _dcbState.staleNotice = true; _dcbState.copyMsg = ''; }
+  else { _dcbState.copyMsg = h.message; }
+  _dcbRerender();
+}
+function dcbCopyHandoff() {
+  var h = _dcbCurrentHandoff();
+  if (!h.ok) { _dcbHandoffRejected(h); return; }
+  _dcbCopyText(buildDailyCandidateHandoffRequest(h.package), '依頼文をコピーしました（Auto Task は実行していません）');
+}
+// 既存 Auto Task 入力欄（#auto-task-message）へ反映するだけ。★実行・自動クリック・fetch・保存は一切しない。
+//   既存入力がある場合は上書きせず、確認メッセージを出して止まる。
+function dcbReflectToAutoTask() {
+  var h = _dcbCurrentHandoff();
+  if (!h.ok) { _dcbHandoffRejected(h); return; }
+  var text = buildDailyCandidateHandoffRequest(h.package);
+  var el = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('auto-task-message') : null;
+  if (!el) {
+    _dcbState.copyMsg = 'Auto Task 入力欄が見つかりません。依頼文をコピーして貼り付けてください';
+  } else if (String(el.value || '').trim()) {
+    _dcbState.copyMsg = (el.value === text)
+      ? 'この依頼文は Auto Task 入力欄へ反映済みです（実行はしていません）'
+      : 'Auto Task 入力欄に既存の内容があるため反映しませんでした（上書きしません）。内容を確認し、不要なら手動で消してから再度押してください';
+  } else {
+    el.value = text;
+    _dcbState.copyMsg = 'Auto Task 入力欄へ反映しました（実行はしていません）。Auto Task パネルで担当と内容を確認してから、ご自身で実行してください';
+  }
+  _dcbRerender();
+}
+
+// 候補選択後の Handoff Preview（content_type 宣言・引き継ぎ内容・依頼文・操作ボタン）
+function _dcbHandoffPreviewHtml(s, snap) {
+  var esc = escapeHtml;
+  var hasProduct = !!(s.productId || s.productName);
+  var ctBtn = function (t, label) {
+    var on = s.contentType === t && s.contentTypeConfirmed;
+    return '<button class="oe-mrc-btn" onclick="dcbSetContentType(\'' + t + '\')" style="' + (on ? 'border-color:rgba(93,219,142,0.9);' : 'opacity:.7;') + '">' + (on ? '● ' : '') + label + '</button>';
+  };
+  var h = buildDailyCandidateHandoff(s, snap);
+  var html = '<div style="border-top:1px solid rgba(255,255,255,0.12);margin-top:10px;padding-top:10px;">'
+    + '<div class="oe-pkg-label">次の投稿へ引き継ぐ内容（Candidate Handoff）</div>'
+    + '<div class="oe-pkg-label">content_type（投稿種別）の宣言</div>'
+    + '<div class="oe-map-actions">' + ctBtn('value', 'value') + (hasProduct ? ctBtn('bridge', 'bridge') + ctBtn('product', 'product') : '') + '</div>'
+    + '<div class="oe-status-sub">' + (s.contentTypeConfirmed ? '宣言済み: ' : '既定値（未宣言）: ') + esc(s.contentType)
+    +   '。value=価値提供／bridge=価値提供から商品へつなぐ／product=商品紹介（商品の主張すべてに APFR の Formal Fact が必要）。'
+    +   (hasProduct ? '' : '商品なしの候補は value のみです。') + '</div>'
+    + '<div class="oe-status-sub">宣言は次に作る新しい投稿の依頼文へ入れます。現在表示中の成果物へは書き込みません（サーバ側の投稿種別は初回宣言のみ有効なため）。</div>';
+  if (!h.ok) {
+    html += '<div class="oe-field-val" style="color:' + (h.reason === 'risk_high' ? '#e06060' : '#f0b840') + ';margin-top:6px;">' + esc(h.message) + '</div>'
+      + '<div class="oe-map-actions"><button class="oe-mrc-btn" onclick="dcbClearSelection()">選択を解除</button></div>'
+      + (_dcbState.copyMsg ? '<div class="oe-status-sub">' + esc(_dcbState.copyMsg) + '</div>' : '')
+      + '</div>';
+    return html;
+  }
+  var p = h.package;
+  var RISK_COLOR = { Low: '#5ddb8e', Medium: '#f0b840' };
+  html += '<div class="oe-field-val">商品: ' + (hasProduct ? esc(p.productName || p.productId) : '商品なし（value 投稿）') + '</div>'
+    + '<div class="oe-field-val">投稿タイプ: ' + esc(p.themeLabel) + '</div>'
+    + '<div class="oe-field-val">content_type: ' + esc(p.contentType) + '</div>'
+    + '<div class="oe-field-val">target: ' + esc(p.target) + '</div>'
+    + '<div class="oe-field-val">theme: ' + esc(p.theme) + '</div>'
+    + '<div class="oe-pkg-label">required Facts（3件・要求仕様／未確定）</div>'
+    + p.requiredFacts.map(function (f, i) { return '<div class="oe-field-val">' + (i + 1) + '. ' + esc(f.text) + ' <span style="opacity:.6;">— ' + esc(f.needs) + ' が必要</span></div>'; }).join('')
+    + '<div class="oe-field-val">Evidence readiness: ' + esc(p.evidenceReadiness) + '　／　Risk: <span style="color:' + RISK_COLOR[p.risk] + ';">' + esc(p.risk) + '</span>　／　スコア ' + esc(String(p.candidateScore)) + '</div>'
+    + h.warnings.map(function (w) { return '<div class="oe-status-sub" style="color:#f0b840;">⚠ ' + esc(w) + '</div>'; }).join('')
+    + '<div class="oe-pkg-label">Auto Task 依頼文（Handoff）</div>'
+    + '<textarea readonly style="width:100%;min-height:200px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;font-size:11px;padding:8px;">'
+    +   esc(buildDailyCandidateHandoffRequest(p)) + '</textarea>'
+    + '<div class="oe-map-actions">'
+    +   '<button class="oe-mrc-btn" onclick="dcbCopyHandoff()">依頼文をコピー</button>'
+    +   '<button class="oe-mrc-btn" onclick="dcbReflectToAutoTask()">Auto Task入力欄へ反映</button>'
+    +   '<button class="oe-mrc-btn" onclick="dcbClearSelection()">選択を解除</button>'
+    + '</div>'
+    + (_dcbState.copyMsg ? '<div class="oe-status-sub">' + esc(_dcbState.copyMsg) + '</div>' : '')
+    + '<div class="oe-status-sub">この画面から Auto Task は実行しません。入力欄へ反映後、Auto Task パネルで確認してご自身で実行してください（有料・要承認）。</div>'
+    + '</div>';
+  return html;
+}
+
 // Phase P0: Daily Candidate Board HTML（データ不足でも安全に表示・副作用なし）
 function buildDailyCandidateBoardHtml() {
   var caseId = (typeof _aicCurrentCaseId === 'function') ? _aicCurrentCaseId() : null;
@@ -45500,6 +45771,14 @@ function buildDailyCandidateBoardHtml() {
   }
   var result = buildDailyCandidates({ ranked: ranked, subject: _dcbState.subject });
   _dcbState.candidates = result.candidates;
+  // P0.5: 入力 snapshot を記録し、候補条件が変わった選択は無効化する（古い Handoff を使わない）
+  var snap = { caseId: caseId, inputsFingerprint: _dcbInputsFingerprint(caseId, ranked, _dcbState.subject), candidates: result.candidates };
+  _dcbState.inputsFingerprint = snap.inputsFingerprint;
+  if (_dcbState.selection && _dcbSelectionIsStale(_dcbState.selection, snap)) {
+    _dcbState.selection = null;
+    _dcbState.staleNotice = true;
+    _dcbState.copyMsg = '';
+  }
 
   var head = '<div class="oe-quality-title">🗓 Daily Candidate Board '
     + '<span style="font-weight:400;opacity:.5;">v' + DAILY_CANDIDATE_BOARD_VERSION + ' / 候補選択まで（Auto Task は実行しません）</span></div>';
@@ -45594,7 +45873,13 @@ function buildDailyCandidateBoardHtml() {
       + '</div>';
   }
 
-  return '<div class="oe-quality-section">' + head + subjectHtml + cardsHtml + excludedHtml + selHtml + '</div>';
+  // P0.5: 選択後は Handoff Preview を表示する（P0 の content_type 宣言を含む）。P0 の selHtml 生成と関数群は残す。
+  if (s) selHtml = _dcbHandoffPreviewHtml(s, snap);
+  var staleHtml = (!s && _dcbState.staleNotice)
+    ? '<div class="oe-field-val" style="color:#f0b840;margin-top:6px;">' + esc(DCB_HANDOFF_STALE_MESSAGE) + '</div>'
+    : '';
+
+  return '<div class="oe-quality-section">' + head + subjectHtml + staleHtml + cardsHtml + excludedHtml + selHtml + '</div>';
 }
 
 function buildAffiliateIntelligenceCoreHtml() {
