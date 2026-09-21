@@ -45795,6 +45795,88 @@ function dcbReflectToAutoTask() {
   _dcbRerender();
 }
 
+// ══════════════════════════════════════════════════════════════
+// Phase P0.9: Direct Auto Task Panel Handoff（Candidate Handoff → Auto Task パネルを直接開く・追加のみ）
+//   ★ 既存 openAutoTaskPanel() をそのまま使う（新しい Workflow・workflowId 生成ロジックは作らない）。
+//     workflowId は同関数の既存方式（'wf-' + Date.now()）で新規発行される。再開モード中は旧 ID を
+//     引き継ぐ仕様のため、Direct Open は拒否する（古い workflowId を流用しない）。
+//   ★ main task は Writer 1行のみ（ID は既存 AT_AGENTS から取得）。Brain / Reviewer / Strategy / Leader Final の
+//     後処理は既存 Workflow のまま（変更しない）。
+//   ★ 実行しない: atRunWorkflow・/api/auto-task・/api/chat・AI・Web Evidence・DB write を一切呼ばない。
+//     パネルを開いて依頼文をセットするところまで。「実行」はユーザーが押す。
+//   ★ 自律相談 ON / Auto Task 自動開始の設定は書き換えない（警告のみ）。
+//   ★ 既存のチャット振り分け → dispatch card → openAutoTaskPanel の導線は無変更（追加経路）。
+// ══════════════════════════════════════════════════════════════
+var DCB_AT_UNSAVED_INPUT_MESSAGE = '未実行のAuto Task内容があります。閉じるかリセットしてから候補を開いてください。';
+var DCB_AT_CONSULT_WARNING = 'Controlled Trialでは自律相談をOFFにしてください。';
+var DCB_AT_AUTOSTART_WARNING = 'Controlled TrialではAuto Taskを「手動」にしてください。';
+
+// Writer の正式 ID（既存 AT_AGENTS 定義から取得。見つからなければ null＝開かない）
+function _dcbWriterAgentId() {
+  try {
+    var list = (typeof AT_AGENTS !== 'undefined' && Array.isArray(AT_AGENTS)) ? AT_AGENTS : [];
+    var w = list.filter(function (a) { return a && a.id === 'writer'; })[0];
+    return w ? w.id : null;
+  } catch (e) { return null; }
+}
+// Direct Open の判定（純関数）。h = buildDailyCandidateHandoff の結果、text = Handoff 依頼文、env = 画面状態。
+//   戻り値: { ok, reason, message, warnings[] }
+function evaluateDirectAutoTaskOpen(h, text, env) {
+  env = env || {};
+  var refuse = function (reason, message) { return { ok: false, reason: reason, message: message, warnings: [] }; };
+  if (!h || !h.ok) return refuse((h && h.reason) || 'no_selection', (h && h.message) || '候補が選択されていません');
+  if (!env.writerId) return refuse('writer_not_found', 'Writer 担当が見つからないため Auto Task パネルを開けません');
+  if (env.resumedWorkflowId) return refuse('resume_mode', '案件再開モード中は開けません（既存 workflowId を引き継ぐため）。再開バナーの ✕ で新規案件に戻ってから開いてください。');
+  var run = (typeof evaluateCandidateHandoffForRun === 'function') ? evaluateCandidateHandoffForRun(text, env.runCaseId) : null;
+  if (!run) return refuse('handoff_check_unavailable', '案件照合を実行できないため開けません');
+  if (run.action === 'refuse') return refuse(run.reason, run.message);
+  if (!run.contentType) return refuse('content_type_not_wired', 'content_type を正式に引き継げないため開けません。候補をもう一度選択してください。');
+  if (env.running) return refuse('auto_task_running', 'Auto Task を実行中です。完了後に開いてください。');
+  var cur = String(env.currentInput == null ? '' : env.currentInput);
+  if (env.panelOpen && cur.trim() && cur !== text) return refuse('unsaved_input', DCB_AT_UNSAVED_INPUT_MESSAGE);   // 既存入力を破棄しない
+  var warnings = (h.warnings || []).slice();
+  if (env.autonomousConsult) warnings.push(DCB_AT_CONSULT_WARNING);
+  if (env.autoStart) warnings.push(DCB_AT_AUTOSTART_WARNING);
+  return { ok: true, reason: null, message: null, warnings: warnings, contentType: run.contentType };
+}
+function _dcbAutoTaskEnv() {
+  var doc = (typeof document !== 'undefined' && document.getElementById) ? document : null;
+  var panel = doc ? doc.getElementById('auto-task-panel') : null;
+  var input = doc ? doc.getElementById('auto-task-message') : null;
+  var runBtn = doc ? doc.getElementById('at-run-btn') : null;
+  return {
+    writerId: _dcbWriterAgentId(),
+    runCaseId: (typeof getCurrentApprovalCaseId === 'function') ? (getCurrentApprovalCaseId() || null) : null,   // atRunWorkflow と同じ案件取得
+    resumedWorkflowId: (typeof _atResumedWorkflowId !== 'undefined') ? _atResumedWorkflowId : null,
+    running: !!(runBtn && runBtn.disabled),
+    panelOpen: !!(panel && panel.classList && panel.classList.contains('open')),
+    currentInput: input ? input.value : '',
+    autonomousConsult: (typeof autonomousConsult !== 'undefined') ? !!autonomousConsult : false,
+    autoStart: (typeof autoStart !== 'undefined') ? !!autoStart : false,
+  };
+}
+// 「Auto Taskパネルを開く」: 検証 → 既存 openAutoTaskPanel(依頼文, [Writer]) → Trial 表示。実行はしない。
+function dcbOpenAutoTaskPanel() {
+  var h = _dcbCurrentHandoff();
+  if (!h.ok) { _dcbHandoffRejected(h); return; }
+  var text = buildDailyCandidateHandoffRequest(h.package);
+  var env = _dcbAutoTaskEnv();
+  var chk = evaluateDirectAutoTaskOpen(h, text, env);
+  if (!chk.ok) { _dcbState.copyMsg = chk.message; _dcbRerender(); return; }
+  if (typeof openAutoTaskPanel !== 'function') { _dcbState.copyMsg = 'Auto Task パネルを開けませんでした'; _dcbRerender(); return; }
+  openAutoTaskPanel(text, [env.writerId], null);   // 既存関数: 新 workflowId・行リセット・Writer 1行・依頼文セット（実行はしない）
+  var title = '';
+  try { if (typeof cases !== 'undefined' && cases && cases[env.runCaseId] && cases[env.runCaseId].title) title = cases[env.runCaseId].title; } catch (e) { title = ''; }
+  if (typeof atSetWorkflowStatus === 'function') {
+    atSetWorkflowStatus('🧪 Controlled First Post Trial 準備完了（未実行）｜案件: ' + (title || '(名称なし)') + '（' + env.runCaseId + '）'
+      + '｜content_type: ' + chk.contentType + '｜担当: Writer のみ'
+      + (chk.warnings.length ? '｜⚠ ' + chk.warnings.join(' ／ ') : ''), chk.warnings.length ? 'error' : 'done');
+  }
+  _dcbState.copyMsg = 'Auto Task パネルを開きました（実行はしていません）。内容を確認してから「自動タスク実行開始」を押してください。'
+    + (chk.warnings.length ? ' ⚠ ' + chk.warnings.join(' ／ ') : '');
+  _dcbRerender();
+}
+
 // 候補選択後の Handoff Preview（content_type 宣言・引き継ぎ内容・依頼文・操作ボタン）
 function _dcbHandoffPreviewHtml(s, snap) {
   var esc = escapeHtml;
@@ -45836,8 +45918,16 @@ function _dcbHandoffPreviewHtml(s, snap) {
     + '<div class="oe-map-actions">'
     +   '<button class="oe-mrc-btn" onclick="dcbCopyHandoff()">依頼文をコピー</button>'
     +   '<button class="oe-mrc-btn" onclick="dcbReflectToAutoTask()">Auto Task入力欄へ反映</button>'
+    +   '<button class="oe-mrc-btn" onclick="dcbOpenAutoTaskPanel()">Auto Taskパネルを開く</button>'   // P0.9: Writer 1行・依頼文セット（実行しない）
     +   '<button class="oe-mrc-btn" onclick="dcbClearSelection()">選択を解除</button>'
     + '</div>'
+    // P0.9: Controlled Trial の前提（自律相談 OFF・Auto Task 手動）を満たしていない場合の警告（設定は書き換えない）
+    + (function () {
+        var env = _dcbAutoTaskEnv(), w = [];
+        if (env.autonomousConsult) w.push(DCB_AT_CONSULT_WARNING);
+        if (env.autoStart) w.push(DCB_AT_AUTOSTART_WARNING);
+        return w.map(function (x) { return '<div class="oe-status-sub" style="color:#f0b840;">⚠ ' + esc(x) + '</div>'; }).join('');
+      })()
     + (_dcbState.copyMsg ? '<div class="oe-status-sub">' + esc(_dcbState.copyMsg) + '</div>' : '')
     + '<div class="oe-status-sub">この画面から Auto Task は実行しません。入力欄へ反映後、Auto Task パネルで確認してご自身で実行してください（有料・要承認）。</div>'
     + '</div>';
