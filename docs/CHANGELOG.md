@@ -4,6 +4,20 @@
 
 ---
 
+## Console 不要フロー Stage 0〜1b ─ ローカル実装完了（2026-09-21・Code commit 3件・本エントリ記録時点で push 未実施・新Decisionなし・Tag未作成）
+
+- **目的**：Carousel Image Production は backend/API として完成済みだったが **Output Engine UI へ未接続**（`index.html` に `carousel-image`／`approvalToken`／`carouselAssets`／`imageReviewOk` の参照 0 件）で、実運用に DevTools Console が必須だった。本 release は **UI 接続のみ**を行い、通常運用から Console を不要にする。
+- **Stage 0（`2a27c12`）Content Value Diagnosis**：保存済み `output_drafts.content_value` を Mobile Approval の直前に**表示のみ**で提示（score／status／FAIL 軸／改善ポイント上位3件、詳細は折りたたみ）。**hard gate ではない**（承認・生成・投稿のいずれもブロックしない）。`shared/contentValueQuality.js` は無変更。`server.js` 変更も不要（`GET /api/output-drafts` は既に行全体を返していた）。
+- **Stage 1a（`b738e82`）Console-free Carousel Production**：`GET /api/carousel-image/quote`（read-only・token 発行 0・課金 0）と `POST /api/carousel-image/produce`（approval → generate を **server 内部で連結**）を追加。**approvalToken は response・log・client のどこにも出さない**。`billingLock` は client から受け取らず内部で `false` 固定。`confirmedCostJpy` 不一致は 409 `estimated_cost_mismatch` で停止。二重生成の正本は既存 execution ledger（`nonce` UNIQUE ／ `uq_carousel_exec_active_output`）。auto retry 0。middleware は既存3route と同一（quote=session、produce=session→Origin）。
+- **Stage 1b（`01d31bc`）Image Review**：既存 `GET /api/carousel-image/assets` のみで7枚プレビュー・拡大・前後移動・URL更新。OK／未OK は既存 `fields.carouselAssets[i].imageReviewOk` を正本に記録。**保存直前に最新 Draft を GET し、最新 fields を基準に `imageReviewOk` だけを変更**して `{outputId, caseId, fields}` のみ送る（whole-fields data loss 防止）。`nonce`／件数／`slideIndex`／`sha256`／`storagePath` が表示時と異なれば **write 0** で fail-closed。署名URLは localStorage・DB・fields・log へ出さず `img.src`（DOM property・https のみ）へ代入。再生成ボタンなし（Decision 112 維持）。
+- **非接触**：`server.js`／`shared/`／`supabase/schema.sql`／`carouselImageClient`／`carouselExecutionDb`／`carouselAssetStorage`／`webSession` は **git 差分 0**。新 DB 列・migration・新 paid route なし。既存3route の契約も無変更。**セッション全体で既存行の削除 0 行。**
+- **テスト（ローカル実測）**：新規2スイート（`imageReviewPanel` 89/0・`carouselImageProduceRoute` 98/0）＋既存回帰8スイート（`carouselImageProduction` 593/0 ほか）。**合計 1,433 assertions / 0 failed**。provider は fake 注入のみで実 Image API・実 DB・実 Storage への到達 0。
+- **Production 安全状態**：`CAROUSEL_IMAGE_REAL_ENABLED` は Render から削除済み（ユーザー実施）。dual-key の env gate 不成立のため **本 release 後も Effective REAL Generation = false**。本工程で Render は変更していない。
+- **既存生成成果（変更しない）**：`case-value-1788410623` ／ `out_1789809676034`（`generated=7`・`published=false`）は **production pipeline 実証成果**であり、**Instagram 実投稿には使用しない**（Content Value 評価器の実測 `insufficient` ／ `11 / 100`）。
+- **本エントリ記録時点で未実施**：push ／ Render Auto-Deploy ／ Render Live 確認 ／ Production 実機確認 ／ Tag ／ Image Review の本番保存 POST ／ 新 Decision（最大番号 119 のまま）。
+
+---
+
 ## PRG Core ＋ PRG UI Contract U2 ─ 本番反映済み ＋ Controlled Production Verification（Level 1／Level 2）（2026-09-18〜19・origin/main `9fef9dc8`・Decision119追記・Tag未作成）
 
 - **本番反映**：`git push origin main`（`e5ce21a..9fef9dc8`・fast-forward・force 無し）。push対象は Code commit `da24cf29`（`feat: guard partial evidence resolution updates`・`server.js`／`lib/outputDraftsDb.js`／`lib/contentEvidenceResolutionGuard.js`（新規）／`index.html` ＋テスト3件）と docs commit `9fef9dc8`（`docs: sync evidence safety and resolution guard status`）。Render Auto-Deploy は commit `9fef9dc` で Live（**ユーザーが Render Dashboard で実測**：service `ai-company`・`node server.js`・port 10000・`Your service is live`）。Production Read-only Smoke（Claude Code 実行・GET 3回）：`GET /` 200／`GET /api/auth-required` 200／未認証 `GET /api/session-status` 401。
