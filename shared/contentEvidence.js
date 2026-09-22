@@ -123,7 +123,10 @@ function _publisherKey(rec) {
     try {
       var host = new URL(url).hostname.toLowerCase();
       if (host.indexOf('www.') === 0) host = host.slice(4);
-      if (host) return 'domain:' + host;
+      // EVIDENCE-Q2: hostname 完全一致ではなく registrable domain 相当で判定する
+      //   （同一組織の別 subdomain を独立 source に数えない。evidenceAcquisition と同じ関数を使う）。
+      var reg = (typeof evidenceAcquisition.registrableDomainOf === 'function') ? evidenceAcquisition.registrableDomainOf(host) : null;
+      if (reg || host) return 'domain:' + (reg || host);
     } catch (e) { /* fall through */ }
   }
   return null;   // 独立ソースとして数えられない
@@ -417,7 +420,11 @@ function resolveContentEvidence(records, context) {
       } else {
         // 既存 evaluateVerifiedPromotion を primary + related で呼ぶ（既存関数は無変更）。
         var related = recs.slice(1);
-        promotion = evidenceAcquisition.evaluateVerifiedPromotion(promoType, primary, related);
+        // EVIDENCE-Q2: レコード単位の判定（isVerifiedContentEvidence）と同じ Source Trust 設定を昇格判定へも渡す。
+        promotion = evidenceAcquisition.evaluateVerifiedPromotion(promoType, primary, related, {
+          officialDomains: Array.isArray(ctx.officialDomains) ? ctx.officialDomains : [],
+          industryDomains: Array.isArray(ctx.industryDomains) ? ctx.industryDomains : [],
+        });
         grounded = !!(promotion && promotion.eligible) && claimVerified >= 1;
       }
 

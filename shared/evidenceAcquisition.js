@@ -269,6 +269,49 @@
   var TIER5_ORG_SUFFIX = 'or.jp';
   // Tier8: 既知のSNS/掲示板/ブログプラットフォーム（UGC中心のため一般ドメイン本体はここに分類）
   var TIER8_SNS_DOMAINS = ['reddit.com', 'twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'threads.net', 'tiktok.com', 'ameblo.jp', 'hatenablog.com', 'hatenadiary.jp', 'fc2.com', 'livedoor.jp', 'note.com'];
+  // EVIDENCE-Q2: 業界団体の公式ドメイン（明示allowlist・Tier6）。
+  //   ★ `.org` 等の末尾から自動判定しない。一次情報として確認できた団体の公式ドメインだけを明示登録する。
+  //   ★ 呼び出し側が options.industryDomains を渡さない経路（contentClaimPlanning の昇格判定等）でも
+  //     同じ判定になるよう、classifySourceTrust() 自体の既定allowlistとして持つ。
+  //   jcia.org … 日本化粧品工業連合会（SPF/PA 測定法基準・UV表示ガイドラインの策定団体）
+  var TIER6_INDUSTRY_ORG_DOMAINS = ['jcia.org'];
+
+  // EVIDENCE-Q2: 独立 publisher 判定用の最小 public suffix（外部依存なし・今回必要な範囲のみ）。
+  //   2階層 suffix に一致する場合は「suffix + 1ラベル」、それ以外は末尾2ラベルを registrable domain とする。
+  //   例: accessdata.fda.gov → fda.gov / ejim.mhlw.go.jp → mhlw.go.jp（go.jp 自体ではまとめない）
+  var TWO_LEVEL_PUBLIC_SUFFIXES = ['go.jp', 'co.jp', 'or.jp', 'ac.jp', 'ne.jp', 'ed.jp', 'lg.jp', 'gr.jp',
+    'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'com.au', 'gov.au', 'org.au'];
+
+  // EVIDENCE-Q2: URL identity 用の tracking parameter（明示列挙のみ。意味のある query は削除しない）
+  var TRACKING_QUERY_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id'];
+
+  // URL から tracking parameter だけを除いた identity 文字列を返す（解析失敗時は trim した原文）。
+  function normalizeSourceUrlIdentity(url) {
+    var raw = str(url).trim();
+    if (!raw) return '';
+    try {
+      var u = new URL(raw);
+      TRACKING_QUERY_PARAMS.forEach(function (p) { u.searchParams.delete(p); });
+      var out = u.toString();
+      // 削除の結果 query が空になった場合の末尾 '?' を除去（URL 実装差の吸収）
+      return out.replace(/\?(#|$)/, '$1');
+    } catch (e) {
+      return raw;
+    }
+  }
+
+  // hostname → registrable domain 相当（www. 除去済み host を想定）。IP・単一ラベルはそのまま返す。
+  function registrableDomainOf(host) {
+    var h = str(host).toLowerCase().replace(/\.$/, '');
+    if (h.indexOf('www.') === 0) h = h.slice(4);
+    if (!h) return null;
+    if (/^[0-9.]+$/.test(h) || h.indexOf(':') !== -1) return h;   // IPv4 / IPv6
+    var labels = h.split('.');
+    if (labels.length <= 2) return h;
+    var last2 = labels.slice(-2).join('.');
+    if (TWO_LEVEL_PUBLIC_SUFFIXES.indexOf(last2) !== -1) return labels.slice(-3).join('.');
+    return last2;
+  }
 
   function _hostOf(url) {
     try {
@@ -307,6 +350,7 @@
     else if (_hostEquals(host, TIER5_ORG_SUFFIX)) { tier = 5; matchedBy = 'or_jp_suffix'; }
     else if (_hostEqualsAny(host, opts.officialDomains || [])) { tier = 3; matchedBy = 'caller_official_domain'; }
     else if (_hostEqualsAny(host, opts.industryDomains || [])) { tier = 6; matchedBy = 'caller_industry_domain'; }
+    else if (_hostEqualsAny(host, TIER6_INDUSTRY_ORG_DOMAINS)) { tier = 6; matchedBy = 'industry_org_allowlist'; }   // EVIDENCE-Q2
 
     var meta = SOURCE_TRUST_TIERS[tier];
     return { tier: tier, label: meta.label, reliability: meta.reliability, host: host, matchedBy: matchedBy };
@@ -315,11 +359,13 @@
   // Publisher単位の独立ソースキー（sourceKeyOf()と同一優先順位: sourceName→sourceUrlのhostname→sourceReference）。
   //   iadpIntelligenceContext.js の sourceKeyOf() と判定基準を揃えるための evidenceAcquisition 側の実装
   //  （ファイル間の相互require依存を避けるため、あえてロジックを複製している。既存の自己完結モジュール方針と同じ）。
+  //   EVIDENCE-Q2: sourceName が無い場合は hostname 完全一致ではなく registrable domain で判定する
+  //   （fda.gov と accessdata.fda.gov を独立2件に数えない。mhlw.go.jp と env.go.jp は別 publisher）。
   function _publisherKeyOf(e) {
     var n = str(e && e.sourceName).trim();
     if (n) return 'name:' + n;
     var host = _hostOf(e && e.sourceUrl);
-    if (host) return 'domain:' + host;
+    if (host) return 'domain:' + (registrableDomainOf(host) || host);
     var r = str(e && e.sourceReference).trim();
     if (r) return 'ref:' + r;
     return null;
@@ -333,11 +379,13 @@
   //     Independent Source集計にのみ使用する（market/competitionのみ参照。法律・ASP公式は単独判定のため無視）。
   //   戻り値: { eligible, reason, tier, independentSourceCount } — eligible:trueでも、実際の
   //     verificationStatus書き換えは呼び出し側の責務（本関数は判定するのみ・何も保存しない）。
-  function evaluateVerifiedPromotion(claimType, candidateEvidence, relatedEvidenceList) {
+  //   trustOptions（EVIDENCE-Q2・任意）: classifySourceTrust() へそのまま渡す { officialDomains, industryDomains }。
+  //     省略時は従来どおり既定判定のみ（既存呼び出しと完全互換）。
+  function evaluateVerifiedPromotion(claimType, candidateEvidence, relatedEvidenceList, trustOptions) {
     var result = { eligible: false, reason: null, tier: null, independentSourceCount: 0 };
     try {
       if (!isPlainObject(candidateEvidence) || !candidateEvidence.sourceUrl) { result.reason = 'no_source_url'; return result; }
-      var trust = classifySourceTrust(candidateEvidence.sourceUrl);
+      var trust = classifySourceTrust(candidateEvidence.sourceUrl, trustOptions);
       result.tier = trust.tier;
       if (trust.tier === null) { result.reason = 'trust_unclassifiable'; return result; }
       if (trust.tier === 8) { result.reason = 'tier8_forbidden'; return result; }          // SNS/掲示板/個人ブログは常に禁止
@@ -362,7 +410,7 @@
         for (var i = 0; i < related.length; i++) {
           var re = related[i];
           if (!re || !re.sourceUrl) continue;
-          var rt = classifySourceTrust(re.sourceUrl);
+          var rt = classifySourceTrust(re.sourceUrl, trustOptions);
           if (rt.tier === null || rt.tier < 1 || rt.tier > 6) continue;   // Tier7/8・判定不能のsourceは独立source数に含めない
           var k = _publisherKeyOf(re);
           if (k) keys[k] = true;
@@ -520,12 +568,26 @@
       result.usage = isPlainObject(responseData.usage) ? responseData.usage : null;
 
       var output = Array.isArray(responseData.output) ? responseData.output : [];
-      var seenUrls = {};
-      function addSource(url, title) {
-        var u = str(url).trim();
-        if (!u || seenUrls[u]) return;          // URL重複排除（同一URLは1件のみ）
-        seenUrls[u] = true;
-        result.sources.push({ url: u, title: (title != null && str(title).trim()) ? str(title).trim() : null });
+      var seenUrls = {};   // identity（tracking parameter 除去後の URL）→ sources 内の要素
+      // EVIDENCE-Q2: 同一 source を再度受け取った場合は、欠けている情報（title / citedModelText）だけを統合する。
+      //   ★ 先に来た action.sources（URL のみ）が後続 url_citation の title を捨てていた不具合の修正。
+      //   ★ citedModelText は「モデル回答文のうち当該 source を引用した箇所」であり source 本文ではない。
+      //     sourceExcerpt へは絶対に入れない（Evidence 昇格・数値検証の根拠にも使わない）。
+      function addSource(url, title, citedModelText) {
+        var u = normalizeSourceUrlIdentity(url);
+        if (!u) return;
+        var t = (title != null && str(title).trim()) ? str(title).trim() : null;
+        var cm = (citedModelText != null && str(citedModelText).trim()) ? str(citedModelText).trim() : null;
+        var existing = seenUrls[u];
+        if (existing) {                         // URL重複排除（同一URLは1件のみ）＋欠損情報の統合
+          if (!existing.title && t) existing.title = t;
+          if (!existing.citedModelText && cm) existing.citedModelText = cm;
+          return;
+        }
+        var src = { url: u, title: t };
+        if (cm) src.citedModelText = cm;
+        seenUrls[u] = src;
+        result.sources.push(src);
       }
 
       for (var i = 0; i < output.length; i++) {
@@ -547,9 +609,16 @@
           for (var c = 0; c < content.length; c++) {
             var block = content[c];
             if (!isPlainObject(block) || !Array.isArray(block.annotations)) continue;
+            var blockText = typeof block.text === 'string' ? block.text : '';
             for (var a = 0; a < block.annotations.length; a++) {
               var ann = block.annotations[a];
-              if (isPlainObject(ann) && ann.type === 'url_citation') addSource(ann.url, ann.title);
+              if (!isPlainObject(ann) || ann.type !== 'url_citation') continue;
+              var cited = null;
+              if (blockText && typeof ann.start_index === 'number' && typeof ann.end_index === 'number'
+                  && ann.start_index >= 0 && ann.end_index > ann.start_index && ann.end_index <= blockText.length) {
+                cited = blockText.slice(ann.start_index, ann.end_index).slice(0, 500);   // モデル回答文の引用箇所（上限付き）
+              }
+              addSource(ann.url, ann.title, cited);
             }
           }
         }
@@ -574,7 +643,7 @@
       for (var i = 0; i < parsed.sources.length; i++) {
         var s = parsed.sources[i];
         if (!s || !s.url) continue;   // URLの無いsourceは候補化しない（推測補完しない）
-        candidates.push({
+        var cand = {
           evidenceType:       CANDIDATE_EVIDENCE_TYPE,
           sourceUrl:          s.url,
           sourceTitle:        s.title || null,
@@ -586,7 +655,11 @@
           sourceMethod:       CANDIDATE_SOURCE_METHOD,
           caseId:             ctx.caseId != null ? String(ctx.caseId) : null,
           notes:              null,
-        });
+        };
+        // EVIDENCE-Q2: モデル回答文の引用箇所は別 field（存在する場合のみ付与＝既存 candidate の形は不変）。
+        //   sourceExcerpt ではない。canonical Evidence へは持ち込まれない（resolution service が転記しない）。
+        if (s.citedModelText) cand.citedModelText = s.citedModelText;
+        candidates.push(cand);
       }
       return candidates;
     } catch (e) {
@@ -624,6 +697,12 @@
     SOURCE_TRUST_TIERS: SOURCE_TRUST_TIERS,
     classifySourceTrust: classifySourceTrust,
     evaluateVerifiedPromotion: evaluateVerifiedPromotion,
+    // EVIDENCE-Q2
+    TIER6_INDUSTRY_ORG_DOMAINS: TIER6_INDUSTRY_ORG_DOMAINS,
+    TRACKING_QUERY_PARAMS: TRACKING_QUERY_PARAMS,
+    normalizeSourceUrlIdentity: normalizeSourceUrlIdentity,
+    registrableDomainOf: registrableDomainOf,
+    publisherKeyOf: _publisherKeyOf,
     // EEA-7
     CATEGORY_COVERAGE_CATEGORIES: CATEGORY_COVERAGE_CATEGORIES,
     selectEvidenceCandidates: selectEvidenceCandidates,
