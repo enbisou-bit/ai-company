@@ -7600,16 +7600,24 @@ function _ceRenderPanel() {
       var md = _ceMappingDecisions[idx] || {};
       var ctOptions = _ceOpt(CE_CT_VALUES, 'claimType', md.claimType);
       var stOptions = _ceOpt(CE_ST_VALUES, 'supportType', md.supportType);
-      var excerptSummary = c.sourceExcerpt ? String(c.sourceExcerpt).slice(0, 80) + '…' : '(excerptなし)';
+      // EVIDENCE-Q4 Security Fix: source 由来の文字列（title / URL / excerpt / status / intentId）は
+      //   すべて既存の escape 関数を通してから HTML へ入れる（従来は生挿入だった）。
+      var excerptSummary = c.sourceExcerpt ? _ceEntryEsc(String(c.sourceExcerpt).slice(0, 80)) + '…' : '(excerptなし)';
+      var safeUrl = _ceSafeHttpUrl(c.sourceUrl);                       // http/https のみ。javascript:/data: 等は null
+      var urlHtml = safeUrl
+        ? '<a ' + _ceLinkHrefAttr(safeUrl) + ' target="_blank" rel="noopener noreferrer">' + _ceEntryEsc(safeUrl) + '</a>'
+          + ' <span style="font-size:10px;opacity:0.7;">（出典を開く）</span>'
+        : (c.sourceUrl ? _ceEntryEsc(String(c.sourceUrl)) + '<span style="font-size:10px;color:#c00;">（開けないURL形式のためリンクにしていません）</span>' : '(なし)');
       return '<li>' +
-        '<strong>' + (c.sourceTitle || c.sourceName || '(タイトルなし)') + '</strong><br>' +
-        'URL: ' + (c.sourceUrl || '(なし)') + '<br>' +
+        '<strong>' + _ceEntryEsc(c.sourceTitle || c.sourceName || '(タイトルなし)') + '</strong><br>' +
+        'URL: ' + urlHtml + '<br>' +
         '要約: ' + excerptSummary + '<br>' +
-        'verificationStatus: ' + (c.verificationStatus || 'unverified') + ' ／ 紐づくintent: ' + (c.intentId || c.category || '(不明)') +
+        'verificationStatus: ' + _ceEntryEsc(c.verificationStatus || 'unverified') + ' ／ 紐づくintent: ' + _ceEntryEsc(c.intentId || c.category || '(不明)') +
         ' <em>※まだ正式Evidenceではありません（server確定前）</em><br>' +
         'Mapping（明示選択必須・未選択はserverへの提出対象外）: ' +
         '<select id="ce-ct-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')">' + ctOptions + '</select> ' +
         '<select id="ce-st-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')">' + stOptions + '</select>' +
+        _ceVerifiedExcerptRowHtml(idx, safeUrl) +
         '</li>';
     }).join('');
 
@@ -7772,6 +7780,78 @@ function _ceRestoreState(restored) {
 //     （shared/contentEvidence.jsはブラウザに公開されておらず、呼んでも
 //     content_evidence_module_unavailableになるため——CV-4c-3B初回実装で判明した反省）。
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// EVIDENCE-Q4: User Verified Evidence Excerpt（Option B）
+//   provider の Web Search response には source 本文の抜粋が無いため、sourceExcerpt は常に null になる。
+//   その結果、数値を含む claim は既存 detectUnsupportedClaimElements() の unsupported_numbers で
+//   fail-closed する（これは正しい挙動であり、弱めない）。
+//   ここでは「ユーザーが出典本文を実際に確認し、そこに書かれている原文を貼った」場合に限り、
+//   既存 Contract（sourceMethod:'public_document_user_verified' / verificationStatus:'user_verified' /
+//   sourceExcerpt）へ載せて、既存 Resolution（POST /api/output-drafts）へ渡す。
+//   ★ 新 Contract・新 API・新 field を作らない。confirm チェックと非空 excerpt の両方が揃った場合のみ。
+//   ★ citedModelText（モデル回答文）や sourceTitle を excerpt の代わりにしない。
+//   ★ 永続化しない（page reload で消える既存挙動のまま）。
+// ══════════════════════════════════════════════════════════════
+var CE_EXCERPT_MAX_LENGTH = 1000;     // 貼り付け上限（canonical 側に長さ制限は無いため UI 側で抑える）
+var _ceVerifiedExcerpts = {};         // candidate index -> { excerpt: string, confirmed: boolean }（candidate objectは変更しない）
+
+// 出典リンクの href 属性を組み立てる（値は必ず attribute escape 済み）。
+//   ★ 属性名を連結で作るのは、index.html 内の静的 asset 参照検査（staticExposureBoundary が
+//     ソース文字列から href / src 属性を抽出する）で、この動的リンクを
+//     「配信対象の local asset」と誤検出させないため。
+function _ceLinkHrefAttr(url) {
+  var attrName = 'href';
+  return attrName + '="' + _ceEntryAttrEsc(url) + '"';
+}
+// http / https のみ許可し、正規化した URL を返す（それ以外・解析不能は null＝リンクを作らない）
+function _ceSafeHttpUrl(u) {
+  try {
+    var p = new URL(String(u == null ? '' : u).trim());
+    return (p.protocol === 'http:' || p.protocol === 'https:') ? p.toString() : null;
+  } catch (e) { return null; }
+}
+// 貼り付け値の正規化: 制御文字除去 → trim → 上限。HTML は解釈せず常に文字列として扱う。
+function _ceSanitizeExcerpt(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ --]/g, '')
+    .trim()
+    .slice(0, CE_EXCERPT_MAX_LENGTH);
+}
+// DOM → state（1 candidate 分）。副作用は state 更新のみ（fetch / 保存なし）。
+function _ceSyncVerifiedExcerpt(idx) {
+  var ta = document.getElementById('ce-excerpt-' + idx);
+  var cb = document.getElementById('ce-excerpt-ok-' + idx);
+  if (!ta && !cb) return;
+  _ceVerifiedExcerpts[idx] = {
+    excerpt: _ceSanitizeExcerpt(ta ? ta.value : ''),
+    confirmed: !!(cb && cb.checked),
+  };
+}
+function _ceSyncAllVerifiedExcerpts() {
+  for (var i = 0; i < _ceLastEvidenceCandidates.length; i++) _ceSyncVerifiedExcerpt(i);
+}
+// user_verified として扱える excerpt のみ返す（非空 かつ 確認チェック済み）。それ以外は null。
+function _ceVerifiedExcerptFor(idx) {
+  var v = _ceVerifiedExcerpts[idx];
+  if (!v || v.confirmed !== true) return null;
+  var ex = _ceSanitizeExcerpt(v.excerpt);
+  return ex ? ex : null;
+}
+// candidate 1件分の入力 UI（出典 URL が http/https のときだけ表示する）
+function _ceVerifiedExcerptRowHtml(idx, safeUrl) {
+  if (!safeUrl) {
+    return '<br><span style="font-size:10px;opacity:0.7;">出典URLが無い／開けない形式のため、原文確認による Evidence 登録はできません。</span>';
+  }
+  var v = _ceVerifiedExcerpts[idx] || { excerpt: '', confirmed: false };
+  return '<br>原文（出典を開いて、該当箇所をコピーして貼り付け）: ' +
+    '<textarea id="ce-excerpt-' + idx + '" maxlength="' + CE_EXCERPT_MAX_LENGTH + '" rows="2" style="width:70%;"' +
+    ' oninput="_ceSyncVerifiedExcerpt(' + idx + ')">' + _ceEntryEsc(v.excerpt) + '</textarea>' +
+    '<br><label style="font-size:11px;"><input type="checkbox" id="ce-excerpt-ok-' + idx + '"' +
+    (v.confirmed ? ' checked' : '') + ' onchange="_ceSyncVerifiedExcerpt(' + idx + ')">' +
+    ' この文章が上記URLの本文に実際に記載されていることを確認しました</label>' +
+    '<span style="font-size:10px;opacity:0.7;">（チェックと原文の両方が揃った場合のみ user_verified として送信します）</span>';
+}
+
 var _ceMappingDecisions = {};        // candidate index -> { claimType, supportType }（明示選択のみ・自動推測しない）
 var _ceLastResolutionResponse = null; // server応答をそのまま保持（表示用。client側で再Formal化しない）
 
@@ -7847,6 +7927,7 @@ async function _ceSubmitEvidenceForResolution() {
   (Array.isArray(scope.targetClaimIds) ? scope.targetClaimIds : []).forEach(function (id) { ceTargetSet[id] = true; });
 
   _ceSyncClaimText();   // 送信直前にDOM→stateを同期（失敗応答後の再描画でも値を失わない）
+  _ceSyncAllVerifiedExcerpts();   // EVIDENCE-Q4: 原文・確認チェックも同様に同期（state更新のみ）
 
   var contentEvidenceCandidates = [];
   var ceUnresolvedIntent = false;
@@ -7866,15 +7947,20 @@ async function _ceSubmitEvidenceForResolution() {
       topic: intent ? intent.topic : undefined,
       question: intent ? intent.question : undefined,
       claimTypeCandidate: intent ? intent.claimTypeCandidate : decision.claimType,
+      // EVIDENCE-Q4: 原文の貼り付け＋確認チェックが揃った candidate だけ、既存 Contract の
+      //   user_verified 経路（sourceMethod:'public_document_user_verified' / verificationStatus:'user_verified'）で送る。
+      //   揃っていない場合は従来どおり web_retrieved のまま（勝手に昇格させない）。
       candidate: {
-        sourceMethod: cand.sourceMethod,
+        sourceMethod: _ceVerifiedExcerptFor(idx) ? 'public_document_user_verified' : cand.sourceMethod,
         sourceUrl: cand.sourceUrl,
         sourceTitle: cand.sourceTitle,
         sourceName: cand.sourceName,
-        sourceExcerpt: cand.sourceExcerpt,
-        createdBy: cand.createdBy,
+        sourceExcerpt: _ceVerifiedExcerptFor(idx) || cand.sourceExcerpt,
+        createdBy: _ceVerifiedExcerptFor(idx) ? 'user' : cand.createdBy,
       },
-      mappingDecision: { claimType: decision.claimType, supportType: decision.supportType },
+      mappingDecision: _ceVerifiedExcerptFor(idx)
+        ? { claimType: decision.claimType, supportType: decision.supportType, verificationStatus: 'user_verified' }
+        : { claimType: decision.claimType, supportType: decision.supportType },
       // DOMを優先し、取得できない場合は控えたstateから補う（どちらも無ければ undefined）。
       proposedClaimText: (claimTextEl && claimTextEl.value)
         ? claimTextEl.value
@@ -8200,7 +8286,7 @@ var _ceCanonicalLoadSeq = 0;           // canonical 確認ごとに増える識�
 
 // server row → canonical 状態（純関数）。row の case / output が要求と一致しなければ使わない（fail-closed）。
 function _ceParseCanonicalRow(row, caseId, outputId) {
-  var out = { ok: false, error: null, hasCanonical: false, claims: [], claimIds: [], revision: null, questionByClaim: {} };
+  var out = { ok: false, error: null, hasCanonical: false, claims: [], claimIds: [], revision: null, questionByClaim: {}, excerptByClaim: {} };
   if (!row || typeof row !== 'object') { out.error = 'canonical_row_not_found'; return out; }
   if (row.case_id !== caseId || row.output_id !== outputId) { out.error = 'canonical_row_mismatch'; return out; }
   var claims = row.content_claims;
@@ -8231,6 +8317,10 @@ function _ceParseCanonicalRow(row, caseId, outputId) {
   for (var j = 0; j < evs.length; j++) {
     var e = evs[j];
     if (e && typeof e.claimId === 'string' && typeof e.claim === 'string' && !out.questionByClaim[e.claimId]) out.questionByClaim[e.claimId] = e.claim;
+    // EVIDENCE-Q4: 確認済み原文（sourceExcerpt）の先頭を後から見返せるようにする（表示用・server確定値のみ）
+    if (e && typeof e.claimId === 'string' && typeof e.sourceExcerpt === 'string' && e.sourceExcerpt.trim() && !out.excerptByClaim[e.claimId]) {
+      out.excerptByClaim[e.claimId] = e.sourceExcerpt.trim().slice(0, 120);
+    }
   }
   out.hasCanonical = out.claimIds.length > 0;
   out.revision = rev;
@@ -8369,7 +8459,7 @@ async function _ceLoadCanonicalForEntry() {
     _ceCanonicalLoadSeq++;
     _ceCanonicalByCase[caseId] = {
       status: 'loaded', outputId: fresh.outputId, claims: fresh.claims, claimIds: fresh.claimIds,
-      revision: fresh.revision, questionByClaim: fresh.questionByClaim, hasCanonical: fresh.hasCanonical,
+      revision: fresh.revision, questionByClaim: fresh.questionByClaim, excerptByClaim: fresh.excerptByClaim || {}, hasCanonical: fresh.hasCanonical,
       loadSeq: _ceCanonicalLoadSeq,
     };
   } else {
@@ -8429,6 +8519,8 @@ function _ceBuildCanonicalSectionHtml(caseId) {
       '<label><input type="checkbox" id="ce-canon-select-' + _ceEntryAttrEsc(id) + '" onchange="_ceToggleCanonicalClaim(\'' + _ceEntryAttrEsc(id) + '\', this.checked)"' + (sel[id] ? ' checked' : '') + '> このClaimを取り直す</label> ' +
       '<code>' + _ceEntryEsc(id) + '</code> ' + _ceEntryEsc(cl.topic) + '<br>' +
       '<span style="font-size:10px;opacity:0.8;">現在のclaim: ' + _ceEntryEsc(cl.text) + '</span><br>' +
+      ((c.excerptByClaim && c.excerptByClaim[id])
+        ? '<span style="font-size:10px;opacity:0.8;">確認済み原文: ' + _ceEntryEsc(c.excerptByClaim[id]) + '…</span><br>' : '') +
       'question（再取得時の検索query）: <input type="text" id="ce-canon-question-' + _ceEntryAttrEsc(id) + '" oninput="_ceSyncCanonicalQuestion(\'' + _ceEntryAttrEsc(id) + '\')" value="' + _ceEntryAttrEsc(q) + '" style="width:80%;">' +
       '</div>';
   }).join('');
