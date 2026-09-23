@@ -247,6 +247,71 @@
     return out;
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // Part C-3（Option B / B-2）: Independent Publisher Preflight
+  //   Evidence Search 直後に、general_practice Intent ごとの「Tier 1〜6 の独立 publisher 数」を数える。
+  //   ★ これは publisher diversity の最低成立可能性だけを見る preflight。Resolution 成功の保証ではない
+  //     （candidate 本文が Formal claim を supports するかは判定しない＝後工程の Mapping / 確認の責務）。
+  //   ★ Tier / publisher の判定は既存 evidenceAcquisition の classifySourceTrust / publisherKeyOf /
+  //     evaluateVerifiedPromotion（'market' ルール＝general_practice の既存写像先）をそのまま使う。新ルールは作らない。
+  //   ★ candidate の Intent は cand.intentId のみで決める（付け替え・推測をしない）。
+  //   ★ 対象は general_practice のみ。それ以外の claimType は applicable:false（Gate 判定に含めない）。
+  // ══════════════════════════════════════════════════════════════
+  var INDEPENDENT_PUBLISHER_MIN = 2;
+  var PUBLISHER_PREFLIGHT_CLAIM_TYPES = ['general_practice'];
+
+  function evaluateIndependentPublisherPreflight(intents, candidates) {
+    var its = Array.isArray(intents) ? intents : [];
+    var cands = Array.isArray(candidates) ? candidates : [];
+    var out = { status: 'not_evaluated', minIndependentPublishers: INDEPENDENT_PUBLISHER_MIN, byIntent: {}, failedIntentIds: [], errors: [] };
+    if (!evidenceAcquisition || typeof evidenceAcquisition.classifySourceTrust !== 'function'
+        || typeof evidenceAcquisition.publisherKeyOf !== 'function' || typeof evidenceAcquisition.evaluateVerifiedPromotion !== 'function') {
+      out.status = 'fail';   // fail-closed: 判定部品が無い場合は通さない
+      out.errors.push('evidence_acquisition_unavailable');
+      return out;
+    }
+    var applicableCount = 0;
+    for (var i = 0; i < its.length; i++) {
+      var it = its[i];
+      if (!_isPlainObject(it) || !_isNonEmptyString(it.intentId)) continue;
+      var claimType = it.claimTypeCandidate;
+      var applicable = PUBLISHER_PREFLIGHT_CLAIM_TYPES.indexOf(claimType) !== -1;
+      var mine = cands.filter(function (c) { return _isPlainObject(c) && c.intentId === it.intentId; });
+      var eligible = [];
+      var publishers = {};    // publisherKey -> { tier, urls }
+      var ineligibleCount = 0;
+      mine.forEach(function (c) {
+        var t = evidenceAcquisition.classifySourceTrust(c.sourceUrl);
+        if (!t || t.tier === null || t.tier < 1 || t.tier > 6) { ineligibleCount++; return; }
+        var key = evidenceAcquisition.publisherKeyOf(c);
+        if (!key) { ineligibleCount++; return; }
+        eligible.push(c);
+        if (!publishers[key]) publishers[key] = { tier: t.tier, urls: 0 };
+        publishers[key].urls++;
+      });
+      var rec = {
+        intentId: it.intentId, claimType: claimType || null, applicable: applicable,
+        candidateCount: mine.length, eligibleCandidateCount: eligible.length, ineligibleCandidateCount: ineligibleCount,
+        independentPublisherCount: Object.keys(publishers).length,
+        publishers: Object.keys(publishers).map(function (k) { return { key: k, tier: publishers[k].tier, urlCount: publishers[k].urls }; }),
+        promotionReason: null, status: applicable ? 'fail' : 'not_applicable',
+      };
+      if (applicable) {
+        applicableCount++;
+        // 既存昇格ルール（market＝Tier1〜6・独立 source >= 2）で最終判定する（数え直しの二重管理をしない）
+        var promo = eligible.length > 0
+          ? evidenceAcquisition.evaluateVerifiedPromotion('market', eligible[0], eligible.slice(1))
+          : { eligible: false, reason: 'no_tier1_to_6_candidate' };
+        rec.promotionReason = promo ? promo.reason || null : null;
+        rec.status = (promo && promo.eligible === true && rec.independentPublisherCount >= INDEPENDENT_PUBLISHER_MIN) ? 'pass' : 'fail';
+        if (rec.status === 'fail') out.failedIntentIds.push(it.intentId);
+      }
+      out.byIntent[it.intentId] = rec;
+    }
+    if (applicableCount > 0) out.status = out.failedIntentIds.length > 0 ? 'fail' : 'pass';
+    return out;
+  }
+
   function buildContentEvidenceQueries(intents) {
     var arr = Array.isArray(intents) ? intents : [];
     var out = { queries: [], blocked: [] };
@@ -519,6 +584,9 @@
     // Part C-2（B-1）
     resolveSearchQuery: resolveSearchQuery,
     validateSearchPlan: validateSearchPlan,
+    // Part C-3（B-2）
+    INDEPENDENT_PUBLISHER_MIN: INDEPENDENT_PUBLISHER_MIN,
+    evaluateIndependentPublisherPreflight: evaluateIndependentPublisherPreflight,
     // Part D/E
     buildContentEvidenceFromCandidate: buildContentEvidenceFromCandidate,
     // Part F

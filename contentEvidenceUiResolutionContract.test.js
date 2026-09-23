@@ -120,6 +120,7 @@ function buildCtx(opts) {
     memberCaseView: { leader: CASE },
     cases: { 'case-x': { id: CASE, title: 'テスト案件' } },
     _ncActiveCaseId: function (m) { const v = ctx.memberCaseView[m]; return (v && v !== 'latest' && v !== '__caselist__') ? v : undefined; },
+    URL: URL,   // B-2: ブラウザ標準の URL（Source Trust の host 解析に必要。無いと Tier 判定不能＝Gate が fail-closed）
     escapeHtml: function (x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
   });
   els['ce-approval-panel'] = mk('ce-approval-panel');

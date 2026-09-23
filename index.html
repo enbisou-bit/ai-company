@@ -7641,8 +7641,8 @@ function _ceRenderPanel() {
         'verificationStatus: ' + _ceEntryEsc(c.verificationStatus || 'unverified') + ' ／ 紐づくintent: ' + _ceEntryEsc(c.intentId || c.category || '(不明)') +
         ' <em>※まだ正式Evidenceではありません（server確定前）</em><br>' +
         'Mapping（明示選択必須・未選択はserverへの提出対象外）: ' +
-        '<select id="ce-ct-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')">' + ctOptions + '</select> ' +
-        '<select id="ce-st-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')">' + stOptions + '</select>' +
+        '<select id="ce-ct-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')"' + (_cePublisherGateBlocked() ? ' disabled' : '') + '>' + ctOptions + '</select> ' +
+        '<select id="ce-st-' + idx + '" onchange="_ceSyncMappingFromSelects(' + idx + ')"' + (_cePublisherGateBlocked() ? ' disabled' : '') + '>' + stOptions + '</select>' +
         _ceVerifiedExcerptRowHtml(idx, safeUrl) +
         '</li>';
     }).join('');
@@ -7679,9 +7679,10 @@ function _ceRenderPanel() {
       }
     }
 
-    candidatesHtml = '<h5>取得結果（Candidate・server未確定）</h5><ul>' + cRows + '</ul>' +
+    candidatesHtml = _cePublisherPreflightHtml() +   // B-2
+      '<h5>取得結果（Candidate・server未確定）</h5><ul>' + cRows + '</ul>' +
       (claimTextRows ? '<h5>claim文言（任意）</h5><ul>' + claimTextRows + '</ul>' : '') +
-      '<button id="ce-submit-btn" onclick="_ceSubmitEvidenceForResolution()">Evidence確定（serverへ送信）</button>' +
+      '<button id="ce-submit-btn" onclick="_ceSubmitEvidenceForResolution()"' + (_cePublisherGateBlocked() ? ' disabled' : '') + '>Evidence確定（serverへ送信）</button>' +
       summaryHtml;
   }
 
@@ -7861,6 +7862,7 @@ function _ceSyncAllVerifiedExcerpts() {
 }
 // user_verified として扱える excerpt のみ返す（非空 かつ 確認チェック済み）。それ以外は null。
 function _ceVerifiedExcerptFor(idx) {
+  if (_cePublisherGateBlocked()) return null;   // B-2: Independent Publisher Preflight FAIL 中は user_verified にしない
   var v = _ceVerifiedExcerpts[idx];
   if (!v || v.confirmed !== true) return null;
   var ex = _ceSanitizeExcerpt(v.excerpt);
@@ -7871,6 +7873,9 @@ function _ceVerifiedExcerptRowHtml(idx, safeUrl) {
   if (!safeUrl) {
     return '<br><span style="font-size:10px;opacity:0.7;">出典URLが無い／開けない形式のため、原文確認による Evidence 登録はできません。</span>';
   }
+  if (_cePublisherGateBlocked()) {   // B-2: 原文入力・確認チェックを出さない（candidate の閲覧は可能）
+    return '<br><span style="font-size:10px;color:#c00;">Independent Publisher不足のため、Verified Excerpt工程へ進めません（原文入力・確認チェックは使用できません）。</span>';
+  }
   var v = _ceVerifiedExcerpts[idx] || { excerpt: '', confirmed: false };
   return '<br>原文（出典を開いて、該当箇所をコピーして貼り付け）: ' +
     '<textarea id="ce-excerpt-' + idx + '" maxlength="' + CE_EXCERPT_MAX_LENGTH + '" rows="2" style="width:70%;"' +
@@ -7879,6 +7884,47 @@ function _ceVerifiedExcerptRowHtml(idx, safeUrl) {
     (v.confirmed ? ' checked' : '') + ' onchange="_ceSyncVerifiedExcerpt(' + idx + ')">' +
     ' この文章が上記URLの本文に実際に記載されていることを確認しました</label>' +
     '<span style="font-size:10px;opacity:0.7;">（チェックと原文の両方が揃った場合のみ user_verified として送信します）</span>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// B-2: Independent Publisher Preflight Gate
+//   Evidence Search 完了後の candidate を intentId ごとに集計し、general_practice Intent の
+//   Tier 1〜6 独立 publisher 数を既存純関数（ContentClaimPlanning.evaluateIndependentPublisherPreflight）で判定する。
+//   ★ publisher diversity の最低成立可能性だけを見る（supports の内容判定・Resolution 成功の保証ではない）。
+//   ★ 状態を保存しない（candidate / Plan から毎回算出＝stale にならない）。自動再検索しない。
+//   ★ FAIL 中は Verified Excerpt 入力・確認チェック・user_verified 化・Mapping・Evidence確定へ進めない。
+// ══════════════════════════════════════════════════════════════
+function _cePublisherPreflightNow() {
+  if (!_cePlan || _ceState !== 'completed' || !_ceLastEvidenceCandidates.length) return null;
+  if (typeof ContentClaimPlanning === 'undefined' || typeof ContentClaimPlanning.evaluateIndependentPublisherPreflight !== 'function') {
+    return { status: 'fail', byIntent: {}, failedIntentIds: [], errors: ['preflight_unavailable'] };   // fail-closed
+  }
+  return ContentClaimPlanning.evaluateIndependentPublisherPreflight(_cePlan.intents || [], _ceLastEvidenceCandidates);
+}
+function _cePublisherGateBlocked() {
+  var p = _cePublisherPreflightNow();
+  return !!(p && p.status === 'fail');
+}
+function _cePublisherPreflightHtml() {
+  var p = _cePublisherPreflightNow();
+  if (!p) return '';
+  var rows = Object.keys(p.byIntent).map(function (id) {
+    var r = p.byIntent[id];
+    var pubs = r.publishers.map(function (x) { return _ceEntryEsc(x.key.replace(/^(domain|name|ref):/, '')) + '（Tier ' + x.tier + '）'; }).join('、');
+    var label = r.status === 'pass' ? '<span style="color:#080;">PASS</span>'
+      : (r.status === 'fail' ? '<span style="color:#c00;">FAIL</span>' : '対象外（' + _ceEntryEsc(r.claimType || '-') + '）');
+    return '<li>' + _ceEntryEsc(id) + '：eligible publishers ' + r.independentPublisherCount + ' ／ ' + label +
+      (pubs ? '<br><span style="font-size:10px;opacity:0.85;">' + pubs + '</span>' : '') +
+      '<span style="font-size:10px;opacity:0.7;">（Tier 1〜6 候補 ' + r.eligibleCandidateCount + '件／Tier 7・8・判定不能 ' + r.ineligibleCandidateCount + '件）</span></li>';
+  }).join('');
+  var head = p.status === 'fail'
+    ? '<p style="color:#c00;"><strong>Independent Publisher Preflight：FAIL</strong><br>Independent Publisher不足のため、Verified Excerpt工程へ進めません。' +
+      '（candidate の閲覧はできます。Evidence Search の再実行は自動では行いません）</p>'
+    : (p.status === 'pass'
+      ? '<p style="color:#080;"><strong>Independent Publisher Preflight：PASS</strong>（publisher の多様性の最低条件のみ。本文が claim を支えるかは未確認です）</p>'
+      : '<p><strong>Independent Publisher Preflight：対象Intentなし</strong></p>');
+  return '<div id="ce-publisher-preflight" style="border:1px solid #999;padding:6px;margin:6px 0;"><h5>Independent Publisher Preflight（general_practice：Tier 1〜6 の独立 publisher が ' +
+    (p.minIndependentPublishers || 2) + '件以上）</h5>' + head + '<ul>' + rows + '</ul></div>';
 }
 
 var _ceMappingDecisions = {};        // candidate index -> { claimType, supportType }（明示選択のみ・自動推測しない）
@@ -8027,6 +8073,13 @@ async function _ceSubmitEvidenceForResolution() {
         _ceMarkCanonicalStale(caseId, ceContract.error);
       }
       _ceLastResolutionResponse = { ok: false, error: ceContract.error };
+      _ceRenderPanel();
+      return _ceLastResolutionResponse;
+    }
+    // B-2: 既存の送信前検証（error code 単位・canonical 再取得を含む）の後、POST の直前で
+    //   Independent Publisher Preflight FAIL を止める（Resolution POST 0）。
+    if (_cePublisherGateBlocked()) {
+      _ceLastResolutionResponse = { ok: false, error: 'independent_publisher_preflight_failed' };
       _ceRenderPanel();
       return _ceLastResolutionResponse;
     }
@@ -8507,6 +8560,7 @@ function _ceResolutionErrorMessage(code) {
     target_without_candidates: '候補（Mapping選択済み）が無い更新対象Claimがあります。',
     candidate_outside_target: '更新対象外のClaimの候補が含まれています。',
     candidate_intent_unresolved: '候補の対象Claimを特定できないため送信していません。',
+    independent_publisher_preflight_failed: 'Independent Publisher不足のため、Verified Excerpt工程・Evidence確定へ進めません（送信していません）。',
     candidate_mapping_missing: 'Mapping未選択の候補が含まれています。',
     candidate_case_mismatch: '別案件のデータが含まれるため更新していません。',
     output_case_mismatch: '別案件のOutput Draftのため更新していません。',
