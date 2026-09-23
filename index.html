@@ -7813,7 +7813,7 @@ function _ceSafeHttpUrl(u) {
 // 貼り付け値の正規化: 制御文字除去 → trim → 上限。HTML は解釈せず常に文字列として扱う。
 function _ceSanitizeExcerpt(s) {
   return String(s == null ? '' : s)
-    .replace(/[ --]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
     .trim()
     .slice(0, CE_EXCERPT_MAX_LENGTH);
 }
