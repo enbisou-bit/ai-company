@@ -7566,6 +7566,32 @@ function _ceBuildPlan(intents, caseId) {
 
 var CE_PANEL_VISIBLE_STATES = ['awaiting_approval', 'executing', 'failed', 'completed'];
 
+// B-1: Formal Intent 一覧（Plan の Intent＝SoT を intentId 単位で表示し、検索文字列とは分けて見せる）。
+//   ★ Formal question を検索文字列で上書きしない。表示のみ・副作用なし。
+function _ceIntentDetailsHtml(plan) {
+  var intents = (plan && Array.isArray(plan.intents)) ? plan.intents : [];
+  if (!intents.length) return '';
+  return '<div style="font-size:10px;opacity:0.85;">Formal Claim Intent（canonical Evidenceのclaimになる問い）:<ul>' +
+    intents.map(function (fi) {
+      return '<li>' + _ceEntryEsc(fi.intentId) + ' Formal question: ' + _ceEntryEsc(fi.question) +
+        ' ／ 検索文字列: ' + (fi.searchQuery ? 'searchQuery（' + _ceEntryEsc(fi.searchQuery) + '）' : 'question（searchQuery未入力のためfallback）') +
+        (Array.isArray(fi.requiredConcepts) && fi.requiredConcepts.length ? ' ／ requiredConcepts: ' + _ceEntryEsc(fi.requiredConcepts.join('、')) : '') +
+        (Array.isArray(fi.prohibitedTerms) && fi.prohibitedTerms.length ? ' ／ prohibitedTerms: ' + _ceEntryEsc(fi.prohibitedTerms.join('、')) : '') +
+        (fi.jurisdictionNote ? ' ／ jurisdiction: ' + _ceEntryEsc(fi.jurisdictionNote) : '') +
+        (fi.sourceClassNote ? ' ／ sourceClass: ' + _ceEntryEsc(fi.sourceClassNote) : '') +
+        '</li>';
+    }).join('') + '</ul></div>';
+}
+// B-1: Search Plan 不成立（requiredConcepts 不足 / prohibitedTerms 該当）で除外された Intent。1件でもあれば実行させない。
+function _ceSearchPlanBlockedList(plan) {
+  return ((plan && plan.blocked) || []).filter(function (b) { return b && typeof b.reason === 'string' && b.reason.indexOf('search_plan_invalid:') === 0; });
+}
+function _ceSearchPlanBlockedHtml(list) {
+  if (!list || !list.length) return '';
+  return '<p style="color:#c00;"><strong>⚠ Search Planが不成立のIntentがあるため実行できません：</strong>' +
+    list.map(function (b) { return _ceEntryEsc(b.intentId) + '（' + _ceEntryEsc(b.reason) + '）'; }).join(' ／ ') + '</p>';
+}
+
 function _ceRenderPanel() {
   var el = document.getElementById('ce-approval-panel');
   if (!el) return;
@@ -7679,7 +7705,8 @@ function _ceRenderPanel() {
       + 'このまま実行するとserver側で超過分が<strong>無警告で切り捨てられ</strong>、一部のClaim Intentが検索されないまま進みます。'
       + 'Claim Intentを' + maxQ + '件以下に減らして作り直してください（STOP-13）。</p>'
     : '';
-  var approveDisabled = disabled || willTruncate;
+  var searchPlanBlocked = _ceSearchPlanBlockedList(_cePlan);   // B-1: Search Plan 不成立が1件でもあれば実行させない
+  var approveDisabled = disabled || willTruncate || searchPlanBlocked.length > 0;
 
   // ── CV-4c-3A Follow-up C: 課金明示（Plan作成時点では課金されないことと区別する） ──
   var execCount = Math.min(_cePlan.queries.length, maxQ);
@@ -7694,6 +7721,8 @@ function _ceRenderPanel() {
     caseBindingHtml +
     '<p>Claim Intent: ' + (_cePlan.intents ? _cePlan.intents.length : 0) + '件 ／ 検索対象: ' + _cePlan.queries.length + '件 ／ 安全フィルタで除外: ' + _cePlan.blocked.length + '件</p>' +
     '<ul>' + rows + '</ul>' +
+    _ceIntentDetailsHtml(_cePlan) +
+    _ceSearchPlanBlockedHtml(searchPlanBlocked) +
     truncationHtml +
     retryNote +
     billingHtml +
@@ -8086,10 +8115,16 @@ function _ceSyncIntentDraft() {
     var topicEl = document.getElementById('ce-intent-topic-' + n);
     var questionEl = document.getElementById('ce-intent-question-' + n);
     var typeEl = document.getElementById('ce-intent-type-' + n);
+    var ex = _ceReadIntentRowExtras(n);   // B-1: searchQuery / requiredConcepts 等も同じ Draft に控える
     rows.push({
       topic: topicEl ? String(topicEl.value || '') : '',
       question: questionEl ? String(questionEl.value || '') : '',
       claimType: typeEl ? String(typeEl.value || 'general_practice') : 'general_practice',
+      searchQuery: ex.searchQuery,
+      requiredConcepts: ex.requiredConcepts,
+      prohibitedTerms: ex.prohibitedTerms,
+      jurisdictionNote: ex.jurisdictionNote,
+      sourceClassNote: ex.sourceClassNote,
     });
   }
   _ceIntentDraftByCase[caseId] = rows;
@@ -8135,9 +8170,53 @@ function _ceEntryRowHtml(n, draft) {
     '<div style="font-size:10px;opacity:0.6;">Claim Intent ' + n + '</div>' +
     'topic: <input type="text" id="ce-intent-topic-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.topic) + '" style="width:30%;"> ' +
     'claimType: <select id="ce-intent-type-' + n + '" oninput="_ceSyncIntentDraft()" onchange="_ceSyncIntentDraft()">' + _ceEntryClaimTypeOptions(d.claimType || 'general_practice') + '</select><br>' +
-    'question（この文がそのまま検索queryになります）: ' +
-    '<input type="text" id="ce-intent-question-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.question) + '" style="width:80%;">' +
+    'question（Formalな問い。canonical Evidenceのclaimになります・検索文字列ではありません）: ' +
+    '<input type="text" id="ce-intent-question-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.question) + '" style="width:80%;"><br>' +
+    // B-1: Evidence 検索専用の派生値（未入力時のみ question で検索＝従来互換）
+    'searchQuery（Evidence検索専用・未入力時はquestionで検索）: ' +
+    '<input type="text" id="ce-intent-searchquery-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.searchQuery) + '" style="width:80%;"><br>' +
+    'requiredConcepts（必須語・、またはカンマ区切り。searchQueryに1語でも無ければPlanを作りません）: ' +
+    '<input type="text" id="ce-intent-concepts-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.requiredConcepts) + '" style="width:60%;"><br>' +
+    'prohibitedTerms（検索ドリフト禁止語・、またはカンマ区切り。searchQueryに含まれればPlanを作りません）: ' +
+    '<input type="text" id="ce-intent-prohibited-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.prohibitedTerms) + '" style="width:60%;"><br>' +
+    '<span style="font-size:10px;opacity:0.7;">jurisdictionNote（表示のみ）: </span>' +
+    '<input type="text" id="ce-intent-jurisdiction-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.jurisdictionNote) + '" style="width:25%;"> ' +
+    '<span style="font-size:10px;opacity:0.7;">sourceClassNote（表示のみ）: </span>' +
+    '<input type="text" id="ce-intent-sourceclass-' + n + '" oninput="_ceSyncIntentDraft()" value="' + _ceEntryAttrEsc(d.sourceClassNote) + '" style="width:25%;">' +
     '</div>';
+}
+
+// B-1: 「、」「，」「,」・改行区切りの語リスト → 非空の配列（重複はそのまま・並び順を保持）。
+function _ceSplitTerms(s) {
+  return String(s == null ? '' : s).split(/[、，,\n]/).map(function (x) { return x.trim(); }).filter(function (x) { return x.length > 0; });
+}
+// B-1: 行 n の入力値（存在しない要素は空文字＝旧 UI・テスト sandbox と互換）。
+function _ceReadIntentRowExtras(n) {
+  var v = function (id) { var el = document.getElementById(id + n); return el ? String(el.value || '') : ''; };
+  return {
+    searchQuery: v('ce-intent-searchquery-'),
+    requiredConcepts: v('ce-intent-concepts-'),
+    prohibitedTerms: v('ce-intent-prohibited-'),
+    jurisdictionNote: v('ce-intent-jurisdiction-'),
+    sourceClassNote: v('ce-intent-sourceclass-'),
+  };
+}
+// B-1: Plan 作成前の Search Plan 検証（1件でも不成立なら Plan を作らない）。戻り値: エラーメッセージ or null
+function _ceSearchPlanErrorMessage(intents) {
+  if (typeof ContentClaimPlanning === 'undefined' || typeof ContentClaimPlanning.validateSearchPlan !== 'function') {
+    return 'Search Plan検証機能を読み込めないためPlanを作成できません。';
+  }
+  var msgs = [];
+  for (var i = 0; i < intents.length; i++) {
+    var r = ContentClaimPlanning.validateSearchPlan(intents[i]);
+    if (r.ok) continue;
+    var parts = [];
+    if (r.missingConcepts.length) parts.push('必須語不足: ' + r.missingConcepts.join('／'));
+    if (r.matchedProhibitedTerms.length) parts.push('禁止語を含む: ' + r.matchedProhibitedTerms.join('／'));
+    if (!parts.length) parts.push(r.errors.join(','));
+    msgs.push(intents[i].intentId + '（' + parts.join('・') + '）');
+  }
+  return msgs.length ? ('Search Planが不成立のためPlanを作成しません: ' + msgs.join(' ／ ')) : null;
 }
 
 // Output Engine パネルへ差し込む Content Evidence セクション。
@@ -8227,18 +8306,35 @@ function _ceStartPlanFromForm() {
     var topic = topicEl ? String(topicEl.value || '').trim() : '';
     var question = questionEl ? String(questionEl.value || '').trim() : '';
     if (!topic && !question) continue;   // 未入力行はスキップ（空のClaim Intentを作らない）
-    intents.push({
+    var ex = _ceReadIntentRowExtras(n);
+    var intent = {
       intentId: 'CI-' + (intents.length + 1 < 10 ? '0' : '') + (intents.length + 1),   // deterministic連番
       caseId: caseId,
       topic: topic,
-      question: question,
+      question: question,                     // ★ Formal question（SoT）。searchQuery で上書きしない
       claimTypeCandidate: typeEl ? typeEl.value : 'general_practice',
       status: 'proposed',
-    });
+    };
+    // B-1: 検索専用の派生値と deterministic 検証条件（入力がある場合のみ付与＝旧データと同形）
+    if (ex.searchQuery.trim()) intent.searchQuery = ex.searchQuery.trim();
+    var reqTerms = _ceSplitTerms(ex.requiredConcepts);
+    var prohTerms = _ceSplitTerms(ex.prohibitedTerms);
+    if (reqTerms.length) intent.requiredConcepts = reqTerms;
+    if (prohTerms.length) intent.prohibitedTerms = prohTerms;
+    if (ex.jurisdictionNote.trim()) intent.jurisdictionNote = ex.jurisdictionNote.trim();
+    if (ex.sourceClassNote.trim()) intent.sourceClassNote = ex.sourceClassNote.trim();
+    intents.push(intent);
   }
 
   if (intents.length === 0) {
     _ceEntryMessage = 'Claim Intentが入力されていません（topicとquestionを入力してください）。';
+    _ceRefreshEntrySection();
+    return null;
+  }
+  // B-1: requiredConcepts 不足 / prohibitedTerms 該当が1件でもあれば Plan を作らない（fail-closed）
+  var spErr = _ceSearchPlanErrorMessage(intents);
+  if (spErr) {
+    _ceEntryMessage = spErr;
     _ceRefreshEntrySection();
     return null;
   }
@@ -8280,7 +8376,6 @@ var CE_CLAIM_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 var CE_SELECTABLE_CLAIM_TYPES = ['general_practice', 'law_regulation', 'public_statistic'];
 var _ceCanonicalByCase = {};           // caseId -> { status, outputId, claims, claimIds, revision, questionByClaim, hasCanonical, message }
 var _ceClaimSelectionByCase = {};      // caseId -> { claimId: true }（明示選択のみ）
-var _ceCanonicalQuestionByCase = {};   // caseId -> { claimId: question }（再取得時の検索 query 入力）
 var _ceSubmitInFlight = false;         // 1操作につき Resolution POST 最大1回
 var _ceCanonicalLoadSeq = 0;           // canonical 確認ごとに増える識別子（選択時の確認結果と送信時の状態を照合する）
 
@@ -8391,7 +8486,7 @@ function _ceMarkCanonicalStale(caseId, reason) {
       : 'Evidenceの状態が更新されています。再読み込みして、更新対象Claimをもう一度確認してください。',
   };
   _ceClaimSelectionByCase[caseId] = {};
-  _ceCanonicalQuestionByCase[caseId] = {};
+  _ceCanonicalSearchQueryByCase[caseId] = {};   // B-1: 古い searchQuery を再利用しない（当該 case のみ）
   _ceRefreshEntrySection();
 }
 
@@ -8466,7 +8561,7 @@ async function _ceLoadCanonicalForEntry() {
     _ceCanonicalByCase[caseId] = { status: 'error', message: '既存Evidenceを確認できませんでした（code: ' + fresh.error + '）。' };
   }
   _ceClaimSelectionByCase[caseId] = {};
-  _ceCanonicalQuestionByCase[caseId] = {};
+  _ceCanonicalSearchQueryByCase[caseId] = {};   // B-1: 古い searchQuery を再利用しない（当該 case のみ）
   _ceRefreshEntrySection();
   return _ceCanonicalByCase[caseId];
 }
@@ -8482,16 +8577,18 @@ function _ceToggleCanonicalClaim(claimId, checked) {
   return true;
 }
 
-// 再取得時の検索 query 入力を控える（Claim 内容は変更しない）。
-function _ceSyncCanonicalQuestion(claimId) {
+// B-1: 再取得時の Evidence 検索専用 searchQuery（canonical の Formal question とは別 state。
+//   evidence.claim を自動でコピーしない＝「Formal question = Search Query」へ戻さない）。
+var _ceCanonicalSearchQueryByCase = {};   // caseId -> { claimId: searchQuery }
+function _ceSyncCanonicalSearchQuery(claimId) {
   var caseId = _ceActiveCaseIdForEntry();
   var canon = caseId ? _ceCanonicalByCase[caseId] : null;
   if (!canon || canon.status !== 'loaded' || !Array.isArray(canon.claimIds) || canon.claimIds.indexOf(claimId) === -1) return;
-  var el = document.getElementById('ce-canon-question-' + claimId);
+  var el = document.getElementById('ce-canon-searchquery-' + claimId);
   if (!el) return;
-  var qm = _ceCanonicalQuestionByCase[caseId] || {};
-  qm[claimId] = String(el.value || '');
-  _ceCanonicalQuestionByCase[caseId] = qm;
+  var sm = _ceCanonicalSearchQueryByCase[caseId] || {};
+  sm[claimId] = String(el.value || '');
+  _ceCanonicalSearchQueryByCase[caseId] = sm;
 }
 
 // 既存 canonical Claim 表示（表示のみ・副作用なし）。
@@ -8511,17 +8608,21 @@ function _ceBuildCanonicalSectionHtml(caseId) {
     return head + '<div style="font-size:10px;">既存canonical Claimはありません（上のフォームで新規作成できます）。</div>' + loadBtn + '</div>';
   }
   var sel = _ceClaimSelectionByCase[caseId] || {};
-  var qm = _ceCanonicalQuestionByCase[caseId] || {};
+  var sm = _ceCanonicalSearchQueryByCase[caseId] || {};
   var items = c.claims.map(function (cl) {
     var id = cl.claimId;   // CE_CLAIM_ID_PATTERN 検証済み（引用符を含まない）
-    var q = (qm[id] !== undefined) ? qm[id] : (c.questionByClaim[id] || '');
+    // B-1: canonical の evidence.claim は Formal question として固定表示（編集させない）。
+    //   検索文字列は別入力の searchQuery（初期値は空・未入力時のみ Formal question で検索）。
+    var fq = c.questionByClaim[id] || '';
+    var sq = (sm[id] !== undefined) ? sm[id] : '';
     return '<div class="ce-canon-claim" data-claim-id="' + _ceEntryAttrEsc(id) + '" style="margin:4px 0;padding:4px;border:1px solid rgba(255,255,255,0.1);">' +
       '<label><input type="checkbox" id="ce-canon-select-' + _ceEntryAttrEsc(id) + '" onchange="_ceToggleCanonicalClaim(\'' + _ceEntryAttrEsc(id) + '\', this.checked)"' + (sel[id] ? ' checked' : '') + '> このClaimを取り直す</label> ' +
       '<code>' + _ceEntryEsc(id) + '</code> ' + _ceEntryEsc(cl.topic) + '<br>' +
       '<span style="font-size:10px;opacity:0.8;">現在のclaim: ' + _ceEntryEsc(cl.text) + '</span><br>' +
       ((c.excerptByClaim && c.excerptByClaim[id])
         ? '<span style="font-size:10px;opacity:0.8;">確認済み原文: ' + _ceEntryEsc(c.excerptByClaim[id]) + '…</span><br>' : '') +
-      'question（再取得時の検索query）: <input type="text" id="ce-canon-question-' + _ceEntryAttrEsc(id) + '" oninput="_ceSyncCanonicalQuestion(\'' + _ceEntryAttrEsc(id) + '\')" value="' + _ceEntryAttrEsc(q) + '" style="width:80%;">' +
+      '<span style="font-size:10px;opacity:0.8;">Formal question（canonical・変更不可）: ' + _ceEntryEsc(fq || '(なし)') + '</span><br>' +
+      'searchQuery（再取得の検索専用・未入力時はFormal questionで検索）: <input type="text" id="ce-canon-searchquery-' + _ceEntryAttrEsc(id) + '" oninput="_ceSyncCanonicalSearchQuery(\'' + _ceEntryAttrEsc(id) + '\')" value="' + _ceEntryAttrEsc(sq) + '" style="width:80%;">' +
       '</div>';
   }).join('');
   return head +
@@ -8555,14 +8656,16 @@ function _ceStartPlanFromSelection() {
     _ceRefreshEntrySection();
     return null;
   }
-  var qm = _ceCanonicalQuestionByCase[caseId] || {};
+  var sm = _ceCanonicalSearchQueryByCase[caseId] || {};
   var intents = [];
   for (var i = 0; i < selected.length; i++) {
     var id = selected[i];
     var claim = canon.claims.filter(function (cl) { return cl.claimId === id; })[0];
-    var question = String((qm[id] !== undefined) ? qm[id] : (canon.questionByClaim[id] || '')).trim();
+    // B-1: question は canonical の Formal question（evidence.claim）のみ。検索文字列で上書きしない。
+    var question = String(canon.questionByClaim[id] || '').trim();
+    var searchQuery = String(sm[id] || '').trim();
     if (!claim || !question) {
-      _ceEntryMessage = id + ' の検索questionが空です。';
+      _ceEntryMessage = id + ' のFormal question（既存Evidence上のclaim）を確認できないためPlanを作成できません。';
       _ceRefreshEntrySection();
       return null;
     }
@@ -8571,14 +8674,22 @@ function _ceStartPlanFromSelection() {
       _ceRefreshEntrySection();
       return null;
     }
-    intents.push({
+    var canonIntent = {
       intentId: id,                          // ★ canonical claimId をそのまま使う
       caseId: caseId,
       topic: claim.topic || id,
       question: question,
       claimTypeCandidate: claim.claimType,   // canonical 値のみ
       status: 'proposed',
-    });
+    };
+    if (searchQuery) canonIntent.searchQuery = searchQuery;   // B-1: 入力がある場合のみ（無ければ Formal question で検索）
+    intents.push(canonIntent);
+  }
+  var canonSpErr = _ceSearchPlanErrorMessage(intents);
+  if (canonSpErr) {
+    _ceEntryMessage = canonSpErr;
+    _ceRefreshEntrySection();
+    return null;
   }
   var plan = _ceBuildPlan(intents, caseId);
   if (plan) {

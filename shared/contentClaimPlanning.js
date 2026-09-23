@@ -154,6 +154,99 @@
   // ══════════════════════════════════════════════════════════════
   var CONTENT_EVIDENCE_QUERY_CATEGORY = 'content_claim';
 
+  // ══════════════════════════════════════════════════════════════
+  // Part C-2（Option B / B-1）: Formal Claim Intent と Search Query の責務分離
+  //   ★ intent.question は Formal な問い（canonical contentEvidence[].claim になる SoT）。
+  //     Evidence 検索文字列ではない。検索には派生値 intent.searchQuery を使う。
+  //   ★ searchQuery が無い旧データは question へ fallback（後方互換・従来と同一の query）。
+  //   ★ requiredConcepts / prohibitedTerms は searchQuery に対する deterministic な文字列検証のみ
+  //     （AI による意味推測で PASS させない）。
+  //     - requiredConcepts: NFKC 正規化 → 小文字化（既存 Compliance Gate / contentValueQuality と同じ正規化）後の一致。
+  //                         concept の先頭/末尾が Latin 文字の場合だけ、その外側が Latin 文字でないこと（単語途中の誤一致防止）
+  //                         を要求する（例: PA は PA++++ に一致・japan / spa には一致しない）。日本語は部分一致のまま。
+  //     - prohibitedTerms : NFKC 正規化後・大文字小文字を区別しない部分一致（止まりやすい側＝安全側）
+  //   ★ jurisdictionNote / sourceClassNote は表示・補助 metadata のみ（検証にも provider 制約にも使わない）。
+  // ══════════════════════════════════════════════════════════════
+  function _nfkc(s) {
+    var t = _str(s);
+    try { return (typeof t.normalize === 'function') ? t.normalize('NFKC') : t; } catch (e) { return t; }
+  }
+
+  // Latin 文字（ASCII 英字 + Latin-1 補助 / Latin 拡張 A・B の英字）。数字・記号・日本語は含まない。
+  var LATIN_LETTER_PATTERN = /[A-Za-zÀ-ÖØ-öø-ɏ]/;
+  function _isLatinLetter(ch) { return !!ch && LATIN_LETTER_PATTERN.test(ch); }
+
+  // requiredConcept 1語が text に含まれるか（両方とも NFKC → 小文字化済みの文字列を渡す）。
+  //   concept の端が Latin 文字のときだけ、一致箇所の外側が Latin 文字でないことを要求する。
+  function _containsConcept(textNorm, conceptNorm) {
+    if (!conceptNorm) return false;
+    var needStart = _isLatinLetter(conceptNorm.charAt(0));
+    var needEnd = _isLatinLetter(conceptNorm.charAt(conceptNorm.length - 1));
+    var from = 0;
+    while (from <= textNorm.length - conceptNorm.length) {
+      var at = textNorm.indexOf(conceptNorm, from);
+      if (at === -1) return false;
+      var before = at > 0 ? textNorm.charAt(at - 1) : '';
+      var after = textNorm.charAt(at + conceptNorm.length);
+      if ((!needStart || !_isLatinLetter(before)) && (!needEnd || !_isLatinLetter(after))) return true;
+      from = at + 1;
+    }
+    return false;
+  }
+
+  // 検索に使う文字列（searchQuery 優先・無ければ question）。Formal Intent 自体は変更しない。
+  function resolveSearchQuery(intent) {
+    var it = _isPlainObject(intent) ? intent : {};
+    if (_isNonEmptyString(it.searchQuery)) return it.searchQuery.trim();
+    return _isNonEmptyString(it.question) ? it.question : '';
+  }
+
+  // 語リストの検証（未指定は空配列扱い。指定がある場合は非空文字列の配列のみ許可）。
+  function _termList(v) {
+    if (v === undefined || v === null) return { ok: true, terms: [] };
+    if (!Array.isArray(v)) return { ok: false, terms: [] };
+    var terms = [];
+    for (var i = 0; i < v.length; i++) {
+      if (!_isNonEmptyString(v[i])) return { ok: false, terms: [] };
+      terms.push(v[i].trim());
+    }
+    return { ok: true, terms: terms };
+  }
+
+  // Search Plan の deterministic 検証（純関数・非破壊）。
+  //   戻り値: { ok, searchQuery, usedQuestionFallback, missingConcepts, matchedProhibitedTerms, errors }
+  function validateSearchPlan(intent) {
+    var it = _isPlainObject(intent) ? intent : {};
+    var searchQuery = resolveSearchQuery(it);
+    var out = {
+      ok: false,
+      searchQuery: searchQuery,
+      usedQuestionFallback: !_isNonEmptyString(it.searchQuery),
+      missingConcepts: [],
+      matchedProhibitedTerms: [],
+      errors: [],
+    };
+    if (!_isNonEmptyString(searchQuery)) out.errors.push('search_query_missing');
+
+    var req = _termList(it.requiredConcepts);
+    if (!req.ok) out.errors.push('required_concepts_invalid');
+    var proh = _termList(it.prohibitedTerms);
+    if (!proh.ok) out.errors.push('prohibited_terms_invalid');
+
+    var sqLower = _nfkc(searchQuery).toLowerCase();
+    for (var i = 0; i < req.terms.length; i++) {
+      if (!_containsConcept(sqLower, _nfkc(req.terms[i]).toLowerCase())) out.missingConcepts.push(req.terms[i]);
+    }
+    for (var j = 0; j < proh.terms.length; j++) {
+      if (sqLower.indexOf(_nfkc(proh.terms[j]).toLowerCase()) !== -1) out.matchedProhibitedTerms.push(proh.terms[j]);
+    }
+    if (out.missingConcepts.length > 0) out.errors.push('required_concepts_missing:' + out.missingConcepts.join('|'));
+    if (out.matchedProhibitedTerms.length > 0) out.errors.push('prohibited_terms_matched:' + out.matchedProhibitedTerms.join('|'));
+
+    out.ok = out.errors.length === 0;
+    return out;
+  }
+
   function buildContentEvidenceQueries(intents) {
     var arr = Array.isArray(intents) ? intents : [];
     var out = { queries: [], blocked: [] };
@@ -169,9 +262,19 @@
         out.blocked.push({ intentId: intent && intent.intentId, reason: 'invalid_intent:' + v.errors.join(',') });
         continue;
       }
+      // B-1: 検索へ渡すのは searchQuery（無ければ question）。searchQuery 自体にも Safety Filter を適用する。
+      var sp = validateSearchPlan(intent);
+      if (sp.searchQuery !== intent.question && !evaluateClaimIntentSafety({ question: sp.searchQuery, topic: '' }).allowed) {
+        out.blocked.push({ intentId: intent.intentId, reason: 'medical_therapeutic_topic_detected' });
+        continue;
+      }
+      if (!sp.ok) {
+        out.blocked.push({ intentId: intent.intentId, reason: 'search_plan_invalid:' + sp.errors.join(',') });
+        continue;
+      }
       out.queries.push({
         category: CONTENT_EVIDENCE_QUERY_CATEGORY,
-        query: intent.question,
+        query: sp.searchQuery,
         reason: _isNonEmptyString(intent.reason) ? intent.reason : ('Claim Intent: ' + intent.topic),
         intentId: intent.intentId,
       });
@@ -413,6 +516,9 @@
     // Part C
     CONTENT_EVIDENCE_QUERY_CATEGORY: CONTENT_EVIDENCE_QUERY_CATEGORY,
     buildContentEvidenceQueries: buildContentEvidenceQueries,
+    // Part C-2（B-1）
+    resolveSearchQuery: resolveSearchQuery,
+    validateSearchPlan: validateSearchPlan,
     // Part D/E
     buildContentEvidenceFromCandidate: buildContentEvidenceFromCandidate,
     // Part F
