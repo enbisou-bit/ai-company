@@ -203,6 +203,39 @@ function reuseSourceRow(publishers) {
   return row;
 }
 
+// ── Trial 同型 fixture（Production GET で確認した構成）: 各 CI = jcia.org user_verified（原文あり）+ env.go.jp web_retrieved（原文なし）──
+const CI02_NEW = 'SPFは主にUVBによるサンバーンを防ぐ効果を表す指標で、数値が大きくなるほどサンバーンの防止効果が高くなります。PAはUVAを防ぐ効果を表す指標です。';
+const CI03_NEW = '日焼け止めは使用場面に合わせて選び、長時間の屋外活動では高い紫外線防止効果を持つもの、水に濡れる場面ではUV耐水性表示のある製品を選ぶ考え方があります。';
+const TRIAL_CLAIMS = [
+  { id: 'CI-01', q: '日焼け止めの塗り直しはなぜ必要か？', text: '日焼け止めは汗や摩擦で落ちやすいため、こまめな塗り直しが大切です',
+    ex: '日焼け止めは汗をかいたり、タオルで拭いたりすると落ちてしまうため、こまめに塗り直すことが大切です。' },
+  { id: 'CI-02', q: 'SPFとPAは何を表す指標か？', text: 'SPFとPAは紫外線を防ぐ効果の目安です',
+    ex: 'SPFは主にUVBによるサンバーンを防ぐ効果を表す指標で、数値が大きくなるほどサンバーンの防止効果が高くなります。PAはUVAを防ぐ効果を表す指標です。' },
+  { id: 'CI-03', q: '日焼け止めはどのように選べばよいか？', text: '日焼け止めは使う場面に合わせて選びます',
+    ex: '使用場面に合わせて日焼け止めを選びましょう。長時間の屋外活動では高い紫外線防止効果を持つものを、水に濡れる場面ではUV耐水性表示のある製品を選ぶ考え方があります。' },
+];
+function trialSourceCandidates(caseId) {
+  const out = [];
+  TRIAL_CLAIMS.forEach(function (c) {
+    const base = { intentId: c.id, caseId: caseId, topic: 'topic ' + c.id, question: c.q, claimTypeCandidate: 'general_practice', proposedClaimText: c.text };
+    out.push(Object.assign({}, base, {
+      candidate: { sourceMethod: 'public_document_user_verified', sourceUrl: 'https://www.jcia.org/uv/' + c.id, sourceName: '日本化粧品工業会', sourceTitle: '紫外線と日焼け止め', sourceExcerpt: c.ex, createdBy: 'user' },
+      mappingDecision: { claimType: 'general_practice', supportType: 'supports', verificationStatus: 'user_verified' },
+    }));
+    out.push(Object.assign({}, base, {
+      candidate: { sourceMethod: 'web_retrieved', sourceUrl: 'https://www.env.go.jp/chemi/uv/' + c.id, sourceName: '環境省', sourceTitle: '紫外線環境保健マニュアル', createdBy: 'system' },
+      mappingDecision: { claimType: 'general_practice', supportType: 'supports' },
+    }));
+  });
+  return out;
+}
+function trialSourceRow() {
+  const row = srcRow({ content_evidence: null, content_claims: null, content_evidence_origin: null });
+  const r = serverResolve({ [SRC]: row }, { outputId: SRC, caseId: CASE, contentEvidenceCandidates: trialSourceCandidates(CASE), resolutionMode: 'full_replace', targetClaimIds: ['CI-01', 'CI-02', 'CI-03'], expectedRevision: null });
+  if (r.status !== 200) throw new Error('trial fixture resolution failed: ' + JSON.stringify(r.json));
+  return row;
+}
+
 function buildReuseCtx(opts) {
   const o = opts || {};
   const ctx = { console: { log: function () {}, warn: function () {}, error: function () {} }, URL: URL };
@@ -268,9 +301,16 @@ async function reuseLoaded(opts) {
   await ctx.mfdReuseLoadSourceEvidence();
   return { ctx: ctx, target: target };
 }
-function setReuseDom(ctx, texts, confirmed) {
-  REUSE_CLAIMS.forEach(function (c) { ctx.__els['mfd-reuse-claim-' + c.id] = { value: texts && texts[c.id] !== undefined ? texts[c.id] : c.text }; });
-  ctx.__els['mfd-reuse-confirm'] = { checked: confirmed === true };
+// confirmed: true = user_verified Evidence をすべて再確認 / false = 未確認 / 数値 n = 先頭 n 件だけ確認
+function setReuseDom(ctx, texts, confirmed, claims) {
+  (claims || REUSE_CLAIMS).forEach(function (c) { ctx.__els['mfd-reuse-claim-' + c.id] = { value: texts && texts[c.id] !== undefined ? texts[c.id] : c.text }; });
+  let n = 0;
+  ((ctx._mfdReuse && ctx._mfdReuse.plan && ctx._mfdReuse.plan.evidence) || []).forEach(function (ev, i) {
+    if (ev.kind !== 'user_verified') return;
+    const on = confirmed === true || (typeof confirmed === 'number' && n < confirmed);
+    ctx.__els['mfd-reuse-confirm-' + i] = { checked: on };
+    n++;
+  });
 }
 
 function ceSnapshot(ctx) { return JSON.stringify([ctx._ceLastEvidenceCandidates, ctx._ceVerifiedExcerpts, ctx._ceMappingDecisions, ctx._ceClaimTextByCase]); }
@@ -378,7 +418,8 @@ function ceSnapshot(ctx) { return JSON.stringify([ctx._ceLastEvidenceCandidates,
     assert(typeof p.revision === 'string' && p.revision === row.content_evidence_origin.revision, 'R-P3. 複製元 revision を保持（stale 検出用）');
     assert(JSON.stringify(row) === before, 'R-P4. 複製元 row を変更しない');
     function mut(fn) { const r = JSON.parse(JSON.stringify(row)); fn(r); return ctx.buildMfdEvidenceReusePlan(r, CASE, SRC).error; }
-    assert(mut(function (r) { r.content_evidence[0].sourceMethod = 'web_retrieved'; r.content_evidence[0].verificationStatus = 'verified'; }) === 'source_evidence_not_user_verified', 'R-P5. web_retrieved（user_verified 以外）は再利用しない（昇格させない）');
+    assert(mut(function (r) { r.content_evidence[0].sourceMethod = 'manual_user_input'; r.content_evidence[0].verificationStatus = 'user_verified'; }) === 'source_evidence_method_not_allowed', 'R-P5. 原文確認済み・Web取得以外の sourceMethod（manual_user_input）は再利用しない');
+    assert(mut(function (r) { r.content_evidence_origin = null; }) === 'source_revision_missing' && mut(function (r) { r.content_type = 'promo'; }) === 'source_content_type_mismatch', 'R-P5b. revision が無い／content_type が value でない複製元は拒否');
     assert(mut(function (r) { r.content_evidence[1].verificationStatus = 'unverified'; }) === 'source_evidence_not_user_verified', 'R-P6. verificationStatus が user_verified 以外は拒否');
     assert(mut(function (r) { r.content_evidence[2].sourceExcerpt = '  '; }) === 'source_evidence_excerpt_missing', 'R-P7. 原文が空の Evidence は拒否');
     assert(mut(function (r) { r.content_evidence[0].supportType = 'contradicts'; }) === 'source_evidence_not_supports', 'R-P8. 反証（contradicts）を含めば拒否');
@@ -422,7 +463,7 @@ function ceSnapshot(ctx) { return JSON.stringify([ctx._ceLastEvidenceCandidates,
     assert(html.indexOf('元DraftのEvidenceを使用（検索なし）') !== -1 && html.indexOf('id="mfd-reuse-submit-btn"') !== -1, 'R-U3. 「元DraftのEvidenceを使用（検索なし）」欄と確定ボタンを表示');
     assert(REUSE_CLAIMS.every(function (c) { return html.indexOf('id="mfd-reuse-claim-' + c.id + '"') !== -1 && html.indexOf(c.q) !== -1; }), 'R-U4. Claim ごとに Formal question（表示）と claim 文言の編集欄');
     assert(!/<(textarea|input)[^>]*(question|excerpt)/i.test(html) && REUSE_CLAIMS.every(function (c) { return html.indexOf('>' + c.ex[0] + '<') !== -1; }), 'R-U5. Formal question / 原文は入力欄ではなく読み取り専用の表示');
-    assert((html.match(/id="mfd-reuse-confirm"/g) || []).length === 1 && html.indexOf('id="mfd-reuse-confirm" checked') === -1, 'R-U6. 再確認チェックは1つ・初期は未チェック');
+    assert((html.match(/id="mfd-reuse-confirm-\d+"/g) || []).length === 6 && !/id="mfd-reuse-confirm-\d+" checked/.test(html) && html.indexOf('id="mfd-reuse-confirm"') === -1, 'R-U6. 再確認チェックは user_verified Evidence 1件ごと（6件）・初期は未チェック・一括チェックなし');
     assert(html.indexOf('Independent Publisher Preflight：PASS') !== -1, 'R-U7. Independent Publisher Preflight（既存純関数）の結果を表示');
 
     // 再確認チェックなし → 送らない
@@ -437,7 +478,7 @@ function ceSnapshot(ctx) { return JSON.stringify([ctx._ceLastEvidenceCandidates,
     const posts = ctx.__posts;
     assert(r.ok === true && posts.length === 1, 'R-U9. server の既存 Resolution が成立（POST 1回）');
     const gets = ctx.__calls.filter(function (c) { return c.method === 'GET'; }).map(function (c) { return c.url; });
-    assert(gets.length === 2 && gets[0].indexOf('outputId=' + SRC) !== -1 && gets[1].indexOf('outputId=' + target) !== -1 && ctx.__calls[2].method === 'POST', 'R-U10. POST 直前に 複製元 → Final Draft の順で canonical を再GET');
+    assert(gets.length === 3 && gets[0].indexOf('outputId=' + SRC) !== -1 && gets[1].indexOf('outputId=' + target) !== -1 && gets[2].indexOf('outputId=' + target) !== -1 && ctx.__calls[3].method === 'POST', 'R-U10. POST 直前に 複製元 → Final Draft（content_type・canonical）の順で再GET');
     const body = posts[0].body;
     assert(posts[0].url === '/api/output-drafts' && body.outputId === target && body.caseId === CASE, 'R-U11. 送信先は既存 POST /api/output-drafts・outputId は Final Draft');
     assert(body.resolutionMode === 'full_replace' && body.expectedRevision === null && JSON.stringify(body.targetClaimIds) === JSON.stringify(['CI-01', 'CI-02', 'CI-03']), 'R-U12. new scope：full_replace・expectedRevision null・targetClaimIds = 複製元 Claim ID');
@@ -517,9 +558,96 @@ function ceSnapshot(ctx) { return JSON.stringify([ctx._ceLastEvidenceCandidates,
     const rg = await g.ctx.mfdReuseSubmit();
     assert(rg.error === 'independent_publisher_preflight_failed' && g.ctx.__posts.length === 0, 'R-S9. Preflight 部品が無ければ fail-closed');
 
-    // web_retrieved を含む複製元 → 読み込み段階で停止（POST 0）
-    const h = await reuseLoaded({ sourceRow: (function () { const row = reuseSourceRow(); row.content_evidence[3].sourceMethod = 'web_retrieved'; row.content_evidence[3].verificationStatus = 'verified'; return row; })() });
-    assert(h.ctx._mfdReuse.status === 'error' && h.ctx._mfdReuse.error === 'source_evidence_not_user_verified' && h.ctx.buildManualFinalDraftHtml().indexOf('mfd-reuse-submit-btn') === -1, 'R-S10. user_verified でない Evidence を含む複製元は使用不可（確定ボタンなし）');
+    // 未許可 method（manual_user_input）を含む複製元 → 読み込み段階で停止（POST 0）
+    const h = await reuseLoaded({ sourceRow: (function () { const row = reuseSourceRow(); row.content_evidence[3].sourceMethod = 'manual_user_input'; return row; })() });
+    assert(h.ctx._mfdReuse.status === 'error' && h.ctx._mfdReuse.error === 'source_evidence_method_not_allowed' && h.ctx.buildManualFinalDraftHtml().indexOf('mfd-reuse-submit-btn') === -1 && h.ctx.__posts.length === 0, 'R-S10. 未許可 method の Evidence を含む複製元は使用不可（確定ボタンなし・POST 0）');
+    // 一部だけ再確認 → 送らない
+    const i2 = await reuseLoaded();
+    setReuseDom(i2.ctx, null, 5);
+    i2.ctx.__calls.length = 0;
+    const ri = await i2.ctx.mfdReuseSubmit();
+    assert(ri.error === 'reuse_confirmation_required' && i2.ctx.__calls.length === 0, 'R-S11. user_verified を1件でも未確認なら送信しない（通信 0）');
+    // Final Draft の content_type が違う → 送らない
+    const j2 = await reuseLoaded();
+    j2.ctx.__rows[j2.target].content_type = 'promo';
+    setReuseDom(j2.ctx, null, true);
+    const rj = await j2.ctx.mfdReuseSubmit();
+    assert(rj.error === 'target_content_type_mismatch' && j2.ctx.__posts.length === 0, 'R-S12. Final Draft の content_type が value でなければ送信しない');
+  }
+
+  caseHeader('M. Mixed Evidence（Trial 同型：jcia.org user_verified + env.go.jp web_retrieved）');
+  {
+    const srcRowT = trialSourceRow();
+    const srcEv = srcRowT.content_evidence;
+    assert(srcEv.length === 6 && srcRowT.content_claims.length === 3 && srcEv.filter(function (e) { return e.sourceMethod === 'web_retrieved' && e.verificationStatus === 'verified' && !e.sourceExcerpt; }).length === 3 && srcEv.filter(function (e) { return e.verificationStatus === 'user_verified'; }).length === 3, 'M-0. fixture は Trial と同型（Evidence 6 = user_verified 3 + web_retrieved/verified・原文なし 3 ／ Claim 3）');
+
+    const ctx0 = buildReuseCtx({ sourceRow: srcRowT });
+    const p = ctx0.buildMfdEvidenceReusePlan(srcRowT, CASE, SRC);
+    assert(p.ok === true && p.userVerifiedCount === 3 && p.webRetrievedCount === 3, 'M-A/B. user_verified と web_retrieved の混在を許可（全件 user_verified でなくても成立）');
+    assert(p.evidence.filter(function (e) { return e.kind === 'web_retrieved'; }).every(function (e) { return e.sourceExcerpt === undefined; }), 'M-C. web_retrieved は原文なしでも許可');
+    function mutT(fn) { const r = JSON.parse(JSON.stringify(srcRowT)); fn(r); return ctx0.buildMfdEvidenceReusePlan(r, CASE, SRC).error; }
+    const uvIdx = srcEv.findIndex(function (e) { return e.verificationStatus === 'user_verified'; });
+    const webIdx = srcEv.findIndex(function (e) { return e.sourceMethod === 'web_retrieved'; });
+    assert(mutT(function (r) { r.content_evidence[uvIdx].sourceExcerpt = ''; }) === 'source_evidence_excerpt_missing', 'M-F. user_verified は原文必須');
+    assert(mutT(function (r) { r.content_evidence[webIdx].sourceMethod = 'scraped_unknown'; }) === 'source_evidence_method_not_allowed', 'M-H. 未知の sourceMethod は FAIL');
+    assert(mutT(function (r) { r.content_evidence[webIdx].sourceMethod = 'manual_user_input'; }) === 'source_evidence_method_not_allowed', 'M-I. manual_user_input 等の未許可 method は FAIL');
+    assert(mutT(function (r) { r.content_evidence[webIdx].supportType = 'contradicts'; }) === 'source_evidence_not_supports', 'M-J. web_retrieved でも反証（contradicts）は FAIL');
+    assert(mutT(function (r) { r.content_evidence[webIdx].claimId = 'CI-99'; }) === 'source_evidence_without_claim', 'M-K. orphan Evidence は FAIL');
+    assert(mutT(function (r) { r.content_evidence[webIdx].caseId = 'case-other'; }) === 'source_evidence_case_mismatch', 'M-L. 別 case の Evidence は FAIL');
+    assert(mutT(function (r) { r.content_evidence[webIdx].sourceUrl = 'ftp://www.env.go.jp/x'; }) === 'source_evidence_url_invalid', 'M-L2. web_retrieved も http / https URL 必須');
+
+    const pre = ctx0._mfdReusePreflight(p);
+    assert(pre.status === 'pass' && ['CI-01', 'CI-02', 'CI-03'].every(function (id) { return pre.byIntent[id].independentPublisherCount === 2 && pre.byIntent[id].status === 'pass'; }), 'M-M. Independent Publisher = 2（jcia.org + env.go.jp）で B-2 PASS');
+
+    const texts = { 'CI-01': TRIAL_CLAIMS[0].text, 'CI-02': CI02_NEW, 'CI-03': CI03_NEW };
+    const b = ctx0.buildMfdEvidenceReuseCandidates(p, CASE, texts);
+    const webC = b.candidates.filter(function (c) { return c.candidate.sourceUrl.indexOf('env.go.jp') !== -1; });
+    const uvC = b.candidates.filter(function (c) { return c.candidate.sourceUrl.indexOf('jcia.org') !== -1; });
+    assert(webC.length === 3 && webC.every(function (c) { return c.candidate.sourceMethod === 'web_retrieved' && c.candidate.createdBy === 'system' && !('verificationStatus' in c.mappingDecision) && c.candidate.sourceExcerpt === undefined; }), 'M-D. web_retrieved は web_retrieved のまま（user_verified へ変換しない・verified を送らない）');
+    assert(uvC.length === 3 && uvC.every(function (c) { return c.candidate.sourceMethod === 'public_document_user_verified' && c.candidate.createdBy === 'user' && c.mappingDecision.verificationStatus === 'user_verified' && !!c.candidate.sourceExcerpt; }), 'M-D2. user_verified は既存 Contract どおり（原文を保持）');
+    assert(b.candidates.every(function (c, i) { return c.question === srcEv[i].claim && c.candidate.sourceUrl === srcEv[i].sourceUrl && c.candidate.sourceTitle === srcEv[i].sourceTitle && c.mappingDecision.supportType === 'supports' && c.claimTypeCandidate === 'general_practice' && c.topic === srcEv[i].topic; }), 'M-D3. Formal question / topic / claimType / URL / title / supportType を保持');
+    const flat = JSON.stringify(b.candidates);
+    assert(!/"verificationStatus":"verified"|"grounded"|"status"|"reliability"|"revision"/.test(flat), 'M-O. payload で verified / grounded / status を捏造しない');
+
+    // UI: 複製 → 読み込み → user_verified 3件だけ再確認 → CI-02 / CI-03 変更 → 送信
+    const { ctx, target } = await reuseLoaded({ sourceRow: srcRowT });
+    const srcBefore = JSON.stringify(ctx.__rows[SRC]);
+    const html = ctx.buildManualFinalDraftHtml();
+    const plan = ctx._mfdReuse.plan;
+    const uvIdxs = plan.evidence.map(function (e, i) { return e.kind === 'user_verified' ? i : -1; }).filter(function (i) { return i >= 0; });
+    const webIdxs = plan.evidence.map(function (e, i) { return e.kind === 'web_retrieved' ? i : -1; }).filter(function (i) { return i >= 0; });
+    assert((html.match(/原文確認済み<\/strong>/g) || []).length === 3 && (html.match(/Web取得（原文なし・serverが再判定）/g) || []).length === 3, 'M-UI1. jcia は「原文確認済み」、env.go.jp は「Web取得（原文なし・serverが再判定）」と区別して表示');
+    assert(uvIdxs.every(function (i) { return html.indexOf('id="mfd-reuse-confirm-' + i + '"') !== -1; }) && webIdxs.every(function (i) { return html.indexOf('id="mfd-reuse-confirm-' + i + '"') === -1; }), 'M-E. 再確認チェックは user_verified 3件だけ（web_retrieved には要求しない）');
+    assert(html.indexOf('前回の server 判定：verified') !== -1 && html.indexOf('Independent Publisher Preflight：PASS') !== -1, 'M-UI2. web_retrieved は前回判定を参考表示（送信しない）・B-2 PASS 表示');
+
+    setReuseDom(ctx, { 'CI-02': CI02_NEW, 'CI-03': CI03_NEW }, 2, TRIAL_CLAIMS);
+    ctx.__calls.length = 0;
+    const g = await ctx.mfdReuseSubmit();
+    assert(g.error === 'reuse_confirmation_required' && ctx.__calls.length === 0, 'M-G. user_verified を3件すべて再確認しなければ送信しない（通信 0）');
+
+    setReuseDom(ctx, { 'CI-02': CI02_NEW, 'CI-03': CI03_NEW }, true, TRIAL_CLAIMS);
+    const r = await ctx.mfdReuseSubmit();
+    const body = ctx.__posts[0] && ctx.__posts[0].body;
+    assert(r.ok === true && ctx.__posts.length === 1 && body.outputId === target && body.resolutionMode === 'full_replace' && body.expectedRevision === null, 'M-P. POST は Final Draft へ1回だけ（new scope・full_replace・expectedRevision null）');
+    assert(!/"verificationStatus":"verified"|"grounded"|"status"/.test(JSON.stringify(body.contentEvidenceCandidates)), 'M-O2. 実送信 payload にも verified / grounded / status なし');
+    const t = ctx.__rows[target];
+    assert(t.content_claims.length === 3 && t.content_claims.every(function (c) { return c.status === 'grounded'; }) && t.content_evidence.length === 6, 'M-N. server Resolution 後 Claim 3 grounded ／ Evidence 6');
+    assert(t.content_evidence.filter(function (e) { return e.sourceMethod === 'web_retrieved'; }).every(function (e) { return e.verificationStatus === 'verified'; }) && t.content_evidence.filter(function (e) { return e.sourceMethod === 'public_document_user_verified'; }).every(function (e) { return e.verificationStatus === 'user_verified'; }), 'M-N2. web_retrieved は既存 server 判定で verified に再昇格・user_verified は維持');
+    assert(t.content_claims[0].text === TRIAL_CLAIMS[0].text && t.content_claims[1].text === CI02_NEW && t.content_claims[2].text === CI03_NEW, 'M-UPD. CI-01 変更なし・CI-02 / CI-03 は更新文で grounded');
+    assert(!/3段階|PA\+\+\+|＋＋＋/.test(t.content_claims.map(function (c) { return c.text; }).join('')), 'M-UPD2. PA 旧3段階記述なし');
+    assert(JSON.stringify(ctx.__rows[SRC]) === srcBefore, 'M-R. source Draft 不変');
+    assert(ctx.__posts.every(function (x) { return x.body.outputId === target; }) && Object.keys(ctx.__rows).length === 2, 'M-S. 更新されたのは target Final Draft だけ');
+    assert(ctx.__calls.every(function (c) { return c.url.indexOf('/api/output-drafts') === 0; }), 'M-T/U. Evidence Search 0 ／ AI API 0（通信は /api/output-drafts のみ）');
+    const n = ctx.__posts.length;
+    await ctx.mfdReuseSubmit();
+    assert(ctx.__posts.length === n, 'M-Q. 送信後に自動 retry・再送なし');
+
+    // server が拒否する場合も1回だけ（409）
+    const q = await reuseLoaded({ sourceRow: trialSourceRow() });
+    q.ctx.__serverOpts.forceConflict = true;
+    setReuseDom(q.ctx, null, true, TRIAL_CLAIMS);
+    const rq = await q.ctx.mfdReuseSubmit();
+    assert(rq.error === 'canonical_revision_conflict' && q.ctx.__posts.length === 1 && q.ctx.__rows[q.target].content_claims === null, 'M-Q2. 409 でも retry せず Final Draft canonical 不変');
   }
 
   caseHeader('Static. AI / Evidence / Resolution 非接触');
@@ -527,7 +655,7 @@ function ceSnapshot(ctx) { return JSON.stringify([ctx._ceLastEvidenceCandidates,
     assert(!/\/api\/(auto-task|chat|consult|evidence\/web-search|leader|strategy)/.test(BLOCK), 'S-1. AI / Evidence Search の API を参照しない（ブロック全体）');
     assert(!/_ce[A-Z][A-Za-z]*\s*=|_ceSubmitEvidenceForResolution|_ceApproveAndExecute/.test(BASE), 'S-2. 複製 / 手動編集は Content Evidence の state / Resolution / 検索を操作しない');
     assert(!/method:\s*'POST'/.test(BASE), 'S-3. 複製 / 手動編集は直接 POST しない（保存は既存 pushOutputDraftToServer のみ）');
-    assert((REUSE.match(/method:\s*'POST'/g) || []).length === 1 && (REUSE.match(/fetch\(/g) || []).length === 2 && REUSE.indexOf("fetch('/api/output-drafts',") !== -1, 'R-SS1. Evidence 再利用の POST は既存 /api/output-drafts への1箇所だけ');
+    assert((REUSE.match(/method:\s*'POST'/g) || []).length === 1 && (REUSE.match(/fetch\(/g) || []).length === 3 && (REUSE.match(/fetch\('\/api\/output-drafts\?caseId=/g) || []).length === 2 && REUSE.indexOf("fetch('/api/output-drafts',") !== -1, 'R-SS1. Evidence 再利用の POST は既存 /api/output-drafts への1箇所だけ');
     assert(!/_ce[A-Z][A-Za-z]*\s*=(?!=)/.test(REUSE), 'R-SS2. Evidence 再利用も Content Evidence の state へ代入しない');
     assert(!/_ceSubmitEvidenceForResolution|_ceApproveAndExecute|_ceBuildPlan|_ceStartPlan|web-search|webSearch/.test(REUSE), 'R-SS3. Evidence Search / 既存 Plan / 承認実行を呼ばない');
     assert(!/localStorage|sessionStorage|setTimeout|setInterval/.test(REUSE), 'R-SS4. 永続化・自動再送タイマーなし');

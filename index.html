@@ -46896,14 +46896,20 @@ function buildManualFinalDraftHtml() {
 //   → Final Draft に対して既存 POST /api/output-drafts（new scope・full_replace・expectedRevision null）を1回だけ送る。
 //   ★ source canonical を Formal Truth としてコピーしない。client で grounded を確定しない
 //     （server の既存 Resolution / 昇格 / Guard / CAS が raw candidate から再判定する）。
-//   ★ 再利用できるのは user_verified（public_document_user_verified・原文あり・http(s) URL・supports）の
-//     Evidence だけ。1件でも外れれば再利用しない（fail-closed・web_retrieved を user_verified へ昇格させない）。
+//   ★ 再利用できる Evidence は2種類だけ（共通条件: http(s) URL・supports・同 case・対象 Claim に紐づく）。
+//     - user_verified（public_document_user_verified / user_verified・原文必須）: 原文を表示し、1件ずつ再確認必須。
+//       既存 Contract どおり user_verified として送る。
+//     - web_retrieved（原文不要）: web_retrieved のまま送る。user_verified へ変換しない・再確認対象にしない。
+//       過去の verified は送らない（client で確定しない）。verification / promotion は server が毎回再判定する。
+//     それ以外の sourceMethod（manual_user_input 等）・反証・別 case・orphan は再利用しない（fail-closed）。
 //   ★ 複製元 Draft は read-only（書込対象は Final Draft だけ）。Evidence Search・AI API は実行しない。
 //   ★ Formal question と原文は読み取り専用（送信値は GET した state から作り、DOM から読まない）。
 //   ★ POST は1操作1回。409 / 失敗時に自動 retry しない。送信後は再読み込みを要求する。
 // ──────────────────────────────────────────────────────────────
 var MFD_REUSE_SOURCE_METHOD = 'public_document_user_verified';
-var _mfdReuse = null;        // { targetOutputId, sourceOutputId, caseId, status, plan, sourceRevision, claimTextById, confirmed, error, result }
+var MFD_REUSE_WEB_METHOD = 'web_retrieved';
+var MFD_REUSE_CONTENT_TYPE = 'value';
+var _mfdReuse = null;        // { targetOutputId, sourceOutputId, caseId, status, plan, sourceRevision, claimTextById, confirmedByIndex, error, result }
 var _mfdReuseBusy = false;
 
 function _mfdStr(v) { return typeof v === 'string' ? v.trim() : ''; }
@@ -46918,12 +46924,14 @@ function buildMfdEvidenceReusePlan(row, caseId, sourceOutputId) {
   if (!idPattern) return fail('claim_id_pattern_unavailable');
   if (!row || typeof row !== 'object') return fail('source_row_not_found');
   if (!caseId || row.case_id !== caseId || row.output_id !== sourceOutputId) return fail('source_row_mismatch');
+  if (row.content_type !== MFD_REUSE_CONTENT_TYPE) return fail('source_content_type_mismatch');
   var claims = row.content_claims, evidence = row.content_evidence, origin = row.content_evidence_origin;
   if (!Array.isArray(claims) || !Array.isArray(evidence) || claims.length === 0 || evidence.length === 0) return fail('source_canonical_missing');
   if (origin !== null && origin !== undefined && (typeof origin !== 'object' || Array.isArray(origin))) return fail('source_canonical_invalid');
   var rev = (origin && Object.prototype.hasOwnProperty.call(origin, 'revision')) ? origin.revision : null;
   if (rev !== null && typeof rev !== 'string') return fail('source_canonical_invalid');
-  var plan = { claims: [], evidence: [], claimIds: [], revision: rev };
+  if (!rev) return fail('source_revision_missing');   // revision で読み込み後の変化を検出するため必須
+  var plan = { claims: [], evidence: [], claimIds: [], revision: rev, contentType: row.content_type, userVerifiedCount: 0, webRetrievedCount: 0 };
   var byId = {};
   for (var i = 0; i < claims.length; i++) {
     var c = claims[i];
@@ -46942,8 +46950,16 @@ function buildMfdEvidenceReusePlan(row, caseId, sourceOutputId) {
     var cl = byId[e.claimId];
     if (!cl) return fail('source_evidence_without_claim');
     if (e.supportType !== 'supports') return fail('source_evidence_not_supports');
-    if (e.sourceMethod !== MFD_REUSE_SOURCE_METHOD || e.verificationStatus !== 'user_verified') return fail('source_evidence_not_user_verified');
-    if (!_mfdStr(e.sourceExcerpt)) return fail('source_evidence_excerpt_missing');
+    var kind;
+    if (e.sourceMethod === MFD_REUSE_SOURCE_METHOD) {
+      if (e.verificationStatus !== 'user_verified') return fail('source_evidence_not_user_verified');
+      if (!_mfdStr(e.sourceExcerpt)) return fail('source_evidence_excerpt_missing');
+      kind = 'user_verified';
+    } else if (e.sourceMethod === MFD_REUSE_WEB_METHOD) {
+      kind = 'web_retrieved';   // 原文は必須にしない（verification は server が再判定する）
+    } else {
+      return fail('source_evidence_method_not_allowed');
+    }
     if (!_mfdIsHttpUrl(e.sourceUrl)) return fail('source_evidence_url_invalid');
     if (!_mfdStr(e.claimType)) return fail('source_canonical_invalid');
     var q = _mfdStr(e.claim);
@@ -46952,9 +46968,12 @@ function buildMfdEvidenceReusePlan(row, caseId, sourceOutputId) {
     cl.question = q;
     cl.evidenceCount++;
     plan.evidence.push({
-      claimId: e.claimId, claimType: e.claimType, supportType: e.supportType,
-      sourceUrl: e.sourceUrl, sourceTitle: e.sourceTitle, sourceName: e.sourceName, sourceExcerpt: e.sourceExcerpt,
+      kind: kind, claimId: e.claimId, claimType: e.claimType, supportType: e.supportType,
+      sourceUrl: e.sourceUrl, sourceTitle: e.sourceTitle, sourceName: e.sourceName,
+      sourceExcerpt: _mfdStr(e.sourceExcerpt) ? e.sourceExcerpt : undefined,
+      previousVerificationStatus: typeof e.verificationStatus === 'string' ? e.verificationStatus : null,   // 表示専用（送信しない）
     });
+    if (kind === 'user_verified') plan.userVerifiedCount++; else plan.webRetrievedCount++;
   }
   for (var k = 0; k < plan.claims.length; k++) {
     if (plan.claims[k].evidenceCount === 0) return fail('source_claim_without_evidence');
@@ -46975,21 +46994,25 @@ function buildMfdEvidenceReuseCandidates(plan, caseId, claimTextById) {
   }
   var candidates = plan.evidence.map(function (ev) {
     var c = claimById[ev.claimId];
+    var userVerified = ev.kind === 'user_verified';
     return {
       intentId: ev.claimId,
       caseId: caseId,
       topic: c.claim.topic || undefined,
       question: c.claim.question,
       claimTypeCandidate: c.claim.claimType,
+      // user_verified: 既存 Contract どおり。web_retrieved: そのまま（user_verified へ変換しない・verified を送らない）。
       candidate: {
-        sourceMethod: MFD_REUSE_SOURCE_METHOD,
+        sourceMethod: userVerified ? MFD_REUSE_SOURCE_METHOD : MFD_REUSE_WEB_METHOD,
         sourceUrl: ev.sourceUrl,
         sourceTitle: ev.sourceTitle,
         sourceName: ev.sourceName,
         sourceExcerpt: ev.sourceExcerpt,
-        createdBy: 'user',
+        createdBy: userVerified ? 'user' : 'system',
       },
-      mappingDecision: { claimType: ev.claimType, supportType: ev.supportType, verificationStatus: 'user_verified' },
+      mappingDecision: userVerified
+        ? { claimType: ev.claimType, supportType: ev.supportType, verificationStatus: 'user_verified' }
+        : { claimType: ev.claimType, supportType: ev.supportType },
       proposedClaimText: c.text,
     };
   });
@@ -47024,8 +47047,27 @@ function _mfdReuseSyncFromDom() {
     var el = document.getElementById('mfd-reuse-claim-' + c.claimId);
     if (el) st.claimTextById[c.claimId] = String(el.value || '');
   });
-  var cb = document.getElementById('mfd-reuse-confirm');
-  if (cb) st.confirmed = cb.checked === true;
+  st.plan.evidence.forEach(function (ev, i) {
+    if (ev.kind !== 'user_verified') return;   // 再確認対象は user_verified だけ
+    var cb = document.getElementById('mfd-reuse-confirm-' + i);
+    if (cb) st.confirmedByIndex[i] = cb.checked === true;
+  });
+}
+
+// user_verified Evidence（原文あり）をすべて再確認済みか。web_retrieved は対象外。
+function _mfdReuseAllConfirmed(st) {
+  if (!st || !st.plan) return false;
+  for (var i = 0; i < st.plan.evidence.length; i++) {
+    if (st.plan.evidence[i].kind === 'user_verified' && st.confirmedByIndex[i] !== true) return false;
+  }
+  return true;
+}
+
+// Final Draft row の GET（read-only）。案件・content_type の確認用。
+async function _mfdReuseFetchRow(caseId, outputId) {
+  var res = await fetch('/api/output-drafts?caseId=' + encodeURIComponent(caseId) + '&outputId=' + encodeURIComponent(outputId), { credentials: 'same-origin' });
+  var data = (res && res.ok) ? await res.json() : null;
+  return (data && data.ok === true) ? data.draft : null;
 }
 
 function _mfdReuseStop(code) {
@@ -47039,7 +47081,7 @@ async function mfdReuseLoadSourceEvidence() {
   if (_mfdReuseBusy) return null;
   var tg = _mfdReuseTarget();
   if (!tg) { _mfdReuse = null; _mfdMessage = '元DraftのEvidenceを使えるのは、この画面で複製したFinal Draftだけです。'; _mfdRender(); return null; }
-  _mfdReuse = { targetOutputId: tg.draft.id, sourceOutputId: tg.sourceOutputId, caseId: tg.caseId, status: 'loading', plan: null, sourceRevision: null, claimTextById: {}, confirmed: false, error: null, result: null };
+  _mfdReuse = { targetOutputId: tg.draft.id, sourceOutputId: tg.sourceOutputId, caseId: tg.caseId, status: 'loading', plan: null, sourceRevision: null, claimTextById: {}, confirmedByIndex: {}, error: null, result: null };
   _mfdReuseBusy = true;
   _mfdRender();
   var st = _mfdReuse;
@@ -47074,7 +47116,7 @@ async function mfdReuseSubmit() {
   }
   st.error = null;
   _mfdReuseSyncFromDom();
-  if (st.confirmed !== true) return _mfdReuseStop('reuse_confirmation_required');
+  if (!_mfdReuseAllConfirmed(st)) return _mfdReuseStop('reuse_confirmation_required');
   var built = buildMfdEvidenceReuseCandidates(st.plan, st.caseId, st.claimTextById);
   if (!built.ok) return _mfdReuseStop(built.error);
   var pre = _mfdReusePreflight(st.plan);
@@ -47089,7 +47131,11 @@ async function mfdReuseSubmit() {
       st.status = 'stale';
       return _mfdReuseStop('source_canonical_changed');
     }
-    // Final Draft の canonical 確認（保存済み・canonical なし）→ 既存の契約決定（new scope）。
+    // Final Draft の確認: 同じ案件・content_type=value（保存済み row）。
+    var tgtRow = await _mfdReuseFetchRow(st.caseId, st.targetOutputId);
+    if (!tgtRow || tgtRow.case_id !== st.caseId || tgtRow.output_id !== st.targetOutputId) { st.status = 'stale'; return _mfdReuseStop('canonical_row_not_found'); }
+    if (tgtRow.content_type !== st.plan.contentType) { st.status = 'stale'; return _mfdReuseStop('target_content_type_mismatch'); }
+    // Final Draft の canonical 確認（canonical なし・revision null）→ 既存の契約決定（new scope）。
     var tgt = await _ceFetchCanonicalState(st.caseId, st.targetOutputId);
     var contract = _ceDecideResolutionContract({ kind: 'new', targetClaimIds: built.targetClaimIds }, tgt);
     if (!contract.ok) { st.status = 'stale'; return _mfdReuseStop(contract.error); }
@@ -47137,7 +47183,11 @@ var MFD_REUSE_ERROR_MESSAGES = {
   source_evidence_case_mismatch: '別案件の Evidence が含まれるため使用できません。',
   source_evidence_without_claim: 'Claim に対応しない Evidence が含まれるため使用できません。',
   source_evidence_not_supports: '支持（supports）以外の Evidence が含まれるため使用できません。',
-  source_evidence_not_user_verified: '原文確認済み（user_verified）でない Evidence が含まれるため使用できません。',
+  source_evidence_not_user_verified: '原文確認済みの形式なのに user_verified でない Evidence が含まれるため使用できません。',
+  source_evidence_method_not_allowed: '再利用できない種類（原文確認済み・Web取得以外）の Evidence が含まれるため使用できません。',
+  source_content_type_mismatch: '複製元Draftの content_type が value ではないため使用できません。',
+  source_revision_missing: '複製元DraftのEvidenceに revision が無いため使用できません。',
+  target_content_type_mismatch: 'Final Draft の content_type が複製元と一致しないため送信していません。',
   source_evidence_excerpt_missing: '原文が保存されていない Evidence が含まれるため使用できません。',
   source_evidence_url_invalid: '出典URLが http / https でない Evidence が含まれるため使用できません。',
   source_question_missing: 'Formal question が保存されていない Evidence が含まれるため使用できません。',
@@ -47195,26 +47245,34 @@ function buildMfdEvidenceReuseHtml(d, meta) {
     ? '<div style="font-size:11px;color:rgba(255,120,120,0.95);">Independent Publisher Preflight：FAIL（送信できません）' + (pre.failedIntentIds.length ? '：' + _mfdEsc(pre.failedIntentIds.join('、')) : '') + '</div>'
     : '<div style="font-size:11px;">Independent Publisher Preflight：' + (pre.status === 'pass' ? 'PASS' : '対象Intentなし') + '（publisher の多様性の最低条件のみ）</div>');
   var claimRows = st.plan.claims.map(function (c) {
-    var evs = st.plan.evidence.filter(function (ev) { return ev.claimId === c.claimId; }).map(function (ev) {
+    var evs = st.plan.evidence.map(function (ev, i) {
+      if (ev.claimId !== c.claimId) return '';
       var name = _mfdEsc(ev.sourceName || ev.sourceTitle || '(出典名なし)');
       var link = (typeof _ceLinkHrefAttr === 'function')
         ? '<a ' + _ceLinkHrefAttr(ev.sourceUrl) + ' target="_blank" rel="noopener noreferrer">' + _mfdEsc(ev.sourceUrl) + '</a>'
         : '<code>' + _mfdEsc(ev.sourceUrl) + '</code>';
-      return '<li style="font-size:10px;">' + name + ' ／ ' + link +
-        '<div style="white-space:pre-wrap;border-left:2px solid rgba(255,255,255,0.3);padding-left:6px;margin:2px 0;">' + _mfdEsc(ev.sourceExcerpt) + '</div></li>';
+      if (ev.kind === 'user_verified') {
+        return '<li style="font-size:10px;"><strong>原文確認済み</strong> ／ ' + name + ' ／ ' + link +
+          '<div style="white-space:pre-wrap;border-left:2px solid rgba(255,255,255,0.3);padding-left:6px;margin:2px 0;">' + _mfdEsc(ev.sourceExcerpt) + '</div>' +
+          '<label style="display:block;"><input type="checkbox" id="mfd-reuse-confirm-' + i + '"' + (st.confirmedByIndex[i] ? ' checked' : '') + ' onchange="_mfdReuseSyncFromDom()">' +
+          ' この原文が上記URLの本文に実際に記載されていることを、今回あらためて確認しました</label></li>';
+      }
+      return '<li style="font-size:10px;"><strong>Web取得（原文なし・serverが再判定）</strong> ／ ' + name + ' ／ ' + link +
+        '<div style="opacity:0.8;">前回の server 判定：' + _mfdEsc(ev.previousVerificationStatus || '-') + '（今回は送信せず、server が改めて判定します）</div>' +
+        (ev.sourceExcerpt ? '<div style="white-space:pre-wrap;border-left:2px solid rgba(255,255,255,0.3);padding-left:6px;margin:2px 0;">' + _mfdEsc(ev.sourceExcerpt) + '</div>' : '') +
+        '</li>';
     }).join('');
     return '<div style="margin-top:6px;">' +
       '<div style="font-size:11px;"><code>' + _mfdEsc(c.claimId) + '</code> ／ ' + _mfdEsc(c.claimType) + '</div>' +
       '<div style="font-size:10px;opacity:0.85;">Formal question（読み取り専用）：' + _mfdEsc(c.question) + '</div>' +
       '<div style="font-size:10px;margin-top:2px;">claim 文言（編集可）</div>' +
       '<textarea id="mfd-reuse-claim-' + _mfdEsc(c.claimId) + '" rows="2" style="width:100%;" oninput="_mfdReuseSyncFromDom()">' + _mfdEsc(st.claimTextById[c.claimId]) + '</textarea>' +
-      '<div style="font-size:10px;opacity:0.85;">保存済み原文（読み取り専用）</div><ul style="margin:2px 0;">' + evs + '</ul></div>';
+      '<div style="font-size:10px;opacity:0.85;">保存済みEvidence（読み取り専用）</div><ul style="margin:2px 0;">' + evs + '</ul></div>';
   }).join('');
   return head +
-    '<div style="font-size:10px;">複製元 revision：<code>' + _mfdEsc(st.sourceRevision || '(なし)') + '</code> ／ Claim ' + st.plan.claims.length + ' ／ Evidence ' + st.plan.evidence.length + '</div>' +
+    '<div style="font-size:10px;">複製元 revision：<code>' + _mfdEsc(st.sourceRevision || '(なし)') + '</code> ／ Claim ' + st.plan.claims.length + ' ／ Evidence ' + st.plan.evidence.length +
+    '（原文確認済み ' + st.plan.userVerifiedCount + '件＝要再確認 ／ Web取得 ' + st.plan.webRetrievedCount + '件＝server 再判定）</div>' +
     preHtml + claimRows +
-    '<label style="font-size:11px;display:block;margin-top:6px;"><input type="checkbox" id="mfd-reuse-confirm"' + (st.confirmed ? ' checked' : '') + ' onchange="_mfdReuseSyncFromDom()">' +
-    ' 上記すべての原文が、それぞれの出典URLの本文に実際に記載されていることを、今回あらためて確認しました</label>' +
     (st.error ? _mfdReuseErrorHtml(st.error) : '') +
     '<div style="font-size:10px;opacity:0.8;">確定（grounded 判定）は server が行います。送信は1回だけで、失敗しても自動再送しません。</div>' +
     '<button id="mfd-reuse-submit-btn" onclick="mfdReuseSubmit()"' + ((_mfdReuseBusy || (pre && pre.status === 'fail')) ? ' disabled' : '') + '>元DraftのEvidenceで確定（検索なし）</button>' +
