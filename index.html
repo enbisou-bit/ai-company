@@ -46614,6 +46614,7 @@ function renderOutputEnginePanel() {
     + '</div>'
     + detectionHtml
     + _oeSafe(buildDailyCandidateBoardHtml,     'DailyCandidateBoard')   // Phase P0: Auto Task 前の候補選択（決定論・保存なし）
+    + _oeSafe(buildManualFinalDraftHtml,        'ManualFinalDraft')      // First Post Finalization: 新 outputId への複製＋手動編集（AIなし）
     + _oeSafe(buildOutputPackageHtml,           'OutputPackage')
     + _oeSafe(buildQualityScoreHtml,             'QualityScore')
     + _oeSafe(buildOutputPackageQualityHtml,     'OutputPackageQuality')
@@ -46695,6 +46696,532 @@ function renderOutputEnginePanel() {
   } catch(_clqE) { console.log('[OE-CLQ-DOM] error:', _clqE && _clqE.message); }
 }
 
+</script>
+<script>
+// MANUAL-FINAL-DRAFT-BEGIN
+// ══════════════════════════════════════════════════════════════
+// First Post Finalization: Manual Final Draft Copy / Edit（AI・Evidence・Resolution 非接触）
+//   表示中の Draft を「新しい outputId の Final Draft」として複製し、slides / caption / CTA / hashtags
+//   だけを人が編集して保存する最小機能。
+//   ★ 複製元は server の保存済み row（fields / content_type）を GET して正本とする（client の古い値を使わない）。
+//   ★ canonical（content_evidence / content_claims / content_evidence_origin）はコピーしない。
+//     fields 内の legacy contentEvidence / contentClaims も除外する
+//     （Evidence は後で既存の Evidence確定＝new scope・full_replace で正式 Resolution する）。
+//   ★ 編集・保存できるのは、この画面セッション中に複製した Final Draft だけ（複製元 Draft は編集・保存しない）。
+//   ★ AI / Evidence Search / Resolution / Content Evidence の state には一切触れない。
+//   ★ 例外は下の MFD-EVIDENCE-REUSE ブロックだけ（元DraftのEvidenceを使用・検索なし）。
+//     そこでも canonical はコピーせず、Final Draft に対して既存 Resolution を新しく1回だけ送る。
+// ══════════════════════════════════════════════════════════════
+var MFD_EXCLUDED_FIELD_KEYS = ['contentEvidence', 'contentClaims'];
+var _mfdManualDrafts = {};   // outputId -> { sourceOutputId, copiedAt }（この画面セッション中に複製した Final Draft のみ）
+var _mfdMessage = null;
+var _mfdBusy = false;
+
+function _mfdDeepCopy(v) { return (v === null || v === undefined) ? v : JSON.parse(JSON.stringify(v)); }
+function _mfdEsc(s) {
+  var t = String(s == null ? '' : s);
+  try { if (typeof escapeHtml === 'function') return escapeHtml(t); } catch (e) { /* fallthrough */ }
+  return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 純関数: server row（複製元）→ 新しい Final Draft（client draft 形式）。入力 row は変更しない。
+function buildManualFinalDraftCopy(sourceRow, opts) {
+  var o = opts || {};
+  if (!sourceRow || typeof sourceRow !== 'object' || !sourceRow.output_id) return { ok: false, error: 'source_missing' };
+  var now = o.nowIso || new Date().toISOString();
+  var newId = o.newOutputId || ('out_' + Date.now());
+  if (newId === sourceRow.output_id) return { ok: false, error: 'output_id_collision' };
+  var srcFields = (sourceRow.fields && typeof sourceRow.fields === 'object') ? sourceRow.fields : {};
+  var fields = {};
+  Object.keys(srcFields).forEach(function (k) {
+    if (MFD_EXCLUDED_FIELD_KEYS.indexOf(k) === -1) fields[k] = _mfdDeepCopy(srcFields[k]);
+  });
+  if (!Array.isArray(fields.slides) || fields.slides.length === 0) return { ok: false, error: 'source_has_no_slides' };
+  return {
+    ok: true,
+    draft: {
+      id: newId,
+      caseId: sourceRow.case_id || null,
+      type: sourceRow.type,
+      status: sourceRow.status || 'ready',
+      sourceText: sourceRow.source_text || '',
+      fields: fields,
+      contentType: sourceRow.content_type || null,   // server canonical の content_type を引き継ぐ
+      assignedRoles: _mfdDeepCopy(sourceRow.assigned_roles) || {},
+      schemaVersion: sourceRow.schema_version || null,
+      detection: _mfdDeepCopy(sourceRow.detection) || null,
+      quality: null,          // 派生値は複製しない（編集後の本文と食い違う古い値を持ち込まない）
+      packageQuality: null,
+      createdAt: now,
+      updatedAt: now,
+      exports: {}, memoryRefs: [], providerRefs: [], reviewNotes: [], finalPackage: null,
+      manualFinalOf: { sourceOutputId: sourceRow.output_id, copiedAt: now },   // client メモリのみ（保存 payload には含まれない）
+    },
+  };
+}
+
+// hashtags 入力（改行・空白・読点区切り）→ '#' 付きの重複なし配列
+function _mfdParseHashtags(text) {
+  var seen = {};
+  return String(text == null ? '' : text).split(/[\s、,，]+/).map(function (x) { return x.trim(); })
+    .filter(function (x) { return x.length > 0; })
+    .map(function (x) { return x.charAt(0) === '#' || x.charAt(0) === '＃' ? '#' + x.slice(1) : '#' + x; })
+    .filter(function (x) { if (x === '#' || seen[x]) return false; seen[x] = true; return true; });
+}
+
+function _mfdRender() { try { if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel(); } catch (e) { /* 表示維持 */ } }
+
+// 「Final Draftとして複製」: server の複製元 row を GET → 新 outputId の Draft を作成 → 新 outputId だけ保存
+async function mfdCopyCurrentDraftAsFinal() {
+  if (_mfdBusy) return null;
+  _mfdMessage = null;
+  var src = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  var caseId = (typeof getCurrentApprovalCaseId === 'function') ? getCurrentApprovalCaseId() : null;
+  if (!src || !src.id || !caseId || src.caseId !== caseId) {
+    _mfdMessage = '複製元のDraftが現在の案件で開かれていないため複製できません。';
+    _mfdRender();
+    return null;
+  }
+  if (_mfdManualDrafts[src.id]) {
+    _mfdMessage = '表示中のDraftはすでにFinal Draftです。下の欄で編集して保存してください。';
+    _mfdRender();
+    return null;
+  }
+  _mfdBusy = true;
+  try {
+    var res = await fetch('/api/output-drafts?caseId=' + encodeURIComponent(caseId) + '&outputId=' + encodeURIComponent(src.id), { credentials: 'same-origin' });
+    var data = (res && res.ok) ? await res.json() : null;
+    var row = data && data.draft;
+    if (!row || row.output_id !== src.id || row.case_id !== caseId) {
+      _mfdMessage = '複製元Draftをserverで確認できないため複製しませんでした。';
+      return null;
+    }
+    var built = buildManualFinalDraftCopy(row, {});
+    if (!built.ok) {
+      _mfdMessage = '複製できませんでした（' + built.error + '）。';
+      return null;
+    }
+    if (typeof normalizeOutputType === 'function') built.draft.type = normalizeOutputType(built.draft.type);
+    _mfdManualDrafts[built.draft.id] = { sourceOutputId: src.id, copiedAt: built.draft.createdAt };
+    _lastOutputDraft = built.draft;   // 以降の表示・保存・Evidence確定の対象は新しい Final Draft
+    if (typeof resetApprovalStatesToDefault === 'function') resetApprovalStatesToDefault();   // 新成果物境界（承認状態は未承認から）
+    if (typeof pushOutputDraftToServer === 'function') pushOutputDraftToServer(_lastOutputDraft);   // 新 outputId のみ保存
+    _mfdMessage = 'Final Draft（' + built.draft.id + '）を作成しました。複製元（' + src.id + '）は変更していません。';
+    return built.draft;
+  } catch (e) {
+    _mfdMessage = '複製に失敗しました（' + ((e && e.message) || 'error') + '）。';
+    return null;
+  } finally {
+    _mfdBusy = false;
+    _mfdRender();
+  }
+}
+
+// 「Final Draftを保存」: この画面で複製した Final Draft の slides / caption / CTA / hashtags だけを更新して保存
+function mfdSaveManualEdits() {
+  _mfdMessage = null;
+  var d = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  var meta = d && d.id ? _mfdManualDrafts[d.id] : null;
+  if (!meta || d.id === meta.sourceOutputId) {
+    _mfdMessage = '編集・保存できるのは、この画面で複製したFinal Draftだけです。';
+    _mfdRender();
+    return null;
+  }
+  var cur = Array.isArray(d.fields && d.fields.slides) ? d.fields.slides : [];
+  var slides = [];
+  for (var i = 0; i < cur.length; i++) {
+    var el = document.getElementById('mfd-slide-' + i);
+    var v = el ? String(el.value || '').trim() : String(cur[i] || '');
+    if (!v) {
+      _mfdMessage = (i + 1) + '枚目が空のため保存しませんでした（スライドの削除はできません）。';
+      _mfdRender();
+      return null;
+    }
+    slides.push(v);
+  }
+  var capEl = document.getElementById('mfd-caption');
+  var ctaEl = document.getElementById('mfd-cta');
+  var tagEl = document.getElementById('mfd-hashtags');
+  var next = {};
+  Object.keys(d.fields || {}).forEach(function (k) { next[k] = d.fields[k]; });
+  next.slides = slides;
+  next.caption = capEl ? String(capEl.value || '').trim() : (d.fields.caption || '');
+  next.cta = ctaEl ? String(ctaEl.value || '').trim() : (d.fields.cta || '');
+  next.hashtags = tagEl ? _mfdParseHashtags(tagEl.value) : (d.fields.hashtags || []);
+  d.fields = next;
+  d.updatedAt = new Date().toISOString();
+  if (typeof pushOutputDraftToServer === 'function') pushOutputDraftToServer(d);   // 新 outputId（Final Draft）のみ
+  _mfdMessage = 'Final Draft（' + d.id + '）を保存しました。';
+  _mfdRender();
+  return d;
+}
+
+// Output Engine セクション（表示のみ・副作用なし）
+function buildManualFinalDraftHtml() {
+  var d = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  var caseId = (typeof getCurrentApprovalCaseId === 'function') ? getCurrentApprovalCaseId() : null;
+  if (!d || !d.id || !caseId || d.caseId !== caseId) return '';
+  if (!Array.isArray(d.fields && d.fields.slides) || d.fields.slides.length === 0) return '';
+  var meta = _mfdManualDrafts[d.id];
+  var msg = _mfdMessage ? '<div style="font-size:11px;color:rgba(255,200,80,0.95);margin:4px 0;">' + _mfdEsc(_mfdMessage) + '</div>' : '';
+  var head = '<div class="oe-status-card" id="mfd-section"><div class="oe-status-title">FINAL DRAFT（手動編集・AIなし）</div>';
+  if (!meta) {
+    return head +
+      '<div class="oe-status-sub" style="font-size:10px;">表示中のDraft: <code>' + _mfdEsc(d.id) + '</code>（このDraftは編集しません）</div>' +
+      '<div class="oe-status-sub" style="font-size:10px;opacity:0.8;">新しいoutputIdへ複製してから編集します。AI・Evidence Search・Resolutionは実行しません。Evidence（canonical）は複製しません。</div>' +
+      msg +
+      '<button id="mfd-copy-btn" onclick="mfdCopyCurrentDraftAsFinal()"' + (_mfdBusy ? ' disabled' : '') + '>Final Draftとして複製</button></div>';
+  }
+  var f = d.fields;
+  var slideRows = f.slides.map(function (s, i) {
+    return '<div style="font-size:10px;opacity:0.8;margin-top:4px;">' + (i + 1) + '枚目</div>' +
+      '<textarea id="mfd-slide-' + i + '" rows="3" style="width:100%;">' + _mfdEsc(s) + '</textarea>';
+  }).join('');
+  var tags = Array.isArray(f.hashtags) ? f.hashtags.join('\n') : String(f.hashtags || '');
+  return head +
+    '<div class="oe-status-sub" style="font-size:10px;">Final Draft: <code>' + _mfdEsc(d.id) + '</code> ／ 複製元: <code>' + _mfdEsc(meta.sourceOutputId) + '</code> ／ content_type: <code>' + _mfdEsc(d.contentType || '(未設定)') + '</code></div>' +
+    msg +
+    '<div style="font-size:11px;margin-top:6px;">slides</div>' + slideRows +
+    '<div style="font-size:11px;margin-top:6px;">caption</div><textarea id="mfd-caption" rows="6" style="width:100%;">' + _mfdEsc(f.caption || '') + '</textarea>' +
+    '<div style="font-size:11px;margin-top:6px;">CTA</div><textarea id="mfd-cta" rows="2" style="width:100%;">' + _mfdEsc(f.cta || '') + '</textarea>' +
+    '<div style="font-size:11px;margin-top:6px;">hashtags（1行に1つ）</div><textarea id="mfd-hashtags" rows="5" style="width:100%;">' + _mfdEsc(tags) + '</textarea>' +
+    '<button id="mfd-save-btn" onclick="mfdSaveManualEdits()" style="margin-top:6px;">Final Draftを保存</button>' +
+    buildMfdEvidenceReuseHtml(d, meta) + '</div>';
+}
+
+// MFD-EVIDENCE-REUSE-BEGIN
+// ──────────────────────────────────────────────────────────────
+// Canonical Evidence Reuse（元DraftのEvidenceを使用・検索なし）
+//   複製元 Draft の canonical を GET（read-only）→ 保存済み原文をユーザーが再確認 → claim 文言だけ編集
+//   → Final Draft に対して既存 POST /api/output-drafts（new scope・full_replace・expectedRevision null）を1回だけ送る。
+//   ★ source canonical を Formal Truth としてコピーしない。client で grounded を確定しない
+//     （server の既存 Resolution / 昇格 / Guard / CAS が raw candidate から再判定する）。
+//   ★ 再利用できるのは user_verified（public_document_user_verified・原文あり・http(s) URL・supports）の
+//     Evidence だけ。1件でも外れれば再利用しない（fail-closed・web_retrieved を user_verified へ昇格させない）。
+//   ★ 複製元 Draft は read-only（書込対象は Final Draft だけ）。Evidence Search・AI API は実行しない。
+//   ★ Formal question と原文は読み取り専用（送信値は GET した state から作り、DOM から読まない）。
+//   ★ POST は1操作1回。409 / 失敗時に自動 retry しない。送信後は再読み込みを要求する。
+// ──────────────────────────────────────────────────────────────
+var MFD_REUSE_SOURCE_METHOD = 'public_document_user_verified';
+var _mfdReuse = null;        // { targetOutputId, sourceOutputId, caseId, status, plan, sourceRevision, claimTextById, confirmed, error, result }
+var _mfdReuseBusy = false;
+
+function _mfdStr(v) { return typeof v === 'string' ? v.trim() : ''; }
+function _mfdIsHttpUrl(u) {
+  try { var p = new URL(String(u == null ? '' : u).trim()); return p.protocol === 'http:' || p.protocol === 'https:'; } catch (e) { return false; }
+}
+
+// 純関数: 複製元 server row → 再利用 plan（検証のみ・入力 row は変更しない）。
+function buildMfdEvidenceReusePlan(row, caseId, sourceOutputId) {
+  function fail(code) { return { ok: false, error: code }; }
+  var idPattern = (typeof CE_CLAIM_ID_PATTERN !== 'undefined') ? CE_CLAIM_ID_PATTERN : null;
+  if (!idPattern) return fail('claim_id_pattern_unavailable');
+  if (!row || typeof row !== 'object') return fail('source_row_not_found');
+  if (!caseId || row.case_id !== caseId || row.output_id !== sourceOutputId) return fail('source_row_mismatch');
+  var claims = row.content_claims, evidence = row.content_evidence, origin = row.content_evidence_origin;
+  if (!Array.isArray(claims) || !Array.isArray(evidence) || claims.length === 0 || evidence.length === 0) return fail('source_canonical_missing');
+  if (origin !== null && origin !== undefined && (typeof origin !== 'object' || Array.isArray(origin))) return fail('source_canonical_invalid');
+  var rev = (origin && Object.prototype.hasOwnProperty.call(origin, 'revision')) ? origin.revision : null;
+  if (rev !== null && typeof rev !== 'string') return fail('source_canonical_invalid');
+  var plan = { claims: [], evidence: [], claimIds: [], revision: rev };
+  var byId = {};
+  for (var i = 0; i < claims.length; i++) {
+    var c = claims[i];
+    if (!c || typeof c !== 'object' || typeof c.claimId !== 'string' || !idPattern.test(c.claimId) || byId[c.claimId]) return fail('source_canonical_invalid');
+    if (c.status !== 'grounded') return fail('source_claim_not_grounded');
+    if (!_mfdStr(c.text)) return fail('source_claim_text_missing');
+    if (!_mfdStr(c.claimType)) return fail('source_canonical_invalid');
+    byId[c.claimId] = { claimId: c.claimId, topic: _mfdStr(c.topic), claimType: c.claimType, text: c.text, question: null, evidenceCount: 0 };
+    plan.claims.push(byId[c.claimId]);
+    plan.claimIds.push(c.claimId);
+  }
+  for (var j = 0; j < evidence.length; j++) {
+    var e = evidence[j];
+    if (!e || typeof e !== 'object') return fail('source_canonical_invalid');
+    if (e.caseId !== caseId) return fail('source_evidence_case_mismatch');
+    var cl = byId[e.claimId];
+    if (!cl) return fail('source_evidence_without_claim');
+    if (e.supportType !== 'supports') return fail('source_evidence_not_supports');
+    if (e.sourceMethod !== MFD_REUSE_SOURCE_METHOD || e.verificationStatus !== 'user_verified') return fail('source_evidence_not_user_verified');
+    if (!_mfdStr(e.sourceExcerpt)) return fail('source_evidence_excerpt_missing');
+    if (!_mfdIsHttpUrl(e.sourceUrl)) return fail('source_evidence_url_invalid');
+    if (!_mfdStr(e.claimType)) return fail('source_canonical_invalid');
+    var q = _mfdStr(e.claim);
+    if (!q) return fail('source_question_missing');
+    if (cl.question !== null && cl.question !== q) return fail('source_question_inconsistent');
+    cl.question = q;
+    cl.evidenceCount++;
+    plan.evidence.push({
+      claimId: e.claimId, claimType: e.claimType, supportType: e.supportType,
+      sourceUrl: e.sourceUrl, sourceTitle: e.sourceTitle, sourceName: e.sourceName, sourceExcerpt: e.sourceExcerpt,
+    });
+  }
+  for (var k = 0; k < plan.claims.length; k++) {
+    if (plan.claims[k].evidenceCount === 0) return fail('source_claim_without_evidence');
+  }
+  plan.ok = true;
+  return plan;
+}
+
+// 純関数: plan + claim 文言 → 既存 Resolution の raw candidate（Formal question / 原文は plan の値のみ）。
+function buildMfdEvidenceReuseCandidates(plan, caseId, claimTextById) {
+  if (!plan || plan.ok !== true || !caseId) return { ok: false, error: 'reuse_plan_missing' };
+  var texts = claimTextById || {};
+  var claimById = {};
+  for (var i = 0; i < plan.claims.length; i++) {
+    var t = _mfdStr(texts[plan.claims[i].claimId]);
+    if (!t) return { ok: false, error: 'claim_text_missing', claimId: plan.claims[i].claimId };
+    claimById[plan.claims[i].claimId] = { claim: plan.claims[i], text: t };
+  }
+  var candidates = plan.evidence.map(function (ev) {
+    var c = claimById[ev.claimId];
+    return {
+      intentId: ev.claimId,
+      caseId: caseId,
+      topic: c.claim.topic || undefined,
+      question: c.claim.question,
+      claimTypeCandidate: c.claim.claimType,
+      candidate: {
+        sourceMethod: MFD_REUSE_SOURCE_METHOD,
+        sourceUrl: ev.sourceUrl,
+        sourceTitle: ev.sourceTitle,
+        sourceName: ev.sourceName,
+        sourceExcerpt: ev.sourceExcerpt,
+        createdBy: 'user',
+      },
+      mappingDecision: { claimType: ev.claimType, supportType: ev.supportType, verificationStatus: 'user_verified' },
+      proposedClaimText: c.text,
+    };
+  });
+  return { ok: true, candidates: candidates, targetClaimIds: plan.claimIds.slice() };
+}
+
+// B-2: 既存純関数で Independent Publisher Preflight を判定（判定部品が無ければ fail-closed）。
+function _mfdReusePreflight(plan) {
+  if (!plan || plan.ok !== true) return null;
+  if (typeof ContentClaimPlanning === 'undefined' || typeof ContentClaimPlanning.evaluateIndependentPublisherPreflight !== 'function') {
+    return { status: 'fail', byIntent: {}, failedIntentIds: [], errors: ['preflight_unavailable'] };
+  }
+  var intents = plan.claims.map(function (c) { return { intentId: c.claimId, claimTypeCandidate: c.claimType }; });
+  var cands = plan.evidence.map(function (ev) { return { intentId: ev.claimId, sourceUrl: ev.sourceUrl, sourceName: ev.sourceName, sourceTitle: ev.sourceTitle }; });
+  return ContentClaimPlanning.evaluateIndependentPublisherPreflight(intents, cands);
+}
+
+// 対象: この画面で複製した Final Draft（現在案件・複製元とは別 outputId）のみ。
+function _mfdReuseTarget() {
+  var d = (typeof _lastOutputDraft !== 'undefined') ? _lastOutputDraft : null;
+  var caseId = (typeof getCurrentApprovalCaseId === 'function') ? getCurrentApprovalCaseId() : null;
+  var meta = d && d.id ? _mfdManualDrafts[d.id] : null;
+  if (!d || !meta || !caseId || d.caseId !== caseId || d.id === meta.sourceOutputId) return null;
+  return { draft: d, caseId: caseId, sourceOutputId: meta.sourceOutputId };
+}
+
+// DOM → state（claim 文言・確認チェックのみ）。副作用は state 更新だけ。
+function _mfdReuseSyncFromDom() {
+  var st = _mfdReuse;
+  if (!st || st.status !== 'loaded') return;
+  st.plan.claims.forEach(function (c) {
+    var el = document.getElementById('mfd-reuse-claim-' + c.claimId);
+    if (el) st.claimTextById[c.claimId] = String(el.value || '');
+  });
+  var cb = document.getElementById('mfd-reuse-confirm');
+  if (cb) st.confirmed = cb.checked === true;
+}
+
+function _mfdReuseStop(code) {
+  if (_mfdReuse) _mfdReuse.error = code;
+  _mfdRender();
+  return { ok: false, error: code };
+}
+
+// 「元DraftのEvidenceを使用（検索なし）」: 複製元 row を GET（read-only）して再利用 plan を作る。
+async function mfdReuseLoadSourceEvidence() {
+  if (_mfdReuseBusy) return null;
+  var tg = _mfdReuseTarget();
+  if (!tg) { _mfdReuse = null; _mfdMessage = '元DraftのEvidenceを使えるのは、この画面で複製したFinal Draftだけです。'; _mfdRender(); return null; }
+  _mfdReuse = { targetOutputId: tg.draft.id, sourceOutputId: tg.sourceOutputId, caseId: tg.caseId, status: 'loading', plan: null, sourceRevision: null, claimTextById: {}, confirmed: false, error: null, result: null };
+  _mfdReuseBusy = true;
+  _mfdRender();
+  var st = _mfdReuse;
+  try {
+    var res = await fetch('/api/output-drafts?caseId=' + encodeURIComponent(tg.caseId) + '&outputId=' + encodeURIComponent(tg.sourceOutputId), { credentials: 'same-origin' });
+    var data = (res && res.ok) ? await res.json() : null;
+    var plan = buildMfdEvidenceReusePlan(data && data.ok === true ? data.draft : null, tg.caseId, tg.sourceOutputId);
+    if (!plan.ok) { st.status = 'error'; st.error = plan.error; return null; }
+    st.plan = plan;
+    st.sourceRevision = plan.revision;
+    plan.claims.forEach(function (c) { st.claimTextById[c.claimId] = c.text; });
+    st.status = 'loaded';
+    return st;
+  } catch (e) {
+    st.status = 'error';
+    st.error = 'source_read_failed';
+    return null;
+  } finally {
+    _mfdReuseBusy = false;
+    _mfdRender();
+  }
+}
+
+// 「元DraftのEvidenceで確定」: 送信前検査 → 既存 POST /api/output-drafts を1回だけ（Final Draft のみ）。
+async function mfdReuseSubmit() {
+  if (_mfdReuseBusy) return { ok: false, error: 'submit_in_flight' };
+  var st = _mfdReuse;
+  var tg = _mfdReuseTarget();
+  if (!st || st.status !== 'loaded' || !tg || tg.draft.id !== st.targetOutputId || tg.sourceOutputId !== st.sourceOutputId
+      || tg.caseId !== st.caseId || st.targetOutputId === st.sourceOutputId) {
+    return _mfdReuseStop('reuse_scope_invalid');
+  }
+  st.error = null;
+  _mfdReuseSyncFromDom();
+  if (st.confirmed !== true) return _mfdReuseStop('reuse_confirmation_required');
+  var built = buildMfdEvidenceReuseCandidates(st.plan, st.caseId, st.claimTextById);
+  if (!built.ok) return _mfdReuseStop(built.error);
+  var pre = _mfdReusePreflight(st.plan);
+  if (!pre || pre.status === 'fail') return _mfdReuseStop('independent_publisher_preflight_failed');
+
+  _mfdReuseBusy = true;
+  try {
+    // 複製元 canonical の再確認（GET のみ）。読み込み時から Claim 集合 / revision が変わっていれば送信しない。
+    var src = await _ceFetchCanonicalState(st.caseId, st.sourceOutputId);
+    if (!src || src.ok !== true || !src.hasCanonical || src.revision !== st.sourceRevision
+        || src.claimIds.join('\u0000') !== st.plan.claimIds.join('\u0000')) {
+      st.status = 'stale';
+      return _mfdReuseStop('source_canonical_changed');
+    }
+    // Final Draft の canonical 確認（保存済み・canonical なし）→ 既存の契約決定（new scope）。
+    var tgt = await _ceFetchCanonicalState(st.caseId, st.targetOutputId);
+    var contract = _ceDecideResolutionContract({ kind: 'new', targetClaimIds: built.targetClaimIds }, tgt);
+    if (!contract.ok) { st.status = 'stale'; return _mfdReuseStop(contract.error); }
+    if (contract.resolutionMode !== 'full_replace' || contract.expectedRevision !== null) { st.status = 'stale'; return _mfdReuseStop('reuse_contract_unexpected'); }
+
+    st.status = 'submitting';
+    var res = await fetch('/api/output-drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outputId: st.targetOutputId,
+        caseId: st.caseId,
+        fields: tg.draft.fields || {},
+        contentEvidenceCandidates: built.candidates,
+        resolutionMode: contract.resolutionMode,
+        targetClaimIds: contract.targetClaimIds,
+        expectedRevision: contract.expectedRevision,
+      }),
+    });
+    var data = await res.json().catch(function () { return { ok: false, error: 'invalid_response' }; });
+    st.result = Object.assign({}, data || {}, { httpStatus: res.status });
+    st.status = 'done';   // 成功・失敗とも再送しない（次は再読み込みから）
+    if (st.result.ok === true) _ceMarkCanonicalStale(st.caseId, 'resolution_succeeded');
+    else if (st.result.error === 'canonical_revision_conflict') _ceMarkCanonicalStale(st.caseId, st.result.error);
+    return st.result;
+  } catch (e) {
+    st.status = 'done';
+    st.result = { ok: false, error: 'network_error' };
+    return st.result;
+  } finally {
+    _mfdReuseBusy = false;
+    _mfdRender();
+  }
+}
+
+var MFD_REUSE_ERROR_MESSAGES = {
+  claim_id_pattern_unavailable: 'Claim ID の検証部品を読み込めないため使用できません。',
+  source_row_not_found: '複製元Draftをserverで確認できませんでした。',
+  source_row_mismatch: '複製元Draftが一致しないため使用できません。',
+  source_read_failed: '複製元Draftを読み込めませんでした。',
+  source_canonical_missing: '複製元DraftにEvidence（canonical）がありません。',
+  source_canonical_invalid: '複製元DraftのEvidenceの状態が不正なため使用できません。',
+  source_claim_not_grounded: '複製元に確定していない Claim があるため使用できません。',
+  source_claim_text_missing: '複製元の Claim 文言が空のため使用できません。',
+  source_evidence_case_mismatch: '別案件の Evidence が含まれるため使用できません。',
+  source_evidence_without_claim: 'Claim に対応しない Evidence が含まれるため使用できません。',
+  source_evidence_not_supports: '支持（supports）以外の Evidence が含まれるため使用できません。',
+  source_evidence_not_user_verified: '原文確認済み（user_verified）でない Evidence が含まれるため使用できません。',
+  source_evidence_excerpt_missing: '原文が保存されていない Evidence が含まれるため使用できません。',
+  source_evidence_url_invalid: '出典URLが http / https でない Evidence が含まれるため使用できません。',
+  source_question_missing: 'Formal question が保存されていない Evidence が含まれるため使用できません。',
+  source_question_inconsistent: '同じ Claim の Formal question が一致しないため使用できません。',
+  source_claim_without_evidence: 'Evidence の無い Claim があるため使用できません。',
+  source_canonical_changed: '複製元のEvidenceが読み込み後に変わっています。再読み込みしてください（送信していません）。',
+  reuse_scope_invalid: '対象のFinal Draftが一致しないため送信していません。再読み込みしてください。',
+  reuse_confirmation_required: '原文の再確認チェックが必要です（送信していません）。',
+  reuse_plan_missing: '元DraftのEvidenceが読み込まれていません。',
+  claim_text_missing: 'claim 文言が空の Claim があります（送信していません）。',
+  reuse_contract_unexpected: 'Final Draft の Evidence 状態が想定と異なるため送信していません。',
+};
+function _mfdReuseErrorText(code) {
+  if (MFD_REUSE_ERROR_MESSAGES[code]) return MFD_REUSE_ERROR_MESSAGES[code];
+  if (typeof _ceResolutionErrorMessage === 'function') return _ceResolutionErrorMessage(code);
+  return 'Evidence確定に失敗しました。';
+}
+function _mfdReuseErrorHtml(code, details) {
+  var list = Array.isArray(details) ? details.map(function (x) {
+    return '<li>' + _mfdEsc((x && (x.intentId || x.claimId)) || '-') + '：' + _mfdEsc((x && x.error) || '-') + '</li>';
+  }).join('') : '';
+  return '<div style="font-size:11px;color:rgba(255,120,120,0.95);margin:4px 0;">' + _mfdEsc(_mfdReuseErrorText(code)) +
+    '（code: <code>' + _mfdEsc(code) + '</code>）' + (list ? '<ul style="margin:2px 0;">' + list + '</ul>' : '') + '</div>';
+}
+
+// Final Draft 内の Evidence 再利用セクション（表示のみ・副作用なし）
+function buildMfdEvidenceReuseHtml(d, meta) {
+  var head = '<div id="mfd-reuse-section" style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.15);padding-top:6px;">' +
+    '<div style="font-size:11px;font-weight:bold;">Evidence（元DraftのEvidenceを使用・検索なし）</div>' +
+    '<div class="oe-status-sub" style="font-size:10px;opacity:0.8;">複製元（<code>' + _mfdEsc(meta.sourceOutputId) + '</code>）の保存済みEvidenceを読み取り専用で読み込み、' +
+    'このFinal Draftに対して既存のEvidence確定（server 再判定）を1回だけ送ります。Evidence Search・AIは実行しません。複製元は変更しません。</div>';
+  var loadBtn = '<button id="mfd-reuse-load-btn" onclick="mfdReuseLoadSourceEvidence()"' + (_mfdReuseBusy ? ' disabled' : '') + '>元DraftのEvidenceを使用（検索なし）</button>';
+  var st = (_mfdReuse && _mfdReuse.targetOutputId === d.id) ? _mfdReuse : null;
+  if (!st) return head + loadBtn + '</div>';
+  if (st.status === 'loading') return head + '<div style="font-size:11px;">読み込み中…</div></div>';
+  if (st.status === 'error') return head + _mfdReuseErrorHtml(st.error) + loadBtn + '</div>';
+  if (st.status === 'submitting') return head + '<div style="font-size:11px;">送信中…（自動再送はしません）</div></div>';
+  if (st.status === 'done' || st.status === 'stale') {
+    var r = st.result;
+    var body = '';
+    if (r && r.ok === true) {
+      var s = r.contentEvidenceSummary || {};
+      body = '<div style="font-size:11px;color:rgba(120,230,140,0.95);">Evidence確定（server 判定）：Evidence ' + _mfdEsc(s.contentEvidenceCount) + ' ／ Claim ' + _mfdEsc(s.contentClaimsCount) +
+        ' ／ ' + _mfdEsc(s.resolutionMode) + ' ／ revision <code>' + _mfdEsc(s.revision) + '</code></div>';
+    } else if (r) {
+      body = _mfdReuseErrorHtml(r.error || 'unknown_error', r.details);
+    } else if (st.error) {
+      body = _mfdReuseErrorHtml(st.error);
+    }
+    return head + body + '<div style="font-size:10px;opacity:0.8;">次の操作の前に再読み込みして状態を確認してください（自動再送はしません）。</div>' + loadBtn + '</div>';
+  }
+  // loaded
+  var pre = _mfdReusePreflight(st.plan);
+  var preHtml = !pre ? '' : (pre.status === 'fail'
+    ? '<div style="font-size:11px;color:rgba(255,120,120,0.95);">Independent Publisher Preflight：FAIL（送信できません）' + (pre.failedIntentIds.length ? '：' + _mfdEsc(pre.failedIntentIds.join('、')) : '') + '</div>'
+    : '<div style="font-size:11px;">Independent Publisher Preflight：' + (pre.status === 'pass' ? 'PASS' : '対象Intentなし') + '（publisher の多様性の最低条件のみ）</div>');
+  var claimRows = st.plan.claims.map(function (c) {
+    var evs = st.plan.evidence.filter(function (ev) { return ev.claimId === c.claimId; }).map(function (ev) {
+      var name = _mfdEsc(ev.sourceName || ev.sourceTitle || '(出典名なし)');
+      var link = (typeof _ceLinkHrefAttr === 'function')
+        ? '<a ' + _ceLinkHrefAttr(ev.sourceUrl) + ' target="_blank" rel="noopener noreferrer">' + _mfdEsc(ev.sourceUrl) + '</a>'
+        : '<code>' + _mfdEsc(ev.sourceUrl) + '</code>';
+      return '<li style="font-size:10px;">' + name + ' ／ ' + link +
+        '<div style="white-space:pre-wrap;border-left:2px solid rgba(255,255,255,0.3);padding-left:6px;margin:2px 0;">' + _mfdEsc(ev.sourceExcerpt) + '</div></li>';
+    }).join('');
+    return '<div style="margin-top:6px;">' +
+      '<div style="font-size:11px;"><code>' + _mfdEsc(c.claimId) + '</code> ／ ' + _mfdEsc(c.claimType) + '</div>' +
+      '<div style="font-size:10px;opacity:0.85;">Formal question（読み取り専用）：' + _mfdEsc(c.question) + '</div>' +
+      '<div style="font-size:10px;margin-top:2px;">claim 文言（編集可）</div>' +
+      '<textarea id="mfd-reuse-claim-' + _mfdEsc(c.claimId) + '" rows="2" style="width:100%;" oninput="_mfdReuseSyncFromDom()">' + _mfdEsc(st.claimTextById[c.claimId]) + '</textarea>' +
+      '<div style="font-size:10px;opacity:0.85;">保存済み原文（読み取り専用）</div><ul style="margin:2px 0;">' + evs + '</ul></div>';
+  }).join('');
+  return head +
+    '<div style="font-size:10px;">複製元 revision：<code>' + _mfdEsc(st.sourceRevision || '(なし)') + '</code> ／ Claim ' + st.plan.claims.length + ' ／ Evidence ' + st.plan.evidence.length + '</div>' +
+    preHtml + claimRows +
+    '<label style="font-size:11px;display:block;margin-top:6px;"><input type="checkbox" id="mfd-reuse-confirm"' + (st.confirmed ? ' checked' : '') + ' onchange="_mfdReuseSyncFromDom()">' +
+    ' 上記すべての原文が、それぞれの出典URLの本文に実際に記載されていることを、今回あらためて確認しました</label>' +
+    (st.error ? _mfdReuseErrorHtml(st.error) : '') +
+    '<div style="font-size:10px;opacity:0.8;">確定（grounded 判定）は server が行います。送信は1回だけで、失敗しても自動再送しません。</div>' +
+    '<button id="mfd-reuse-submit-btn" onclick="mfdReuseSubmit()"' + ((_mfdReuseBusy || (pre && pre.status === 'fail')) ? ' disabled' : '') + '>元DraftのEvidenceで確定（検索なし）</button>' +
+    loadBtn + '</div>';
+}
+// MFD-EVIDENCE-REUSE-END
+// MANUAL-FINAL-DRAFT-END
 </script>
 <script>
 /* Phase52-9b: Mobile Topbar Rebuild
