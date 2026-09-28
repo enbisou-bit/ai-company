@@ -1,0 +1,955 @@
+{
+  "schemaVersion": 1,
+  "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
+  "expected": {
+    "total": 61,
+    "safe": 44,
+    "conditional": 13,
+    "forbidden": 4
+  },
+  "baselineSnapshot": {
+    "note": "Safety Architecture Freeze 時点の既存 test（Autopilot 自身の test を除く）",
+    "total": 60,
+    "safe": 43,
+    "conditional": 13,
+    "forbidden": 4
+  },
+  "tests": [
+    {
+      "file": "apfrApprovalEnforcement.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrCaseDataContext.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrComplianceAssessment.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrComplianceContext.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrComplianceGate.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrComplianceInjection.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）／AI provider client に到達",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "OPENAI_* / ANTHROPIC_* / CLAUDE_* が未設定であること"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/supabase.js",
+          "openaiClient.js",
+          "shared/agentResultNormalizer.js",
+          "shared/evidenceAcquisition.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 1
+      }
+    },
+    {
+      "file": "apfrComplianceUiScope.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrCore.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrCorrectionDuplicate.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrCorrectionUi.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrCurrentFactResolver.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrCurrentFactUi.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrDisclosureDetection.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrListingScope.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrManualInputUi.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrNumericConsistency.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrProductContentFields.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apfrReadoptCarryOver.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "apiAuthBoundary.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/webSession.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "carouselAccessControl.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "worktree では sharp / opentype.js が未 tracked のため NODE_PATH=<main>/node_modules が必要"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js",
+          "lib/carouselAssetStorageSupabase.js",
+          "lib/carouselCompositor.js",
+          "lib/carouselExecutionDb.js",
+          "lib/carouselExecutionStore.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 14
+      }
+    },
+    {
+      "file": "carouselAssetStorage.test.js",
+      "class": "conditional",
+      "reason": "Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと"
+      ],
+      "deps": {
+        "files": [
+          "lib/carouselAssetStorage.js"
+        ],
+        "npm": [
+          "@supabase"
+        ]
+      }
+    },
+    {
+      "file": "carouselAssetStorageSupabase.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "worktree では sharp / opentype.js が未 tracked のため NODE_PATH=<main>/node_modules が必要"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js",
+          "lib/carouselAssetStorageSupabase.js",
+          "lib/carouselCompositor.js",
+          "lib/carouselExecutionDb.js",
+          "lib/carouselExecutionStore.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 14
+      }
+    },
+    {
+      "file": "carouselExecutionDb.test.js",
+      "class": "conditional",
+      "reason": "Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと"
+      ],
+      "deps": {
+        "files": [
+          "lib/carouselExecutionDb.js",
+          "lib/carouselExecutionStore.js",
+          "lib/carouselExecutionSupabase.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js"
+        ]
+      }
+    },
+    {
+      "file": "carouselImageProduceRoute.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "worktree では sharp / opentype.js が未 tracked のため NODE_PATH=<main>/node_modules が必要"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js",
+          "lib/carouselAssetStorageSupabase.js",
+          "lib/carouselCompositor.js",
+          "lib/carouselExecutionDb.js",
+          "lib/carouselExecutionStore.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 14
+      }
+    },
+    {
+      "file": "carouselImageProduction.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "worktree では sharp / opentype.js が未 tracked のため NODE_PATH=<main>/node_modules が必要"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/carouselCompositor.js",
+          "lib/carouselImageClient.js",
+          "lib/carouselImageNormalize.js",
+          "shared/carouselApproval.js",
+          "shared/carouselBackgroundSanitizer.js",
+          "shared/carouselFont.js",
+          "shared/carouselImageCore.js"
+        ],
+        "npm": [
+          "axios",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 2
+      }
+    },
+    {
+      "file": "carouselImageRoutes.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "worktree では sharp / opentype.js が未 tracked のため NODE_PATH=<main>/node_modules が必要"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js",
+          "lib/carouselAssetStorageSupabase.js",
+          "lib/carouselCompositor.js",
+          "lib/carouselExecutionDb.js",
+          "lib/carouselExecutionStore.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 14
+      }
+    },
+    {
+      "file": "carouselRealEnabledKillSwitch.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "worktree では sharp / opentype.js が未 tracked のため NODE_PATH=<main>/node_modules が必要"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js",
+          "lib/carouselAssetStorageSupabase.js",
+          "lib/carouselCompositor.js",
+          "lib/carouselExecutionDb.js",
+          "lib/carouselExecutionStore.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 14
+      }
+    },
+    {
+      "file": "contentClaimPlanning.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "shared/contentClaimPlanning.js",
+          "shared/contentEvidence.js",
+          "shared/contentValueQuality.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "contentClaimSearchPlan.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・危険 module を遮断）＋ Protected hash 確認",
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/contentEvidenceCanonical.js",
+          "lib/contentEvidenceResolutionGuard.js",
+          "lib/contentEvidenceResolutionService.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/supabase.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 7
+      }
+    },
+    {
+      "file": "contentEvidence.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "shared/contentEvidence.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "contentEvidenceApproval.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/contentEvidenceResolutionService.js",
+          "lib/publicStatic.js",
+          "shared/contentClaimPlanning.js",
+          "shared/contentEvidence.js",
+          "shared/contentEvidenceApproval.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": [
+          "express"
+        ]
+      }
+    },
+    {
+      "file": "contentEvidenceBrowserReality.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "contentEvidenceCanonicalColumns.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・危険 module を遮断）＋ Protected hash 確認",
+      "deps": {
+        "files": [
+          "conversationHistory.js",
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/contentEvidenceCanonical.js",
+          "lib/contentEvidenceResolutionService.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/outputDraftsDb.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 8
+      }
+    },
+    {
+      "file": "contentEvidenceResolutionGuard.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・危険 module を遮断）＋ Protected hash 確認",
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/contentEvidenceCanonical.js",
+          "lib/contentEvidenceResolutionGuard.js",
+          "lib/contentEvidenceResolutionService.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/outputDraftsDb.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 8
+      }
+    },
+    {
+      "file": "contentEvidenceServerResolution.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/contentEvidenceResolutionService.js",
+          "lib/publicStatic.js",
+          "shared/contentClaimPlanning.js",
+          "shared/contentEvidence.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": [
+          "express"
+        ]
+      }
+    },
+    {
+      "file": "contentEvidenceUiResolutionContract.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・危険 module を遮断）＋ Protected hash 確認",
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/contentEvidenceCanonical.js",
+          "lib/contentEvidenceResolutionGuard.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/supabase.js",
+          "openaiClient.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 3
+      }
+    },
+    {
+      "file": "contentEvidenceWriterContext.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/webSession.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "contentPublisherPreflight.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・危険 module を遮断）＋ Protected hash 確認",
+      "deps": {
+        "files": [
+          "shared/contentClaimPlanning.js",
+          "shared/contentEvidence.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "contentValueQuality.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "shared/contentEvidence.js",
+          "shared/contentValueQuality.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "contentValueWiring.test.js",
+      "class": "conditional",
+      "reason": "Supabase client に到達（DB / Storage 接続経路）",
+      "conditions": [
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと"
+      ],
+      "deps": {
+        "files": [
+          "lib/contentValueService.js",
+          "lib/outputDraftsDb.js",
+          "lib/publicStatic.js",
+          "lib/supabase.js",
+          "lib/webSession.js",
+          "shared/contentEvidence.js",
+          "shared/contentValueQuality.js",
+          "shared/evidenceAcquisition.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "express"
+        ],
+        "moreFiles": 1
+      }
+    },
+    {
+      "file": "costTracker.eea8.test.js",
+      "class": "forbidden",
+      "reason": "resetCostTracker が Protected cost-logs.json を上書きする",
+      "deps": {
+        "files": [
+          "costTracker.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "costTrackerGpt54Mini.test.js",
+      "class": "forbidden",
+      "reason": "resetCostTracker が Protected cost-logs.json を上書きする",
+      "deps": {
+        "files": [
+          "costTracker.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "costTrackerTestIsolation.test.js",
+      "class": "forbidden",
+      "reason": "server.js 全体を読み込む／resetCostTracker が Protected cost-logs.json を上書きする",
+      "deps": {
+        "files": [
+          "claudeClient.js",
+          "claudeCostTracker.js",
+          "conversationHistory.js",
+          "costTracker.js",
+          "lib/affiliateEvalDb.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js"
+        ],
+        "npm": [
+          "@anthropic-ai/sdk",
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv",
+          "express",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 48
+      }
+    },
+    {
+      "file": "devAutopilotStep1.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・env・危険 module を遮断）＋ Protected hash 確認。Autopilot Step 1 自身の test",
+      "deps": {
+        "files": [
+          "tools/devAutopilot/riskClassifier.js",
+          "tools/devAutopilot/testSelector.js",
+          "tools/devAutopilot/testManifest.json"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "evidencePromotion.eea10b.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "externalExecutionRecord.eer1.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "iadpQualityContractRouting.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "iadpScopeBoundary.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "iadpStructuredOutput.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）／AI provider client に到達",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "OPENAI_* / ANTHROPIC_* / CLAUDE_* が未設定であること"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/supabase.js",
+          "openaiClient.js",
+          "shared/agentResultNormalizer.js",
+          "shared/evidenceAcquisition.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 2
+      }
+    },
+    {
+      "file": "imageReviewPanel.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "indexInlineScriptSafety.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "leaderFinalGrounding.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）／AI provider client に到達／20-2a は working tree の diff 状態に依存し決定的でない（既知 52/53）",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "OPENAI_* / ANTHROPIC_* / CLAUDE_* が未設定であること",
+        "期待値 52/53 を人が確認すること（自動 PASS 判定に使わない）"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/supabase.js",
+          "openaiClient.js",
+          "shared/agentResultNormalizer.js",
+          "shared/evidenceAcquisition.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 1
+      }
+    },
+    {
+      "file": "leaderFinalModel.test.js",
+      "class": "conditional",
+      "reason": "costTracker に到達（日付変更時に Protected cost-logs.json を書き換え得る）／Supabase client に到達（DB / Storage 接続経路）／AI provider client に到達",
+      "conditions": [
+        "worktree 内で実行し、実行前後で Protected の md5 と worktree の tracked cost-logs.json の差分 0 を確認すること",
+        "SUPABASE_* / NEXT_PUBLIC_SUPABASE_* がすべて未設定で .env.local が存在しないこと",
+        "OPENAI_* / ANTHROPIC_* / CLAUDE_* が未設定であること"
+      ],
+      "deps": {
+        "files": [
+          "costTracker.js",
+          "lib/companyMemoryDb.js",
+          "lib/costDb.js",
+          "lib/knowledgeDb.js",
+          "lib/supabase.js",
+          "openaiClient.js",
+          "shared/agentResultNormalizer.js",
+          "shared/evidenceAcquisition.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv"
+        ],
+        "moreFiles": 1
+      }
+    },
+    {
+      "file": "mainReviewerSupply.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "manualFinalDraft.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・fs write・危険 module を遮断）＋ Protected hash 確認",
+      "deps": {
+        "files": [
+          "lib/contentEvidenceCanonical.js",
+          "lib/contentEvidenceResolutionGuard.js",
+          "lib/contentEvidenceResolutionService.js",
+          "shared/contentClaimPlanning.js",
+          "shared/contentEvidence.js",
+          "shared/evidenceAcquisition.js",
+          "shared/iadpIntelligenceContext.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "mobileReviewGroundedWiring.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "outputDraftAuth.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/webSession.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "outputDraftCarouselParser.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "p1BlockingFix.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [],
+        "npm": []
+      }
+    },
+    {
+      "file": "server.test.js",
+      "class": "forbidden",
+      "reason": "server.js 全体を読み込む／resetCostTracker が Protected cost-logs.json を上書きする／data/conversations/_meta.json（Protected）へ書き込む経路を持つ",
+      "deps": {
+        "files": [
+          "claudeClient.js",
+          "claudeCostTracker.js",
+          "conversationHistory.js",
+          "costTracker.js",
+          "lib/affiliateEvalDb.js",
+          "lib/approvalsDb.js",
+          "lib/carouselAssetAccess.js",
+          "lib/carouselAssetStorage.js"
+        ],
+        "npm": [
+          "@anthropic-ai/sdk",
+          "@supabase/supabase-js",
+          "axios",
+          "dotenv",
+          "express",
+          "opentype.js",
+          "sharp"
+        ],
+        "moreFiles": 48
+      }
+    },
+    {
+      "file": "staticExposureBoundary.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/publicStatic.js"
+        ],
+        "npm": [
+          "express"
+        ]
+      }
+    }
+  ]
+}
