@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
   "expected": {
-    "total": 62,
-    "safe": 45,
+    "total": 63,
+    "safe": 46,
     "conditional": 13,
     "forbidden": 4
   },
@@ -712,6 +712,19 @@
       "deps": {
         "files": [
           "tools/devAutopilot/runStore.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "devAutopilotStep3A.test.js",
+      "class": "safe",
+      "reason": "純関数 test のみ。sandbox（network・fs write 全面・env file 読込・child_process 等の危険 module を遮断。OS temp も作らず process.env も変更しない）＋ Protected hash 確認。Autopilot Step 3A（worktreeController / Pure Git Isolation Contract）自身の test",
+      "deps": {
+        "files": [
+          "tools/devAutopilot/worktreeController.js",
+          "tools/devAutopilot/runStore.js",
+          "tools/devAutopilot/testManifest.json"
         ],
         "npm": []
       }
