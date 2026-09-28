@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
   "expected": {
-    "total": 61,
-    "safe": 44,
+    "total": 62,
+    "safe": 45,
     "conditional": 13,
     "forbidden": 4
   },
@@ -701,6 +701,17 @@
           "tools/devAutopilot/riskClassifier.js",
           "tools/devAutopilot/testSelector.js",
           "tools/devAutopilot/testManifest.json"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "devAutopilotStep2.test.js",
+      "class": "safe",
+      "reason": "sandbox（network・env・危険 module を遮断し、fs write は OS temp に作った自分の sandbox directory の内側だけ許可）＋ Protected hash 確認。Autopilot Step 2（runStore / State Machine）自身の test",
+      "deps": {
+        "files": [
+          "tools/devAutopilot/runStore.js"
         ],
         "npm": []
       }

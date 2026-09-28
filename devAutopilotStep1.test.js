@@ -203,7 +203,11 @@ function hasRule(r, rule) { return r.findings.some(function (f) { return f.rule 
   {
     const v = ts.validateTestManifest(manifest, repoTests);
     assert(v.ok === true && v.errors.length === 0, 'MF-12. 実 repo の全 test を過不足なく網羅（errors ' + v.errors.length + '）');
-    assert(repoTests.length === 61 && v.counts.total === 61 && v.counts.safe === 44 && v.counts.conditional === 13 && v.counts.forbidden === 4, 'MF-12b. 実測 61（safe 44 / conditional 13 / forbidden 4）');
+    // Manifest Evolution Contract: 新規 test は manifest 登録と expected 同期が必須。固定値ではなく expected と実測の一致を検証する。
+    const exp = manifest.expected || {};
+    assert(Number.isInteger(exp.total) && repoTests.length === exp.total && v.counts.total === exp.total && v.counts.safe === exp.safe
+      && v.counts.conditional === exp.conditional && v.counts.forbidden === exp.forbidden,
+      'MF-12b. manifest.expected と repo 実測が一致（total ' + repoTests.length + ' / safe ' + v.counts.safe + ' / conditional ' + v.counts.conditional + ' / forbidden ' + v.counts.forbidden + '）');
     const pre = manifest.tests.filter(function (t) { return !/^devAutopilot/.test(t.file); });
     const preCount = pre.reduce(function (a, t) { a[t.class]++; return a; }, { safe: 0, conditional: 0, forbidden: 0 });
     assert(pre.length === 60 && preCount.safe === 43 && preCount.conditional === 13 && preCount.forbidden === 4, 'MF-12c. 既存 test は Safety Freeze 実測どおり 60（43 / 13 / 4）');

@@ -1,0 +1,352 @@
+'use strict';
+// devAutopilotStep2.test.js
+// Development Autopilot V1 — Step 2（runStore / State Machine）の deterministic テスト。
+//
+//   ★ 実行は必ずこのファイル名を明示指定する（node devAutopilotStep2.test.js）。
+//   ★ 外部出口は冒頭で fail-closed に封鎖する（network / credential env / .env / 禁止 module）。
+//   ★ fs の書き込みは「このテストが OS temp に作った sandbox directory の内側」だけ許可し、それ以外は遮断する。
+//   ★ Protected 10件の hash を開始時・終了時に read-only で取得し、全件一致を assert する。
+//   ★ 終了時に削除するのは自分で作った temp directory だけ。
+
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+const Module = require('module');
+
+const ROOT = __dirname;
+const violations = [];
+
+const PROTECTED_BASELINE = {
+  'cost-logs.json': 'ce24d4808bc7bbbf1b517b12c6bce65e',
+  'data/conversations/_meta.json': 'b1f27d5f863f8fe20edc686157fbc992',
+  'claude-cost-logs.json': '2f7fdd7d6105b92dbc022ea090f3399f',
+  'claude-quality-history.json': '429a054a7898fcc78906b17a72b4d860',
+  'backup-dup-candidates-20260714/dup-candidates-123.csv': 'c6800a3ff3b2e1acda3ccc5b8440b751',
+  'backup-dup-candidates-20260714/dup-candidates-123.json': 'cdd3e71b3b295f4b094cf05a30cc79f7',
+  'data/conversations/user-cont-1_line_web.json': 'dbceb6d32a3dda1fb9b5d721325089d5',
+  'data/conversations/user-cont-2_line_estimate.json': '8124d35bad188d047ac162c1f38a0a69',
+  'data/conversations/user-cont-3_line_leader.json': 'ab4e713e61a9ecc0496dad41c2f13536',
+  'data/conversations/user-cont-4_line_video.json': '12ab03f1cc7d686de163ae4483b01c54',
+};
+const PROTECTED_FILES = Object.keys(PROTECTED_BASELINE);
+function hashProtected() {
+  const out = {};
+  PROTECTED_FILES.forEach(function (rel) {
+    try { out[rel] = crypto.createHash('md5').update(fs.readFileSync(path.join(ROOT, rel))).digest('hex'); }
+    catch (e) { out[rel] = 'unreadable:' + e.code; }
+  });
+  return out;
+}
+const protectedBefore = hashProtected();
+
+// ── OS temp の sandbox directory（blocker 導入前に作成）──
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'devAutopilotStep2-'));
+const ORIG_RM = fs.rmSync;
+function insideSandbox(p) {
+  if (typeof p !== 'string' && !(p instanceof URL)) return false;
+  const rel = path.relative(SANDBOX.toLowerCase(), path.resolve(String(p)).toLowerCase());
+  return rel === '' || (!!rel && rel.split(/[\\\/]/)[0] !== '..' && !path.isAbsolute(rel));
+}
+
+// ── sandbox（network / env / fs / module） ──
+function blockedNetwork(name) { return function () { violations.push('network:' + name); throw new Error('SANDBOX_BLOCKED_NETWORK:' + name); }; }
+['http', 'https'].forEach(function (m) { const mod = require(m); mod.request = blockedNetwork(m + '.request'); mod.get = blockedNetwork(m + '.get'); });
+{ const net = require('net'); net.connect = blockedNetwork('net.connect'); net.createConnection = blockedNetwork('net.createConnection'); const tls = require('tls'); tls.connect = blockedNetwork('tls.connect'); }
+globalThis.fetch = blockedNetwork('fetch');
+const CREDENTIAL_ENV_PATTERN = /^(OPENAI|ANTHROPIC|CLAUDE|SUPABASE|NEXT_PUBLIC_SUPABASE|LINE_|WEB_SESSION|CAROUSEL_)/i;
+Object.keys(process.env).forEach(function (k) { if (CREDENTIAL_ENV_PATTERN.test(k)) delete process.env[k]; });
+function isEnvFile(p) { try { return /^\.env(\..*)?$/.test(path.basename(String(p))); } catch (e) { return false; } }
+['readFileSync', 'readFile', 'existsSync', 'statSync', 'createReadStream'].forEach(function (n) {
+  const orig = fs[n]; if (typeof orig !== 'function') return;
+  fs[n] = function (p) { if (isEnvFile(p)) { violations.push('env_file_read:' + n); throw new Error('SANDBOX_BLOCKED_ENV_READ'); } return orig.apply(this, arguments); };
+});
+// fs write は SANDBOX の内側だけ許可（第1引数・rename/copy の第2引数も確認）
+function guardedWrite(name, orig) {
+  return function (a, b) {
+    const two = /rename|copy|symlink|cp/i.test(name);
+    if (insideSandbox(a) && (!two || insideSandbox(b))) return orig.apply(this, arguments);
+    violations.push('fs_write:' + name + ':' + String(a));
+    throw new Error('SANDBOX_BLOCKED_FS_WRITE:' + name);
+  };
+}
+['writeFileSync', 'appendFileSync', 'renameSync', 'unlinkSync', 'mkdirSync', 'rmSync', 'rmdirSync', 'copyFileSync', 'truncateSync',
+  'symlinkSync', 'cpSync', 'writeFile', 'appendFile', 'rename', 'unlink', 'mkdir', 'rm', 'rmdir', 'copyFile', 'truncate', 'createWriteStream']
+  .forEach(function (n) { if (typeof fs[n] === 'function') fs[n] = guardedWrite('fs.' + n, fs[n]); });
+{ const origOpen = fs.openSync;
+  fs.openSync = function (p, flags) {
+    const f = flags === undefined ? 'r' : String(flags);
+    if (f === 'r' || f === 'rs' || f === 'sr') return origOpen.apply(this, arguments);
+    if (insideSandbox(p)) return origOpen.apply(this, arguments);
+    violations.push('fs_write:fs.openSync:' + String(p)); throw new Error('SANDBOX_BLOCKED_FS_WRITE:fs.openSync');
+  }; }
+['writeFile', 'appendFile', 'rename', 'unlink', 'mkdir', 'rm', 'rmdir', 'copyFile', 'truncate'].forEach(function (n) { if (typeof fs.promises[n] === 'function') fs.promises[n] = guardedWrite('fs.promises.' + n, fs.promises[n]); });
+const BLOCKED_BARE = new Set(['axios', 'dotenv', '@supabase/supabase-js', '@anthropic-ai/sdk', 'http2', 'undici', 'child_process', 'node:http2', 'node:child_process']);
+const BLOCKED_FILES = new Set(['openaiClient.js', 'claudeClient.js', 'costTracker.js', 'lib/costDb.js', 'conversationHistory.js', 'server.js', 'lib/supabase.js', 'lib/outputDraftsDb.js']
+  .map(function (p) { return path.join(ROOT, p); }));
+const origLoad = Module._load;
+Module._load = function (request, parent, isMain) {
+  if (BLOCKED_BARE.has(request)) { violations.push('module:' + request); throw new Error('SANDBOX_BLOCKED_MODULE:' + request); }
+  let filename = null;
+  try { filename = Module._resolveFilename(request, parent, isMain); } catch (e) { filename = null; }
+  if (filename && BLOCKED_FILES.has(filename)) { violations.push('module:' + path.relative(ROOT, filename)); throw new Error('SANDBOX_BLOCKED_MODULE:' + request); }
+  return origLoad.apply(this, arguments);
+};
+
+let _passed = 0, _failed = 0;
+function assert(cond, label) { if (cond) { _passed++; console.log('  ✅ ' + label); } else { _failed++; console.log('  ❌ ' + label); } }
+function caseHeader(t) { console.log('\n── ' + t + ' ──'); }
+
+const rs = require('./tools/devAutopilot/runStore');
+
+const T0 = Date.parse('2026-09-28T00:00:00.000Z');
+function at(min) { return new Date(T0 + min * 60000).toISOString(); }
+const HEAD = '735e39d3f6b5ed01005fd7a0e52ae27c33aa2f37';
+const OTHER_HEAD = '961aaf81b5eb6eb5a7af1f7997cd3772d4351d70';
+function baseInput(extra) {
+  return Object.assign({
+    taskId: 'task-001',
+    task: { title: 'sample task', goal: 'add a helper', allowedPaths: ['tools/devAutopilot/'], forbiddenPaths: [] },
+    mainRepoPath: ROOT, baseHead: HEAD, branch: 'dev/task-001', worktreePath: path.join(SANDBOX, 'wt', 'task-001'),
+    budget: { capUsd: 5, maxInvocations: 6 }, mainStatusHashAtStart: 'de31f7fdb243',
+    protectedMd5AtStart: Object.assign({}, PROTECTED_BASELINE), now: at(0),
+  }, extra || {});
+}
+function advance(run, stages, startMin) {
+  let r = run, m = startMin || 1;
+  for (const s of stages) { const x = rs.transitionStage(r, s, { now: at(m++) }); if (!x.ok) throw new Error('advance failed: ' + x.error); r = x.run; }
+  return r;
+}
+const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing'];
+
+(function main() {
+  console.log('\n=== devAutopilotStep2.test.js (Development Autopilot V1 Step 2: runStore / State Machine) ===');
+
+  caseHeader('SB. sandbox 自己検証');
+  {
+    const sv = violations.length;
+    let net = false, cp = false, repoWrite = false;
+    try { globalThis.fetch('https://example.com'); } catch (e) { net = /SANDBOX_BLOCKED_NETWORK/.test(e.message); }
+    try { require('child_process'); } catch (e) { cp = /SANDBOX_BLOCKED_MODULE/.test(e.message); }
+    try { fs.writeFileSync(path.join(ROOT, 'cost-logs.json'), 'x'); } catch (e) { repoWrite = /SANDBOX_BLOCKED_FS_WRITE/.test(e.message); }
+    violations.length = sv;
+    let tmpOk = false;
+    try { fs.writeFileSync(path.join(SANDBOX, 'probe.txt'), 'ok'); tmpOk = fs.readFileSync(path.join(SANDBOX, 'probe.txt'), 'utf8') === 'ok'; fs.unlinkSync(path.join(SANDBOX, 'probe.txt')); } catch (e) { tmpOk = false; }
+    assert(net && cp && repoWrite && tmpOk, 'SB-1. network・child_process・repo への書き込みを封鎖し、OS temp の sandbox だけ書き込み可');
+    assert(!insideSandbox(ROOT) && path.relative(ROOT.toLowerCase(), SANDBOX.toLowerCase()).split(/[\\\/]/)[0] === '..', 'SB-2. sandbox は repo の外（OS temp）');
+  }
+
+  caseHeader('ST. State Machine');
+  const init = rs.createInitialRun(baseInput());
+  let r0 = init.run;
+  {
+    assert(init.ok && r0.stage === null && r0.gate === 'none' && r0.outcome === null && rs.deriveRunStatus(r0, { now: at(0) }) === 'queued', 'ST-1. 初期状態は queued（stage null / gate none / outcome null / lock なし）');
+    assert(!('status' in r0) && !('derivedStatus' in r0), 'ST-1b. derived status は正本に保存しない');
+    const s1 = rs.transitionStage(r0, 'researching', { now: at(1) });
+    assert(s1.ok && s1.run.stage === 'researching' && s1.run.completedStages.length === 0, 'ST-2. researching へ遷移');
+    const s2 = rs.transitionStage(s1.run, 'designing', { now: at(2) });
+    assert(s2.ok && s2.run.stage === 'designing' && s2.run.completedStages.join() === 'researching', 'ST-3. designing へ遷移（researching が完了扱い）');
+    const s3 = rs.transitionStage(s2.run, 'implementing', { now: at(3) });
+    assert(s3.ok && s3.run.stage === 'implementing', 'ST-4. implementing へ遷移');
+    const s4 = rs.transitionStage(s3.run, 'testing', { now: at(4) });
+    assert(s4.ok && s4.run.stage === 'testing', 'ST-5. testing へ遷移');
+    const s5 = rs.transitionStage(s4.run, 'reviewing', { now: at(5) });
+    assert(s5.ok && s5.run.stage === 'reviewing' && s5.run.completedStages.length === 4, 'ST-6. reviewing へ遷移');
+    const s6 = rs.markAwaitingCommitApproval(s5.run, { now: at(6) });
+    assert(s6.ok && s6.run.gate === 'awaiting_commit_approval' && s6.run.completedStages.length === 5 && rs.deriveRunStatus(s6.run, { now: at(6) }) === 'awaiting_human', 'ST-7. awaiting_commit_approval（derived: awaiting_human）');
+    assert(s6.run.stageHistory.filter(function (h) { return h.result === 'completed'; }).length === 5 && s6.run.updatedAt === at(6), 'ST-7b. stageHistory と updatedAt を記録');
+
+    const h1 = rs.requireHumanApproval(s3.run, 'risk:human_required', { now: at(7) });
+    assert(h1.ok && h1.run.gate === 'human_approval_required' && h1.run.gateReason === 'risk:human_required' && rs.deriveRunStatus(h1.run, { now: at(7) }) === 'awaiting_human', 'ST-8. human_approval_required');
+    assert(!rs.transitionStage(h1.run, 'testing', { now: at(8) }).ok, 'ST-8b. human gate 中は stage を進めない');
+    const h2 = rs.approveHumanGate(h1.run, { now: at(8), actor: 'human' });
+    assert(h2.ok && h2.run.gate === 'none' && h2.run.stage === 'implementing' && h2.run.stageHistory.some(function (x) { return x.result === 'human_approved'; }), 'ST-9. 承認後は止まった stage（implementing）から再開');
+    assert(!rs.approveHumanGate(h1.run, { now: at(8) }).ok && !rs.approveHumanGate(h1.run, { now: at(8), actor: 'autopilot' }).ok, 'ST-9b. 承認は actor=human の明示操作だけ');
+    const h3 = rs.rejectHumanGate(h1.run, { now: at(8), actor: 'human', detail: 'scope too wide' });
+    assert(h3.ok && h3.run.outcome === 'failed' && /^human_rejected/.test(h3.run.failureReason) && rs.deriveRunStatus(h3.run, { now: at(8) }) === 'failed', 'ST-10. 人の却下 → failed（human_rejected）');
+    const rj2 = rs.rejectHumanGate(s6.run, { now: at(9), actor: 'human' });
+    assert(rj2.ok && rj2.run.outcome === 'failed', 'ST-10b. commit 承認待ちからの却下も failed');
+
+    const b1 = rs.blockRun(s3.run, 'protected_mismatch', { now: at(9) });
+    assert(b1.ok && b1.run.outcome === 'blocked' && b1.run.blockedReason === 'protected_mismatch' && rs.deriveRunStatus(b1.run, { now: at(9) }) === 'blocked', 'ST-11. blockRun → blocked（理由必須）');
+    assert(!rs.blockRun(s3.run, '', { now: at(9) }).ok, 'ST-11b. 理由なしの block は拒否');
+    const f1 = rs.failRun(s4.run, 'tests_failed_twice', { now: at(9) });
+    assert(f1.ok && f1.run.outcome === 'failed' && f1.run.failureReason === 'tests_failed_twice', 'ST-12. failRun → failed');
+
+    const c1 = rs.markCompletedByHuman(s6.run, { now: at(10), actor: 'human', commitHash: 'abc1234' });
+    assert(c1.ok && c1.run.outcome === 'completed' && c1.run.gate === 'none' && rs.deriveRunStatus(c1.run, { now: at(10) }) === 'completed', 'ST-13. 人の commit 確認後のみ completed');
+    assert(!rs.markCompletedByHuman(s6.run, { now: at(10), commitHash: 'abc1234' }).ok && !rs.markCompletedByHuman(s6.run, { now: at(10), actor: 'human' }).ok
+      && !rs.markCompletedByHuman(s5.run, { now: at(10), actor: 'human', commitHash: 'abc1234' }).ok, 'ST-13b. actor=human・commitHash・commit 承認待ちのすべてが必要');
+
+    assert(!rs.transitionStage(c1.run, 'implementing', { now: at(11) }).ok && !rs.requireHumanApproval(c1.run, 'x', { now: at(11) }).ok, 'ST-14. completed からの再開は拒否');
+    assert(!rs.transitionStage(b1.run, 'testing', { now: at(11) }).ok && !rs.approveHumanGate(b1.run, { now: at(11), actor: 'human' }).ok && !rs.acquireLock(b1.run, { now: at(11), pid: 10 }).ok, 'ST-15. blocked からの自動再開は拒否');
+    assert(!rs.transitionStage(f1.run, 'testing', { now: at(11) }).ok && !rs.transitionStage(f1.run, 'reviewing', { now: at(11) }).ok, 'ST-16. failed からの自動再開は拒否');
+
+    assert(!rs.transitionStage(r0, 'designing', { now: at(1) }).ok && !rs.transitionStage(s1.run, 'implementing', { now: at(2) }).ok
+      && !rs.transitionStage(s5.run, 'researching', { now: at(6) }).ok && !rs.transitionStage(s6.run, 'implementing', { now: at(7) }).ok, 'ST-17. stage skip・逆行・commit 承認待ちからの実装再開を拒否');
+    const badEnum = [Object.assign({}, r0, { stage: 'deploying' }), Object.assign({}, r0, { gate: 'maybe' }), Object.assign({}, r0, { outcome: 'done' })];
+    assert(badEnum.every(function (x) { return !rs.validateRunState(x).ok && rs.deriveRunStatus(x, { now: at(0) }) === 'invalid'; }) && !rs.transitionStage(r0, 'deploying', { now: at(1) }).ok, 'ST-18. 不正な stage / gate / outcome を拒否');
+    assert(!rs.transitionStage(r0, 'researching', { now: 'yesterday' }).ok && !rs.transitionStage(r0, 'researching', {}).ok, 'ST-18b. now（注入時刻）が不正なら拒否');
+    const amb = [Object.assign({}, s3.run, { completedStages: ['researching'] }), Object.assign({}, s6.run, { gateReason: null }), Object.assign({}, b1.run, { gate: 'human_approval_required', gateReason: 'x' })];
+    assert(amb.every(function (x) { return !rs.validateRunState(x).ok; }), 'ST-18c. 曖昧な組み合わせ（completedStages 不整合・gate 理由なし・outcome と gate の併存）を拒否');
+
+    const snap = JSON.stringify(s3.run);
+    rs.transitionStage(s3.run, 'testing', { now: at(20) }); rs.requireHumanApproval(s3.run, 'x', { now: at(20) }); rs.blockRun(s3.run, 'x', { now: at(20) });
+    assert(JSON.stringify(s3.run) === snap, 'ST-19. transition は入力を変更しない');
+  }
+
+  caseHeader('LK. Lock');
+  {
+    const q = rs.createInitialRun(baseInput()).run;
+    const l1 = rs.acquireLock(q, { now: at(0), pid: 1234 });
+    assert(l1.ok && rs.lockStatus(l1.run.lock, { now: at(5) }) === 'active', 'LK-37. heartbeat が新しい lock は active');
+    assert(rs.lockStatus(l1.run.lock, { now: at(11) }) === 'stale' && rs.lockStatus(l1.run.lock, { now: at(5), staleMs: 60000 }) === 'stale', 'LK-38. 既定 10 分・注入した staleMs を超えると stale');
+    assert(rs.lockStatus(l1.run.lock, { now: at(5) }) === rs.lockStatus(l1.run.lock, { now: at(5) }) && rs.lockStatus(l1.run.lock, { now: at(-1) }) === 'invalid' && rs.lockStatus(l1.run.lock, {}) === 'invalid', 'LK-39. 注入時刻で決定的・未来の heartbeat や時刻なしは invalid');
+    assert(!rs.acquireLock(l1.run, { now: at(1), pid: 99 }).ok && rs.acquireLock(l1.run, { now: at(30), pid: 99 }).error === 'lock_stale_requires_human', 'LK-40. active lock は奪えず、stale lock も自動では奪わない');
+    const hb = rs.heartbeatLock(l1.run, { now: at(9), pid: 1234 });
+    assert(hb.ok && rs.lockStatus(hb.run.lock, { now: at(15) }) === 'active' && !rs.heartbeatLock(l1.run, { now: at(9), pid: 1 }).ok, 'LK-41. heartbeat は lock の所有者だけ');
+    const rel = rs.releaseLock(hb.run, { now: at(10), pid: 1234 });
+    assert(rel.ok && rel.run.lock === null, 'LK-42. release で lock を外す');
+    const running = rs.transitionStage(l1.run, 'researching', { now: at(1) }).run;
+    assert(rs.deriveRunStatus(running, { now: at(2) }) === 'running' && rs.deriveRunStatus(running, { now: at(30) }) === 'interrupted', 'LK-43. active lock なら running、stale なら interrupted（derived）');
+    assert(rs.deriveRunStatus(l1.run, { now: at(1) }) === 'invalid', 'LK-44. stage なしで active lock は曖昧 → invalid');
+  }
+
+  caseHeader('SC. Secret protection');
+  {
+    const base = rs.createInitialRun(baseInput()).run;
+    function withKey(fn) { const x = JSON.parse(JSON.stringify(base)); fn(x); return rs.validateRunState(x); }
+    const a = withKey(function (x) { x.task.apiKey = 'abc'; });
+    const b = withKey(function (x) { x.stageHistory.push({ stage: 'researching', token: 'abc' }); });
+    const c = withKey(function (x) { x.riskFindings.push({ password: 'x' }); });
+    const d = withKey(function (x) { x.diffSummary = { authorization: 'x' }; });
+    const e = withKey(function (x) { x.testResults.push({ env: { A: 1 } }); });
+    const f = withKey(function (x) { x.diffSummary = 'leaked sk-ant-abcdefghijklmnopqrstuv'; });
+    const g = withKey(function (x) { x.riskFindings.push({ accessToken: 'y', cookie: 'z' }); });
+    assert(!a.ok && a.errors.some(function (m) { return /secret_detected:.*apiKey/.test(m); }), 'SC-33. apiKey を拒否');
+    assert(!b.ok && !g.ok, 'SC-34. token / accessToken / cookie を拒否');
+    assert(!c.ok && !d.ok && !e.ok, 'SC-35. password / authorization / env を拒否');
+    assert(!f.ok, 'SC-35b. 値として明白な API key（sk-ant-…）を拒否');
+    const ok = withKey(function (x) { x.sessionIds.research = 'sess-0001'; x.budget.invocations = 1; });
+    assert(ok.ok, 'SC-36. sessionIds（Claude session identifier）は許可');
+  }
+
+  caseHeader('PT. Path safety');
+  const store = { runtimeRoot: path.join(SANDBOX, 'runtime'), repoPath: ROOT };
+  {
+    assert(rs.resolveRunPaths(store, 'task-001').ok, 'PT-0. OS temp の runtime root は許可');
+    const bad = ['../x', '..\\x', 'a/b', 'a\\b', 'C:x', '/etc', '', 'x', '.hidden', 'task 01'];
+    assert(bad.every(function (id) { return rs.resolveRunPaths(store, id).error === 'task_id_invalid'; }), 'PT-28. taskId の path traversal / 区切り文字 / drive を拒否');
+    assert(rs.resolveRunPaths({ runtimeRoot: 'relative/rt', repoPath: ROOT }, 'task-001').error === 'runtime_root_invalid'
+      && rs.resolveRunPaths({ runtimeRoot: path.join(SANDBOX, 'a') + path.sep + '..' + path.sep + 'b', repoPath: ROOT }, 'task-001').error === 'runtime_root_traversal'
+      && rs.resolveRunPaths({ runtimeRoot: SANDBOX + '\u0000x', repoPath: ROOT }, 'task-001').error === 'runtime_root_invalid', 'PT-29. 相対 path・.. を含む root・制御文字を拒否');
+    const inRepo = rs.resolveRunPaths({ runtimeRoot: path.join(ROOT, 'tmp-runtime'), repoPath: ROOT }, 'task-001');
+    const repoItself = rs.resolveRunPaths({ runtimeRoot: ROOT, repoPath: ROOT }, 'task-001');
+    assert(inRepo.error === 'runtime_root_inside_repo' && repoItself.error === 'runtime_root_inside_repo', 'PT-30. repo 内の runtime root を拒否');
+    const fwd = rs.resolveRunPaths({ runtimeRoot: ROOT.replace(/\\/g, '/') + '/x', repoPath: ROOT }, 'task-001');
+    const mixed = rs.resolveRunPaths({ runtimeRoot: ROOT.replace(/\\/g, '/') + '\\sub/deep', repoPath: ROOT }, 'task-001');
+    assert(fwd.error === 'runtime_root_inside_repo' && mixed.error === 'runtime_root_inside_repo', 'PT-31. Windows の区切り文字（/ と \\ の混在）でも repo 内を検出');
+    const upper = rs.resolveRunPaths({ runtimeRoot: path.join(ROOT.toUpperCase(), 'x'), repoPath: ROOT.toLowerCase() }, 'task-001');
+    assert(upper.error === 'runtime_root_inside_repo', 'PT-32. 大文字小文字が違っても repo 内を検出');
+    const repoInRun = rs.resolveRunPaths({ runtimeRoot: path.join(SANDBOX, 'rt2'), repoPath: path.join(SANDBOX, 'rt2', 'runs', 'task-001', 'repo') }, 'task-001');
+    assert(repoInRun.error === 'repo_inside_run_dir' && rs.resolveRunPaths({ runtimeRoot: SANDBOX }, 'task-001').error === 'repo_path_required', 'PT-33. repo が run dir の内側・repoPath 未指定を拒否');
+    const blockedCreate = rs.createRun({ runtimeRoot: path.join(ROOT, 'tmp-runtime'), repoPath: ROOT }, r0);
+    let existsInRepo = true;
+    try { fs.statSync(path.join(ROOT, 'tmp-runtime')); } catch (e) { existsInRepo = false; }
+    assert(blockedCreate.ok === false && existsInRepo === false, 'PT-34. repo 内への createRun は directory も作らずに拒否');
+  }
+
+  caseHeader('SR. runStore（OS temp のみ）');
+  {
+    const created = rs.createRun(store, r0);
+    assert(created.ok && created.runFile.toLowerCase().indexOf(SANDBOX.toLowerCase()) === 0, 'SR-20. run.json を作成（OS temp の sandbox 内）');
+    const read = rs.readRun(store, 'task-001');
+    assert(read.ok && JSON.stringify(read.run) === JSON.stringify(r0), 'SR-21. 読み込みは保存内容と一致');
+    const nx = rs.transitionStage(read.run, 'researching', { now: at(1) }).run;
+    const saved = rs.saveRun(store, nx, { expectedUpdatedAt: r0.updatedAt });
+    assert(saved.ok && rs.readRun(store, 'task-001').run.stage === 'researching', 'SR-22. update（楽観的排他つき）');
+    assert(rs.saveRun(store, nx, { expectedUpdatedAt: r0.updatedAt }).error === 'stale_write' && rs.saveRun(store, nx, {}).error === 'stale_write', 'SR-22b. 古い updatedAt での上書きは拒否');
+
+    const before = fs.readFileSync(created.runFile, 'utf8');
+    const failingFs = Object.assign({}, fs, { renameSync: function () { throw new Error('simulated crash before rename'); } });
+    const nx2 = rs.transitionStage(nx, 'designing', { now: at(2) }).run;
+    const crashed = rs.saveRun(Object.assign({}, store, { fs: failingFs }), nx2, { expectedUpdatedAt: nx.updatedAt });
+    const leftovers = fs.readdirSync(path.dirname(created.runFile)).filter(function (f) { return f !== 'run.json'; });
+    assert(crashed.error === 'atomic_write_failed' && fs.readFileSync(created.runFile, 'utf8') === before && leftovers.length === 0, 'SR-23. rename 前に失敗しても既存 run.json は無傷・tmp も残さない（atomic）');
+    assert(rs.saveRun(store, nx2, { expectedUpdatedAt: nx.updatedAt }).ok && rs.readRun(store, 'task-001').run.stage === 'designing', 'SR-23b. 正常時は tmp → rename で置き換わる');
+
+    const s2 = { runtimeRoot: path.join(SANDBOX, 'runtime-bad'), repoPath: ROOT };
+    const badRun = rs.createInitialRun(baseInput({ taskId: 'task-002', branch: 'dev/task-002' })).run;
+    rs.createRun(s2, badRun);
+    const f2 = rs.resolveRunPaths(s2, 'task-002').runFile;
+    fs.writeFileSync(f2, '{ broken json');
+    assert(rs.readRun(s2, 'task-002').error === 'run_json_invalid', 'SR-24. 壊れた JSON を検出');
+    fs.writeFileSync(f2, JSON.stringify(Object.assign({}, badRun, { schemaVersion: 2 })));
+    const sv = rs.readRun(s2, 'task-002');
+    assert(sv.error === 'run_invalid' && sv.errors.indexOf('schema_version') !== -1, 'SR-25. schemaVersion 不一致を検出');
+    fs.writeFileSync(f2, JSON.stringify(Object.assign({}, badRun, { taskId: 'task-999' })));
+    assert(rs.readRun(s2, 'task-002').error === 'task_id_mismatch', 'SR-25b. run.json の taskId と directory の不一致を検出');
+    assert(rs.createRun(store, r0).error === 'run_exists', 'SR-26. 同じ taskId の重複 create を拒否（既存を上書きしない）');
+    assert(rs.readRun(store, 'task-404').error === 'run_not_found', 'SR-27. 存在しない run は run_not_found');
+    const secretRun = JSON.parse(JSON.stringify(r0)); secretRun.taskId = 'task-003'; secretRun.branch = 'dev/task-003'; secretRun.task.apiKey = 'x';
+    let sec3 = true; try { fs.statSync(path.join(store.runtimeRoot, 'runs', 'task-003')); } catch (e) { sec3 = false; }
+    assert(rs.createRun(store, secretRun).error === 'run_invalid' && sec3 === false, 'SR-28. secret を含む run は保存しない（directory も作らない）');
+  }
+
+  caseHeader('RS. Resume validation');
+  {
+    const good = { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD, worktreeExists: true, branchExists: true, worktreeStatus: 'dirty', diffAllowed: true, protectedMd5Matches: true };
+    const noWt = Object.assign({}, good, { worktreeExists: false, branchExists: false, worktreeStatus: 'absent' });
+    const testing = advance(r0, ALL.slice(0, 4));
+    const researching = advance(r0, ALL.slice(0, 1));
+    const implementing = advance(r0, ALL.slice(0, 3));
+    const opt = { now: at(60) };
+    assert(rs.validateResume(testing, good, opt).result === 'resumable' && rs.validateResume(researching, noWt, opt).result === 'resumable', 'RS-40. 整合した run は resumable（testing / 読み取りのみの researching）');
+    const pm = rs.validateResume(testing, Object.assign({}, good, { protectedMd5Matches: false }), opt);
+    assert(pm.result === 'blocked' && pm.reasons.indexOf('protected_mismatch') !== -1, 'RS-41. Protected 不一致 → blocked');
+    const ds = rs.validateResume(testing, Object.assign({}, good, { diffAllowed: false }), opt);
+    assert(ds.result === 'blocked' && ds.reasons.indexOf('diff_outside_scope') !== -1, 'RS-42. scope 外の diff → blocked');
+    const mal = rs.validateResume(Object.assign({}, testing, { stage: 'deploying' }), good, opt);
+    const malSnap = rs.validateResume(testing, { worktreeExists: 'yes' }, opt);
+    assert(mal.result === 'blocked' && mal.reasons[0] === 'run_invalid' && malSnap.result === 'blocked' && malSnap.reasons[0] === 'snapshot_invalid', 'RS-43. 壊れた run / snapshot → blocked');
+    const intr = rs.validateResume(implementing, good, opt);
+    assert(intr.result === 'human_approval_required' && intr.reasons.indexOf('interrupted_implementation') !== -1, 'RS-44. 実装途中で停止 → human_approval_required');
+    const amb1 = rs.validateResume(researching, good, opt);
+    const amb2 = rs.validateResume(testing, noWt, opt);
+    const amb3 = rs.validateResume(testing, Object.assign({}, good, { branchExists: false }), opt);
+    assert(amb1.result === 'blocked' && amb2.result === 'blocked' && amb3.result === 'blocked', 'RS-45. 曖昧（実装前なのに worktree あり・worktree/branch 欠落）→ blocked');
+    assert(rs.validateResume(testing, Object.assign({}, good, { baseHeadExists: false }), opt).result === 'blocked', 'RS-46. baseHead が存在しない → blocked');
+    const adv = rs.validateResume(testing, Object.assign({}, good, { currentOriginMain: OTHER_HEAD }), opt);
+    assert(adv.result === 'human_approval_required' && adv.reasons.indexOf('origin_advanced') !== -1, 'RS-47. origin/main が進んだ → human_approval_required');
+    const locked = rs.acquireLock(testing, { now: at(50), pid: 77 }).run;
+    assert(rs.validateResume(locked, good, { now: at(55) }).result === 'blocked' && rs.validateResume(locked, good, { now: at(90) }).result === 'human_approval_required', 'RS-48. active lock → blocked（二重起動防止）・stale lock → human_approval_required');
+    const done = rs.markCompletedByHuman(rs.markAwaitingCommitApproval(advance(r0, ALL), { now: at(40) }).run, { now: at(41), actor: 'human', commitHash: 'abc1234' }).run;
+    const blockedRun = rs.blockRun(testing, 'x', { now: at(41) }).run;
+    assert(rs.validateResume(done, good, opt).result === 'blocked' && rs.validateResume(blockedRun, good, opt).result === 'blocked', 'RS-49. completed / blocked の run は resume しない');
+    const gateRun = rs.requireHumanApproval(testing, 'risk', { now: at(41) }).run;
+    assert(rs.validateResume(gateRun, good, opt).result === 'human_approval_required', 'RS-50. human gate 待ちは human_approval_required のまま（自動再開しない）');
+    const snapIn = JSON.stringify(good), runIn = JSON.stringify(testing);
+    rs.validateResume(testing, good, opt);
+    assert(JSON.stringify(good) === snapIn && JSON.stringify(testing) === runIn, 'RS-51. resume 判定は入力を変更しない');
+  }
+
+  caseHeader('P. Protected 10件 hash 不変・sandbox 違反 0・repo に runtime file なし');
+  {
+    const after = hashProtected();
+    assert(PROTECTED_FILES.every(function (f) { return protectedBefore[f] === PROTECTED_BASELINE[f] && after[f] === PROTECTED_BASELINE[f]; }), 'P-1. Protected 10件の hash が開始時・終了時とも baseline 一致');
+    assert(violations.length === 0, 'P-2. sandbox 違反 0（network / DB / provider / repo への fs write / env file）');
+    let runsInRepo = true; try { fs.statSync(path.join(ROOT, 'runs')); } catch (e) { runsInRepo = false; }
+    let tmpInRepo = true; try { fs.statSync(path.join(ROOT, 'tmp-runtime')); } catch (e) { tmpInRepo = false; }
+    assert(!runsInRepo && !tmpInRepo, 'P-3. repo 内に run directory を作っていない');
+  }
+
+  // 自分で作った OS temp の sandbox directory だけを削除
+  try { ORIG_RM(SANDBOX, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+  let cleaned = true; try { fs.statSync(SANDBOX); cleaned = false; } catch (e) { cleaned = true; }
+  assert(cleaned, 'P-4. 自分で作った temp directory だけを後始末');
+
+  console.log('\n────────────────────────────────────────────────────────────');
+  console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
+  if (_failed > 0) { console.log('🔴 FAILED'); process.exit(1); }
+  console.log('🟢 All Development Autopilot Step 2 cases passed');
+})();
