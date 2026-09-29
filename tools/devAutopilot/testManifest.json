@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
   "expected": {
-    "total": 64,
-    "safe": 46,
+    "total": 65,
+    "safe": 47,
     "conditional": 14,
     "forbidden": 4
   },
@@ -725,6 +725,20 @@
           "tools/devAutopilot/worktreeController.js",
           "tools/devAutopilot/runStore.js",
           "tools/devAutopilot/testManifest.json"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "devAutopilotStep3CPrep.test.js",
+      "class": "safe",
+      "reason": "Git mutation 0（本物の repo へは --no-optional-locks の read-only Git だけ = Decision 120 決定 2 の自動許可範囲）。fs write は OS temp に作った自己所有 sandbox（owner marker 付き）の内側だけで、Permit file もその中にだけ作る（Step 2 test と同じ条件）。本物の repo に対する executor guard の検証は Git 実行を spy に差し替え、さらに存在しない SHA と sandbox 内 worktree 先で多重防御する。network・危険 module・.env 読込を封鎖し、process.env は変更しない。DB / provider / costTracker / server に到達しない。Autopilot Step 3C Preparation（realRepoPermit / canonical status hash / executor の自 repo guard）自身の test",
+      "deps": {
+        "files": [
+          "tools/devAutopilot/realRepoPermit.js",
+          "tools/devAutopilot/worktreeExecutor.js",
+          "tools/devAutopilot/worktreeController.js",
+          "tools/devAutopilot/runStore.js"
         ],
         "npm": []
       }

@@ -188,7 +188,7 @@ let exitCode = 0;
       const r0 = rs.createInitialRun({
         taskId: t, task: { title: 'fixture', goal: 'fixture', allowedPaths: ['lib/'], forbiddenPaths: [] },
         mainRepoPath: REPO, baseHead: baseHead, branch: 'dev/' + t, worktreePath: path.join(WT_ROOT, t),
-        budget: { capUsd: 1, maxInvocations: 1 }, mainStatusHashAtStart: exe.readRepoState(REPO).statusHash,
+        budget: { capUsd: 1, maxInvocations: 1 }, mainStatusHashAtStart: exe.readRepoState(REPO).autopilotStatusHash,
         protectedMd5AtStart: tempProtectedMd5(REPO), now: '2026-09-28T00:00:00.000Z',
       });
       if (!r0.ok) throw new Error('run fixture invalid: ' + JSON.stringify(r0));
@@ -209,7 +209,7 @@ let exitCode = 0;
       return {
         currentBranch: st.currentBranch, stagedCount: st.stagedCount, currentHead: st.head, originMain: commit1,
         originIsAncestor: anc.ok ? true : (anc.exitCode === 1 ? false : undefined),
-        protectedFingerprint: tempProtectedFingerprint(REPO), mainStatusHash: st.statusHash,
+        protectedFingerprint: tempProtectedFingerprint(REPO), mainStatusHash: st.autopilotStatusHash,
         existingBranchRefs: st.branchRefs, targetBranchExists: tip.ok ? true : (tip.exitCode === 1 ? false : undefined),
         targetWorktreeExists: target.ok ? target.exists : undefined, pathCollision: false,
         pathHasLinkOrJunction: target.ok ? target.hasLinkOrJunction : undefined, activeHooks: hooks.active,
@@ -218,7 +218,7 @@ let exitCode = 0;
     }
     function expected(taskId, extra) {
       return Object.assign({ taskId: taskId, repoPath: REPO, worktreeRoot: WT_ROOT, baseHead: baseHead,
-        protectedFingerprint: tempProtectedFingerprint(REPO), mainStatusHash: exe.readRepoState(REPO).statusHash, run: run('designing', taskId) }, extra || {});
+        protectedFingerprint: tempProtectedFingerprint(REPO), mainStatusHash: exe.readRepoState(REPO).autopilotStatusHash, run: run('designing', taskId) }, extra || {});
     }
     const EXEC_OPTS = { mutationRepoAllowlist: [REPO], protectedRepoRoots: [ROOT], timeoutMs: 15000 };
 
@@ -244,12 +244,12 @@ let exitCode = 0;
       assert(ws.envFiles.length === 0 && exe.listEnvFiles(REPO).indexOf('.env.local') !== -1, 'W-12. worktree に .env* なし（main 側の ignored .env.local はコピーされない）');
       let untrackedProtectedLike = true; try { fs.lstatSync(path.join(WT, 'claude-cost-logs.json')); } catch (e) { untrackedProtectedLike = false; }
       assert(!untrackedProtectedLike && fs.readFileSync(path.join(WT, 'cost-logs.json'), 'utf8').replace(/\r\n/g, '\n') === '{"fixture":true}\n', 'W-12b. untracked Protected-like は現れず、tracked Protected-like は baseHead 版');
-      assert(mainAfter.head === mainBefore.head && mainAfter.statusHash === mainBefore.statusHash && mainAfter.currentBranch === 'main', 'W-12c. temp main 側は HEAD / status 不変');
+      assert(mainAfter.head === mainBefore.head && mainAfter.autopilotStatusHash === mainBefore.autopilotStatusHash && mainAfter.currentBranch === 'main', 'W-12c. temp main 側は HEAD / status 不変');
       const created = wc.validateCreatedWorktree({
         worktreeHead: ws.head, worktreeBranchRef: ws.branchRef, worktreeStatusCount: ws.statusLines.length,
         worktreeGitCommonDir: ws.gitCommonDir, mainGitCommonDir: mainAfter.gitCommonDir, worktreeListPorcelain: mainAfter.worktreeListPorcelain,
         worktreeEnvFiles: ws.envFiles, worktreeProtectedChanged: false,
-        mainHeadBefore: mainBefore.head, mainHeadAfter: mainAfter.head, mainStatusHashBefore: mainBefore.statusHash, mainStatusHashAfter: mainAfter.statusHash,
+        mainHeadBefore: mainBefore.head, mainHeadAfter: mainAfter.head, mainStatusHashBefore: mainBefore.autopilotStatusHash, mainStatusHashAfter: mainAfter.autopilotStatusHash,
         mainProtectedFingerprintBefore: tempProtectedFingerprint(REPO), mainProtectedFingerprintAfter: tempProtectedFingerprint(REPO),
       }, runDesign);
       assert(created.result === 'valid', 'W-12d. 実測 snapshot で Step 3A validateCreatedWorktree = valid（' + created.reasons.join(',') + '）');
@@ -298,11 +298,11 @@ let exitCode = 0;
       // 本物の repo を対象にした pass 形の plan（純関数で生成）→ executor は Git を呼ばずに拒否
       const realPf = wc.validateIsolationPreflight({
         currentBranch: 'main', stagedCount: 0, currentHead: realBefore.head, originMain: realBefore.head, originIsAncestor: true,
-        protectedFingerprint: PROTECTED_FINGERPRINT, mainStatusHash: realBefore.statusHash, existingBranchRefs: realBefore.branchRefs,
+        protectedFingerprint: PROTECTED_FINGERPRINT, mainStatusHash: realBefore.autopilotStatusHash, existingBranchRefs: realBefore.branchRefs,
         targetBranchExists: false, targetWorktreeExists: false, pathCollision: false, pathHasLinkOrJunction: false, activeHooks: false,
         worktreeListPorcelain: realBefore.worktreeListPorcelain, maxTrackedPathLength: 67,
       }, { taskId: 'task-3b-real', repoPath: ROOT, worktreeRoot: path.join(SANDBOX, 'wt-real'), baseHead: realBefore.head,
-        protectedFingerprint: PROTECTED_FINGERPRINT, mainStatusHash: realBefore.statusHash,
+        protectedFingerprint: PROTECTED_FINGERPRINT, mainStatusHash: realBefore.autopilotStatusHash,
         run: Object.assign(run('designing', 'task-3b-real'), { mainRepoPath: ROOT, baseHead: realBefore.head, worktreePath: path.join(SANDBOX, 'wt-real', 'task-3b-real') }) });
       const r1 = exe.executeWorktreeCreate(realPf, { mutationRepoAllowlist: [ROOT], _execFileSync: spy });
       assert(realPf.result === 'pass' && !r1.ok && r1.error === 'repo_protected' && calls.length === 0, 'M-1. 本物の repo は allowlist に入れても mutation 拒否（Git 呼び出し 0）');
@@ -341,7 +341,7 @@ let exitCode = 0;
         return {
           worktreeExists: fs.existsSync(WT), branchExists: tip.ok, worktreeHead: ws.head, branchTip: tip.ok ? tip.stdout.trim() : undefined,
           worktreeGitCommonDir: ws.gitCommonDir, mainGitCommonDir: st.gitCommonDir, worktreeListPorcelain: st.worktreeListPorcelain,
-          mainStatusHash: st.statusHash, mainProtectedMd5: tempProtectedMd5(REPO), worktreeEnvFiles: ws.envFiles || [],
+          mainStatusHash: st.autopilotStatusHash, mainProtectedMd5: tempProtectedMd5(REPO), worktreeEnvFiles: ws.envFiles || [],
           diffAllowed: changed.every(function (p) { return p.indexOf('lib/') === 0; }),
           worktreeProtectedChanged: changed.some(function (p) { return PROTECTED_LIKE.indexOf(p) !== -1; }),
         };
@@ -463,7 +463,9 @@ let exitCode = 0;
       assert(!residue, 'C-34. temp 残骸なし');
       const realAfter = realState();
       assert(realBefore && realAfter.ok && realAfter.head === realBefore.head, 'B-13. 本物の repo の HEAD 不変');
-      assert(realBefore && realAfter.statusHash === realBefore.statusHash, 'B-14. 本物の repo の status hash 不変（' + realAfter.statusHash + '）');
+      assert(realBefore && realAfter.autopilotStatusHash === realBefore.autopilotStatusHash && realAfter.displayStatusHash === realBefore.displayStatusHash,
+        'B-14. 本物の repo の autopilotStatusHash / displayStatusHash 不変（' + realAfter.autopilotStatusHash + ' / ' + realAfter.displayStatusHash + '）');
+      assert(!('statusHash' in realAfter), 'B-14b. executor の結果に曖昧な statusHash は無い');
       assert(protectedFingerprint() === PROTECTED_FINGERPRINT, 'B-15. Protected fingerprint 不変（' + PROTECTED_FINGERPRINT + '）');
       assert(realBefore && realAfter.branchRefs.length === realBefore.branchRefs.length && realAfter.branchRefs.length === 1, 'B-16. 本物の repo の branch 数不変（1）');
       assert(realBefore && realAfter.worktreeCount === realBefore.worktreeCount && realAfter.worktreeCount === 1, 'B-17. 本物の repo の worktree 数不変（1）');

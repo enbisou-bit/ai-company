@@ -8,7 +8,9 @@
 //   ★ child env は必ず worktreeController.buildChildEnv（allowlist）を通し、GIT_CONFIG_GLOBAL=NUL を固定で上書きする
 //     （user global config を読ませない。system config は維持）。raw env を result に含めない。
 //   ★ mutation（worktree add）は mutationRepoAllowlist に明示された repo だけ。
-//     この executor 自身が置かれた repo（ENBISOU 本体）は mutation を常に拒否する（Step 3C は Decision 後に別途扱う）。
+//     この executor 自身が置かれた repo（ENBISOU 本体）は既定で常に拒否する。generic allowlist では解除できず、
+//     realRepoPermit.consumePermit が発行した opaque capability の binding が全一致する 1 操作だけ解除する（Decision 120 決定 10〜13）。
+//   ★ status hash は autopilotStatusHash（safety 判断の正本）と displayStatusHash（表示用）に分離する（Decision 120 決定 14）。
 //   ★ 失敗時の自動 repair / cleanup / retry / force はしない。
 
 var path = require('path');
@@ -16,6 +18,7 @@ var fs = require('fs');
 var crypto = require('crypto');
 var childProcess = require('child_process');
 var wc = require('./worktreeController');
+var permitMod = require('./realRepoPermit');
 
 var HEAD_RE = /^[0-9a-f]{40}$/;
 var DEV_REF_RE = /^refs\/heads\/dev\/[a-z0-9][a-z0-9-]{2,40}$/;
@@ -47,7 +50,8 @@ var KINDS = Object.freeze({
   version: function () { return ['--version']; },
   revParseHead: function (p) { return ['--no-optional-locks', '-C', p.dir, 'rev-parse', '--verify', 'HEAD']; },
   symbolicHead: function (p) { return ['--no-optional-locks', '-C', p.dir, 'symbolic-ref', '--quiet', 'HEAD']; },
-  statusShort: function (p) { return ['--no-optional-locks', '-C', p.dir, 'status', '--short', '--untracked-files=all']; },
+  statusShort: function (p) { return ['--no-optional-locks', '-C', p.dir, 'status', '--short', '--untracked-files=all']; },   // autopilotStatusHash 用
+  statusShortDisplay: function (p) { return ['--no-optional-locks', '-C', p.dir, 'status', '--short']; },                     // displayStatusHash 用
   stagedNames: function (p) { return ['--no-optional-locks', '-C', p.dir, 'diff', '--cached', '--name-only']; },
   branchRefs: function (p) { return ['--no-optional-locks', '-C', p.dir, 'for-each-ref', '--format=%(refname)', 'refs/heads/']; },
   worktreeList: function (p) { return ['--no-optional-locks', '-C', p.dir, 'worktree', 'list', '--porcelain']; },
@@ -121,14 +125,18 @@ function validateGitAvailable(opts) {
 }
 
 function _lines(s) { return String(s || '').split(/\r?\n/).filter(function (l) { return l.length > 0; }); }
+// status hash の共通 helper（`<git status 出力> | md5sum | cut -c1-12` と同じ値）
+function _statusHash(stdout) { return crypto.createHash('md5').update(stdout).digest('hex').slice(0, 12); }
 
 // main repo 側の read-only 実測（preflight / 前後比較用）
+//   autopilotStatusHash: safety 判断の正本（--untracked-files=all。Decision 120 決定 14）
+//   displayStatusHash:   Human / handover 表示用（git status --short）。safety 判断・Permit・resume には使わない
 function readRepoState(repoPath, opts) {
   if (!_dirOk(repoPath)) return { ok: false, error: 'repo_path_invalid' };
   var q = function (k, extra) { return runGitReadOnly(k, Object.assign({ dir: repoPath }, extra || {}), opts); };
-  var head = q('revParseHead'), sym = q('symbolicHead'), st = q('statusShort'), staged = q('stagedNames'),
+  var head = q('revParseHead'), sym = q('symbolicHead'), st = q('statusShort'), std = q('statusShortDisplay'), staged = q('stagedNames'),
     refs = q('branchRefs'), wl = q('worktreeList'), cd = q('gitCommonDir');
-  var failed = [head, st, staged, refs, wl, cd].filter(function (r) { return !r.ok; });
+  var failed = [head, st, std, staged, refs, wl, cd].filter(function (r) { return !r.ok; });
   if (failed.length) return { ok: false, error: 'git_read_failed', kinds: failed.map(function (r) { return r.kind + ':' + r.error; }) };
   var symRef = sym.ok ? sym.stdout.trim() : null;
   var parsed = wc.parseWorktreeListPorcelain(wl.stdout);
@@ -138,7 +146,8 @@ function readRepoState(repoPath, opts) {
     currentBranch: symRef && symRef.indexOf('refs/heads/') === 0 ? symRef.slice('refs/heads/'.length) : null,
     stagedCount: _lines(staged.stdout).length,
     statusLines: _lines(st.stdout),
-    statusHash: crypto.createHash('md5').update(st.stdout).digest('hex').slice(0, 12),   // `git status --short | md5sum` と同じ
+    autopilotStatusHash: _statusHash(st.stdout),
+    displayStatusHash: _statusHash(std.stdout),
     branchRefs: _lines(refs.stdout),
     worktreeListPorcelain: wl.stdout,
     worktreeCount: parsed.ok ? parsed.worktrees.length : null,
@@ -160,6 +169,35 @@ function readWorktreeState(worktreePath, opts) {
     statusLines: _lines(st.stdout),
     gitCommonDir: cd.stdout.trim(),
     envFiles: listEnvFiles(worktreePath),
+  };
+}
+
+// repo identity 専用の read-only kind（runGitReadOnly からは呼べない。raw remote を public result に出さないため）
+var IDENTITY_KINDS = Object.freeze({
+  rootCommits: function (p) { return ['--no-optional-locks', '-C', p.dir, 'rev-list', '--max-parents=0', 'HEAD']; },
+  originUrl: function (p) { return ['--no-optional-locks', '-C', p.dir, 'config', '--get', 'remote.origin.url']; },
+});
+
+// Permit 用の repo identity（canonical path・common dir・root commit・credential-free remote identity）
+// raw remote URL は canonicalize の入力にだけ使い、戻り値・error に含めない
+function readRepoIdentity(repoPath, opts) {
+  if (!_dirOk(repoPath)) return { ok: false, error: 'repo_path_invalid' };
+  var real;
+  try { real = fs.realpathSync.native(repoPath); } catch (e) { return { ok: false, error: 'repo_path_unreadable' }; }
+  if (!wc.samePath(real, repoPath)) return { ok: false, error: 'repo_path_link_or_junction' };
+  var cd = runGitReadOnly('gitCommonDir', { dir: repoPath }, opts);
+  var roots = _exec('rootCommits', IDENTITY_KINDS.rootCommits({ dir: repoPath }), repoPath, opts);
+  var origin = _exec('originUrl', IDENTITY_KINDS.originUrl({ dir: repoPath }), repoPath, opts);
+  if (!cd.ok || !roots.ok) return { ok: false, error: 'git_read_failed' };
+  if (!origin.ok) return { ok: false, error: 'remote_identity_unavailable' };
+  var rootList = _lines(roots.stdout);
+  if (rootList.length !== 1 || !HEAD_RE.test(rootList[0])) return { ok: false, error: 'root_commit_ambiguous' };
+  var rem = permitMod.canonicalizeRemote(origin.stdout.trim());
+  origin = null;   // raw 値を保持しない
+  if (!rem.ok) return { ok: false, error: 'remote_identity_unavailable:' + rem.error };
+  return {
+    ok: true,
+    repoIdentity: { repoPath: path.win32.normalize(repoPath), gitCommonDir: cd.stdout.trim(), rootCommit: rootList[0], remoteIdentity: rem.identity },
   };
 }
 
@@ -227,11 +265,28 @@ function executeWorktreeCreate(preflight, opts) {
     && _dirOk(a[1]) && _dirOk(a[6]) && a.every(function (x, i) { return typeof x === 'string' && (x.charAt(0) !== '-' || i === 0 || i === 4); });
   if (!shapeOk) return { ok: false, kind: 'worktreeAdd', error: 'command_shape_invalid' };
   var repo = a[1], wt = a[6];
-  // 自 repo（ENBISOU 本体）は常に拒否。追加の protected root も拒否
-  var protectedRoots = [SELF_REPO_ROOT].concat(Array.isArray(o.protectedRepoRoots) ? o.protectedRepoRoots : []);
-  if (protectedRoots.some(function (r) { return typeof r !== 'string' || _insideOrSame(repo, r) || _insideOrSame(r, repo) || _insideOrSame(wt, r); })) {
+  var extraRoots = Array.isArray(o.protectedRepoRoots) ? o.protectedRepoRoots : [];
+  // worktree は自 repo・追加 protected root の外でなければならない（Permit があっても例外なし）
+  if (_insideOrSame(wt, SELF_REPO_ROOT) || extraRoots.some(function (r) { return typeof r !== 'string' || _insideOrSame(wt, r); })) {
     return { ok: false, kind: 'worktreeAdd', error: 'repo_protected' };
   }
+  // 追加 protected root は Permit でも解除しない
+  if (extraRoots.some(function (r) { return _insideOrSame(repo, r) || _insideOrSame(r, repo); })) return { ok: false, kind: 'worktreeAdd', error: 'repo_protected' };
+  var cap = o.realRepoCapability;
+  if (_insideOrSame(repo, SELF_REPO_ROOT) || _insideOrSame(SELF_REPO_ROOT, repo)) {
+    // 自 repo（ENBISOU 本体）は既定で常に拒否。generic allowlist では解除しない。
+    // Decision 120 決定 10: consumePermit が発行した opaque capability があり、全 binding が一致する 1 操作だけ解除する
+    if (cap === undefined || cap === null || !wc.samePath(repo, SELF_REPO_ROOT)) return { ok: false, kind: 'worktreeAdd', error: 'repo_protected' };
+    if (!permitMod.isGenuineCapability(cap)) return { ok: false, kind: 'worktreeAdd', error: 'capability_invalid' };
+    var bindOk = cap.operation === permitMod.OPERATION && wc.samePath(cap.repoPath, repo)
+      && cap.expectedHead === a[7] && cap.expectedHead === plan.baseHead
+      && cap.expectedOriginMain === cap.expectedHead && cap.expectedOriginMain === plan.originMainAtStart
+      && cap.taskId === taskId && cap.branch === a[5] && wc.samePath(cap.worktreePath, wt);
+    if (!bindOk) return { ok: false, kind: 'worktreeAdd', error: 'capability_binding_mismatch' };
+    if (!permitMod.redeemCapability(cap)) return { ok: false, kind: 'worktreeAdd', error: 'capability_already_used' };   // 以後この capability は使えない
+    return _exec('worktreeAdd', a, repo, o);
+  }
+  if (cap !== undefined && cap !== null) return { ok: false, kind: 'worktreeAdd', error: 'capability_unexpected' };   // temp repo に capability は不要
   var allow = Array.isArray(o.mutationRepoAllowlist) ? o.mutationRepoAllowlist : [];
   if (!allow.some(function (r) { return wc.samePath(r, repo); })) return { ok: false, kind: 'worktreeAdd', error: 'repo_not_allowlisted_for_mutation' };
   return _exec('worktreeAdd', a, repo, o);
@@ -247,6 +302,7 @@ module.exports = {
   validateGitAvailable: validateGitAvailable,
   readRepoState: readRepoState,
   readWorktreeState: readWorktreeState,
+  readRepoIdentity: readRepoIdentity,
   listEnvFiles: listEnvFiles,
   detectActiveHooks: detectActiveHooks,
   inspectTargetPath: inspectTargetPath,
