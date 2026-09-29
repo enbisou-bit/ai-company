@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
   "expected": {
-    "total": 65,
-    "safe": 47,
+    "total": 66,
+    "safe": 48,
     "conditional": 14,
     "forbidden": 4
   },
@@ -739,6 +739,21 @@
           "tools/devAutopilot/worktreeExecutor.js",
           "tools/devAutopilot/worktreeController.js",
           "tools/devAutopilot/runStore.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "devAutopilotStep4B.test.js",
+      "class": "safe",
+      "reason": "純関数 test のみ（Claude CLI・API・child_process・Git・network を使わない）。sandbox（network・fs write 全面・env file 読込・child_process 等の危険 module を遮断。OS temp も作らず process.env も変更しない）＋ Protected hash 確認。実 repo の testManifest / testSelector は read-only で読むだけ。Autopilot Stage 4B（claudeRunner / Claude Runner Pure Contract）自身の test",
+      "deps": {
+        "files": [
+          "tools/devAutopilot/claudeRunner.js",
+          "tools/devAutopilot/worktreeController.js",
+          "tools/devAutopilot/riskClassifier.js",
+          "tools/devAutopilot/testSelector.js",
+          "tools/devAutopilot/testManifest.json"
         ],
         "npm": []
       }

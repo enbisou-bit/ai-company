@@ -30,8 +30,38 @@ function protectedFingerprint() {
   catch (e) { return 'unreadable:' + e.code; }
 }
 const fpBefore = protectedFingerprint();
+// Z-54: 本物の .autopilot（Permit root・Step 3C の audit artifact を含む）をこのテストが変更しないことの snapshot。
+//   監視範囲は <repo の親>\.autopilot 配下全体。Step 3C 以降は consumed Permit 等が意図的に残置されているため「存在しないこと」は前提にしない。
+//   比較するのは相対 path・種別・size・内容の sha256 だけ（Permit 本文は出力しない）。atime / mtime は同一性の条件にしない。
+//   link / junction・特殊ファイル・読取失敗は「変更なし」とみなさず snapshot 失敗（ok:false）とする。
 const REAL_AUTOPILOT_ROOT = path.join(path.dirname(ROOT), '.autopilot');
-const realAutopilotExistedBefore = fs.existsSync(REAL_AUTOPILOT_ROOT);
+function snapshotTree(root) {
+  const res = { ok: true, exists: false, entries: [], errors: [] };
+  let st;
+  try { st = fs.lstatSync(root); } catch (e) { return e.code === 'ENOENT' ? res : { ok: false, exists: null, entries: [], errors: ['lstat_root:' + e.code] }; }
+  res.exists = true;
+  if (st.isSymbolicLink() || !st.isDirectory()) return { ok: false, exists: true, entries: [], errors: ['root_not_plain_directory'] };
+  try { if (fs.realpathSync.native(root).toLowerCase() !== path.resolve(root).toLowerCase()) return { ok: false, exists: true, entries: [], errors: ['root_realpath_mismatch'] }; }
+  catch (e) { return { ok: false, exists: true, entries: [], errors: ['realpath_root:' + e.code] }; }
+  (function walk(dir, rel) {
+    let names;
+    try { names = fs.readdirSync(dir).sort(); } catch (e) { res.ok = false; res.errors.push('readdir:' + (rel || '.') + ':' + e.code); return; }
+    names.forEach(function (n) {
+      const p = path.join(dir, n), r = rel ? rel + '/' + n : n;
+      let s;
+      try { s = fs.lstatSync(p); } catch (e) { res.ok = false; res.errors.push('lstat:' + r + ':' + e.code); return; }
+      if (s.isSymbolicLink()) { res.ok = false; res.errors.push('link:' + r); return; }
+      if (s.isDirectory()) { res.entries.push({ path: r, type: 'dir' }); walk(p, r); return; }
+      if (!s.isFile()) { res.ok = false; res.errors.push('special:' + r); return; }
+      let h;
+      try { h = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); } catch (e) { res.ok = false; res.errors.push('read:' + r + ':' + String(e.code || 'blocked')); return; }
+      res.entries.push({ path: r, type: 'file', size: s.size, sha256: h });
+    });
+  })(root, '');
+  return res;
+}
+function sameTree(a, b) { return a.ok && b.ok && a.exists === b.exists && JSON.stringify(a.entries) === JSON.stringify(b.entries); }
+const autopilotBefore = snapshotTree(REAL_AUTOPILOT_ROOT);
 
 // ── OS temp の自己所有 sandbox（blocker 導入前に作成）──
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'devAutopilotStep3CPrep-'));
@@ -338,6 +368,27 @@ const collected = [];   // secret / raw URL の漏洩確認用に result を集�
       const dump = JSON.stringify(collected) + saved;
       assert(envVals.every(function (v) { return dump.indexOf(v) === -1; }) && dump.indexOf('tok3nSECRET') === -1, 'X-50. result / Permit に env の secret 値・credential を含めない');
     }
+
+    caseHeader('Y. Z-54 の snapshot 比較 self-test（sandbox 内の fixture だけ）');
+    {
+      const T = path.join(SANDBOX, 'snapshot-selftest');
+      fs.mkdirSync(path.join(T, 'permits'), { recursive: true });
+      fs.writeFileSync(path.join(T, 'permits', 'a.consumed.json'), '{"x":1}');
+      const s0 = snapshotTree(T);
+      assert(s0.ok && s0.exists && sameTree(s0, snapshotTree(T)), 'Y-1. 読み取りだけなら同一（atime 等に依存しない）');
+      fs.writeFileSync(path.join(T, 'permits', 'b.json'), '{}');
+      const sAdd = snapshotTree(T);
+      fs.unlinkSync(path.join(T, 'permits', 'b.json'));
+      fs.writeFileSync(path.join(T, 'permits', 'a.consumed.json'), '{"x":2}');   // 同 size・内容違い
+      const sMod = snapshotTree(T);
+      fs.unlinkSync(path.join(T, 'permits', 'a.consumed.json'));
+      const sDel = snapshotTree(T);
+      assert(!sameTree(s0, sAdd) && !sameTree(s0, sMod) && !sameTree(s0, sDel), 'Y-2. 追加・内容変更（同 size）・削除を検出');
+      const none = snapshotTree(path.join(SANDBOX, 'does-not-exist'));
+      assert(none.ok && none.exists === false && sameTree(none, snapshotTree(path.join(SANDBOX, 'does-not-exist'))) && !sameTree(none, s0), 'Y-3. 開始時に無ければ終了時も無いことを検証できる');
+      assert(!sameTree({ ok: false, exists: true, entries: [], errors: ['x'] }, { ok: false, exists: true, entries: [], errors: ['x'] }), 'Y-4. snapshot 失敗同士は「変更なし」とみなさない');
+      assert(JSON.stringify(s0).indexOf('"x":1') === -1, 'Y-5. snapshot に file 本文を含めない（hash のみ）');
+    }
   } catch (e) {
     _failed++;
     console.log('  ❌ 例外: ' + (e && e.message ? e.message : String(e)));
@@ -349,7 +400,11 @@ const collected = [];   // secret / raw URL の漏洩確認用に result を集�
       assert(done.ok, 'Z-51. 自己所有 sandbox（Permit file を含む）を後始末' + (done.ok ? '' : '（' + done.error + ' / residue: ' + SANDBOX + '）'));
       let residue = true; try { fs.statSync(SANDBOX); } catch (e) { residue = false; }
       assert(!residue, 'Z-53. temp 残骸なし');
-      assert(fs.existsSync(REAL_AUTOPILOT_ROOT) === realAutopilotExistedBefore && !realAutopilotExistedBefore, 'Z-54. 本物の .autopilot directory（Permit root）を作っていない');
+      const autopilotAfter = snapshotTree(REAL_AUTOPILOT_ROOT);
+      assert(autopilotBefore.ok && autopilotAfter.ok, 'Z-54a. 本物の .autopilot の snapshot を安全に取得（link / 特殊ファイル / 読取失敗なし）' + (autopilotBefore.ok && autopilotAfter.ok ? '' : '（' + autopilotBefore.errors.concat(autopilotAfter.errors).join(',') + '）'));
+      assert(sameTree(autopilotBefore, autopilotAfter), 'Z-54. 本物の .autopilot（Permit root・audit artifact）をこのテストが追加・削除・変更していない（監視先 ' + path.resolve(REAL_AUTOPILOT_ROOT)
+        + '・exists=' + autopilotBefore.exists + '・dir ' + autopilotBefore.entries.filter(function (x) { return x.type === 'dir'; }).map(function (x) { return x.path; }).join('|')
+        + '・file ' + autopilotBefore.entries.filter(function (x) { return x.type === 'file'; }).map(function (x) { return x.path + '#sha256:' + x.sha256.slice(0, 12); }).join('|') + '）');
       const after = realSnapshot();
       assert(realBefore && after.st.head === realBefore.st.head && after.origin === realBefore.origin, 'Z-55. 本物の repo の HEAD / origin/main 不変');
       assert(realBefore && after.st.autopilotStatusHash === realBefore.st.autopilotStatusHash && after.st.displayStatusHash === realBefore.st.displayStatusHash, 'Z-56. autopilotStatusHash / displayStatusHash 不変');
