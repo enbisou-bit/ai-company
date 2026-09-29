@@ -4,6 +4,17 @@
 
 ---
 
+## Development Autopilot V1 ─ Git Isolation / Real Repo Boundary（2026-09-28〜29・Decision 120・origin/main `0c8941c`・Tag未作成）
+
+- **本番反映**：Step 1 Safety Foundation（`735e39d`）・Step 2 Run Store / State Machine（`fe391a1`）・Step 3A Pure Git Isolation Contract（`1bcbaac`）・Step 3B Temp Repo Git Integration（`16d5128`）・Decision 120（`005386a`）・Step 3C Preparation Explicit Real Repo Permit（`0c8941c`）の 6 commit を main へ fast-forward push。Render commit `0c8941c` Live（ユーザー実測）。Production Smoke 5/5 PASS（未認証 GET のみ）。
+- **runtime 未接続**：`tools/devAutopilot/` と Autopilot の test は server／UI／API／DB から参照されず、公開配信もされない（Smoke で 404 を確認）。
+- **Step 3C Controlled Real Repo Trial 成功**：Permit に束縛した `git worktree add -b` を本物の repo へ 1 回だけ実行し、created／resume validation と main・Protected の不変を確認（code edit 0）。その後 non-force の `worktree remove`・`branch -d` で cleanup し、branch／worktree 1／1 に復帰。
+- **未完了**：Claude Runner Connection 以降（Orchestrator・自律 E2E・automatic commit／push／deploy・Level 2／3）。次工程は Claude Runner Connection の Read-Only Research / Design。
+- **docs 追補**：2026-09-22〜24 の未同期 code history（11 commit）を docs/02PHASE_PROGRESS.md へ追補（再検証なし）。P0.8 Trial（`out_1790221365601`）は Production E2E validation artifact として保持・published = false（Instagram 未投稿）。
+- Version／Phase 変更なし（Version1.1 開発中・Phase54 Complete 維持・Phase55 未着手）。
+
+---
+
 ## Console 不要フロー Stage 0〜1b ─ ローカル実装完了（2026-09-21・Code commit 3件・本エントリ記録時点で push 未実施・新Decisionなし・Tag未作成）
 
 - **目的**：Carousel Image Production は backend/API として完成済みだったが **Output Engine UI へ未接続**（`index.html` に `carousel-image`／`approvalToken`／`carouselAssets`／`imageReviewOk` の参照 0 件）で、実運用に DevTools Console が必須だった。本 release は **UI 接続のみ**を行い、通常運用から Console を不要にする。
