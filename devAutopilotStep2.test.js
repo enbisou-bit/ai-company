@@ -227,8 +227,10 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     assert(!b.ok && !g.ok, 'SC-34. token / accessToken / cookie を拒否');
     assert(!c.ok && !d.ok && !e.ok, 'SC-35. password / authorization / env を拒否');
     assert(!f.ok, 'SC-35b. 値として明白な API key（sk-ant-…）を拒否');
-    const ok = withKey(function (x) { x.sessionIds.research = 'sess-0001'; x.budget.invocations = 1; });
-    assert(ok.ok, 'SC-36. sessionIds（Claude session identifier）は許可');
+    const withSid = JSON.parse(JSON.stringify(r0)); withSid.sessionIds.research = '1b4e28ba-2fa1-4d3b-a3f5-ef19b5a7633b';
+    const handSet = withKey(function (x) { x.sessionIds.research = '1b4e28ba-2fa1-4d3b-a3f5-ef19b5a7633b'; x.budget.invocations = 1; });
+    assert(rs.findSecrets(withSid).length === 0 && !handSet.ok && handSet.errors.some(function (m) { return m.indexOf('session_without_invocation') === 0; })
+      && !handSet.errors.some(function (m) { return m.indexOf('secret_detected') === 0; }), 'SC-36. sessionIds（Claude session identifier）は secret と誤検出しない・v2 では invocation の無い手書き session は整合違反');
   }
 
   caseHeader('PT. Path safety');
@@ -281,9 +283,21 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     const f2 = rs.resolveRunPaths(s2, 'task-002').runFile;
     fs.writeFileSync(f2, '{ broken json');
     assert(rs.readRun(s2, 'task-002').error === 'run_json_invalid', 'SR-24. 壊れた JSON を検出');
-    fs.writeFileSync(f2, JSON.stringify(Object.assign({}, badRun, { schemaVersion: 2 })));
+    fs.writeFileSync(f2, JSON.stringify(Object.assign({}, badRun, { schemaVersion: 99 })));
     const sv = rs.readRun(s2, 'task-002');
-    assert(sv.error === 'run_invalid' && sv.errors.indexOf('schema_version') !== -1, 'SR-25. schemaVersion 不一致を検出');
+    assert(sv.error === 'run_invalid' && sv.errors.indexOf('schema_version') !== -1, 'SR-25. schemaVersion 不一致（未知の版）を検出');
+    // v1 記録：read-only 参照はできるが、実行・上書き・再開はしない（自動移行しない・ファイルを変更しない）
+    const v1Run = JSON.parse(JSON.stringify(badRun)); v1Run.schemaVersion = 1; delete v1Run.isolation; delete v1Run.invocations;
+    const v1Text = JSON.stringify(v1Run, null, 2) + '\n';
+    fs.writeFileSync(f2, v1Text);
+    const v1Read = rs.readRun(s2, 'task-002');
+    const v1Next = rs.transitionStage(v1Run, 'researching', { now: '2026-09-30T00:00:01.000Z' });
+    const v2Try = rs.transitionStage(badRun, 'researching', { now: '2026-09-30T00:00:01.000Z' }).run;
+    const v1Save = rs.saveRun(s2, v2Try, { expectedUpdatedAt: v1Run.updatedAt });
+    assert(v1Read.ok && v1Read.schemaVersion === 1 && v1Read.executable === false && v1Read.run.stage === null && !v1Next.ok
+      && v1Save.error === 'run_read_only_v1' && fs.readFileSync(f2, 'utf8') === v1Text, 'SR-25c. v1 記録は read-only 参照のみ（遷移・上書きは拒否・ファイルは不変）');
+    const v2Read = rs.readRun(store, 'task-001');
+    assert(v2Read.ok && v2Read.schemaVersion === 2 && v2Read.executable === true, 'SR-25d. v2 記録は実行可能として読める（ok / run の意味は従来どおり）');
     fs.writeFileSync(f2, JSON.stringify(Object.assign({}, badRun, { taskId: 'task-999' })));
     assert(rs.readRun(s2, 'task-002').error === 'task_id_mismatch', 'SR-25b. run.json の taskId と directory の不一致を検出');
     assert(rs.createRun(store, r0).error === 'run_exists', 'SR-26. 同じ taskId の重複 create を拒否（既存を上書きしない）');

@@ -16,7 +16,10 @@
 var fs = require('fs');
 var path = require('path');
 
-var SCHEMA_VERSION = 1;
+// schema v2（Stage 4C / S1）：isolation・invocations[] を追加し、明示 allowlist で検証する。
+//   v1 の記録は変更・削除・自動移行しない。v1 は read-only 参照（inspectRunRecord / readRun）だけで、状態遷移・保存・再開は v2 のみ。
+var SCHEMA_VERSION = 2;
+var SCHEMA_VERSION_V1 = 1;
 var STAGES = Object.freeze(['researching', 'designing', 'implementing', 'testing', 'reviewing']);
 var GATES = Object.freeze(['none', 'human_approval_required', 'awaiting_commit_approval']);
 var OUTCOMES = Object.freeze([null, 'failed', 'blocked', 'completed']);
@@ -26,6 +29,15 @@ var TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/;
 var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 var HEAD_RE = /^[0-9a-f]{40}$/;
 var DEFAULT_STALE_MS = 10 * 60 * 1000;
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+var SHA256_RE = /^[0-9a-f]{64}$/;                                   // 照合用 hash は 64 桁全体を保持する（表示だけ短縮）
+var CODE_RE = /^[A-Za-z0-9_:.\/,@+=-]{1,200}$/;                    // 理由コード（固定分類・worktree 相対 path）
+var CLI_VERSION_RE = /^\d{1,3}\.\d{1,3}\.\d{1,4} \(Claude Code\)$/;
+var CHILD_VAR_NAME_RE = /^[A-Z][A-Z0-9_]{0,63}$/;                   // 子プロセスへ渡す変数の「名前」だけ（値は保存しない）
+var MODEL_ID_RE = /^claude-[a-z0-9.-]{3,60}$/;
+// Claude を呼ぶ stage（runStore の stage 名）→ sessionIds の key。testing は Claude を呼ばない
+var SESSION_KEY_BY_STAGE = Object.freeze({ researching: 'research', designing: 'design', implementing: 'implement', reviewing: 'review' });
+var COST_BASIS = 'cli_reported_estimate_not_billing';               // CLI の推定値。請求額・月額利用枠の消費量ではない
 
 function _clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 function _isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -98,15 +110,16 @@ function createInitialRun(input) {
     failureReason: null,
     finalGitStatus: null,
     finalStatus: null,
+    // S1 ではデータ形だけ。research 前の worktree 作成（S5）への切替はしない
+    isolation: { state: 'absent', worktreeHead: null, verifiedAt: null },
+    invocations: [],
   };
   var v = validateRunState(run);
   return v.ok ? { ok: true, run: run } : _err('invalid_initial_run', { errors: v.errors });
 }
 
-function validateRunState(run) {
-  var e = [];
-  if (!_isObj(run)) return { ok: false, errors: ['run_not_object'] };
-  if (run.schemaVersion !== SCHEMA_VERSION) e.push('schema_version');
+// v1 / v2 共通の検証（v1 時点の条件をそのまま維持する）
+function _validateCommon(run, e) {
   if (typeof run.taskId !== 'string' || !TASK_ID_RE.test(run.taskId)) e.push('task_id');
   var t = run.task;
   if (!_isObj(t) || !_str(t.title) || !_str(t.goal) || !Array.isArray(t.allowedPaths) || t.allowedPaths.length === 0
@@ -153,9 +166,211 @@ function validateRunState(run) {
   if ((run.gate === 'human_approval_required' || run.gate === 'awaiting_commit_approval') && !_str(run.gateReason)) e.push('gate_reason_missing');
   if (run.outcome === 'blocked' && !_str(run.blockedReason)) e.push('blocked_reason_missing');
   if (run.outcome === 'failed' && !_str(run.failureReason)) e.push('failure_reason_missing');
+  return e;
+}
+
+// v1 記録の read-only 検証（実行可否の判定には使わない）
+function validateRunStateV1(run) {
+  if (!_isObj(run)) return { ok: false, errors: ['run_not_object'] };
+  var e = [];
+  if (run.schemaVersion !== SCHEMA_VERSION_V1) e.push('schema_version');
+  _validateCommon(run, e);
   var secrets = findSecrets(run);
   if (secrets.length) e.push('secret_detected:' + secrets.join(','));
   return { ok: e.length === 0, errors: e };
+}
+
+// v2（実行可能な記録）の検証：共通条件 ＋ top-level key allowlist ＋ isolation / invocations の型・enum・整合
+function validateRunState(run) {
+  if (!_isObj(run)) return { ok: false, errors: ['run_not_object'] };
+  var e = [];
+  if (run.schemaVersion !== SCHEMA_VERSION) e.push('schema_version');
+  _validateCommon(run, e);
+  _validateV2(run, e);
+  var secrets = findSecrets(run);
+  if (secrets.length) e.push('secret_detected:' + secrets.join(','));
+  return { ok: e.length === 0, errors: e };
+}
+
+// ── v2 allowlist ───────────────────────────────────────
+var RUN_KEYS_V2 = Object.freeze(['schemaVersion', 'taskId', 'task', 'mainRepoPath', 'baseHead', 'branch', 'worktreePath', 'stage', 'gate', 'gateReason',
+  'outcome', 'completedStages', 'stageHistory', 'sessionIds', 'lock', 'startedAt', 'updatedAt', 'budget', 'mainStatusHashAtStart', 'protectedMd5AtStart',
+  'filesChanged', 'diffSummary', 'testResults', 'skippedTests', 'riskFindings', 'blockedReason', 'failureReason', 'finalGitStatus', 'finalStatus',
+  'isolation', 'invocations']);
+var BUDGET_KEYS = ['capUsd', 'spentUsd', 'invocations', 'maxInvocations', 'costUnknown'];
+var ISOLATION_KEYS = ['state', 'worktreeHead', 'verifiedAt'];
+var INVOCATION_KEYS = ['invocationId', 'stage', 'sessionId', 'state', 'reservedAt', 'completedAt', 'launch', 'result'];
+var INVOCATION_STATES = ['started', 'finished', 'unconfirmed'];
+var LAUNCH_KEYS = ['exeSha256', 'cliVersion', 'argvSha256', 'promptSha256', 'settingsSha256', 'childVarNames', 'timeoutMs', 'maxBuffer'];
+var RESULT_INPUT_KEYS = ['process', 'cost', 'envelope', 'schema', 'session', 'diff', 'safety', 'transcript', 'classification', 'structuredOutputSha256'];
+var RESULT_KEYS = RESULT_INPUT_KEYS.concat(['disposition', 'dispositionReason']);
+var PROCESS_KEYS = ['exitCode', 'signal', 'timedOut', 'bufferExceeded', 'errorClass', 'wallMs', 'stdoutBytes', 'stderrBytes', 'termination'];
+var SIGNALS = [null, 'SIGKILL', 'SIGTERM', 'SIGINT'];
+var ERROR_CLASSES = [null, 'ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM', 'ENOBUFS', 'spawn_error', 'other'];
+var TERMINATIONS_CONFIRMED = ['exit_event_observed', 'not_started'];
+var TERMINATIONS_UNCONFIRMED = ['exit_event_missing', 'descendants_unknown', 'probe_only'];
+var COST_KEYS = ['basis', 'state', 'cliReportedUsd'];
+var ENVELOPE_KEYS = ['parse', 'isError', 'subtype', 'apiErrorStatus', 'numTurns', 'permissionDenials', 'modelIds', 'unlistedModelCount'];
+var ENVELOPE_PARSE = ['ok', 'invalid', 'absent'];
+var SUBTYPES = [null, 'success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries', 'other'];
+var API_STATUS_STATES = ['absent', 'null', 'number', 'invalid_number', 'wrong_type', 'not_applicable'];
+var SCHEMA_RESULT_KEYS = ['ok', 'errorCodes', 'structuredSource'];
+var STRUCTURED_SOURCES = [null, 'structured_output', 'result_json'];
+var SESSION_RESULTS = ['match', 'mismatch', 'missing', 'invalid', 'unverified_no_envelope'];
+var DIFF_KEYS = ['result', 'reasonCodes', 'changedCount'];
+var DIFF_RESULTS = ['ok', 'blocked', 'human_approval_required', 'unavailable'];
+var SAFETY_KEYS = ['result', 'reasonCodes'];
+var SAFETY_RESULTS = ['ok', 'violated', 'unverified'];
+var TRANSCRIPT_KEYS = ['verdict', 'toolCounts', 'unparseable', 'outside', 'missingResults', 'errorResults'];
+var TRANSCRIPT_VERDICTS = ['ok', 'unverified_record_unparseable', 'unverified_unknown_tool', 'unverified_tool_error', 'unverified_expected_calls_missing',
+  'outside_reference_observed', 'not_analyzed'];
+var TOOL_COUNT_KEYS = ['Read', 'Glob', 'Grep', 'StructuredOutput', 'other'];   // 未知の tool 名は保存せず 'other' に数える
+var CLASSIFICATION_KEYS = ['outcome', 'reasonCodes'];
+var CLASSIFICATION_OUTCOMES = ['ok', 'failed', 'blocked', 'human_approval_required'];
+var DISPOSITIONS = ['none', 'fail', 'block', 'human_gate'];
+var MAX_CODES = 50;
+
+function _has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function _exactKeys(o, keys) { return _isObj(o) && Object.keys(o).length === keys.length && keys.every(function (k) { return _has(o, k); }); }
+function _int0(v) { return Number.isInteger(v) && v >= 0; }
+function _intOrNull(v) { return v === null || Number.isInteger(v); }
+function _in(list, v) { return list.indexOf(v) !== -1; }
+function _codes(v) { return Array.isArray(v) && v.length <= MAX_CODES && v.every(function (s) { return typeof s === 'string' && CODE_RE.test(s); }); }
+function _sha(v) { return typeof v === 'string' && SHA256_RE.test(v); }
+
+function _launchErrors(l, p) {
+  if (!_exactKeys(l, LAUNCH_KEYS)) return [p + 'keys'];
+  var e = [];
+  ['exeSha256', 'argvSha256', 'promptSha256', 'settingsSha256'].forEach(function (k) { if (!_sha(l[k])) e.push(p + k); });
+  if (typeof l.cliVersion !== 'string' || !CLI_VERSION_RE.test(l.cliVersion)) e.push(p + 'cliVersion');
+  if (!Array.isArray(l.childVarNames) || l.childVarNames.length === 0 || l.childVarNames.length > 32
+    || !l.childVarNames.every(function (n) { return typeof n === 'string' && CHILD_VAR_NAME_RE.test(n); })) e.push(p + 'childVarNames');
+  if (!(Number.isInteger(l.timeoutMs) && l.timeoutMs > 0)) e.push(p + 'timeoutMs');
+  if (!(Number.isInteger(l.maxBuffer) && l.maxBuffer > 0)) e.push(p + 'maxBuffer');
+  return e;
+}
+
+// completeInvocation の入力（disposition を除く観測値）の検証
+function _resultInputErrors(r, p) {
+  if (!_exactKeys(r, RESULT_INPUT_KEYS)) return [p + 'keys'];
+  var e = [];
+  var pr = r.process;
+  if (!_exactKeys(pr, PROCESS_KEYS)) e.push(p + 'process.keys');
+  else {
+    if (!_intOrNull(pr.exitCode)) e.push(p + 'process.exitCode');
+    if (!_in(SIGNALS, pr.signal)) e.push(p + 'process.signal');
+    if (typeof pr.timedOut !== 'boolean' || typeof pr.bufferExceeded !== 'boolean') e.push(p + 'process.flags');
+    if (!_in(ERROR_CLASSES, pr.errorClass)) e.push(p + 'process.errorClass');
+    if (!_int0(pr.wallMs) || !_int0(pr.stdoutBytes) || !_int0(pr.stderrBytes)) e.push(p + 'process.numbers');
+    if (!_in(TERMINATIONS_CONFIRMED.concat(TERMINATIONS_UNCONFIRMED), pr.termination)) e.push(p + 'process.termination');
+  }
+  var c = r.cost;
+  if (!_exactKeys(c, COST_KEYS) || c.basis !== COST_BASIS || !_in(['known', 'unknown'], c.state)
+    || (c.state === 'known' && !(typeof c.cliReportedUsd === 'number' && isFinite(c.cliReportedUsd) && c.cliReportedUsd >= 0))
+    || (c.state === 'unknown' && c.cliReportedUsd !== null)) e.push(p + 'cost');       // 費用不明を 0 とみなさない
+  var en = r.envelope;
+  if (!_exactKeys(en, ENVELOPE_KEYS)) e.push(p + 'envelope.keys');
+  else {
+    if (!_in(ENVELOPE_PARSE, en.parse)) e.push(p + 'envelope.parse');
+    if (!(en.isError === null || typeof en.isError === 'boolean')) e.push(p + 'envelope.isError');
+    if (!_in(SUBTYPES, en.subtype)) e.push(p + 'envelope.subtype');
+    var a = en.apiErrorStatus;
+    if (!_exactKeys(a, ['state', 'value']) || !_in(API_STATUS_STATES, a.state)
+      || (a.state === 'number' ? !(Number.isInteger(a.value) && a.value >= 100 && a.value <= 599) : a.value !== null)) e.push(p + 'envelope.apiErrorStatus');
+    if (!(en.numTurns === null || _int0(en.numTurns)) || !(en.permissionDenials === null || _int0(en.permissionDenials))) e.push(p + 'envelope.numbers');
+    if (!Array.isArray(en.modelIds) || en.modelIds.length > 10 || !en.modelIds.every(function (m) { return typeof m === 'string' && MODEL_ID_RE.test(m); })) e.push(p + 'envelope.modelIds');
+    if (!_int0(en.unlistedModelCount)) e.push(p + 'envelope.unlistedModelCount');
+    if (en.parse !== 'ok' && (en.isError !== null || en.subtype !== null)) e.push(p + 'envelope.parse_inconsistent');
+  }
+  var s = r.schema;
+  if (!_exactKeys(s, SCHEMA_RESULT_KEYS) || typeof s.ok !== 'boolean' || !_codes(s.errorCodes) || !_in(STRUCTURED_SOURCES, s.structuredSource)
+    || (s.ok && s.errorCodes.length > 0)) e.push(p + 'schema');
+  if (!_in(SESSION_RESULTS, r.session)) e.push(p + 'session');
+  var d = r.diff;
+  if (!_exactKeys(d, DIFF_KEYS) || !_in(DIFF_RESULTS, d.result) || !_codes(d.reasonCodes) || !_int0(d.changedCount)) e.push(p + 'diff');
+  var sf = r.safety;
+  if (!_exactKeys(sf, SAFETY_KEYS) || !_in(SAFETY_RESULTS, sf.result) || !_codes(sf.reasonCodes) || (sf.result !== 'ok' && sf.reasonCodes.length === 0)) e.push(p + 'safety');
+  var t = r.transcript;
+  if (!_exactKeys(t, TRANSCRIPT_KEYS) || !_in(TRANSCRIPT_VERDICTS, t.verdict) || !_exactKeys(t.toolCounts, TOOL_COUNT_KEYS)
+    || !TOOL_COUNT_KEYS.every(function (k) { return _int0(t.toolCounts[k]); })
+    || !_int0(t.unparseable) || !_int0(t.outside) || !_int0(t.missingResults) || !_int0(t.errorResults)) e.push(p + 'transcript');
+  var cl = r.classification;
+  if (!_exactKeys(cl, CLASSIFICATION_KEYS) || !_in(CLASSIFICATION_OUTCOMES, cl.outcome) || !_codes(cl.reasonCodes)) e.push(p + 'classification');
+  if (!(r.structuredOutputSha256 === null || _sha(r.structuredOutputSha256))) e.push(p + 'structuredOutputSha256');
+  return e;
+}
+
+function _invocationErrors(inv, i) {
+  var p = 'invocations[' + i + '].';
+  if (!_exactKeys(inv, INVOCATION_KEYS)) return [p + 'keys'];
+  var e = [];
+  if (typeof inv.invocationId !== 'string' || !UUID_RE.test(inv.invocationId)) e.push(p + 'invocationId');
+  if (!_has(SESSION_KEY_BY_STAGE, inv.stage)) e.push(p + 'stage');
+  if (typeof inv.sessionId !== 'string' || !UUID_RE.test(inv.sessionId)) e.push(p + 'sessionId');
+  if (!_in(INVOCATION_STATES, inv.state)) e.push(p + 'state');
+  if (!_isIso(inv.reservedAt)) e.push(p + 'reservedAt');
+  e = e.concat(_launchErrors(inv.launch, p + 'launch.'));
+  if (inv.state === 'started') {
+    if (inv.completedAt !== null || inv.result !== null) e.push(p + 'started_with_result');
+  } else if (_in(INVOCATION_STATES, inv.state)) {
+    if (!_isIso(inv.completedAt) || (_isIso(inv.reservedAt) && Date.parse(inv.completedAt) < Date.parse(inv.reservedAt))) e.push(p + 'completedAt');
+    var r = inv.result;
+    if (!_exactKeys(r, RESULT_KEYS)) e.push(p + 'result.keys');
+    else {
+      var input = {}; RESULT_INPUT_KEYS.forEach(function (k) { input[k] = r[k]; });
+      e = e.concat(_resultInputErrors(input, p + 'result.'));
+      if (!_in(DISPOSITIONS, r.disposition)) e.push(p + 'result.disposition');
+      if (r.disposition === 'none' ? r.dispositionReason !== null : !(typeof r.dispositionReason === 'string' && CODE_RE.test(r.dispositionReason))) e.push(p + 'result.dispositionReason');
+      var term = _isObj(r.process) ? r.process.termination : null;
+      if (inv.state === 'finished' && !_in(TERMINATIONS_CONFIRMED, term)) e.push(p + 'finished_without_confirmed_termination');
+      if (inv.state === 'unconfirmed' && (!_in(TERMINATIONS_UNCONFIRMED, term) || r.disposition !== 'block')) e.push(p + 'unconfirmed_must_block');
+    }
+  }
+  return e;
+}
+
+function _validateV2(run, e) {
+  var unknown = Object.keys(run).filter(function (k) { return RUN_KEYS_V2.indexOf(k) === -1; });
+  if (unknown.length) e.push('unknown_keys:' + unknown.join(','));
+  var missing = RUN_KEYS_V2.filter(function (k) { return !_has(run, k); });
+  if (missing.length) e.push('missing_keys:' + missing.join(','));
+  if (!_exactKeys(run.budget, BUDGET_KEYS)) e.push('budget_keys');
+  var iso = run.isolation;
+  if (!_exactKeys(iso, ISOLATION_KEYS)) e.push('isolation');
+  else if (iso.state === 'absent') { if (iso.worktreeHead !== null || iso.verifiedAt !== null) e.push('isolation'); }
+  else if (iso.state === 'verified') { if (typeof iso.worktreeHead !== 'string' || !HEAD_RE.test(iso.worktreeHead) || !_isIso(iso.verifiedAt)) e.push('isolation'); }
+  else e.push('isolation');
+  var sid = run.sessionIds;
+  if (_isObj(sid) && Object.keys(sid).some(function (k) { return sid[k] !== null && !(typeof sid[k] === 'string' && UUID_RE.test(sid[k])); })) e.push('session_id_format');
+  if (!Array.isArray(run.invocations)) { e.push('invocations'); return; }
+  var ids = {}, sessions = {}, started = 0, known = 0, unknownCost = false, stageIdx = run.stage === null ? -1 : STAGES.indexOf(run.stage);
+  run.invocations.forEach(function (inv, i) {
+    var ie = _invocationErrors(inv, i);
+    e.push.apply(e, ie);
+    if (ie.length) return;
+    if (ids[inv.invocationId]) e.push('duplicate_invocation_id'); ids[inv.invocationId] = true;
+    if (sessions[inv.sessionId]) e.push('duplicate_session_id'); sessions[inv.sessionId] = true;
+    if (inv.state === 'started') started++;
+    if (STAGES.indexOf(inv.stage) > stageIdx) e.push('invocation_stage_ahead_of_run');
+    var key = SESSION_KEY_BY_STAGE[inv.stage];
+    if (!_isObj(sid) || sid[key] !== inv.sessionId) e.push('session_ids_mismatch:' + key);
+    if (inv.result && inv.result.cost.state === 'known') known += inv.result.cost.cliReportedUsd;
+    if (inv.result && inv.result.cost.state === 'unknown') unknownCost = true;
+  });
+  if (started > 1) e.push('multiple_started_invocations');
+  // sessionIds は invocation と 1 対 1（V1：stage ごとに 1 回）
+  if (_isObj(sid)) Object.keys(SESSION_KEY_BY_STAGE).forEach(function (st) {
+    var key = SESSION_KEY_BY_STAGE[st];
+    var n = run.invocations.filter(function (inv) { return _isObj(inv) && inv.stage === st; }).length;
+    if (n > 1) e.push('multiple_invocations_for_stage:' + st);
+    if (sid[key] !== null && n === 0) e.push('session_without_invocation:' + key);
+  });
+  var bd = run.budget;
+  if (_isObj(bd)) {
+    if (bd.invocations !== run.invocations.length) e.push('invocation_count_mismatch');
+    if (typeof bd.spentUsd === 'number' && Math.abs(bd.spentUsd - known) > 1e-9) e.push('spent_usd_mismatch');
+    if (bd.costUnknown !== unknownCost) e.push('cost_unknown_mismatch');
+  }
 }
 
 // ── lock ───────────────────────────────────────────────
@@ -200,12 +415,17 @@ function _requireActive(r) {
   if (r.outcome !== null) return _err('terminal_outcome:' + r.outcome);
   return null;
 }
+// 未確定（started / unconfirmed）の invocation が残っている間は、stage を進めない・commit 承認待ちへ進めない
+function _unfinalized(r) {
+  return r.invocations.some(function (inv) { return inv.state === 'started' || inv.state === 'unconfirmed'; }) ? _err('invocation_unfinalized') : null;
+}
 
 function transitionStage(run, nextStage, opts) {
   var now = _isObj(opts) ? opts.now : undefined;
   return _next(run, now, function (r) {
     var t = _requireActive(r); if (t) return t;
     if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
+    var u = _unfinalized(r); if (u) return u;
     if (STAGES.indexOf(nextStage) === -1) return _err('unknown_stage');
     var expected = r.stage === null ? STAGES[0] : STAGES[STAGES.indexOf(r.stage) + 1];
     if (nextStage !== expected) return _err('invalid_transition:' + String(r.stage) + '->' + nextStage);
@@ -286,6 +506,7 @@ function markAwaitingCommitApproval(run, opts) {
   return _next(run, now, function (r) {
     var t = _requireActive(r); if (t) return t;
     if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
+    var u = _unfinalized(r); if (u) return u;
     if (r.stage !== 'reviewing') return _err('review_not_reached');
     r.completedStages.push('reviewing');
     var last = r.stageHistory[r.stageHistory.length - 1];
@@ -309,6 +530,124 @@ function markCompletedByHuman(run, opts) {
     r.outcome = 'completed';
     r.finalStatus = 'completed';
   });
+}
+
+// ── invocation 記録（純関数・S1）─────────────────────────
+//   ★ 返すのは「新しい状態」だけ。ディスクへの atomic 保存・所有者 lock・heartbeat は S2 以降（この関数は保存しない）。
+//   ★ 不正入力では部分更新しない（_next が clone 上で mutate し、検証に通った場合だけ返す。入力の run は変更しない）。
+//
+// beginInvocation：予約・回数加算・session 割当・stageHistory 更新を 1 つの新しい状態として返す（この状態の保存に成功した場合だけ起動してよい）
+//   input: { now, invocationId, sessionId, stage, launch:{ exeSha256, cliVersion, argvSha256, promptSha256, settingsSha256, childVarNames[], timeoutMs, maxBuffer } }
+function beginInvocation(run, input) {
+  var i = _isObj(input) ? input : {};
+  if (!_exactKeys(i, ['now', 'invocationId', 'sessionId', 'stage', 'launch'])) return _err('input_keys_invalid');
+  if (typeof i.invocationId !== 'string' || !UUID_RE.test(i.invocationId)) return _err('invocation_id_invalid');
+  if (typeof i.sessionId !== 'string' || !UUID_RE.test(i.sessionId)) return _err('session_id_invalid');
+  var le = _launchErrors(i.launch, 'launch.');
+  if (le.length) return _err('launch_invalid', { errors: le });
+  return _next(run, i.now, function (r) {
+    var t = _requireActive(r); if (t) return t;
+    if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
+    if (r.stage === null || !_has(SESSION_KEY_BY_STAGE, r.stage)) return _err('stage_not_invocable');
+    if (i.stage !== r.stage) return _err('stage_mismatch');
+    var u = _unfinalized(r); if (u) return u;
+    var key = SESSION_KEY_BY_STAGE[r.stage];
+    if (r.sessionIds[key] !== null) return _err('stage_already_invoked:' + key);            // 同一 stage の再起動は禁止（V1・retry 0）
+    if (r.invocations.some(function (inv) { return inv.invocationId === i.invocationId; })) return _err('duplicate_invocation_id');
+    if (r.invocations.some(function (inv) { return inv.sessionId === i.sessionId; })
+      || Object.keys(r.sessionIds).some(function (k) { return r.sessionIds[k] === i.sessionId; })) return _err('duplicate_session_id');
+    if (r.budget.invocations >= r.budget.maxInvocations) return _err('invocation_limit_reached');
+    if (r.budget.costUnknown) return _err('cost_unknown_requires_human');                    // 費用不明のまま次を起動しない
+    if (r.budget.spentUsd >= r.budget.capUsd) return _err('budget_cap_reached');
+    var last = r.stageHistory[r.stageHistory.length - 1];
+    if (!last || last.stage !== r.stage || last.endedAt !== null) return _err('stage_history_inconsistent');
+    r.invocations.push({ invocationId: i.invocationId, stage: r.stage, sessionId: i.sessionId, state: 'started', reservedAt: i.now, completedAt: null,
+      launch: _clone(i.launch), result: null });
+    r.budget.invocations += 1;
+    r.sessionIds[key] = i.sessionId;
+    last.invocations += 1;
+  });
+}
+
+// 観測値 → run の処理区分（Safety 最優先。未検証は成功扱いにしない）
+function _deriveDisposition(state, res, budgetAfter) {
+  if (state === 'unconfirmed') return { d: 'block', why: 'termination_unconfirmed' };
+  if (res.safety.result !== 'ok') return { d: 'block', why: 'safety:' + res.safety.result };
+  if (res.diff.result === 'blocked' || res.diff.result === 'unavailable') return { d: 'block', why: 'diff:' + res.diff.result };
+  if (res.transcript.verdict === 'outside_reference_observed') return { d: 'block', why: 'transcript:outside_reference_observed' };
+  if (res.classification.outcome === 'blocked') return { d: 'block', why: 'classification:blocked' };
+  // 未検証（transcript が ok 以外）は失敗より優先して block（終了状態）。失敗の詳細は result.classification に保持される
+  if (res.transcript.verdict !== 'ok') return { d: 'block', why: 'unverified:' + res.transcript.verdict };
+  if (res.classification.outcome === 'failed') return { d: 'fail', why: 'classification:failed' };
+  if (res.classification.outcome === 'human_approval_required') return { d: 'human_gate', why: 'classification:human_approval_required' };
+  if (res.diff.result === 'human_approval_required') return { d: 'human_gate', why: 'diff:human_approval_required' };
+  if (res.cost.state === 'unknown') return { d: 'human_gate', why: 'cost_unknown' };
+  if (budgetAfter.spentUsd >= budgetAfter.capUsd) return { d: 'human_gate', why: 'budget_cap_reached' };
+  return { d: 'none', why: null };
+}
+// classification が ok なのに観測値が矛盾する入力は受け付けない（fail-closed）
+function _okConsistencyErrors(state, res) {
+  var e = [];
+  if (res.classification.outcome !== 'ok') return e;
+  if (state !== 'finished') e.push('ok_but_not_finished');
+  if (res.process.exitCode !== 0 || res.process.timedOut || res.process.bufferExceeded || res.process.termination !== 'exit_event_observed') e.push('ok_but_process_failed');
+  if (res.envelope.parse !== 'ok' || res.envelope.isError !== false) e.push('ok_but_envelope_error');
+  if (res.envelope.permissionDenials !== 0) e.push('ok_but_permission_denials');
+  if (!res.schema.ok) e.push('ok_but_schema_invalid');
+  if (res.session !== 'match') e.push('ok_but_session_not_matched');
+  if (res.diff.result === 'blocked' || res.diff.result === 'unavailable') e.push('ok_but_diff_blocked');
+  return e;
+}
+
+// completeInvocation：観測値・費用・invocation 状態・run の outcome / gate を 1 つの新しい状態として返す
+//   input: { now, invocationId, state:'finished'|'unconfirmed', result:{ process, cost, envelope, schema, session, diff, safety, transcript, classification, structuredOutputSha256 } }
+//   ★ 二重完了（state が started でない）は拒否する → 費用の二重計上も起きない。
+//   ★ 費用不明は 0 とみなさず costUnknown を立て、Human 判断（human_gate）を要求する。費用は CLI 推定値であり請求額・月額利用枠ではない。
+function completeInvocation(run, input) {
+  var i = _isObj(input) ? input : {};
+  if (!_exactKeys(i, ['now', 'invocationId', 'state', 'result'])) return _err('input_keys_invalid');
+  if (i.state !== 'finished' && i.state !== 'unconfirmed') return _err('state_invalid');
+  var re = _resultInputErrors(i.result, 'result.');
+  if (re.length) return _err('result_invalid', { errors: re });
+  if (i.state === 'finished' && !_in(TERMINATIONS_CONFIRMED, i.result.process.termination)) return _err('finished_requires_confirmed_termination');
+  if (i.state === 'unconfirmed' && !_in(TERMINATIONS_UNCONFIRMED, i.result.process.termination)) return _err('unconfirmed_requires_unconfirmed_termination');
+  var ce = _okConsistencyErrors(i.state, i.result);
+  if (ce.length) return _err('result_inconsistent', { errors: ce });
+  return _next(run, i.now, function (r) {
+    var idx = -1;
+    r.invocations.forEach(function (inv, k) { if (inv.invocationId === i.invocationId) idx = k; });
+    if (idx === -1) return _err('invocation_not_found');
+    var inv = r.invocations[idx];
+    if (inv.state !== 'started') return _err('invocation_already_finalized');
+    if (r.outcome !== null) return _err('terminal_outcome:' + r.outcome);
+    if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
+    if (Date.parse(i.now) < Date.parse(inv.reservedAt)) return _err('clock_regression');
+    var res = _clone(i.result);
+    if (res.cost.state === 'known') {
+      r.budget.spentUsd += res.cost.cliReportedUsd;
+      var h = r.stageHistory.filter(function (x) { return x.stage === inv.stage; }).pop();
+      if (h) h.costUsd += res.cost.cliReportedUsd;
+    } else {
+      r.budget.costUnknown = true;
+    }
+    var dsp = _deriveDisposition(i.state, res, r.budget);
+    res.disposition = dsp.d;
+    res.dispositionReason = dsp.why;
+    inv.state = i.state;
+    inv.completedAt = i.now;
+    inv.result = res;
+    if (dsp.d === 'block') { r.outcome = 'blocked'; r.blockedReason = 'invocation:' + dsp.why; }
+    else if (dsp.d === 'fail') { r.outcome = 'failed'; r.failureReason = 'invocation:' + dsp.why; }
+    else if (dsp.d === 'human_gate') { r.gate = 'human_approval_required'; r.gateReason = 'invocation:' + dsp.why; }
+  });
+}
+
+// ── 記録の参照可否（v1 read-only / v2 実行可能）──────────────
+function inspectRunRecord(run) {
+  if (!_isObj(run)) return { schemaVersion: null, readable: false, executable: false, errors: ['run_not_object'] };
+  if (run.schemaVersion === SCHEMA_VERSION_V1) { var v1 = validateRunStateV1(run); return { schemaVersion: 1, readable: v1.ok, executable: false, errors: v1.errors }; }
+  if (run.schemaVersion === SCHEMA_VERSION) { var v2 = validateRunState(run); return { schemaVersion: 2, readable: v2.ok, executable: v2.ok, errors: v2.errors }; }
+  return { schemaVersion: null, readable: false, executable: false, errors: ['schema_version'] };
 }
 
 function acquireLock(run, opts) {
@@ -346,9 +685,18 @@ function releaseLock(run, opts) {
 //   戻り値: { result: 'resumable' | 'human_approval_required' | 'blocked', reasons[] }
 function validateResume(run, snapshot, opts) {
   var blocked = [], human = [];
+  if (_isObj(run) && run.schemaVersion === SCHEMA_VERSION_V1) return { result: 'blocked', reasons: ['schema_v1_read_only'] };   // v1 は参照のみ・再開しない
   var v = validateRunState(run);
   if (!v.ok) return { result: 'blocked', reasons: ['run_invalid'].concat(v.errors) };
-  if (run.outcome !== null) return { result: 'blocked', reasons: ['terminal_outcome:' + run.outcome] };
+  if (run.outcome !== null) return { result: 'blocked', reasons: ['terminal_outcome:' + run.outcome] };   // 未検証 block を含む（自動で新 run も作らない）
+  // 起動したか・終了したかが確定しない invocation は自動再開しない（保存失敗・クラッシュ・終了未確認を含む）
+  run.invocations.forEach(function (inv) {
+    if (inv.state === 'started') blocked.push('invocation_started_unfinalized');
+    if (inv.state === 'unconfirmed') blocked.push('invocation_termination_unconfirmed');
+  });
+  // 現 stage の invocation が finished として保存済み（区分 none、または human_gate を人が承認済み）で次 stage への遷移前の場合は、
+  //   再開して「次 stage へ進む」ことは妨げない。同じ stage の再起動は beginInvocation が stage_already_invoked で拒否する（人の承認でも解除されない）。
+  //   完了記録の欠落（session だけあって invocation が無い）は validateRunState の整合違反として上で blocked になる。
   var s = snapshot;
   var shapeOk = _isObj(s) && typeof s.baseHeadExists === 'boolean' && typeof s.worktreeExists === 'boolean'
     && typeof s.branchExists === 'boolean' && typeof s.diffAllowed === 'boolean' && typeof s.protectedMd5Matches === 'boolean'
@@ -445,16 +793,18 @@ function createRun(store, run) {
   return w.ok ? { ok: true, runFile: p.runFile } : w;
 }
 
+// v2 は { ok, run, schemaVersion:2, executable:true }、v1 は { ok, run, schemaVersion:1, executable:false }（read-only 参照）を返す。
+//   既存呼び出しが使う ok / run / error / errors の意味は変えない（schemaVersion / executable は追加項目）。
 function readRun(store, taskId) {
   var fsx = (store && store.fs) || fs;
   var p = resolveRunPaths(store, taskId);
   if (!p.ok) return p;
   var r = _readRaw(fsx, p.runFile);
   if (!r.ok) return r;
-  var v = validateRunState(r.run);
-  if (!v.ok) return _err('run_invalid', { errors: v.errors });
+  var info = inspectRunRecord(r.run);
+  if (!info.readable) return _err('run_invalid', { errors: info.errors });
   if (r.run.taskId !== taskId) return _err('task_id_mismatch');
-  return { ok: true, run: r.run };
+  return { ok: true, run: r.run, schemaVersion: info.schemaVersion, executable: info.executable };
 }
 
 // 楽観的排他: 既存 run.json の updatedAt が expectedUpdatedAt と一致する場合だけ上書き
@@ -465,6 +815,7 @@ function saveRun(store, nextRun, opts) {
   if (!v.ok) return _err('run_invalid', { errors: v.errors });
   var cur = readRun(store, nextRun.taskId);
   if (!cur.ok) return cur;
+  if (!cur.executable) return _err('run_read_only_v1');   // v1 記録は上書きしない（自動移行しない）
   if (typeof o.expectedUpdatedAt !== 'string' || cur.run.updatedAt !== o.expectedUpdatedAt) return _err('stale_write');
   var p = resolveRunPaths(store, nextRun.taskId);
   var w = _atomicWriteJson(fsx, p.runFile, nextRun);
@@ -473,6 +824,13 @@ function saveRun(store, nextRun, opts) {
 
 module.exports = {
   SCHEMA_VERSION: SCHEMA_VERSION,
+  SCHEMA_VERSION_V1: SCHEMA_VERSION_V1,
+  COST_BASIS: COST_BASIS,
+  SESSION_KEY_BY_STAGE: SESSION_KEY_BY_STAGE,
+  validateRunStateV1: validateRunStateV1,
+  inspectRunRecord: inspectRunRecord,
+  beginInvocation: beginInvocation,
+  completeInvocation: completeInvocation,
   STAGES: STAGES,
   GATES: GATES,
   OUTCOMES: OUTCOMES,
