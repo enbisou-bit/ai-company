@@ -384,8 +384,27 @@ function validateStageOutput(stage, out) {
 // ── parseRunnerEnvelope（CLI の JSON envelope）────────────────────
 //   ★ envelope のフィールド名は Stage 4A 時点で未実測（ASSUMED_ENVELOPE_FIELDS）。必須と決め打ちせず、
 //     取得できない値は null として返し、判定側（classifyRunnerFailure）で fail-closed に扱う。
-var ASSUMED_ENVELOPE_FIELDS = Object.freeze(['is_error', 'subtype', 'result', 'structured_output', 'session_id', 'total_cost_usd', 'permission_denials', 'num_turns']);
+var ASSUMED_ENVELOPE_FIELDS = Object.freeze(['is_error', 'subtype', 'result', 'structured_output', 'session_id', 'total_cost_usd', 'permission_denials', 'num_turns', 'api_error_status', 'modelUsage']);
 var MAX_STDOUT = 2 * 1024 * 1024;
+// 実使用モデルの記録用 allowlist（観測専用。判定条件にはしない）。これ以外の識別子は値を持たず件数だけ数える
+var KNOWN_MODEL_IDS = Object.freeze(['claude-haiku-4-5-20251001', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1']);
+// api_error_status：欠落 / null / 有効な HTTP status（100〜599 の整数）/ 数値だが不正 / 型不正 を区別する
+function _apiErrorStatus(env) {
+  if (!Object.prototype.hasOwnProperty.call(env, 'api_error_status')) return { state: 'absent' };
+  var v = env.api_error_status;
+  if (v === null) return { state: 'null' };
+  if (typeof v !== 'number') return { state: 'wrong_type' };
+  if (!Number.isInteger(v) || v < 100 || v > 599) return { state: 'invalid_number' };   // NaN / Infinity / 小数 / 範囲外
+  return { state: 'number', value: v };
+}
+// modelUsage：key 名（モデル識別子）だけを見る。本文・token 内訳は保持しない
+function _modelUsage(env) {
+  if (!Object.prototype.hasOwnProperty.call(env, 'modelUsage')) return { state: 'absent', models: [], unlistedCount: 0 };
+  if (!_isObj(env.modelUsage)) return { state: 'wrong_type', models: [], unlistedCount: 0 };
+  var models = [], unlisted = 0;
+  Object.keys(env.modelUsage).forEach(function (k) { if (KNOWN_MODEL_IDS.indexOf(k) !== -1) { if (models.indexOf(k) === -1) models.push(k); } else unlisted++; });
+  return { state: 'ok', models: models.sort(), unlistedCount: unlisted };
+}
 function parseRunnerEnvelope(stdout) {
   if (typeof stdout !== 'string') return _err('stdout_not_string');
   if (!stdout.trim()) return _err('stdout_empty');
@@ -403,6 +422,9 @@ function parseRunnerEnvelope(stdout) {
     isError: typeof env.is_error === 'boolean' ? env.is_error : null,
     subtype: typeof env.subtype === 'string' ? env.subtype : null,
     sessionId: typeof env.session_id === 'string' ? env.session_id : null,
+    sessionIdState: !Object.prototype.hasOwnProperty.call(env, 'session_id') ? 'absent' : typeof env.session_id === 'string' ? 'string' : 'wrong_type',
+    apiErrorStatus: _apiErrorStatus(env),
+    modelUsage: _modelUsage(env),
     costUsd: typeof env.total_cost_usd === 'number' && isFinite(env.total_cost_usd) && env.total_cost_usd >= 0 ? env.total_cost_usd : null,
     permissionDenials: Array.isArray(env.permission_denials) ? env.permission_denials.length : null,
     numTurns: Number.isInteger(env.num_turns) ? env.num_turns : null,
@@ -487,10 +509,21 @@ function validatePostRunDiff(input) {
 
 // ── classifyRunnerFailure（runStore の状態へ対応づけ・自動 retry 0）──────────
 // obs: { stage, exitCode, timedOut, envelope(parseRunnerEnvelope の結果), outputValidation(validateStageOutput の結果),
-//        postRunDiff(validatePostRunDiff の結果), budget:{ capUsd, spentUsd, invocations, maxInvocations, costUnknown } }
+//        postRunDiff(validatePostRunDiff の結果), budget:{ capUsd, spentUsd, invocations, maxInvocations, costUnknown }, expectedSessionId }
 //   重大度：blocked ＞ failed ＞ human_approval_required ＞ ok
+//   ★ is_error=true はエラー応答（subtype に関係なく）。成功出力 schema は検査しないが、Safety・費用・session は検査する。
+//   ★ エラー詳細は api_error_status / subtype の明示値だけで分類し、result 本文から推測しない。429 だけで月額枠の枯渇・課金区分を断定しない。
 //   runStore への対応：blocked → blockRun ／ failed → failRun ／ human_approval_required → requireHumanApproval ／ ok → none
 var ACTION = { blocked: 'blockRun', failed: 'failRun', human_approval_required: 'requireHumanApproval', ok: 'none' };
+// エラー応答の詳細理由（固定分類のみ）。CLI 予算上限停止と 429 は別の理由にする
+function _cliErrorDetails(env) {
+  var d = [];
+  if (env.subtype === 'error_max_budget_usd') d.push('cli_error_budget_stop');
+  var s = _isObj(env.apiErrorStatus) ? env.apiErrorStatus : { state: 'absent' };
+  if (s.state === 'number') d.push(s.value === 401 ? 'cli_error_401' : s.value === 403 ? 'cli_error_403' : s.value === 429 ? 'cli_error_429' : 'cli_error_status_other');
+  else if (!d.length) d.push('cli_error_unclassified:' + (['absent', 'null', 'wrong_type', 'invalid_number'].indexOf(s.state) !== -1 ? s.state : 'unknown'));
+  return d;
+}
 function classifyRunnerFailure(obs) {
   var blocked = [], failed = [], human = [];
   if (!_isObj(obs)) return { outcome: 'blocked', runStoreAction: 'blockRun', reasons: ['observation_missing'], retry: 0 };
@@ -510,14 +543,26 @@ function classifyRunnerFailure(obs) {
   }
   var env = obs.envelope;
   var envOk = _isObj(env) && env.ok === true;
+  var isErrResp = envOk && env.isError === true;
+  var expSid = obs.expectedSessionId;
+  var expSidOk = typeof expSid === 'string' && UUID_RE.test(expSid);
+  if (!expSidOk) blocked.push('expected_session_id_invalid');
+  if (envOk) {
+    // 解析できた envelope の session は、エラー応答でも照合する
+    if (env.sessionIdState !== 'string' || typeof env.sessionId !== 'string') blocked.push(env.sessionIdState === 'wrong_type' ? 'session_id_invalid' : 'session_id_missing');
+    else if (!UUID_RE.test(env.sessionId)) blocked.push('session_id_invalid');
+    else if (expSidOk && env.sessionId !== expSid) blocked.push('session_id_mismatch');
+    if (typeof env.permissionDenials === 'number' && env.permissionDenials > 0) blocked.push('forbidden_tool_attempted');
+  } else {
+    failed.push('session_unverified_no_envelope');   // envelope 自体が無い：プロセス障害として扱い、session 不一致とは記録しない
+  }
   if (exitKnown && obs.exitCode !== 0) failed.push('non_zero_exit');
+  if (isErrResp) { failed.push('cli_error'); _cliErrorDetails(env).forEach(function (d) { failed.push(d); }); }
   if (obs.timedOut !== true && exitKnown && obs.exitCode === 0) {
     if (!envOk) blocked.push('envelope_malformed');
-    else {
-      if (env.isError === true) failed.push('cli_error');
+    else if (env.permissionDenials === null) blocked.push('permission_denials_unknown');   // エラー応答でも拒否記録の観測不足は blocked
+    if (envOk && !isErrResp) {
       if (env.isError === null) blocked.push('is_error_unknown');
-      if (env.permissionDenials === null) blocked.push('permission_denials_unknown');
-      else if (env.permissionDenials > 0) blocked.push('forbidden_tool_attempted');
       var ov = obs.outputValidation;
       if (!_isObj(ov) || ov.ok !== true) blocked.push('output_invalid');
       else if (!_isObj(env.structuredOutput)) blocked.push('structured_output_missing');

@@ -272,6 +272,17 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
     assert(P('not json').error === 'envelope_not_json' && P('[1]').error === 'envelope_not_object' && P('').error === 'stdout_empty' && P(null).error === 'stdout_not_string', 'V-3. 不正な envelope は fail-closed');
     assert(P('{"a":1}').ok && P('{"a":1}').structuredOutput === null && P('{"a":1}').unknownFields.join(',') === 'a', 'V-4. 未知フィールドは記録し、必須と決め打ちしない');
     assert(good.assumptions.length === cr.ASSUMED_ENVELOPE_FIELDS.length && P(JSON.stringify({ total_cost_usd: -1 })).costUsd === null, 'V-5. 仮定を明示・不正な費用値は null（費用不明）');
+    const st = function (raw) { return P(raw).apiErrorStatus; };
+    assert(st('{}').state === 'absent' && st('{"api_error_status":null}').state === 'null' && st('{"api_error_status":401}').state === 'number' && st('{"api_error_status":401}').value === 401
+      && st('{"api_error_status":"401"}').state === 'wrong_type' && st('{"api_error_status":true}').state === 'wrong_type', 'V-6. api_error_status の欠落 / null / 有効な数値 / 型不正を区別');
+    assert(['401.5', '1e999', '-1e999', '99', '600', '0'].every(function (n) { const s = st('{"api_error_status":' + n + '}'); return s.state === 'invalid_number' && s.value === undefined; }), 'V-7. 小数・Infinity・範囲外の数値は有効な HTTP status として扱わない');
+    const mu = P(JSON.stringify({ modelUsage: { 'claude-haiku-4-5-20251001': { inputTokens: 12, outputTokens: 34, costUSD: 0.01 }, 'secret-looking-model/../x': { inputTokens: 1 } } }));
+    assert(mu.modelUsage.state === 'ok' && mu.modelUsage.models.join(',') === 'claude-haiku-4-5-20251001' && mu.modelUsage.unlistedCount === 1
+      && JSON.stringify(mu).indexOf('secret-looking-model') === -1 && JSON.stringify(mu).indexOf('inputTokens') === -1, 'V-8. modelUsage は既知の識別子だけ記録・未知は件数だけ・本文や token 内訳を保持しない');
+    assert(P('{}').modelUsage.state === 'absent' && P('{"modelUsage":[]}').modelUsage.state === 'wrong_type' && P('{"modelUsage":{}}').modelUsage.models.length === 0, 'V-9. modelUsage の欠落 / 型不正 / 空を区別（観測用・失敗条件にしない）');
+    const extra = P(JSON.stringify({ is_error: false, session_id: UUID, usage: {}, uuid: 'u', fast_mode_state: 'off', terminal_reason: 'completed', duration_ms: 1, duration_api_ms: 1, stop_reason: 'end_turn' }));
+    assert(extra.ok && ['usage', 'uuid', 'fast_mode_state', 'terminal_reason', 'duration_ms'].every(function (k) { return extra.unknownFields.indexOf(k) !== -1; }) && P('{"is_error":false}').ok, 'V-10. 追加 key は記録するだけで必須にしない');
+    assert(P('{}').sessionIdState === 'absent' && P('{"session_id":7}').sessionIdState === 'wrong_type' && P('{"session_id":7}').sessionId === null && P(JSON.stringify({ session_id: UUID })).sessionIdState === 'string', 'V-11. session_id の欠落 / 型不正を区別');
   }
 
   caseHeader('D. validatePostRunDiff（snapshot 比較）');
@@ -303,10 +314,10 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
 
   caseHeader('F. classifyRunnerFailure（runStore への対応・retry 0）');
   {
-    const okEnv = cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, structured_output: out('research'), total_cost_usd: 0.1, permission_denials: [] }));
+    const okEnv = cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, structured_output: out('research'), session_id: UUID, total_cost_usd: 0.1, permission_denials: [] }));
     const budget = { capUsd: 5, spentUsd: 0, invocations: 0, maxInvocations: 6, costUnknown: false };
     const diffOk = { result: 'ok', reasons: [], changedPaths: [] };
-    function F(extra) { return cr.classifyRunnerFailure(Object.assign({ stage: 'research', exitCode: 0, timedOut: false, envelope: okEnv, outputValidation: { ok: true, errors: [] }, postRunDiff: diffOk, budget: budget }, extra || {})); }
+    function F(extra) { return cr.classifyRunnerFailure(Object.assign({ stage: 'research', exitCode: 0, timedOut: false, envelope: okEnv, outputValidation: { ok: true, errors: [] }, postRunDiff: diffOk, budget: budget, expectedSessionId: UUID }, extra || {})); }
     const ok = F();
     assert(ok.outcome === 'ok' && ok.runStoreAction === 'none' && ok.retry === 0, 'F-1. 正常は ok（retry 0）');
     assert(F({ exitCode: 1 }).outcome === 'failed' && F({ exitCode: 1 }).runStoreAction === 'failRun', 'F-2. non-zero exit → failed（failRun）');
@@ -323,10 +334,70 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
     assert(F({ budget: Object.assign({}, budget, { invocations: 5 }) }).outcome === 'ok', 'F-11b. 上限ちょうど（6 回目）の正常 invocation は ok');
     assert(F({ budget: undefined }).outcome === 'blocked' && F({ exitCode: undefined }).outcome === 'blocked' && cr.classifyRunnerFailure(null).outcome === 'blocked', 'F-12. 観測不足 → blocked');
     assert([F({ exitCode: 1 }), F({ outputValidation: null }), F({ budget: Object.assign({}, budget, { costUnknown: true }) })].every(function (x) { return x.retry === 0; }), 'F-13. どの分類でも自動 retry は 0');
-    function envWith(o) { return cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, structured_output: o, total_cost_usd: 0.1, permission_denials: [] })); }
+    function envWith(o) { return cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, structured_output: o, session_id: UUID, total_cost_usd: 0.1, permission_denials: [] })); }
     assert(F({ envelope: envWith(out('review', { status: 'stop', stop_reason: 'needs change' })) }).outcome === 'human_approval_required'
       && F({ envelope: envWith(out('review', { status: 'needs_human', requires_human: true })) }).outcome === 'human_approval_required', 'F-14. Claude の stop / needs_human は human_approval_required（review の stop も自動 Fix 扱いにしない）');
-    assert(F({ envelope: cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, total_cost_usd: 0.1, permission_denials: [] })) }).outcome === 'blocked', 'F-15. 構造化出力が無ければ blocked');
+    const noSo = F({ envelope: cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, session_id: UUID, total_cost_usd: 0.1, permission_denials: [] })) });
+    assert(noSo.outcome === 'blocked' && has(noSo.reasons, 'structured_output_missing'), 'F-15. 構造化出力が無ければ blocked');
+
+    // ── C. Stage 4C 実測応答に基づくエラー応答 / エラー分類 / session 照合（値は汎用 fixture。実測値に固定しない）──
+    const OTHER_UUID = '2c5f39cb-3ab2-4e4c-b4a6-f02ac6b8744c';
+    function errEnv(extra, omit) {
+      const o = Object.assign({ type: 'result', subtype: 'success', is_error: true, api_error_status: 401, session_id: UUID, total_cost_usd: 0, permission_denials: [], num_turns: 1, modelUsage: {}, result: 'error text' }, extra || {});
+      (omit || []).forEach(function (k) { delete o[k]; });
+      return cr.parseRunnerEnvelope(JSON.stringify(o));
+    }
+    const badOv = { ok: false, errors: ['output_not_object'] };   // 呼び出し側が構造化出力なしで validate した場合
+    const e1 = F({ exitCode: 1, envelope: errEnv(), outputValidation: badOv });
+    assert(e1.outcome === 'failed' && has(e1.reasons, 'cli_error_401') && has(e1.reasons, 'non_zero_exit') && !has(e1.reasons, 'output_invalid') && !has(e1.reasons, 'structured_output_missing'),
+      'C-1. exit 1・is_error=true・subtype=success・structured_output 欠落 → failed（401）・成功 schema 違反にしない');
+    const e2 = F({ exitCode: 0, envelope: errEnv({ api_error_status: 403 }), outputValidation: badOv });
+    assert(e2.outcome === 'failed' && has(e2.reasons, 'cli_error_403') && !has(e2.reasons, 'cli_error_401') && !has(e2.reasons, 'output_invalid') && !has(e2.reasons, 'structured_output_missing'),
+      'C-2. exit 0・is_error=true（403）・structured_output 欠落 → failed（blocked の出力不正にしない・401 と区別）');
+    const e3 = F({ exitCode: 1, envelope: errEnv(), outputValidation: badOv, postRunDiff: { result: 'blocked', reasons: ['protected_path:x'] } });
+    assert(e3.outcome === 'blocked' && e3.runStoreAction === 'blockRun' && has(e3.reasons, 'post_run_diff_blocked') && has(e3.reasons, 'cli_error_401')
+      && e3.reasons.indexOf('post_run_diff_blocked') < e3.reasons.indexOf('cli_error_401'), 'C-3. Safety 違反と 401 の同時発生 → Safety 優先で blocked・401 の詳細も保持');
+    function detail(extra, omit) { return F({ exitCode: 1, envelope: errEnv(extra, omit), outputValidation: badOv }); }
+    const d429 = detail({ api_error_status: 429 }), dBud = detail({ subtype: 'error_max_budget_usd' }, ['api_error_status']), d500 = detail({ api_error_status: 500 });
+    assert(has(d429.reasons, 'cli_error_429') && !has(d429.reasons, 'cli_error_budget_stop') && has(dBud.reasons, 'cli_error_budget_stop') && !has(dBud.reasons, 'cli_error_429') && !has(dBud.reasons, 'cli_error_unclassified')
+      && has(d500.reasons, 'cli_error_status_other') && [d429, dBud, d500].every(function (x) { return x.outcome === 'failed' && x.retry === 0; }), 'C-4. 429 / CLI 予算上限停止 / その他を別の理由で区別（429 と予算停止をまとめない・retry 0）');
+    const dAbs = detail({}, ['api_error_status']), dNull = detail({ api_error_status: null }), dStr = detail({ api_error_status: '401' }), dFrac = detail({ api_error_status: 401.5 }), dRange = detail({ api_error_status: 99 });
+    assert(has(dAbs.reasons, 'cli_error_unclassified:absent') && has(dNull.reasons, 'cli_error_unclassified:null') && has(dStr.reasons, 'cli_error_unclassified:wrong_type')
+      && has(dFrac.reasons, 'cli_error_unclassified:invalid_number') && has(dRange.reasons, 'cli_error_unclassified:invalid_number') && !has(dStr.reasons, 'cli_error_401'), 'C-5. api_error_status の欠落 / null / 型不正 / 不正数値は分類不能（文字列 "401" を 401 扱いしない）');
+    const dText = detail({ result: 'HTTP 401 rate limit exceeded; buy credits' }, ['api_error_status']);
+    assert(has(dText.reasons, 'cli_error_unclassified:absent') && !has(dText.reasons, 'cli_error_401') && !has(dText.reasons, 'cli_error_429'), 'C-6. result 本文から推測分類しない');
+    const s1 = F({ expectedSessionId: undefined }), s2 = F({ expectedSessionId: 'not-a-uuid' });
+    assert(s1.outcome === 'blocked' && has(s1.reasons, 'expected_session_id_invalid') && s2.outcome === 'blocked' && has(s2.reasons, 'expected_session_id_invalid'), 'C-7. expectedSessionId の欠落・不正 → blocked');
+    const sEnv = function (sid, omit) { const o = { is_error: false, structured_output: out('research'), total_cost_usd: 0.1, permission_denials: [] }; if (!omit) o.session_id = sid; return cr.parseRunnerEnvelope(JSON.stringify(o)); };
+    const sMiss = F({ envelope: sEnv(null, true) }), sType = F({ envelope: sEnv(123) }), sBad = F({ envelope: sEnv('abc') }), sMis = F({ envelope: sEnv(OTHER_UUID) }), sOk = F({ envelope: sEnv(UUID) });
+    assert(sMiss.outcome === 'blocked' && has(sMiss.reasons, 'session_id_missing') && has(sType.reasons, 'session_id_invalid') && has(sBad.reasons, 'session_id_invalid')
+      && sMis.outcome === 'blocked' && has(sMis.reasons, 'session_id_mismatch') && sOk.outcome === 'ok' && !sOk.reasons.some(function (r) { return /session/.test(r); }), 'C-8. 応答 session の欠落 / 型不正 / 不正 / 不一致 → blocked・一致なら ok');
+    const sErr = F({ exitCode: 1, envelope: errEnv({ session_id: OTHER_UUID }), outputValidation: badOv });
+    assert(sErr.outcome === 'blocked' && has(sErr.reasons, 'session_id_mismatch') && has(sErr.reasons, 'cli_error_401'), 'C-9. エラー応答でも session 照合を省略しない');
+    const pTo = F({ timedOut: true, exitCode: null, envelope: undefined, outputValidation: undefined });
+    const pExit = F({ exitCode: 1, envelope: { ok: false, error: 'stdout_empty' }, outputValidation: undefined });
+    const pZero = F({ exitCode: 0, envelope: { ok: false, error: 'envelope_not_json' }, outputValidation: undefined });
+    assert(pTo.outcome === 'failed' && has(pTo.reasons, 'timeout') && has(pTo.reasons, 'session_unverified_no_envelope') && !has(pTo.reasons, 'session_id_mismatch')
+      && pExit.outcome === 'failed' && has(pExit.reasons, 'non_zero_exit') && has(pExit.reasons, 'session_unverified_no_envelope') && !has(pExit.reasons, 'session_id_mismatch')
+      && pZero.outcome === 'blocked' && has(pZero.reasons, 'envelope_malformed'), 'C-10. envelope 未取得はプロセス障害＋session 未確認（不一致と捏造しない）・exit 0 の envelope 不正は blocked のまま');
+    const cErr = F({ exitCode: 1, envelope: errEnv({}, ['total_cost_usd']), outputValidation: badOv });
+    const dErr = F({ exitCode: 1, envelope: errEnv({ permission_denials: [{ tool: 'Bash' }] }), outputValidation: badOv });
+    const nErr = F({ exitCode: 0, envelope: errEnv({}, ['permission_denials']), outputValidation: badOv });
+    assert(has(cErr.reasons, 'cost_unknown') && dErr.outcome === 'blocked' && has(dErr.reasons, 'forbidden_tool_attempted')
+      && nErr.outcome === 'blocked' && has(nErr.reasons, 'permission_denials_unknown'), 'C-11. エラー応答でも費用不明・禁止 tool 試行・拒否記録の欠落の検査を省略しない');
+    function sucEnv(extra, omit) {
+      const o = Object.assign({ type: 'result', subtype: 'success', is_error: false, api_error_status: null, session_id: UUID, total_cost_usd: 0.02, permission_denials: [], num_turns: 2,
+        modelUsage: { 'claude-haiku-4-5-20251001': { inputTokens: 10 } }, structured_output: out('research'), usage: { x: 1 }, uuid: 'u', fast_mode_state: 'off', terminal_reason: 'completed', duration_ms: 1 }, extra || {});
+      (omit || []).forEach(function (k) { delete o[k]; });
+      return cr.parseRunnerEnvelope(JSON.stringify(o));
+    }
+    assert(F({ envelope: sucEnv() }).outcome === 'ok' && F({ envelope: sucEnv({ modelUsage: { 'claude-unknown-9': {} } }) }).outcome === 'ok' && F({ envelope: sucEnv({}, ['modelUsage']) }).outcome === 'ok'
+      && F({ envelope: sucEnv({}, ['api_error_status']) }).outcome === 'ok', 'C-12. 正常応答：追加 key・未知 / 欠落 modelUsage・api_error_status 欠落だけでは失敗にしない');
+    assert(F({ envelope: sucEnv({ num_turns: 9 }) }).outcome === 'ok' && !has(F({ envelope: sucEnv({ num_turns: 9 }) }).reasons, 'invocation_limit_exceeded')
+      && has(F({ envelope: sucEnv({ num_turns: 1 }), budget: Object.assign({}, budget, { invocations: 6 }) }).reasons, 'invocation_limit_exceeded'), 'C-13. num_turns は invocation 回数に数えない（回数は budget.invocations だけ）');
+    const probe2 = { probe: '4c-1', ok: true };
+    const p2 = F({ envelope: sucEnv({ structured_output: probe2 }), outputValidation: cr.validateStageOutput('research', probe2) });
+    assert(p2.outcome === 'blocked' && has(p2.reasons, 'output_invalid') && cr.validateStageOutput('research', out('research')).ok, 'C-14. probe の 2 項目 schema は Runner 出力として受け付けない・9 項目の正常出力は従来どおり ok');
   }
 
   caseHeader('I. Invocation plan（V1 no-auto-fix：research → design → implement → review のみ）');
@@ -361,10 +432,10 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
     assert(four.runStoreStage === 'reviewing' && I(h(['research', 'design', 'implement'])).runStoreStage === 'implementing', 'I-14. runStore の stage 名への対応');
     // 関数連結：review の構造化出力 → classifyRunnerFailure → validateInvocationPlan（Fix へ進む経路が無いこと）
     function chain(reviewOut) {
-      const env = cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, structured_output: reviewOut, total_cost_usd: 0.1, permission_denials: [] }));
+      const env = cr.parseRunnerEnvelope(JSON.stringify({ is_error: false, structured_output: reviewOut, session_id: UUID, total_cost_usd: 0.1, permission_denials: [] }));
       const ov = cr.validateStageOutput('review', reviewOut);
       const c = cr.classifyRunnerFailure({ stage: 'review', exitCode: 0, timedOut: false, envelope: env, outputValidation: ov, postRunDiff: { result: 'ok', reasons: [], changedPaths: [] },
-        budget: { capUsd: 5, spentUsd: 0, invocations: 3, maxInvocations: 6, costUnknown: false } });
+        budget: { capUsd: 5, spentUsd: 0, invocations: 3, maxInvocations: 6, costUnknown: false }, expectedSessionId: UUID });
       const hist = h(['research', 'design', 'implement']).concat([{ kind: 'review', status: reviewOut.status, requiresHuman: reviewOut.requires_human, runnerOutcome: c.outcome }]);
       return { c: c, p: I(hist, DONE) };
     }
