@@ -21,7 +21,8 @@ var WIN_MAX_PATH = 259;                                  // MAX_PATH 260 − 終
 var WIN_RESERVED = Object.freeze(['CON', 'PRN', 'AUX', 'NUL',
   'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
   'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9']);
-var PREFLIGHT_RUN_STAGE = 'designing';                   // worktree は designing → implementing の境界でのみ作る（Step 2 WORKTREE_STAGES と整合）
+// S5：worktree は research の前（stage 未開始・isolation 未確定・invocation なし）でのみ作る。全 stage で同じ隔離場所を使う（runStore WORKTREE_STAGES と整合）
+var PREFLIGHT_RUN_STAGE = null;
 
 // child process へ渡す env の allowlist（大文字で比較）。実際に必要な最小集合は Step 3B で検証する。
 var CHILD_ENV_ALLOWLIST = Object.freeze(['PATH', 'PATHEXT', 'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP']);
@@ -257,7 +258,8 @@ function validateIsolationPreflight(snapshot, expected) {
     if (run.baseHead !== x.baseHead) r.push('run_base_head_mismatch');
     if (wp.ok && !samePath(run.worktreePath, wp.worktreePath)) r.push('run_worktree_path_mismatch');
     if (!samePath(run.mainRepoPath, x.repoPath)) r.push('run_main_repo_path_mismatch');
-    if (run.stage !== PREFLIGHT_RUN_STAGE || run.gate !== 'none' || run.outcome !== null) r.push('run_state_not_ready_for_worktree');
+    if (run.stage !== PREFLIGHT_RUN_STAGE || run.gate !== 'none' || run.outcome !== null
+      || !_isObj(run.isolation) || run.isolation.state !== 'absent' || !Array.isArray(run.invocations) || run.invocations.length !== 0) r.push('run_state_not_ready_for_worktree');
   }
 
   if (r.length) return { result: 'blocked', reasons: r };

@@ -110,9 +110,13 @@ function makeRun(stageTarget, extra) {
   }, extra || {}));
   if (!init.ok) throw new Error('fixture run invalid: ' + JSON.stringify(init));
   let r = init.run, m = 1;
+  if (stageTarget === null) return r;
+  // S5：research の前に隔離 worktree を確定する
+  const iso = rs.markIsolationVerified(r, { now: at(0), worktreeHead: r.baseHead });
+  if (!iso.ok) throw new Error('isolate failed: ' + iso.error);
+  r = iso.run;
   const order = ['researching', 'designing', 'implementing', 'testing', 'reviewing'];
   for (const s of order) {
-    if (stageTarget === null) break;
     const x = rs.transitionStage(r, s, { now: at(m++) });
     if (!x.ok) throw new Error('advance failed: ' + x.error);
     r = x.run;
@@ -130,7 +134,7 @@ function goodPreflightSnapshot(extra) {
   }, extra || {});
 }
 function goodExpected(extra) {
-  return Object.assign({ taskId: TASK, repoPath: REPO, worktreeRoot: WT_ROOT, baseHead: HEAD, protectedFingerprint: FP, mainStatusHash: STATUS, run: makeRun('designing') }, extra || {});
+  return Object.assign({ taskId: TASK, repoPath: REPO, worktreeRoot: WT_ROOT, baseHead: HEAD, protectedFingerprint: FP, mainStatusHash: STATUS, run: makeRun(null) }, extra || {});
 }
 function goodCreatedSnapshot(extra) {
   return Object.assign({
@@ -248,8 +252,10 @@ function goodResumeSnapshot(extra) {
     assert(blockedBy(goodPreflightSnapshot({ worktreeListPorcelain: 'garbage' }), null, 'worktree_list_malformed'), 'F-26d. worktree list 不正 → blocked');
     assert(blockedBy(goodPreflightSnapshot(), goodExpected({ baseHead: 'HEAD' }), 'expected_base_head_invalid'), 'F-26e. baseHead が SHA でない（暗黙 HEAD）→ blocked');
     assert(blockedBy(goodPreflightSnapshot(), goodExpected({ run: undefined }), 'run_missing'), 'F-26f. run 欠落 → blocked');
-    assert(blockedBy(goodPreflightSnapshot(), goodExpected({ run: makeRun('researching') }), 'run_state_not_ready_for_worktree'), 'F-26g. run が designing 以外 → blocked');
-    assert(blockedBy(goodPreflightSnapshot(), goodExpected({ run: makeRun('designing', { baseHead: ORIGIN }) }), 'run_base_head_mismatch'), 'F-26h. run.baseHead 不一致 → blocked');
+    const isoOnly = rs.markIsolationVerified(makeRun(null), { now: at(0), worktreeHead: HEAD }).run;
+    assert(['researching', 'designing', 'implementing'].every(function (s) { return blockedBy(goodPreflightSnapshot(), goodExpected({ run: makeRun(s) }), 'run_state_not_ready_for_worktree'); })
+      && blockedBy(goodPreflightSnapshot(), goodExpected({ run: isoOnly }), 'run_state_not_ready_for_worktree'), 'F-26g. stage 未開始・隔離未確定の run 以外（research 以降・隔離確定済み）→ blocked（S5）');
+    assert(blockedBy(goodPreflightSnapshot(), goodExpected({ run: makeRun(null, { baseHead: ORIGIN }) }), 'run_base_head_mismatch'), 'F-26h. run.baseHead 不一致 → blocked');
     assert(blockedBy(goodPreflightSnapshot(), goodExpected({ worktreeRoot: REPO + '\\wt' }), 'worktree_path:'), 'F-26i. root が repo 内 → blocked');
     const mainMis = 'worktree C:/elsewhere/repo\nHEAD ' + HEAD + '\nbranch refs/heads/main\n';
     assert(blockedBy(goodPreflightSnapshot({ worktreeListPorcelain: mainMis }), null, 'main_worktree_mismatch'), 'F-26j. main worktree の path 不一致 → blocked');
@@ -294,7 +300,7 @@ function goodResumeSnapshot(extra) {
 
   caseHeader('V. Created Worktree Validation');
   {
-    const run = makeRun('designing');
+    const run = makeRun(null);   // S5：作成直後の run は stage 未開始（隔離の確定前）
     const v = wc.validateCreatedWorktree(goodCreatedSnapshot(), run);
     assert(v.result === 'valid' && v.reasons.length === 0, 'V-36. 正常な作成直後の状態 → valid（' + v.reasons.join(',') + '）');
     function blockedBy(extra, reason) { const r = wc.validateCreatedWorktree(goodCreatedSnapshot(extra), run); return r.result === 'blocked' && has(r, reason); }
@@ -360,7 +366,7 @@ function goodResumeSnapshot(extra) {
     const before = JSON.stringify(run);
     wc.validateIsolationResume(run, goodResumeSnapshot({ worktreeExists: false }));
     assert(JSON.stringify(run) === before, 'R-56h. run を mutation しない');
-    const storeOk = rs.validateResume(run, { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD, worktreeExists: true, branchExists: true, worktreeStatus: 'dirty', diffAllowed: true, protectedMd5Matches: true }, { now: at(10) });
+    const storeOk = rs.validateResume(run, { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD, worktreeExists: true, branchExists: true, worktreeStatus: 'dirty', diffAllowed: true, protectedMd5Matches: true, diffClassification: 'recorded_within_scope' }, { now: at(10) });
     const c1 = wc.combineResumeResults(storeOk, ok);
     const c2 = wc.combineResumeResults(storeOk, wc.validateIsolationResume(run, goodResumeSnapshot({ branchTip: OTHER })));
     const c3 = wc.combineResumeResults({ result: 'human_approval_required', reasons: ['origin_advanced'] }, ok);

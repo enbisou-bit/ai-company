@@ -193,6 +193,11 @@ let exitCode = 0;
       });
       if (!r0.ok) throw new Error('run fixture invalid: ' + JSON.stringify(r0));
       let r = r0.run, m = 1;
+      // S5：worktree は stage 未開始・隔離未確定の run でのみ作る（stage === null）。research 以降は隔離確定後に進める
+      if (stage === null) return r;
+      const iso = rs.markIsolationVerified(r, { now: '2026-09-28T00:00:30.000Z', worktreeHead: baseHead });
+      if (!iso.ok) throw new Error('run fixture isolation failed: ' + iso.error);
+      r = iso.run;
       for (const s of ['researching', 'designing', 'implementing', 'testing', 'reviewing']) {
         r = rs.transitionStage(r, s, { now: '2026-09-28T00:0' + (m++) + ':00.000Z' }).run;
         if (s === stage) break;
@@ -218,17 +223,17 @@ let exitCode = 0;
     }
     function expected(taskId, extra) {
       return Object.assign({ taskId: taskId, repoPath: REPO, worktreeRoot: WT_ROOT, baseHead: baseHead,
-        protectedFingerprint: tempProtectedFingerprint(REPO), mainStatusHash: exe.readRepoState(REPO).autopilotStatusHash, run: run('designing', taskId) }, extra || {});
+        protectedFingerprint: tempProtectedFingerprint(REPO), mainStatusHash: exe.readRepoState(REPO).autopilotStatusHash, run: run(null, taskId) }, extra || {});
     }
     const EXEC_OPTS = { mutationRepoAllowlist: [REPO], protectedRepoRoots: [ROOT], timeoutMs: 15000 };
 
     caseHeader('W. Actual worktree add（temp repo のみ）');
     const WT = path.join(WT_ROOT, TASK);
-    const runDesign = run('designing');
+    const runPre = run(null);   // S5：worktree 作成前の run（stage 未開始・隔離未確定）
     let pf = null;
     {
       const mainBefore = exe.readRepoState(REPO);
-      pf = wc.validateIsolationPreflight(preflightSnapshot(TASK), expected(TASK, { run: runDesign }));
+      pf = wc.validateIsolationPreflight(preflightSnapshot(TASK), expected(TASK, { run: runPre }));
       assert(pf.result === 'pass', 'W-5c. 実測 snapshot で Step 3A preflight = pass（' + pf.reasons.join(',') + '）');
       const res = exe.executeWorktreeCreate(pf, EXEC_OPTS);
       assert(res.ok && res.exitCode === 0 && !res.timedOut, 'W-6. executor 経由の actual `git worktree add -b` 成功' + (res.ok ? '' : '（' + res.error + ' / ' + String(res.stderr).slice(0, 160) + '）'));
@@ -251,7 +256,7 @@ let exitCode = 0;
         worktreeEnvFiles: ws.envFiles, worktreeProtectedChanged: false,
         mainHeadBefore: mainBefore.head, mainHeadAfter: mainAfter.head, mainStatusHashBefore: mainBefore.autopilotStatusHash, mainStatusHashAfter: mainAfter.autopilotStatusHash,
         mainProtectedFingerprintBefore: tempProtectedFingerprint(REPO), mainProtectedFingerprintAfter: tempProtectedFingerprint(REPO),
-      }, runDesign);
+      }, runPre);
       assert(created.result === 'valid', 'W-12d. 実測 snapshot で Step 3A validateCreatedWorktree = valid（' + created.reasons.join(',') + '）');
     }
 
@@ -266,7 +271,7 @@ let exitCode = 0;
       fs.writeFileSync(path.join(WT_ROOT, TASK2, 'occupied.txt'), 'x');
       const occ = wc.validateIsolationPreflight(preflightSnapshot(TASK2), expected(TASK2));
       assert(occ.result === 'blocked' && has(occ, 'target_worktree_exists'), 'F-19. 既存 directory の path は preflight で blocked');
-      const wrong = wc.validateIsolationPreflight(preflightSnapshot(TASK2), expected(TASK2, { baseHead: commit1, run: Object.assign(run('designing', TASK2), { baseHead: commit1 }) }));
+      const wrong = wc.validateIsolationPreflight(preflightSnapshot(TASK2), expected(TASK2, { baseHead: commit1, run: Object.assign(run(null, TASK2), { baseHead: commit1 }) }));
       const wrongExec = exe.executeWorktreeCreate(wrong, EXEC_OPTS);
       assert(wrong.result === 'blocked' && has(wrong, 'head_mismatch') && !wrongExec.ok && wrongExec.error === 'preflight_not_pass' && exe.readRepoState(REPO).worktreeListPorcelain === wlBefore,
         'F-20. 誤った base は実行前に blocked（executor も preflight_not_pass で Git を呼ばない）');
@@ -303,7 +308,7 @@ let exitCode = 0;
         worktreeListPorcelain: realBefore.worktreeListPorcelain, maxTrackedPathLength: 67,
       }, { taskId: 'task-3b-real', repoPath: ROOT, worktreeRoot: path.join(SANDBOX, 'wt-real'), baseHead: realBefore.head,
         protectedFingerprint: PROTECTED_FINGERPRINT, mainStatusHash: realBefore.autopilotStatusHash,
-        run: Object.assign(run('designing', 'task-3b-real'), { mainRepoPath: ROOT, baseHead: realBefore.head, worktreePath: path.join(SANDBOX, 'wt-real', 'task-3b-real') }) });
+        run: Object.assign(run(null, 'task-3b-real'), { mainRepoPath: ROOT, baseHead: realBefore.head, worktreePath: path.join(SANDBOX, 'wt-real', 'task-3b-real') }) });
       const r1 = exe.executeWorktreeCreate(realPf, { mutationRepoAllowlist: [ROOT], _execFileSync: spy });
       assert(realPf.result === 'pass' && !r1.ok && r1.error === 'repo_protected' && calls.length === 0, 'M-1. 本物の repo は allowlist に入れても mutation 拒否（Git 呼び出し 0）');
       const pf2 = wc.validateIsolationPreflight(preflightSnapshot(TASK2), expected(TASK2));
@@ -332,7 +337,7 @@ let exitCode = 0;
 
     caseHeader('R. Resume（実測 snapshot）');
     {
-      const runImpl = rs.transitionStage(runDesign, 'implementing', { now: '2026-09-28T01:00:00.000Z' }).run;
+      const runImpl = run('implementing');   // S5：隔離確定後に research → design → implementing へ進めた run
       const wtGitDir = path.join(REPO, '.git', 'worktrees', TASK);
       function resumeSnap() {
         const st = exe.readRepoState(REPO), ws = exe.readWorktreeState(WT);
@@ -370,7 +375,7 @@ let exitCode = 0;
         worktreeGitCommonDir: exe.readWorktreeState(WT).gitCommonDir, mainGitCommonDir: exe.readRepoState(REPO).gitCommonDir,
         worktreeListPorcelain: exe.readRepoState(REPO).worktreeListPorcelain, worktreeEnvFiles: [], worktreeProtectedChanged: false,
         mainHeadBefore: baseHead, mainHeadAfter: baseHead, mainStatusHashBefore: 'aaaaaaaaaaaa', mainStatusHashAfter: 'aaaaaaaaaaaa',
-        mainProtectedFingerprintBefore: 'bbbbbbbbbbbb', mainProtectedFingerprintAfter: 'bbbbbbbbbbbb' }, runDesign);
+        mainProtectedFingerprintBefore: 'bbbbbbbbbbbb', mainProtectedFingerprintAfter: 'bbbbbbbbbbbb' }, runPre);
       assert(createdDirty.result === 'blocked' && has(createdDirty, 'worktree_dirty'), 'R-25c. 作成直後検証では dirty は blocked');
       // wrong branch / wrong HEAD / branch tip は temp repo の Git metadata file を fixture として書き換えて作り、直後に戻す
       const headFile = path.join(wtGitDir, 'HEAD');

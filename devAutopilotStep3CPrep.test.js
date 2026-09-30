@@ -306,7 +306,7 @@ const collected = [];   // secret / raw URL の漏洩確認用に result を集�
           mainRepoPath: ROOT, baseHead: head, branch: 'dev/' + taskId, worktreePath: path.join(WT_ROOT, taskId),
           budget: { capUsd: 1, maxInvocations: 1 }, mainStatusHashAtStart: st.autopilotStatusHash, protectedMd5AtStart: { 'cost-logs.json': '0'.repeat(32) }, now: NOW,
         }).run;
-        const r = rs.transitionStage(rs.transitionStage(r0, 'researching', { now: at(1) }).run, 'designing', { now: at(2) }).run;
+        const r = r0;   // S5：worktree は stage 未開始（隔離の確定前）の run でのみ作る
         return wc.validateIsolationPreflight({
           currentBranch: 'main', stagedCount: 0, currentHead: head, originMain: head, originIsAncestor: true,
           protectedFingerprint: 'd1fd4bd36f69', mainStatusHash: st.autopilotStatusHash, existingBranchRefs: ['refs/heads/main'],
@@ -338,10 +338,10 @@ const collected = [];   // secret / raw URL の漏洩確認用に result を集�
       assert(!again.ok && again.error === 'capability_already_used' && calls.length === 1, 'E-41d. 同じ capability の 2 回目 → 拒否（single-use）');
       // temp repo（自 repo 以外）の既存挙動
       const TMP_REPO = path.join(SANDBOX, 'repo');
-      const run2 = rs.transitionStage(rs.transitionStage(rs.createInitialRun({
+      const run2 = rs.createInitialRun({
         taskId: 'prep-3c-005', task: { title: 't', goal: 'g', allowedPaths: ['lib/'], forbiddenPaths: [] }, mainRepoPath: TMP_REPO, baseHead: OTHER_HEAD,
         branch: 'dev/prep-3c-005', worktreePath: path.join(WT_ROOT, 'prep-3c-005'), budget: { capUsd: 1, maxInvocations: 1 },
-        mainStatusHashAtStart: 'aaaaaaaaaaaa', protectedMd5AtStart: { a: 'b' }, now: NOW }).run, 'researching', { now: at(1) }).run, 'designing', { now: at(2) }).run;
+        mainStatusHashAtStart: 'aaaaaaaaaaaa', protectedMd5AtStart: { a: 'b' }, now: NOW }).run;   // S5：stage 未開始の run
       const pfTmp = wc.validateIsolationPreflight({
         currentBranch: 'main', stagedCount: 0, currentHead: OTHER_HEAD, originMain: OTHER_HEAD, originIsAncestor: true, protectedFingerprint: 'cccccccccccc',
         mainStatusHash: 'aaaaaaaaaaaa', existingBranchRefs: ['refs/heads/main'], targetBranchExists: false, targetWorktreeExists: false, pathCollision: false,

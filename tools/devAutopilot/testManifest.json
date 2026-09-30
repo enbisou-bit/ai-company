@@ -708,7 +708,7 @@
     {
       "file": "devAutopilotStep2.test.js",
       "class": "safe",
-      "reason": "sandbox（network・env・危険 module を遮断し、fs write は OS temp に作った自分の sandbox directory の内側だけ許可）＋ Protected hash 確認。Autopilot Step 2（runStore / State Machine）自身の test",
+      "reason": "sandbox（network・env・危険 module を遮断し、fs write は OS temp に作った自分の sandbox directory の内側だけ許可）＋ Protected hash 確認。Autopilot Step 2（runStore / State Machine）自身の test。自分の sandbox の後片付け失敗・残存は FAIL として報告する",
       "deps": {
         "files": [
           "tools/devAutopilot/runStore.js"
@@ -761,10 +761,15 @@
     {
       "file": "devAutopilotStep5A.test.js",
       "class": "safe",
-      "reason": "純関数 test のみ（Claude CLI・API・child_process・Git・network を使わない）。sandbox（network・fs write 全面・env file 読込・child_process 等の危険 module を遮断。OS temp も作らず process.env も変更しない）＋ Protected hash 確認。Autopilot Stage 4C S1（runStore schema v2・invocation 記録の純関数）自身の test",
+      "reason": "純関数 test のみ（Claude CLI・API・child_process・Git・network を使わない）。sandbox（network・fs write 全面・env file 読込・child_process 等の危険 module を遮断。OS temp も作らず process.env も変更しない）＋ Protected hash 確認。所有者 lock・所有者保存・run 作成の排他は store.fs に注入したメモリ上の偽 fs だけで検証する（本物の fs には書かない）。Autopilot Stage 4C S1（runStore schema v2・invocation 記録の純関数）／S2（owner.lock・saveRunAsOwner・競合を防ぐ createRun）／S3（transcriptCheck）／S4（claudeExecutor：承認の束縛・起動前の worktree 検証・例外経路。spawn は必ず差し替え・child_process は読み込まない・実 CLI / network / 推論なし）／S5（research 前の隔離・再開時の差分分類）自身の test",
       "deps": {
         "files": [
-          "tools/devAutopilot/runStore.js"
+          "tools/devAutopilot/runStore.js",
+          "tools/devAutopilot/transcriptCheck.js",
+          "tools/devAutopilot/claudeExecutor.js",
+          "tools/devAutopilot/claudeRunner.js",
+          "tools/devAutopilot/riskClassifier.js",
+          "tools/devAutopilot/worktreeController.js"
         ],
         "npm": []
       }

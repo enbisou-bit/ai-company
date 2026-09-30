@@ -24,7 +24,9 @@ var STAGES = Object.freeze(['researching', 'designing', 'implementing', 'testing
 var GATES = Object.freeze(['none', 'human_approval_required', 'awaiting_commit_approval']);
 var OUTCOMES = Object.freeze([null, 'failed', 'blocked', 'completed']);
 var DERIVED = Object.freeze(['queued', 'running', 'interrupted', 'awaiting_human', 'failed', 'blocked', 'completed', 'invalid']);
-var WORKTREE_STAGES = Object.freeze(['implementing', 'testing', 'reviewing']);   // 隔離 worktree は Implement から存在する
+// S5：research 前に専用 branch / worktree を用意し、全 stage で同じ隔離場所を使う（main では起動しない）
+var WORKTREE_STAGES = Object.freeze(['researching', 'designing', 'implementing', 'testing', 'reviewing']);
+var RESUME_DIFF_CLASSES = Object.freeze(['none', 'recorded_within_scope', 'unexpected', 'unknown']);
 var TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/;
 var ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 var HEAD_RE = /^[0-9a-f]{40}$/;
@@ -110,9 +112,10 @@ function createInitialRun(input) {
     failureReason: null,
     finalGitStatus: null,
     finalStatus: null,
-    // S1 ではデータ形だけ。research 前の worktree 作成（S5）への切替はしない
+    // S5：隔離 worktree は research の前に作成・検証し、markIsolationVerified で 'verified' にしてから research を始める
     isolation: { state: 'absent', worktreeHead: null, verifiedAt: null },
     invocations: [],
+    revision: 0,   // 保存ごとに +1（同一時刻の更新も識別する。S2）
   };
   var v = validateRunState(run);
   return v.ok ? { ok: true, run: run } : _err('invalid_initial_run', { errors: v.errors });
@@ -196,12 +199,15 @@ function validateRunState(run) {
 var RUN_KEYS_V2 = Object.freeze(['schemaVersion', 'taskId', 'task', 'mainRepoPath', 'baseHead', 'branch', 'worktreePath', 'stage', 'gate', 'gateReason',
   'outcome', 'completedStages', 'stageHistory', 'sessionIds', 'lock', 'startedAt', 'updatedAt', 'budget', 'mainStatusHashAtStart', 'protectedMd5AtStart',
   'filesChanged', 'diffSummary', 'testResults', 'skippedTests', 'riskFindings', 'blockedReason', 'failureReason', 'finalGitStatus', 'finalStatus',
-  'isolation', 'invocations']);
+  'isolation', 'invocations', 'revision']);
 var BUDGET_KEYS = ['capUsd', 'spentUsd', 'invocations', 'maxInvocations', 'costUnknown'];
 var ISOLATION_KEYS = ['state', 'worktreeHead', 'verifiedAt'];
 var INVOCATION_KEYS = ['invocationId', 'stage', 'sessionId', 'state', 'reservedAt', 'completedAt', 'launch', 'result'];
 var INVOCATION_STATES = ['started', 'finished', 'unconfirmed'];
 var LAUNCH_KEYS = ['exeSha256', 'cliVersion', 'argvSha256', 'promptSha256', 'settingsSha256', 'childVarNames', 'timeoutMs', 'maxBuffer'];
+// schema v2 の拡張（S4）：起動の根拠にした Human 実行承認の識別（承認 ID と正規化した承認内容の SHA-256 全文）。
+//   新しい予約（beginInvocation）では必須。拡張前の形の保存済み記録は読み取り時に受け付ける（書き換え・自動移行はしない）
+var LAUNCH_APPROVAL_KEYS = ['approvalId', 'approvalSha256'];
 var RESULT_INPUT_KEYS = ['process', 'cost', 'envelope', 'schema', 'session', 'diff', 'safety', 'transcript', 'classification', 'structuredOutputSha256'];
 var RESULT_KEYS = RESULT_INPUT_KEYS.concat(['disposition', 'dispositionReason']);
 var PROCESS_KEYS = ['exitCode', 'signal', 'timedOut', 'bufferExceeded', 'errorClass', 'wallMs', 'stdoutBytes', 'stderrBytes', 'termination'];
@@ -211,7 +217,7 @@ var TERMINATIONS_CONFIRMED = ['exit_event_observed', 'not_started'];
 var TERMINATIONS_UNCONFIRMED = ['exit_event_missing', 'descendants_unknown', 'probe_only'];
 var COST_KEYS = ['basis', 'state', 'cliReportedUsd'];
 var ENVELOPE_KEYS = ['parse', 'isError', 'subtype', 'apiErrorStatus', 'numTurns', 'permissionDenials', 'modelIds', 'unlistedModelCount'];
-var ENVELOPE_PARSE = ['ok', 'invalid', 'absent'];
+var ENVELOPE_PARSE = ['ok', 'invalid', 'absent', 'over_limit'];   // over_limit：stdout が上限を超えたため解析していない（欠落 absent と区別）
 var SUBTYPES = [null, 'success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries', 'other'];
 var API_STATUS_STATES = ['absent', 'null', 'number', 'invalid_number', 'wrong_type', 'not_applicable'];
 var SCHEMA_RESULT_KEYS = ['ok', 'errorCodes', 'structuredSource'];
@@ -221,7 +227,9 @@ var DIFF_KEYS = ['result', 'reasonCodes', 'changedCount'];
 var DIFF_RESULTS = ['ok', 'blocked', 'human_approval_required', 'unavailable'];
 var SAFETY_KEYS = ['result', 'reasonCodes'];
 var SAFETY_RESULTS = ['ok', 'violated', 'unverified'];
-var TRANSCRIPT_KEYS = ['verdict', 'toolCounts', 'unparseable', 'outside', 'missingResults', 'errorResults'];
+var TRANSCRIPT_KEYS = ['verdict', 'toolCounts', 'unparseable', 'outside', 'missingResults', 'errorResults', 'structuredOutputComparison'];
+// StructuredOutput の入力と envelope の structured_output の正規化 JSON 比較（完全一致の確認だけ。安全性・副作用不存在の証明ではない）
+var SO_COMPARISONS = ['not_present', 'match', 'mismatch', 'not_comparable'];
 var TRANSCRIPT_VERDICTS = ['ok', 'unverified_record_unparseable', 'unverified_unknown_tool', 'unverified_tool_error', 'unverified_expected_calls_missing',
   'outside_reference_observed', 'not_analyzed'];
 var TOOL_COUNT_KEYS = ['Read', 'Glob', 'Grep', 'StructuredOutput', 'other'];   // 未知の tool 名は保存せず 'other' に数える
@@ -238,9 +246,14 @@ function _in(list, v) { return list.indexOf(v) !== -1; }
 function _codes(v) { return Array.isArray(v) && v.length <= MAX_CODES && v.every(function (s) { return typeof s === 'string' && CODE_RE.test(s); }); }
 function _sha(v) { return typeof v === 'string' && SHA256_RE.test(v); }
 
-function _launchErrors(l, p) {
-  if (!_exactKeys(l, LAUNCH_KEYS)) return [p + 'keys'];
+function _launchErrors(l, p, requireApproval) {
+  var withApproval = _exactKeys(l, LAUNCH_KEYS.concat(LAUNCH_APPROVAL_KEYS));
+  if (!withApproval && (requireApproval || !_exactKeys(l, LAUNCH_KEYS))) return [p + 'keys'];
   var e = [];
+  if (withApproval) {
+    if (typeof l.approvalId !== 'string' || !UUID_RE.test(l.approvalId)) e.push(p + 'approvalId');
+    if (!_sha(l.approvalSha256)) e.push(p + 'approvalSha256');
+  }
   ['exeSha256', 'argvSha256', 'promptSha256', 'settingsSha256'].forEach(function (k) { if (!_sha(l[k])) e.push(p + k); });
   if (typeof l.cliVersion !== 'string' || !CLI_VERSION_RE.test(l.cliVersion)) e.push(p + 'cliVersion');
   if (!Array.isArray(l.childVarNames) || l.childVarNames.length === 0 || l.childVarNames.length > 32
@@ -293,7 +306,7 @@ function _resultInputErrors(r, p) {
   var t = r.transcript;
   if (!_exactKeys(t, TRANSCRIPT_KEYS) || !_in(TRANSCRIPT_VERDICTS, t.verdict) || !_exactKeys(t.toolCounts, TOOL_COUNT_KEYS)
     || !TOOL_COUNT_KEYS.every(function (k) { return _int0(t.toolCounts[k]); })
-    || !_int0(t.unparseable) || !_int0(t.outside) || !_int0(t.missingResults) || !_int0(t.errorResults)) e.push(p + 'transcript');
+    || !_int0(t.unparseable) || !_int0(t.outside) || !_int0(t.missingResults) || !_int0(t.errorResults) || !_in(SO_COMPARISONS, t.structuredOutputComparison)) e.push(p + 'transcript');
   var cl = r.classification;
   if (!_exactKeys(cl, CLASSIFICATION_KEYS) || !_in(CLASSIFICATION_OUTCOMES, cl.outcome) || !_codes(cl.reasonCodes)) e.push(p + 'classification');
   if (!(r.structuredOutputSha256 === null || _sha(r.structuredOutputSha256))) e.push(p + 'structuredOutputSha256');
@@ -335,6 +348,14 @@ function _validateV2(run, e) {
   var missing = RUN_KEYS_V2.filter(function (k) { return !_has(run, k); });
   if (missing.length) e.push('missing_keys:' + missing.join(','));
   if (!_exactKeys(run.budget, BUDGET_KEYS)) e.push('budget_keys');
+  if (!_int0(run.revision)) e.push('revision');
+  if (Array.isArray(run.filesChanged) && !run.filesChanged.every(_relOk)) e.push('files_changed_format');
+  // lock：pid / startedAt / heartbeatAt ＋ 任意の ownerId（UUID）。所有者として保存する経路では ownerId を必須にする
+  if (run.lock !== null && _isObj(run.lock)) {
+    var lk = Object.keys(run.lock);
+    if (lk.some(function (k) { return ['pid', 'startedAt', 'heartbeatAt', 'ownerId'].indexOf(k) === -1; })
+      || (_has(run.lock, 'ownerId') && !(typeof run.lock.ownerId === 'string' && UUID_RE.test(run.lock.ownerId)))) e.push('lock_keys');
+  }
   var iso = run.isolation;
   if (!_exactKeys(iso, ISOLATION_KEYS)) e.push('isolation');
   else if (iso.state === 'absent') { if (iso.worktreeHead !== null || iso.verifiedAt !== null) e.push('isolation'); }
@@ -427,6 +448,8 @@ function transitionStage(run, nextStage, opts) {
     if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
     var u = _unfinalized(r); if (u) return u;
     if (STAGES.indexOf(nextStage) === -1) return _err('unknown_stage');
+    // S5：隔離 worktree が検証済みでなければ research を始めない（main での実行を構造的に防ぐ）
+    if (nextStage === STAGES[0] && (!_isObj(r.isolation) || r.isolation.state !== 'verified')) return _err('isolation_not_verified');
     var expected = r.stage === null ? STAGES[0] : STAGES[STAGES.indexOf(r.stage) + 1];
     if (nextStage !== expected) return _err('invalid_transition:' + String(r.stage) + '->' + nextStage);
     if (r.stage !== null) {
@@ -532,18 +555,50 @@ function markCompletedByHuman(run, opts) {
   });
 }
 
+// ── 隔離の確定（S5・純関数）──────────────────────────────
+//   明示承認済み single-use Permit 経由で作った worktree を、executor が read-only で検証した後に呼ぶ。
+//   stage 未開始・gate なし・outcome なし・invocation なし・isolation 未確定の run だけ。worktree の HEAD は baseHead と一致すること。
+function markIsolationVerified(run, opts) {
+  var o = _isObj(opts) ? opts : {};
+  return _next(run, o.now, function (r) {
+    var t = _requireActive(r); if (t) return t;
+    if (r.stage !== null || r.gate !== 'none' || r.invocations.length !== 0) return _err('run_state_not_ready_for_isolation');
+    if (r.isolation.state !== 'absent') return _err('isolation_already_recorded');
+    if (typeof o.worktreeHead !== 'string' || !HEAD_RE.test(o.worktreeHead)) return _err('worktree_head_invalid');
+    if (o.worktreeHead !== r.baseHead) return _err('worktree_head_mismatch');
+    r.isolation = { state: 'verified', worktreeHead: o.worktreeHead, verifiedAt: o.now };
+  });
+}
+
+// 再開時の worktree 差分の分類（純関数）：記録済み・許可範囲内の実装差分と、想定外の差分を区別する。
+//   observed: [{ path（worktree 相対・'/' 区切り）, status }]。判定材料が不正なら 'unknown'（再開しない）。
+//   'recorded_within_scope' は implementing 以降で、run.filesChanged に記録済みかつ allowedPaths 内・forbiddenPaths 外の変更だけ。
+function _relOk(p) { return typeof p === 'string' && p.length > 0 && p.length <= 400 && !/[\\\u0000-\u001f]/.test(p) && !/^([A-Za-z]:|\/)/.test(p) && p.split('/').every(function (s) { return s && s !== '.' && s !== '..'; }); }
+function _inScope(p, list) { var a = p.toLowerCase(); return list.some(function (x) { var b = String(x).toLowerCase(); return b.slice(-1) === '/' ? a.indexOf(b) === 0 : a === b; }); }
+function classifyResumeDiff(run, observed) {
+  if (!validateRunState(run).ok || !Array.isArray(observed)) return 'unknown';
+  if (!observed.every(function (x) { return _isObj(x) && _relOk(x.path) && typeof x.status === 'string'; })) return 'unknown';
+  if (!observed.length) return 'none';
+  if (run.stage === null || STAGES.indexOf(run.stage) < STAGES.indexOf('implementing')) return 'unexpected';
+  var recorded = run.filesChanged.map(function (f) { return String(f).toLowerCase(); });
+  var ok = observed.every(function (x) {
+    return recorded.indexOf(x.path.toLowerCase()) !== -1 && _inScope(x.path, run.task.allowedPaths) && !_inScope(x.path, run.task.forbiddenPaths);
+  });
+  return ok ? 'recorded_within_scope' : 'unexpected';
+}
+
 // ── invocation 記録（純関数・S1）─────────────────────────
 //   ★ 返すのは「新しい状態」だけ。ディスクへの atomic 保存・所有者 lock・heartbeat は S2 以降（この関数は保存しない）。
 //   ★ 不正入力では部分更新しない（_next が clone 上で mutate し、検証に通った場合だけ返す。入力の run は変更しない）。
 //
 // beginInvocation：予約・回数加算・session 割当・stageHistory 更新を 1 つの新しい状態として返す（この状態の保存に成功した場合だけ起動してよい）
-//   input: { now, invocationId, sessionId, stage, launch:{ exeSha256, cliVersion, argvSha256, promptSha256, settingsSha256, childVarNames[], timeoutMs, maxBuffer } }
+//   input: { now, invocationId, sessionId, stage, launch:{ exeSha256, cliVersion, argvSha256, promptSha256, settingsSha256, childVarNames[], timeoutMs, maxBuffer, approvalId, approvalSha256 } }
 function beginInvocation(run, input) {
   var i = _isObj(input) ? input : {};
   if (!_exactKeys(i, ['now', 'invocationId', 'sessionId', 'stage', 'launch'])) return _err('input_keys_invalid');
   if (typeof i.invocationId !== 'string' || !UUID_RE.test(i.invocationId)) return _err('invocation_id_invalid');
   if (typeof i.sessionId !== 'string' || !UUID_RE.test(i.sessionId)) return _err('session_id_invalid');
-  var le = _launchErrors(i.launch, 'launch.');
+  var le = _launchErrors(i.launch, 'launch.', true);
   if (le.length) return _err('launch_invalid', { errors: le });
   return _next(run, i.now, function (r) {
     var t = _requireActive(r); if (t) return t;
@@ -605,10 +660,13 @@ function _okConsistencyErrors(state, res) {
 //   ★ 費用不明は 0 とみなさず costUnknown を立て、Human 判断（human_gate）を要求する。費用は CLI 推定値であり請求額・月額利用枠ではない。
 function completeInvocation(run, input) {
   var i = _isObj(input) ? input : {};
-  if (!_exactKeys(i, ['now', 'invocationId', 'state', 'result'])) return _err('input_keys_invalid');
+  if (!_exactKeys(i, ['now', 'invocationId', 'state', 'result', 'changedPaths'])) return _err('input_keys_invalid');
   if (i.state !== 'finished' && i.state !== 'unconfirmed') return _err('state_invalid');
+  // changedPaths：差分検証で観測した worktree 相対の変更 path（implementing だけが記録対象。再開時の差分分類の材料）
+  if (!Array.isArray(i.changedPaths) || i.changedPaths.length > 500 || !i.changedPaths.every(_relOk)) return _err('changed_paths_invalid');
   var re = _resultInputErrors(i.result, 'result.');
   if (re.length) return _err('result_invalid', { errors: re });
+  if (i.changedPaths.length !== i.result.diff.changedCount) return _err('result_inconsistent', { errors: ['changed_paths_count_mismatch'] });
   if (i.state === 'finished' && !_in(TERMINATIONS_CONFIRMED, i.result.process.termination)) return _err('finished_requires_confirmed_termination');
   if (i.state === 'unconfirmed' && !_in(TERMINATIONS_UNCONFIRMED, i.result.process.termination)) return _err('unconfirmed_requires_unconfirmed_termination');
   var ce = _okConsistencyErrors(i.state, i.result);
@@ -629,6 +687,10 @@ function completeInvocation(run, input) {
       if (h) h.costUsd += res.cost.cliReportedUsd;
     } else {
       r.budget.costUnknown = true;
+    }
+    if (i.changedPaths.length) {
+      if (inv.stage !== 'implementing') return _err('changes_in_non_write_stage');   // 読取 stage の変更は記録しない（差分検証側で block されるはず）
+      i.changedPaths.forEach(function (cp) { if (r.filesChanged.indexOf(cp) === -1) r.filesChanged.push(cp); });
     }
     var dsp = _deriveDisposition(i.state, res, r.budget);
     res.disposition = dsp.d;
@@ -658,14 +720,18 @@ function acquireLock(run, opts) {
     var ls = lockStatus(r.lock, { now: o.now, staleMs: o.staleMs });
     if (ls === 'active' || ls === 'invalid') return _err('lock_' + ls);
     if (ls === 'stale') return _err('lock_stale_requires_human');   // stale の自動奪取はしない
+    if (o.ownerId !== undefined && !(typeof o.ownerId === 'string' && UUID_RE.test(o.ownerId))) return _err('invalid_owner_id');
     r.lock = { pid: o.pid, startedAt: o.now, heartbeatAt: o.now };
+    if (o.ownerId !== undefined) r.lock.ownerId = o.ownerId;
   });
 }
+// lock に ownerId がある場合は pid だけでなく ownerId も一致しなければ所有者とみなさない（pid 再利用対策）
+function _ownsLock(lock, o) { return !!lock && lock.pid === o.pid && (lock.ownerId === undefined || lock.ownerId === o.ownerId); }
 
 function heartbeatLock(run, opts) {
   var o = _isObj(opts) ? opts : {};
   return _next(run, o.now, function (r) {
-    if (!r.lock || r.lock.pid !== o.pid) return _err('lock_not_owned');
+    if (!_ownsLock(r.lock, o)) return _err('lock_not_owned');
     if (Date.parse(o.now) < Date.parse(r.lock.heartbeatAt)) return _err('clock_regression');
     r.lock.heartbeatAt = o.now;
   });
@@ -674,7 +740,7 @@ function heartbeatLock(run, opts) {
 function releaseLock(run, opts) {
   var o = _isObj(opts) ? opts : {};
   return _next(run, o.now, function (r) {
-    if (!r.lock || r.lock.pid !== o.pid) return _err('lock_not_owned');
+    if (!_ownsLock(r.lock, o)) return _err('lock_not_owned');
     r.lock = null;
   });
 }
@@ -709,11 +775,19 @@ function validateResume(run, snapshot, opts) {
   if (!s.protectedMd5Matches) blocked.push('protected_mismatch');
   if (!s.diffAllowed) blocked.push('diff_outside_scope');
 
-  var needsWorktree = run.stage !== null && WORKTREE_STAGES.indexOf(run.stage) !== -1;
+  // S5：隔離が確定した run（stage 開始後を含む）は worktree が必須。確定前は worktree が無いこと
+  var needsWorktree = (run.stage !== null && WORKTREE_STAGES.indexOf(run.stage) !== -1) || run.isolation.state === 'verified';
   if (needsWorktree) {
     if (!s.worktreeExists || !s.branchExists || s.worktreeStatus === 'absent') blocked.push('worktree_or_branch_missing');
+    // 差分の分類（classifyResumeDiff の結果）が無い・不明・想定外なら再開しない。記録済み・許可範囲内の実装差分は implementing 以降だけ許す
+    var dc = s.diffClassification;
+    if (dc === undefined) blocked.push('diff_classification_missing');
+    else if (RESUME_DIFF_CLASSES.indexOf(dc) === -1 || dc === 'unknown') blocked.push('diff_unknown');
+    else if (dc === 'unexpected') blocked.push('diff_unexpected');
+    else if (dc === 'recorded_within_scope' && STAGES.indexOf(run.stage) < STAGES.indexOf('implementing')) blocked.push('diff_before_implementation');
+    if (dc === 'none' && s.worktreeStatus === 'dirty') blocked.push('diff_classification_inconsistent');
   } else if (s.worktreeExists || s.branchExists || s.worktreeStatus !== 'absent') {
-    blocked.push('unexpected_worktree_before_implementation');   // 曖昧 → blocked
+    blocked.push('unexpected_worktree_before_isolation');   // 隔離確定前に worktree がある → 曖昧 → blocked
   }
 
   var ls = lockStatus(run.lock, opts);
@@ -779,18 +853,96 @@ function _readRaw(fsx, file) {
   try { return { ok: true, run: JSON.parse(raw) }; } catch (e) { return _err('run_json_invalid'); }
 }
 
+// ── 排他用の lock file（S2）──────────────────────────────
+//   ★ 排他の根拠は「同じ path への exclusive create（open 'wx'）は 1 つだけ成功する」ことだけ（local NTFS 前提）。
+//     atomic rename は「書込み途中の run.json を残さない」ためであり、排他の根拠にはしない。
+//   ★ lock file の自動奪取・自動削除はしない。途中失敗・不正な内容の lock は残し、以後の操作を安全側に止める（解除は Human）。
+//   ★ 例外：自分が作った短時間の mutex（write.lock / .create.lock）は、内容の token が自分のものと一致する場合だけ自分で消す。
+var OWNER_LOCK = 'owner.lock', WRITE_LOCK = 'write.lock', CREATE_LOCK = '.create.lock';
+var _lockSeq = 0;
+function _statExists(fsx, p) { try { fsx.statSync(p); return true; } catch (e) { return !(e && e.code === 'ENOENT') ? 'unknown' : false; } }
+function _createLockFile(fsx, file, obj) {
+  var fd = null;
+  try { fd = fsx.openSync(file, 'wx'); } catch (e) { return _err(e && e.code === 'EEXIST' ? 'lock_exists' : 'lock_create_failed'); }
+  try { fsx.writeSync(fd, JSON.stringify(obj)); fsx.fsyncSync(fd); fsx.closeSync(fd); return { ok: true }; }
+  catch (e) { try { fsx.closeSync(fd); } catch (x) { /* ignore */ } return _err('lock_write_failed'); }   // 中途半端な lock は残す（安全側に停止）
+}
+function _readLockFile(fsx, file) {
+  var raw;
+  try { raw = fsx.readFileSync(file, 'utf8'); } catch (e) { return e && e.code === 'ENOENT' ? { ok: true, exists: false } : _err('lock_read_failed'); }
+  try { return { ok: true, exists: true, lock: JSON.parse(raw) }; } catch (e) { return _err('lock_invalid'); }
+}
+// 短時間の mutex（critical section）。取得できなければ fn を実行しない
+function _withMutex(fsx, file, fn) {
+  var token = process.pid + '-' + Date.now() + '-' + (++_lockSeq) + '-' + Math.random().toString(16).slice(2);
+  var c = _createLockFile(fsx, file, { kind: 'mutex', token: token });
+  if (!c.ok) return _err(c.error === 'lock_exists' ? 'mutex_busy' : 'mutex_failed:' + c.error);
+  var res;
+  try { res = fn(); } catch (e) { res = _err('mutex_section_failed'); }
+  var mine = _readLockFile(fsx, file);
+  if (mine.ok && mine.exists && _isObj(mine.lock) && mine.lock.token === token) {
+    try { fsx.unlinkSync(file); } catch (e) { return Object.assign({}, res, { mutexReleased: false }); }   // 残った mutex は以後の操作を止める
+  } else return Object.assign({}, res, { mutexReleased: false });
+  return res;
+}
+function _ownerLockOk(l, taskId) {
+  return _exactKeys(l, ['kind', 'taskId', 'ownerId', 'pid', 'acquiredAt']) && l.kind === 'owner' && l.taskId === taskId
+    && typeof l.ownerId === 'string' && UUID_RE.test(l.ownerId) && Number.isInteger(l.pid) && l.pid > 0 && _isIso(l.acquiredAt);
+}
+function _paths(store, taskId) {
+  var p = resolveRunPaths(store, taskId);
+  if (!p.ok) return p;
+  return Object.assign({}, p, { ownerLock: path.join(p.runDir, OWNER_LOCK), writeLock: path.join(p.runDir, WRITE_LOCK) });
+}
+function _identityChanged(a, b) {
+  return ['schemaVersion', 'taskId', 'mainRepoPath', 'baseHead', 'branch', 'worktreePath', 'startedAt'].some(function (k) { return JSON.stringify(a[k]) !== JSON.stringify(b[k]); });
+}
+
+// runtimeRoot 内の既存 run を走査し、新 run 作成と競合するものを列挙する（読取不能・不正は「競合なし」と扱わない）
+function _scanCreateConflicts(fsx, store, run) {
+  var runsDir = path.join(path.resolve(store.runtimeRoot), 'runs');
+  var names;
+  try { names = fsx.readdirSync(runsDir); } catch (e) { if (e && e.code === 'ENOENT') return []; return ['runs_dir_unreadable']; }
+  var c = [];
+  names.forEach(function (name) {
+    if (!TASK_ID_RE.test(name)) { c.push('unexpected_entry:' + name); return; }
+    var dir = path.join(runsDir, name), entries;
+    try { entries = fsx.readdirSync(dir); } catch (e) { c.push('run_dir_unreadable:' + name); return; }
+    if (entries.indexOf(OWNER_LOCK) !== -1) c.push('owner_lock_present:' + name);
+    if (entries.indexOf(WRITE_LOCK) !== -1) c.push('write_lock_present:' + name);
+    if (entries.indexOf('run.json') === -1) { c.push('run_record_missing:' + name); return; }
+    var r = _readRaw(fsx, path.join(dir, 'run.json'));
+    if (!r.ok) { c.push('run_record_unreadable:' + name); return; }
+    var info = inspectRunRecord(r.run);
+    if (!info.readable) { c.push('run_record_invalid:' + name); return; }
+    if (r.run.lock !== null) c.push('lock_present:' + name);
+    if (info.schemaVersion === SCHEMA_VERSION && r.run.invocations.some(function (inv) { return inv.state === 'started' || inv.state === 'unconfirmed'; })) c.push('unfinalized_invocation:' + name);
+    if (r.run.outcome === null && _normAbs(r.run.mainRepoPath) === _normAbs(run.mainRepoPath)) c.push('active_run_same_repo:' + name);
+  });
+  return c;
+}
+
+// 新 run の作成：runtimeRoot の .create.lock を共通の排他範囲とし、その中で「既存確認 → 競合走査 → 作成」を行う
 function createRun(store, run) {
   var fsx = (store && store.fs) || fs;
   var v = validateRunState(run);
   if (!v.ok) return _err('run_invalid', { errors: v.errors });
   var p = resolveRunPaths(store, run.taskId);
   if (!p.ok) return p;
-  try { fsx.mkdirSync(p.runDir, { recursive: true }); } catch (e) { return _err('run_dir_create_failed'); }
-  var exists = false;
-  try { fsx.statSync(p.runFile); exists = true; } catch (e) { exists = false; }
-  if (exists) return _err('run_exists');
-  var w = _atomicWriteJson(fsx, p.runFile, run);
-  return w.ok ? { ok: true, runFile: p.runFile } : w;
+  var root = path.resolve(store.runtimeRoot);
+  try { fsx.mkdirSync(root, { recursive: true }); } catch (e) { return _err('run_dir_create_failed'); }
+  return _withMutex(fsx, path.join(root, CREATE_LOCK), function () {
+    var ex = _statExists(fsx, p.runFile);
+    if (ex === true) return _err('run_exists');
+    if (ex !== false) return _err('run_state_unknown');
+    var conflicts = _scanCreateConflicts(fsx, store, run);
+    if (conflicts.length) return _err('create_conflict', { conflicts: conflicts });
+    try { fsx.mkdirSync(p.runDir, { recursive: true }); } catch (e) { return _err('run_dir_create_failed'); }
+    var left; try { left = fsx.readdirSync(p.runDir); } catch (e) { return _err('run_dir_unreadable'); }
+    if (left.length) return _err('run_dir_not_empty');
+    var w = _atomicWriteJson(fsx, p.runFile, run);
+    return w.ok ? { ok: true, runFile: p.runFile } : w;
+  });
 }
 
 // v2 は { ok, run, schemaVersion:2, executable:true }、v1 は { ok, run, schemaVersion:1, executable:false }（read-only 参照）を返す。
@@ -807,19 +959,150 @@ function readRun(store, taskId) {
   return { ok: true, run: r.run, schemaVersion: info.schemaVersion, executable: info.executable };
 }
 
-// 楽観的排他: 既存 run.json の updatedAt が expectedUpdatedAt と一致する場合だけ上書き
+// 所有者管理外の run（lock なし・owner.lock なし）だけを更新する従来経路。楽観的排他：updatedAt（＋任意の expectedRevision）一致時だけ上書き。
+//   ★ 所有者管理下の run（owner.lock がある／保存済み・保存する run に lock がある）はこの経路では書けない → saveRunAsOwner を使う。
+//   ★ 書込みは run 単位の write.lock の内側で行う。保存時は revision を +1 する。
 function saveRun(store, nextRun, opts) {
   var fsx = (store && store.fs) || fs;
   var o = _isObj(opts) ? opts : {};
   var v = validateRunState(nextRun);
   if (!v.ok) return _err('run_invalid', { errors: v.errors });
-  var cur = readRun(store, nextRun.taskId);
-  if (!cur.ok) return cur;
-  if (!cur.executable) return _err('run_read_only_v1');   // v1 記録は上書きしない（自動移行しない）
-  if (typeof o.expectedUpdatedAt !== 'string' || cur.run.updatedAt !== o.expectedUpdatedAt) return _err('stale_write');
-  var p = resolveRunPaths(store, nextRun.taskId);
-  var w = _atomicWriteJson(fsx, p.runFile, nextRun);
-  return w.ok ? { ok: true, runFile: p.runFile } : w;
+  var p = _paths(store, nextRun.taskId);
+  if (!p.ok) return p;
+  return _withMutex(fsx, p.writeLock, function () {
+    var ol = _statExists(fsx, p.ownerLock);
+    if (ol !== false) return _err('owner_managed_use_saveRunAsOwner');
+    var cur = readRun(store, nextRun.taskId);
+    if (!cur.ok) return cur;
+    if (!cur.executable) return _err('run_read_only_v1');   // v1 記録は上書きしない（自動移行しない）
+    if (cur.run.lock !== null || nextRun.lock !== null) return _err('owner_managed_use_saveRunAsOwner');
+    if (typeof o.expectedUpdatedAt !== 'string' || cur.run.updatedAt !== o.expectedUpdatedAt) return _err('stale_write');
+    if (o.expectedRevision !== undefined && o.expectedRevision !== cur.run.revision) return _err('stale_write');
+    if (_identityChanged(cur.run, nextRun)) return _err('identity_changed');
+    var toWrite = _clone(nextRun); toWrite.revision = cur.run.revision + 1;
+    var w = _atomicWriteJson(fsx, p.runFile, toWrite);
+    return w.ok ? { ok: true, runFile: p.runFile, revision: toWrite.revision } : w;
+  });
+}
+
+// ── 所有者 lock（S2）─────────────────────────────────────
+// 所有権の取得：owner.lock を排他作成し、その後 write.lock の内側で run.json の lock を記録する。
+//   opts: { ownerId(UUID), pid, now }。既存 owner.lock は奪取・削除しない（owner_lock_exists）。
+//   ★ 事前確認（lock 作成前）で拒否できるものは拒否し、不要な lock を残さない。
+//   ★ owner.lock 作成後の失敗（acquire_incomplete）では owner.lock を残す（安全側に停止。解除は Human）。
+function acquireOwnership(store, taskId, opts) {
+  var fsx = (store && store.fs) || fs;
+  var o = _isObj(opts) ? opts : {};
+  if (typeof o.ownerId !== 'string' || !UUID_RE.test(o.ownerId) || !Number.isInteger(o.pid) || o.pid <= 0 || !_isIso(o.now)) return _err('opts_invalid');
+  var p = _paths(store, taskId);
+  if (!p.ok) return p;
+  var pre = readRun(store, taskId);
+  if (!pre.ok) return pre;
+  if (!pre.executable) return _err('run_read_only_v1');
+  if (pre.run.outcome !== null) return _err('terminal_outcome:' + pre.run.outcome);
+  if (pre.run.lock !== null) return _err('run_lock_present');
+  if (pre.run.invocations.some(function (inv) { return inv.state === 'started' || inv.state === 'unconfirmed'; })) return _err('invocation_unfinalized');
+  var c = _createLockFile(fsx, p.ownerLock, { kind: 'owner', taskId: taskId, ownerId: o.ownerId, pid: o.pid, acquiredAt: o.now });
+  if (!c.ok) return _err(c.error === 'lock_exists' ? 'owner_lock_exists' : 'owner_lock_' + c.error);
+  var res = _withMutex(fsx, p.writeLock, function () {
+    // saveRun と同じ write.lock の内側で最新の run.json を読み直し、最新状態に基づいて判定する（事前確認後の他者の更新を上書きしない）
+    var cur = readRun(store, taskId);
+    if (!cur.ok) return _err('run_unreadable');
+    if (!cur.executable) return _err('run_read_only_v1');
+    if (cur.run.outcome !== null) return _err('terminal_outcome:' + cur.run.outcome);
+    if (cur.run.invocations.some(function (inv) { return inv.state === 'started' || inv.state === 'unconfirmed'; })) return _err('invocation_unfinalized');
+    if (cur.run.lock !== null) return _err('run_lock_present');
+    if (cur.run.revision !== pre.run.revision) return _err('state_changed_during_acquire');   // 事前確認以降に更新された → 古い前提で進めない
+    var nx = acquireLock(cur.run, { now: o.now, pid: o.pid, ownerId: o.ownerId });
+    if (!nx.ok) return nx;
+    var toWrite = nx.run; toWrite.revision = cur.run.revision + 1;
+    var w = _atomicWriteJson(fsx, p.runFile, toWrite);
+    return w.ok ? { ok: true, run: toWrite, revision: toWrite.revision } : w;
+  });
+  if (!res.ok) return _err('acquire_incomplete', { cause: res.error });
+  return res;
+}
+
+// 所有者としての保存（heartbeat・予約・完了を含む）。write.lock の内側で次をすべて確認してから書く：
+//   owner.lock の ownerId が自分／保存済み run の revision が expectedRevision と一致（nextRun も同じ revision から導出）／
+//   保存済み run の lock が自分のもので期限内／nextRun の lock も自分のもので期限内／run の識別項目が不変。
+//   opts: { ownerId, expectedRevision, now, staleMs? }。失敗時は既存 run.json を変更しない。
+function saveRunAsOwner(store, nextRun, opts) {
+  var fsx = (store && store.fs) || fs;
+  var o = _isObj(opts) ? opts : {};
+  if (typeof o.ownerId !== 'string' || !UUID_RE.test(o.ownerId) || !_int0(o.expectedRevision) || !_isIso(o.now)) return _err('opts_invalid');
+  var v = validateRunState(nextRun);
+  if (!v.ok) return _err('run_invalid', { errors: v.errors });
+  var p = _paths(store, nextRun.taskId);
+  if (!p.ok) return p;
+  return _withMutex(fsx, p.writeLock, function () {
+    var ol = _readLockFile(fsx, p.ownerLock);
+    if (!ol.ok) return _err('owner_' + ol.error);
+    if (!ol.exists) return _err('owner_lock_missing');
+    if (!_ownerLockOk(ol.lock, nextRun.taskId)) return _err('owner_lock_invalid');
+    if (ol.lock.ownerId !== o.ownerId) return _err('not_owner');
+    var cur = readRun(store, nextRun.taskId);
+    if (!cur.ok) return cur;
+    if (!cur.executable) return _err('run_read_only_v1');
+    if (cur.run.revision !== o.expectedRevision || nextRun.revision !== o.expectedRevision) return _err('stale_write');
+    var lopts = { now: o.now, staleMs: o.staleMs };
+    if (!cur.run.lock || cur.run.lock.ownerId !== o.ownerId || cur.run.lock.pid !== ol.lock.pid) return _err('not_owner');
+    if (lockStatus(cur.run.lock, lopts) !== 'active') return _err('lock_expired');
+    if (!nextRun.lock || nextRun.lock.ownerId !== o.ownerId || nextRun.lock.pid !== ol.lock.pid) return _err('next_lock_not_owned');
+    if (lockStatus(nextRun.lock, lopts) !== 'active') return _err('lock_expired');
+    if (_identityChanged(cur.run, nextRun)) return _err('identity_changed');
+    var toWrite = _clone(nextRun); toWrite.revision = cur.run.revision + 1;
+    var w = _atomicWriteJson(fsx, p.runFile, toWrite);
+    return w.ok ? { ok: true, run: toWrite, revision: toWrite.revision } : w;
+  });
+}
+
+// 所有権の解放：自分の lock だけを、正常な条件でのみ解放する。
+//   拒否：所有者不一致・期限切れ（奪われた可能性）・未確定 invocation（started＝結果保存失敗 / unconfirmed＝終了未確認）。
+//   run.json の lock を外して保存した後、owner.lock が自分のものである場合だけ削除する。
+function releaseOwnership(store, taskId, opts) {
+  var fsx = (store && store.fs) || fs;
+  var o = _isObj(opts) ? opts : {};
+  if (typeof o.ownerId !== 'string' || !UUID_RE.test(o.ownerId) || !_int0(o.expectedRevision) || !_isIso(o.now)) return _err('opts_invalid');
+  var p = _paths(store, taskId);
+  if (!p.ok) return p;
+  var ownerPid = null;
+  var res = _withMutex(fsx, p.writeLock, function () {
+    var ol = _readLockFile(fsx, p.ownerLock);
+    if (!ol.ok) return _err('owner_' + ol.error);
+    if (!ol.exists) return _err('owner_lock_missing');
+    if (!_ownerLockOk(ol.lock, taskId)) return _err('owner_lock_invalid');
+    if (ol.lock.ownerId !== o.ownerId) return _err('not_owner');
+    var cur = readRun(store, taskId);
+    if (!cur.ok) return cur;
+    if (!cur.executable) return _err('run_read_only_v1');
+    if (cur.run.revision !== o.expectedRevision) return _err('stale_write');
+    if (!cur.run.lock || cur.run.lock.ownerId !== o.ownerId || cur.run.lock.pid !== ol.lock.pid) return _err('not_owner');
+    if (lockStatus(cur.run.lock, { now: o.now, staleMs: o.staleMs }) !== 'active') return _err('lock_expired_requires_human');
+    if (cur.run.invocations.some(function (inv) { return inv.state === 'started' || inv.state === 'unconfirmed'; })) return _err('release_refused_unfinalized');
+    var nx = releaseLock(cur.run, { now: o.now, pid: ol.lock.pid, ownerId: o.ownerId });
+    if (!nx.ok) return nx;
+    var toWrite = nx.run; toWrite.revision = cur.run.revision + 1;
+    var w = _atomicWriteJson(fsx, p.runFile, toWrite);
+    ownerPid = ol.lock.pid;
+    return w.ok ? { ok: true, run: toWrite, revision: toWrite.revision } : w;
+  });
+  if (!res.ok) return res;
+  var again = _readLockFile(fsx, p.ownerLock);
+  if (!(again.ok && again.exists && _ownerLockOk(again.lock, taskId) && again.lock.ownerId === o.ownerId && again.lock.pid === ownerPid)) return _err('owner_lock_changed_before_unlink', { runReleased: true });
+  try { fsx.unlinkSync(p.ownerLock); } catch (e) { return _err('owner_lock_unlink_failed', { runReleased: true }); }
+  return res;
+}
+
+// owner.lock の状態を読むだけ（値は ownerId / pid / acquiredAt のみ。解除はしない）
+function readOwnerLock(store, taskId) {
+  var fsx = (store && store.fs) || fs;
+  var p = _paths(store, taskId);
+  if (!p.ok) return p;
+  var ol = _readLockFile(fsx, p.ownerLock);
+  if (!ol.ok) return ol;
+  if (!ol.exists) return { ok: true, exists: false };
+  return _ownerLockOk(ol.lock, taskId) ? { ok: true, exists: true, ownerId: ol.lock.ownerId, pid: ol.lock.pid, acquiredAt: ol.lock.acquiredAt } : _err('owner_lock_invalid');
 }
 
 module.exports = {
@@ -831,6 +1114,13 @@ module.exports = {
   inspectRunRecord: inspectRunRecord,
   beginInvocation: beginInvocation,
   completeInvocation: completeInvocation,
+  markIsolationVerified: markIsolationVerified,
+  classifyResumeDiff: classifyResumeDiff,
+  WORKTREE_STAGES: WORKTREE_STAGES,
+  acquireOwnership: acquireOwnership,
+  saveRunAsOwner: saveRunAsOwner,
+  releaseOwnership: releaseOwnership,
+  readOwnerLock: readOwnerLock,
   STAGES: STAGES,
   GATES: GATES,
   OUTCOMES: OUTCOMES,

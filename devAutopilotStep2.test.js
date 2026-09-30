@@ -112,8 +112,10 @@ function baseInput(extra) {
     protectedMd5AtStart: Object.assign({}, PROTECTED_BASELINE), now: at(0),
   }, extra || {});
 }
+// S5：research の前に隔離 worktree を確定する（stage 未開始の run だけ）
+function isolate(run, when) { const x = rs.markIsolationVerified(run, { now: when || at(0), worktreeHead: HEAD }); if (!x.ok) throw new Error('isolate failed: ' + x.error); return x.run; }
 function advance(run, stages, startMin) {
-  let r = run, m = startMin || 1;
+  let r = run.stage === null && run.isolation.state === 'absent' ? isolate(run) : run, m = startMin || 1;
   for (const s of stages) { const x = rs.transitionStage(r, s, { now: at(m++) }); if (!x.ok) throw new Error('advance failed: ' + x.error); r = x.run; }
   return r;
 }
@@ -142,7 +144,12 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
   {
     assert(init.ok && r0.stage === null && r0.gate === 'none' && r0.outcome === null && rs.deriveRunStatus(r0, { now: at(0) }) === 'queued', 'ST-1. 初期状態は queued（stage null / gate none / outcome null / lock なし）');
     assert(!('status' in r0) && !('derivedStatus' in r0), 'ST-1b. derived status は正本に保存しない');
-    const s1 = rs.transitionStage(r0, 'researching', { now: at(1) });
+    const noIso = rs.transitionStage(r0, 'researching', { now: at(1) });
+    const iso = rs.markIsolationVerified(r0, { now: at(0), worktreeHead: HEAD });
+    assert(noIso.error === 'isolation_not_verified' && iso.ok && iso.run.isolation.state === 'verified' && iso.run.stage === null
+      && rs.markIsolationVerified(r0, { now: at(0), worktreeHead: OTHER_HEAD }).error === 'worktree_head_mismatch'
+      && rs.markIsolationVerified(iso.run, { now: at(0), worktreeHead: HEAD }).error === 'isolation_already_recorded', 'ST-1c. 隔離 worktree（baseHead と一致）の確定前は research を始めない（S5）');
+    const s1 = rs.transitionStage(iso.run, 'researching', { now: at(1) });
     assert(s1.ok && s1.run.stage === 'researching' && s1.run.completedStages.length === 0, 'ST-2. researching へ遷移');
     const s2 = rs.transitionStage(s1.run, 'designing', { now: at(2) });
     assert(s2.ok && s2.run.stage === 'designing' && s2.run.completedStages.join() === 'researching', 'ST-3. designing へ遷移（researching が完了扱い）');
@@ -207,7 +214,7 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     assert(hb.ok && rs.lockStatus(hb.run.lock, { now: at(15) }) === 'active' && !rs.heartbeatLock(l1.run, { now: at(9), pid: 1 }).ok, 'LK-41. heartbeat は lock の所有者だけ');
     const rel = rs.releaseLock(hb.run, { now: at(10), pid: 1234 });
     assert(rel.ok && rel.run.lock === null, 'LK-42. release で lock を外す');
-    const running = rs.transitionStage(l1.run, 'researching', { now: at(1) }).run;
+    const running = rs.transitionStage(isolate(l1.run), 'researching', { now: at(1) }).run;
     assert(rs.deriveRunStatus(running, { now: at(2) }) === 'running' && rs.deriveRunStatus(running, { now: at(30) }) === 'interrupted', 'LK-43. active lock なら running、stale なら interrupted（derived）');
     assert(rs.deriveRunStatus(l1.run, { now: at(1) }) === 'invalid', 'LK-44. stage なしで active lock は曖昧 → invalid');
   }
@@ -264,7 +271,7 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     assert(created.ok && created.runFile.toLowerCase().indexOf(SANDBOX.toLowerCase()) === 0, 'SR-20. run.json を作成（OS temp の sandbox 内）');
     const read = rs.readRun(store, 'task-001');
     assert(read.ok && JSON.stringify(read.run) === JSON.stringify(r0), 'SR-21. 読み込みは保存内容と一致');
-    const nx = rs.transitionStage(read.run, 'researching', { now: at(1) }).run;
+    const nx = rs.transitionStage(isolate(read.run), 'researching', { now: at(1) }).run;
     const saved = rs.saveRun(store, nx, { expectedUpdatedAt: r0.updatedAt });
     assert(saved.ok && rs.readRun(store, 'task-001').run.stage === 'researching', 'SR-22. update（楽観的排他つき）');
     assert(rs.saveRun(store, nx, { expectedUpdatedAt: r0.updatedAt }).error === 'stale_write' && rs.saveRun(store, nx, {}).error === 'stale_write', 'SR-22b. 古い updatedAt での上書きは拒否');
@@ -292,7 +299,7 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     fs.writeFileSync(f2, v1Text);
     const v1Read = rs.readRun(s2, 'task-002');
     const v1Next = rs.transitionStage(v1Run, 'researching', { now: '2026-09-30T00:00:01.000Z' });
-    const v2Try = rs.transitionStage(badRun, 'researching', { now: '2026-09-30T00:00:01.000Z' }).run;
+    const v2Try = rs.transitionStage(isolate(badRun), 'researching', { now: '2026-09-30T00:00:01.000Z' }).run;
     const v1Save = rs.saveRun(s2, v2Try, { expectedUpdatedAt: v1Run.updatedAt });
     assert(v1Read.ok && v1Read.schemaVersion === 1 && v1Read.executable === false && v1Read.run.stage === null && !v1Next.ok
       && v1Save.error === 'run_read_only_v1' && fs.readFileSync(f2, 'utf8') === v1Text, 'SR-25c. v1 記録は read-only 参照のみ（遷移・上書きは拒否・ファイルは不変）');
@@ -305,17 +312,33 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     const secretRun = JSON.parse(JSON.stringify(r0)); secretRun.taskId = 'task-003'; secretRun.branch = 'dev/task-003'; secretRun.task.apiKey = 'x';
     let sec3 = true; try { fs.statSync(path.join(store.runtimeRoot, 'runs', 'task-003')); } catch (e) { sec3 = false; }
     assert(rs.createRun(store, secretRun).error === 'run_invalid' && sec3 === false, 'SR-28. secret を含む run は保存しない（directory も作らない）');
+    // S2：本物の fs（OS temp の sandbox 内）での owner.lock の排他作成・所有者保存・解放
+    const s3 = { runtimeRoot: path.join(SANDBOX, 'runtime-owner'), repoPath: ROOT };
+    const oRun = rs.createInitialRun(baseInput({ taskId: 'task-010', branch: 'dev/task-010' })).run;
+    const OWN_A = '00000000-0000-4000-8000-000000000a01', OWN_B = '00000000-0000-4000-8000-000000000b02';
+    const oc = rs.createRun(s3, oRun);
+    const oa = rs.acquireOwnership(s3, 'task-010', { ownerId: OWN_A, pid: 4321, now: at(1) });
+    const ob = rs.acquireOwnership(s3, 'task-010', { ownerId: OWN_B, pid: 8765, now: at(1) });
+    const olFile = path.join(path.dirname(oc.runFile), 'owner.lock');
+    const oLockOnDisk = fs.readFileSync(olFile, 'utf8');
+    const oHb = rs.saveRunAsOwner(s3, rs.heartbeatLock(oa.run, { now: at(2), pid: 4321, ownerId: OWN_A }).run, { ownerId: OWN_A, expectedRevision: 1, now: at(2) });
+    const oRel = rs.releaseOwnership(s3, 'task-010', { ownerId: OWN_A, expectedRevision: 2, now: at(3) });
+    const oLeft = fs.readdirSync(path.dirname(oc.runFile));
+    assert(oc.ok && oa.ok && !ob.ok && JSON.parse(oLockOnDisk).ownerId === OWN_A && oHb.ok && oRel.ok && oLeft.join(',') === 'run.json'
+      && rs.readRun(s3, 'task-010').run.lock === null && rs.readRun(s3, 'task-010').run.revision === 3, 'SR-29. 本物の fs で owner.lock の排他作成・二重取得の拒否・所有者保存・解放（残骸なし）');
   }
 
   caseHeader('RS. Resume validation');
   {
-    const good = { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD, worktreeExists: true, branchExists: true, worktreeStatus: 'dirty', diffAllowed: true, protectedMd5Matches: true };
+    const good = { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD, worktreeExists: true, branchExists: true, worktreeStatus: 'dirty', diffAllowed: true, protectedMd5Matches: true, diffClassification: 'recorded_within_scope' };
+    const clean = Object.assign({}, good, { worktreeStatus: 'clean', diffClassification: 'none' });
     const noWt = Object.assign({}, good, { worktreeExists: false, branchExists: false, worktreeStatus: 'absent' });
     const testing = advance(r0, ALL.slice(0, 4));
     const researching = advance(r0, ALL.slice(0, 1));
     const implementing = advance(r0, ALL.slice(0, 3));
     const opt = { now: at(60) };
-    assert(rs.validateResume(testing, good, opt).result === 'resumable' && rs.validateResume(researching, noWt, opt).result === 'resumable', 'RS-40. 整合した run は resumable（testing / 読み取りのみの researching）');
+    assert(rs.validateResume(testing, good, opt).result === 'resumable' && rs.validateResume(researching, clean, opt).result === 'resumable'
+      && rs.validateResume(r0, Object.assign({}, noWt, { diffClassification: undefined }), opt).result === 'resumable', 'RS-40. 整合した run は resumable（testing の記録済み差分 / research 中の clean な隔離 worktree / 隔離前の queued）');;
     const pm = rs.validateResume(testing, Object.assign({}, good, { protectedMd5Matches: false }), opt);
     assert(pm.result === 'blocked' && pm.reasons.indexOf('protected_mismatch') !== -1, 'RS-41. Protected 不一致 → blocked');
     const ds = rs.validateResume(testing, Object.assign({}, good, { diffAllowed: false }), opt);
@@ -325,10 +348,27 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     assert(mal.result === 'blocked' && mal.reasons[0] === 'run_invalid' && malSnap.result === 'blocked' && malSnap.reasons[0] === 'snapshot_invalid', 'RS-43. 壊れた run / snapshot → blocked');
     const intr = rs.validateResume(implementing, good, opt);
     assert(intr.result === 'human_approval_required' && intr.reasons.indexOf('interrupted_implementation') !== -1, 'RS-44. 実装途中で停止 → human_approval_required');
-    const amb1 = rs.validateResume(researching, good, opt);
+    const amb1 = rs.validateResume(r0, good, opt);
     const amb2 = rs.validateResume(testing, noWt, opt);
     const amb3 = rs.validateResume(testing, Object.assign({}, good, { branchExists: false }), opt);
-    assert(amb1.result === 'blocked' && amb2.result === 'blocked' && amb3.result === 'blocked', 'RS-45. 曖昧（実装前なのに worktree あり・worktree/branch 欠落）→ blocked');
+    const amb4 = rs.validateResume(researching, noWt, opt);
+    assert(amb1.result === 'blocked' && amb1.reasons.indexOf('unexpected_worktree_before_isolation') !== -1 && amb2.result === 'blocked' && amb3.result === 'blocked'
+      && amb4.result === 'blocked' && amb4.reasons.indexOf('worktree_or_branch_missing') !== -1, 'RS-45. 曖昧（隔離確定前なのに worktree あり・research 以降の worktree/branch 欠落）→ blocked');
+    // S5：再開時の差分分類（記録済み・許可範囲内の実装差分と想定外の差分を区別。材料不足は停止）
+    const dcMissing = rs.validateResume(testing, Object.assign({}, good, { diffClassification: undefined }), opt);
+    const dcUnexp = rs.validateResume(testing, Object.assign({}, good, { diffClassification: 'unexpected' }), opt);
+    const dcUnknown = rs.validateResume(testing, Object.assign({}, good, { diffClassification: 'unknown' }), opt);
+    const dcEarly = rs.validateResume(researching, Object.assign({}, good, { diffClassification: 'recorded_within_scope' }), opt);
+    const dcIncons = rs.validateResume(researching, Object.assign({}, clean, { worktreeStatus: 'dirty' }), opt);
+    assert(dcMissing.reasons.indexOf('diff_classification_missing') !== -1 && dcUnexp.reasons.indexOf('diff_unexpected') !== -1 && dcUnknown.reasons.indexOf('diff_unknown') !== -1
+      && dcEarly.reasons.indexOf('diff_before_implementation') !== -1 && dcIncons.reasons.indexOf('diff_classification_inconsistent') !== -1
+      && [dcMissing, dcUnexp, dcUnknown, dcEarly, dcIncons].every(function (x) { return x.result === 'blocked'; }), 'RS-45b. 差分分類の欠落・想定外・不明・実装前の差分・分類と状態の矛盾は blocked');
+    const impl = JSON.parse(JSON.stringify(implementing)); impl.filesChanged = ['tools/devAutopilot/x.js'];
+    const C = rs.classifyResumeDiff;
+    assert(C(impl, []) === 'none' && C(impl, [{ path: 'tools/devAutopilot/x.js', status: 'modified' }]) === 'recorded_within_scope'
+      && C(impl, [{ path: 'tools/devAutopilot/y.js', status: 'modified' }]) === 'unexpected' && C(impl, [{ path: 'server.js', status: 'modified' }]) === 'unexpected'
+      && C(researching, [{ path: 'tools/devAutopilot/x.js', status: 'modified' }]) === 'unexpected' && C(impl, [{ path: '../x.js', status: 'modified' }]) === 'unknown'
+      && C(impl, 'x') === 'unknown' && C({ bad: 1 }, []) === 'unknown', 'RS-45c. classifyResumeDiff：記録済み・許可範囲内だけ recorded_within_scope・未記録 / 範囲外 / 実装前は unexpected・不正は unknown');
     assert(rs.validateResume(testing, Object.assign({}, good, { baseHeadExists: false }), opt).result === 'blocked', 'RS-46. baseHead が存在しない → blocked');
     const adv = rs.validateResume(testing, Object.assign({}, good, { currentOriginMain: OTHER_HEAD }), opt);
     assert(adv.result === 'human_approval_required' && adv.reasons.indexOf('origin_advanced') !== -1, 'RS-47. origin/main が進んだ → human_approval_required');
@@ -355,9 +395,13 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
   }
 
   // 自分で作った OS temp の sandbox directory だけを削除
-  try { ORIG_RM(SANDBOX, { recursive: true, force: true }); } catch (e) { /* ignore */ }
-  let cleaned = true; try { fs.statSync(SANDBOX); cleaned = false; } catch (e) { cleaned = true; }
-  assert(cleaned, 'P-4. 自分で作った temp directory だけを後始末');
+  //   失敗は黙って無視しない：削除の例外・削除後の残存（ENOENT 以外の stat 結果・親 directory の一覧に残る）はテスト失敗として報告する
+  let rmError = null;
+  try { ORIG_RM(SANDBOX, { recursive: true, force: true }); } catch (e) { rmError = (e && e.code) || 'rm_failed'; }
+  let statState = 'present'; try { fs.statSync(SANDBOX); } catch (e) { statState = e && e.code === 'ENOENT' ? 'absent' : 'unknown:' + ((e && e.code) || 'error'); }
+  let listed = true; try { listed = fs.readdirSync(os.tmpdir()).indexOf(path.basename(SANDBOX)) !== -1; } catch (e) { listed = true; }
+  assert(rmError === null && statState === 'absent' && !listed, 'P-4. 自分で作った temp directory だけを後始末（失敗・残存は FAIL として報告）'
+    + (rmError || statState !== 'absent' || listed ? '（rm: ' + (rmError || 'ok') + ' / stat: ' + statState + ' / listed: ' + listed + ' / ' + path.basename(SANDBOX) + '）' : ''));
 
   console.log('\n────────────────────────────────────────────────────────────');
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
