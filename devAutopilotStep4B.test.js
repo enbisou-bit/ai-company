@@ -136,12 +136,12 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
     const r = cr.buildRunnerArgs(argsInput('research'));
     const a = r.args || [];
     assert(r.ok && a[0] === '-p' && valOf(a, '--output-format') === 'json' && valOf(a, '--input-format') === 'text' && r.promptVia === 'stdin', 'A-1. -p・json 出力・prompt は stdin');
-    assert(valOf(a, '--permission-mode') === 'dontAsk' && valOf(a, '--tools') === 'Read,Glob,Grep' && valOf(a, '--allowedTools') === 'Read,Glob,Grep', 'A-2. dontAsk・--tools と --allowedTools は stage policy');
+    assert(valOf(a, '--permission-mode') === 'dontAsk' && valOf(a, '--tools') === 'Read,Glob,Grep' && a.indexOf('--allowedTools') === -1 && a.indexOf('--allowed-tools') === -1, 'A-2. dontAsk・--tools は stage policy・範囲指定のない --allowedTools は付けない');
     assert(valOf(a, '--disallowedTools') === 'Bash,WebFetch,WebSearch,Agent,mcp__*', 'A-3. --disallowedTools に禁止 tool');
     assert(a.indexOf('--strict-mcp-config') !== -1 && valOf(a, '--mcp-config') === '{"mcpServers":{}}', 'A-4. strict MCP ＋ 空の mcpServers');
-    assert(a.indexOf('--safe-mode') !== -1 && valOf(a, '--setting-sources') === 'project' && a.indexOf('--disable-slash-commands') !== -1 && JSON.parse(valOf(a, '--settings')).permissions.defaultMode === 'dontAsk', 'A-5. safe-mode・setting-sources project・専用 settings・slash commands 無効（候補契約）');
+    assert(a.indexOf('--safe-mode') !== -1 && a.indexOf('--restricted') !== -1 && a.indexOf('--setting-sources') === -1 && a.indexOf('--disable-slash-commands') !== -1 && JSON.parse(valOf(a, '--settings')).permissions.defaultMode === 'dontAsk', 'A-5. safe-mode・restricted・setting-sources なし・専用 settings・slash commands 無効');
     assert(valOf(a, '--session-id') === UUID && JSON.stringify(JSON.parse(valOf(a, '--json-schema'))) === JSON.stringify(cr.buildOutputSchema('research')) && valOf(a, '--max-budget-usd') === '1', 'A-6. stage ごとの session-id・json-schema・max-budget');
-    assert(['-c', '--continue', '-r', '--resume', '-w', '--worktree', '--add-dir', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', 'bypassPermissions'].every(function (f) { return a.indexOf(f) === -1; }), 'A-7. -c / -r / -w / --add-dir / bypass 系を含まない');
+    assert(['-c', '--continue', '-r', '--resume', '-w', '--worktree', '--add-dir', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', 'bypassPermissions', '--allowedTools', '--setting-sources'].every(function (f) { return a.indexOf(f) === -1; }), 'A-7. -c / -r / -w / --add-dir / bypass 系 / --allowedTools / --setting-sources を含まない');
     assert(a.indexOf('--no-session-persistence') === -1 && r.unverified.length === 8, 'A-8. --no-session-persistence は既定で付けない（4C 未確認のため必須にしない）・未確認点を返す');
     const np = cr.buildRunnerArgs(argsInput('research', { noSessionPersistence: true }));
     assert(np.ok && np.args.indexOf('--no-session-persistence') !== -1, 'A-8b. 明示指定時だけ --no-session-persistence を付与');
@@ -165,22 +165,38 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
     assert(!V(base.concat(['--dangerously-skip-permissions'])).ok && !V(base.concat(['--allow-dangerously-skip-permissions'])).ok
       && !V(base.map(function (x) { return x === 'dontAsk' ? 'bypassPermissions' : x; })).ok, 'A-19. bypass 系フラグ・値を検出');
     assert(['-c', '--resume', '-w', '--add-dir', '--bare'].every(function (f) { return !V(base.concat([f])).ok; }), 'A-20. -c / --resume / -w / --add-dir / --bare を検出');
+    const allowedAdded = V(base.concat(['--allowedTools', 'Read'])), allowedAlias = V(base.concat(['--allowed-tools', 'Read'])), srcAdded = V(base.concat(['--setting-sources', 'project']));
+    assert(!allowedAdded.ok && allowedAdded.errors.indexOf('forbidden_flag:--allowedTools') !== -1 && !allowedAlias.ok && allowedAlias.errors.indexOf('forbidden_flag:--allowed-tools') !== -1
+      && !srcAdded.ok && srcAdded.errors.indexOf('forbidden_flag:--setting-sources') !== -1, 'A-20b. --allowedTools / --allowed-tools / --setting-sources の追加を明示の理由で拒否');
     assert(!V(base.filter(function (x) { return x !== '--strict-mcp-config'; })).ok && !V(base.concat(['--permission-mode', 'dontAsk'])).ok
       && !V(base.map(function (x) { return x === 'Read,Glob,Grep' ? 'Read,Bash' : x; })).ok, 'A-21. strict MCP 欠落 / permission mode 重複 / Bash tool を検出');
     function without(flag, hasValue) { const c = base.slice(); const i = c.indexOf(flag); c.splice(i, hasValue ? 2 : 1); return c; }
     function setVal(flag, v) { const c = base.slice(); c[c.indexOf(flag) + 1] = v; return c; }
     const lax = JSON.parse(valOf(base, '--settings')); lax.permissions.allow.push('Bash');
+    const laxRead = JSON.parse(valOf(base, '--settings')); laxRead.permissions.allow.push('Read');
     const tampered = [
-      without('--safe-mode', false), without('--disable-slash-commands', false), without('--settings', true), without('--disallowedTools', true), without('--setting-sources', true),
-      setVal('--setting-sources', 'user,project,local'), setVal('--settings', JSON.stringify(lax)), setVal('--allowedTools', 'Read,Glob,Grep,Edit'),
+      without('--safe-mode', false), without('--restricted', false), without('--disable-slash-commands', false), without('--settings', true), without('--disallowedTools', true),
+      base.concat(['--restricted']), setVal('--settings', JSON.stringify(lax)), setVal('--settings', JSON.stringify(laxRead)),
       setVal('--disallowedTools', 'WebFetch'), setVal('--output-format', 'text'), setVal('--tools', 'Read'), setVal('--settings', 'not json'),
       base.concat(['--tools', 'Read,Glob,Grep']), base.concat(['--tools=Read,Glob,Grep,Bash']), setVal('--max-budget-usd', '50'),
     ];
-    assert(tampered.every(function (t) { return !V(t).ok; }), 'A-22. 制限 flag の欠落・改変・重複・--x=y 形式・settings の緩和（Bash allow）・allowedTools 不一致をすべて検出（tool 制限が緩まない）');
+    assert(tampered.every(function (t) { return !V(t).ok; }), 'A-22. 制限 flag（--restricted を含む）の欠落・改変・重複・--x=y 形式・settings の緩和（Bash / Read allow）をすべて検出（tool 制限が緩まない）');
+    const noRestricted = V(without('--restricted', false));
+    assert(noRestricted.errors.indexOf('missing:--restricted') !== -1 && V(base.concat(['--restricted'])).errors.indexOf('duplicated:--restricted') !== -1, 'A-22b. --restricted の欠落・重複を明示の理由で検出');
     assert(V(base).ok && V(cr.buildRunnerArgs(argsInput('implement')).args).ok, 'A-23. builder の出力そのものは検査を通る');
     assert(cr.buildRunnerArgs(argsInput('research', { maxBudgetUsd: 2, approvedRemainingBudgetUsd: 1.5 })).error === 'max_budget_exceeds_approved_remaining'
       && cr.buildRunnerArgs(argsInput('research', { approvedRemainingBudgetUsd: 0 })).error === 'approved_remaining_budget_invalid'
       && cr.buildRunnerArgs((function () { const x = argsInput('research'); delete x.approvedRemainingBudgetUsd; return x; })()).error === 'missing_input_keys', 'A-24. --max-budget-usd は承認済み run budget の残額以内（5 は絶対上限であり承認ではない）');
+    function withAllow(stage, rule) { const s = JSON.parse(JSON.stringify(settingsFor(stage).settings)); s.permissions.allow.push(rule); return s; }
+    const readAllows = ['Read', 'Glob', 'Grep', 'Read(**)', 'Read(//c/**)', 'Glob(*)'];
+    assert(readAllows.every(function (rule) { const v = cr.validateRunnerSettings(withAllow('research', rule), 'research'); return !v.ok && v.errors.indexOf('read_allow_rule_forbidden') !== -1; })
+      && readAllows.every(function (rule) { return cr.buildRunnerArgs(argsInput('research', { settings: withAllow('research', rule) })).error === 'settings_invalid'; }), 'A-25. 範囲指定の有無にかかわらず Read / Glob / Grep の allow を拒否');
+    const unscopedEdit = cr.validateRunnerSettings(withAllow('implement', 'Edit'), 'implement'), unscopedWrite = cr.validateRunnerSettings(withAllow('implement', 'Write'), 'implement');
+    assert(!unscopedEdit.ok && unscopedEdit.errors.indexOf('unscoped_write_allow') !== -1 && !unscopedWrite.ok && cr.validateRunnerSettings(settingsFor('implement').settings, 'implement').ok, 'A-26. implement でも範囲指定のない Edit / Write allow は拒否・path 指定の allow は通る');
+    const addDirs = JSON.parse(JSON.stringify(settingsFor('research').settings)); addDirs.permissions.additionalDirectories = ['C:\\other'];
+    const addDirsTop = Object.assign({ additionalDirectories: ['C:\\other'] }, JSON.parse(JSON.stringify(settingsFor('research').settings)));
+    assert(!cr.validateRunnerSettings(addDirs, 'research').ok && !cr.validateRunnerSettings(addDirsTop, 'research').ok
+      && cr.buildRunnerArgs(argsInput('research', { settings: addDirs })).error === 'settings_invalid', 'A-27. settings による追加作業ディレクトリ（additionalDirectories）は拒否');
   }
 
   caseHeader('E. buildRunnerEnv（allowlist・deny 優先・値を出さない）');
@@ -195,7 +211,7 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
     const before = JSON.stringify(parent);
     const r = cr.buildRunnerEnv(parent);
     const keys = Object.keys(r.env).sort();
-    assert(r.ok && JSON.stringify(keys) === JSON.stringify(['APPDATA', 'HOME', 'LOCALAPPDATA', 'Path', 'SystemRoot', 'TEMP', 'TMP', 'USERPROFILE']), 'E-1. allowlist の候補だけ残る（' + keys.join(',') + '）');
+    assert(r.ok && JSON.stringify(keys) === JSON.stringify(['APPDATA', 'DISABLE_UPDATES', 'HOME', 'LOCALAPPDATA', 'Path', 'SystemRoot', 'TEMP', 'TMP', 'USERPROFILE']), 'E-1. allowlist の候補＋固定の DISABLE_UPDATES だけ残る（' + keys.join(',') + '）');
     assert(['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT'].every(function (k) { return !(k in r.env); }), 'E-2. CLAUDECODE / CLAUDE_* を引き継がない');
     assert(!('ANTHROPIC_BASE_URL' in r.env) && !('ANTHROPIC_API_KEY' in r.env), 'E-3. ANTHROPIC_BASE_URL / 不要な ANTHROPIC_API_KEY を引き継がない');
     assert(['SUPABASE_URL', 'OPENAI_API_KEY', 'GITHUB_TOKEN', 'MY_SECRET', 'GIT_DIR', 'NODE_OPTIONS', 'RANDOM_VAR'].every(function (k) { return !(k in r.env) && r.dropped.indexOf(k) !== -1; }), 'E-4. SUPABASE / OPENAI / *_TOKEN / *_SECRET / GIT_* / NODE_OPTIONS / 無関係 env を除外');
@@ -207,24 +223,33 @@ function valOf(args, flag) { const i = args.indexOf(flag); return i === -1 ? und
       && JSON.stringify({ envNames: k.envNames, dropped: k.dropped }).indexOf(SECRET) === -1, 'E-7b. 子へ渡す env は opt-in 時だけ credential を含む（containsCredential で明示）・診断用の envNames / dropped は名前だけで値を含まない');
     assert(!cr.buildRunnerEnv({ PATH: 'a', Path: 'b' }).ok && !cr.buildRunnerEnv(parent, { other: 1 }).ok && !cr.buildRunnerEnv(null).ok, 'E-8. 大小違い重複 / 未知 opts / 不正入力は fail-closed');
     assert(JSON.stringify(parent) === before, 'E-9. parentEnv を mutation しない');
+    const ov = cr.buildRunnerEnv(Object.assign({}, parent, { DISABLE_UPDATES: '0' })), ovLower = cr.buildRunnerEnv(Object.assign({}, parent, { disable_updates: '0' }));
+    assert(cr.RUNNER_ENV_FIXED.DISABLE_UPDATES === '1' && Object.isFrozen(cr.RUNNER_ENV_FIXED) && r.env.DISABLE_UPDATES === '1' && k.env.DISABLE_UPDATES === '1'
+      && ov.ok && ov.env.DISABLE_UPDATES === '1' && ov.dropped.indexOf('DISABLE_UPDATES') !== -1 && ovLower.ok && ovLower.env.DISABLE_UPDATES === '1' && !('disable_updates' in ovLower.env), 'E-10. DISABLE_UPDATES=1 を固定付与・親 env の値（大小違いを含む）で上書きできない');
+    const fixedOnly = Object.keys(r.env).filter(function (x) { return cr.RUNNER_ENV_ALLOWLIST.indexOf(x.toUpperCase()) === -1; });
+    assert(fixedOnly.join(',') === 'DISABLE_UPDATES' && Object.keys(cr.RUNNER_ENV_FIXED).every(function (x) { return !/(KEY|TOKEN|SECRET|AUTH|CREDENTIAL|^ANTHROPIC_|^CLAUDE_)/i.test(x); }) && r.containsCredential === false, 'E-11. allowlist 外で付与するのは DISABLE_UPDATES だけ（認証 env を追加しない）');
   }
 
   caseHeader('G. buildRunnerSettings');
   {
     const rs = settingsFor('research');
     const d = rs.settings.permissions.deny, al = rs.settings.permissions.allow;
-    assert(rs.ok && rs.settings.permissions.defaultMode === 'dontAsk' && al.join(',') === 'Read,Glob,Grep' && d.indexOf('Edit') !== -1 && d.indexOf('Write') !== -1, 'G-1. 読取 stage は allow Read/Glob/Grep・Edit/Write を deny');
+    assert(rs.ok && rs.settings.permissions.defaultMode === 'dontAsk' && al.length === 0 && d.indexOf('Edit') !== -1 && d.indexOf('Write') !== -1, 'G-1. 読取 stage は allow 空（範囲指定のない Read/Glob/Grep allow なし）・Edit/Write を deny');
     assert(['Bash', 'WebFetch', 'WebSearch', 'Agent', 'Read(**/.env*)', 'Edit(**/.git/**)', 'Read(~/.claude/**)'].every(function (x) { return d.indexOf(x) !== -1; })
-      && d.some(function (x) { return /^Edit\(\/\/C:\/Users\/hp\/ENBISOU_AI\/ai-company\/\*\*\)$/.test(x); }), 'G-2. Bash/Web/Agent・.env・.git・~/.claude・main repo の絶対 path を deny');
+      && ['Read', 'Edit', 'Write'].every(function (t) { return d.indexOf(t + '(//c/Users/hp/ENBISOU_AI/ai-company/**)') !== -1; })
+      && !d.some(function (x) { return /\/\/[A-Za-z]:/.test(x); }), 'G-2. Bash/Web/Agent・.env・.git・~/.claude・main repo の絶対 path（公式 docs の //c/... 形式）を deny・//C:/ 形式は出さない');
     assert(['cost-logs.json', 'data/conversations/_meta.json'].every(function (p) { return d.indexOf('Edit(' + p + ')') !== -1 && d.indexOf('Write(' + p + ')') !== -1; }), 'G-3. Protected を Edit / Write deny');
     const im = settingsFor('implement');
     assert(im.ok && im.settings.permissions.allow.indexOf('Edit(tools/devAutopilot/**)') !== -1 && im.settings.permissions.deny.indexOf('Edit(server.js)') !== -1
-      && im.settings.permissions.deny.indexOf('Edit') === -1, 'G-4. implement は allowedPaths だけ Edit/Write allow・forbiddenPaths を deny');
+      && im.settings.permissions.deny.indexOf('Edit') === -1 && !im.settings.permissions.allow.some(function (x) { return /^(Read|Glob|Grep|Edit|Write)$/.test(x) || /^(Read|Glob|Grep)\(/.test(x); }), 'G-4. implement は allowedPaths だけ Edit/Write allow（Read 系 allow・範囲指定なしの allow なし）・forbiddenPaths を deny');
     assert(settingsFor('implement', { allowedPaths: [] }).error === 'allowed_paths_required_for_write_stage', 'G-5. 書込 stage で allowedPaths 空は拒否');
     assert(settingsFor('research', { worktreeRoot: MAIN + '\\wt' }).error === 'worktree_main_overlap' && settingsFor('research', { worktreeRoot: MAIN }).error === 'worktree_main_overlap', 'G-6. worktree と main の重なりは拒否');
     assert(settingsFor('implement', { allowedPaths: ['../x'] }).error === 'scope_invalid' && settingsFor('implement', { allowedPaths: ['C:\\x'] }).error === 'scope_invalid', 'G-7. traversal / 絶対 path の scope は拒否');
     assert(cr.buildRunnerSettings({ stage: 'research', worktreeRoot: WT, mainRepoRoot: MAIN, allowedPaths: [], forbiddenPaths: [], extra: 1 }).error === 'input_keys_invalid' && settingsFor('test').error === 'stage_not_runnable', 'G-8. 未知 key / test stage は拒否');
     assert(rs.pathRuleSyntaxUnverified === true, 'G-9. permission rule の path 構文は 4C 未確認と明示');
+    function mainDeny(mainRoot) { const s = cr.buildRunnerSettings({ stage: 'research', worktreeRoot: WT, mainRepoRoot: mainRoot, allowedPaths: [], forbiddenPaths: [] }); return s.ok ? s.settings.permissions.deny.filter(function (x) { return /^Read\(\/\//.test(x); }) : ['ERR:' + s.error]; }
+    assert(mainDeny('D:\\Work\\Repo\\').join() === 'Read(//d/Work/Repo/**)' && mainDeny('C:/Users/hp/ENBISOU_AI/ai-company').join() === 'Read(//c/Users/hp/ENBISOU_AI/ai-company/**)'
+      && mainDeny('C:\\Users\\hp\\ENBISOU_AI\\ai-company\\.\\').join() === 'ERR:root_invalid', 'G-10. 絶対 path rule は drive 小文字・/ 区切り・末尾区切りなしに正規化（区切り・末尾の違いで揺れない）・. / .. を含む root は rule を作らず拒否');
   }
 
   caseHeader('R. buildStagePrompt');

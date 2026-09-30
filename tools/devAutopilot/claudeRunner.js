@@ -60,6 +60,8 @@ var FORBIDDEN_FLAGS = Object.freeze([
   '-c', '--continue', '-r', '--resume', '--fork-session', '--from-pr',
   '-w', '--worktree', '--tmux', '--add-dir',
   '--chrome', '--ide', '--remote-control', '--plugin-dir', '--plugin-url', '--agents', '--agent', '--file', '--bare',
+  // 範囲指定のない allow（--allowedTools は allow rule として働く）と、--restricted と条件が異なる設定読込元の指定は使わない
+  '--allowedTools', '--allowed-tools', '--setting-sources',
 ]);
 var FORBIDDEN_VALUES = Object.freeze(['bypassPermissions']);
 var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -150,12 +152,14 @@ function buildRunnerArgs(input) {
     '--output-format', 'json',
     '--input-format', 'text',
     '--permission-mode', PERMISSION_MODE,
-    '--tools', tools,
-    '--allowedTools', tools,
+    '--tools', tools,                                  // 使える tool は stage policy だけ（allow ではない）
     '--disallowedTools', DENIED_TOOLS.join(','),
     '--strict-mcp-config', '--mcp-config', EMPTY_MCP_CONFIG,
     '--safe-mode',
-    '--setting-sources', 'project',
+    // --restricted：file tools を作業ディレクトリに限定し、設定は managed と --settings だけを読む（公式 docs）。
+    //   Stage 4C Unit 2a（2.1.280・research 相当の Read/Glob/Grep）で、worktree 外 4 経路の拒否と内側 Read の成功を観測した範囲の条件。
+    //   design / implement / review や Edit / Write での境界は未実証。
+    '--restricted',
     '--settings', JSON.stringify(input.settings),
     '--disable-slash-commands',
     '--session-id', input.sessionId,
@@ -172,8 +176,8 @@ function buildRunnerArgs(input) {
 
 // 任意の argv に危険フラグ・bypass 値が無く、tool 制限を構成する flag が欠落・改変・重複していないか（多重防御）
 //   欠落や改変で tool 制限が緩まないよう、制限を担う flag はすべて「ちょうど 1 回・期待値」を要求する。
-var REQUIRED_SINGLE_FLAGS = Object.freeze(['-p', '--output-format', '--input-format', '--permission-mode', '--tools', '--allowedTools', '--disallowedTools',
-  '--strict-mcp-config', '--mcp-config', '--safe-mode', '--setting-sources', '--settings', '--disable-slash-commands', '--session-id', '--json-schema', '--max-budget-usd']);
+var REQUIRED_SINGLE_FLAGS = Object.freeze(['-p', '--output-format', '--input-format', '--permission-mode', '--tools', '--disallowedTools',
+  '--strict-mcp-config', '--mcp-config', '--safe-mode', '--restricted', '--settings', '--disable-slash-commands', '--session-id', '--json-schema', '--max-budget-usd']);
 function _flagValue(args, f) { var i = args.indexOf(f); return i === -1 ? undefined : args[i + 1]; }
 function validateRunnerArgs(args) {
   var e = [];
@@ -197,11 +201,9 @@ function validateRunnerArgs(args) {
   var matchesPolicy = CLAUDE_STAGES.some(function (s) { return STAGE_POLICY[s].tools.join(',') === tools; });
   if (!matchesPolicy) e.push('tools_not_a_stage_policy');
   if (toolSet.some(function (t) { return WRITE_TOOLS.indexOf(t) === -1; })) e.push('tool_not_permitted');
-  if (_flagValue(args, '--allowedTools') !== tools) e.push('allowed_tools_must_equal_tools');
   var dis = String(_flagValue(args, '--disallowedTools') || '').split(',');
   if (!DENIED_TOOLS.every(function (t) { return dis.indexOf(t) !== -1; })) e.push('disallowed_tools_incomplete');
   if (_flagValue(args, '--mcp-config') !== EMPTY_MCP_CONFIG) e.push('mcp_config_must_be_empty');
-  if (_flagValue(args, '--setting-sources') !== 'project') e.push('setting_sources_must_be_project');
   var st = null;
   try { st = JSON.parse(_flagValue(args, '--settings')); } catch (x) { st = null; }
   var stageForTools = CLAUDE_STAGES.filter(function (s) { return STAGE_POLICY[s].tools.join(',') === tools; })[0];
@@ -216,6 +218,9 @@ function validateRunnerArgs(args) {
 //   HOME / USERPROFILE は OAuth（~/.claude）に必要と考えられる候補。APPDATA / LOCALAPPDATA も候補。必要最小集合は 4C で確定。
 var RUNNER_ENV_ALLOWLIST = Object.freeze(['PATH', 'PATHEXT', 'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA']);
 var RUNNER_ENV_UNVERIFIED_NECESSITY = Object.freeze(['HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA']);
+// 固定で付与する env（親 env の同名値は allowlist 外として落とし、常にこの値を使う）。認証 env は含めない。
+//   DISABLE_UPDATES：版固定の CLI が更新経路を使わないため（公式 docs：すべての更新経路を止める）。直接配置した binary での実効性は未確認
+var RUNNER_ENV_FIXED = Object.freeze({ DISABLE_UPDATES: '1' });
 var RUNNER_ENV_DENY = Object.freeze([
   /^CLAUDECODE$/i, /^CLAUDE_/i, /^ANTHROPIC_/i,
   /^(SUPABASE|NEXT_PUBLIC_SUPABASE|OPENAI|LINE_|WEB_SESSION|CAROUSEL_|RENDER_|GITHUB_|GH_|NPM_)/i,
@@ -245,6 +250,7 @@ function buildRunnerEnv(parentEnv, opts) {
     if (denied || RUNNER_ENV_ALLOWLIST.indexOf(up) === -1 || typeof val !== 'string') { dropped.push(key); continue; }
     env[key] = val;
   }
+  Object.keys(RUNNER_ENV_FIXED).forEach(function (k) { env[k] = RUNNER_ENV_FIXED[k]; });
   return { ok: true, env: env, envNames: Object.keys(env).sort(), dropped: dropped, containsCredential: Object.keys(env).some(function (k) { return k.toUpperCase() === 'ANTHROPIC_API_KEY'; }), unverifiedNecessity: RUNNER_ENV_UNVERIFIED_NECESSITY.slice() };
 }
 
@@ -252,7 +258,12 @@ function buildRunnerEnv(parentEnv, opts) {
 // input: { stage, worktreeRoot, mainRepoRoot, allowedPaths, forbiddenPaths }
 //   permission rule の path 構文（絶対 path・Windows の扱い）は 4C 未確認。Orchestrator の事後検証を正本とする。
 var SETTINGS_KEYS = ['stage', 'worktreeRoot', 'mainRepoRoot', 'allowedPaths', 'forbiddenPaths'];
-function _absRule(winPath) { return '//' + path.win32.normalize(winPath).replace(/\\/g, '/').replace(/\/+$/, '') + '/**'; }
+// Windows 絶対 path rule：公式 docs の正規化（C:\Users\alice → /c/Users/alice、絶対は //c/...）に合わせる。
+//   Unit 2a ではこの個別 deny rule の効力までは実証していない（境界の拒否は --restricted / dontAsk 下で観測したもの）。
+function _absRule(winPath) {
+  var n = path.win32.normalize(winPath).replace(/[\\\/]+$/, '');
+  return '//' + n.charAt(0).toLowerCase() + n.slice(2).replace(/\\/g, '/') + '/**';
+}
 function buildRunnerSettings(input) {
   if (!_isObj(input)) return _err('input_invalid');
   var k = _exactKeys(input, SETTINGS_KEYS, SETTINGS_KEYS);
@@ -272,7 +283,8 @@ function buildRunnerSettings(input) {
     'Edit(**/.git/**)', 'Write(**/.git/**)', 'Edit(.git)', 'Write(.git)'];
   rc.PROTECTED_PATHS.forEach(function (p) { deny.push('Edit(' + p + ')', 'Write(' + p + ')'); });
   forbidden.forEach(function (p) { var g = p.slice(-1) === '/' ? p + '**' : p; deny.push('Edit(' + g + ')', 'Write(' + g + ')'); });
-  var allow = READ_TOOLS.slice();
+  // 範囲指定のない Read / Glob / Grep の allow は置かない（作業ディレクトリ内の読取は dontAsk でも実行され、外側は allow が無いため拒否される）
+  var allow = [];
   if (pol.writes) allowed.forEach(function (p) { var g = p.slice(-1) === '/' ? p + '**' : p; allow.push('Edit(' + g + ')', 'Write(' + g + ')'); });
   else deny.push('Edit', 'Write');
   return _freezeDeep({ ok: true, settings: { permissions: { defaultMode: PERMISSION_MODE, allow: allow, deny: deny } }, pathRuleSyntaxUnverified: true });
@@ -294,6 +306,8 @@ function validateRunnerSettings(settings, stage) {
   else {
     if (p.allow.some(function (r) { return /^(Bash|WebFetch|WebSearch|Agent|mcp__)/.test(r); })) e.push('dangerous_allow_rule');
     if (!pol.writes && p.allow.some(function (r) { return /^(Edit|Write)/.test(r); })) e.push('write_rule_in_read_stage');
+    if (p.allow.some(function (r) { return /^(Read|Glob|Grep)(\(|$)/.test(r); })) e.push('read_allow_rule_forbidden');       // 外側の読取を許可し得る allow は置かない
+    if (p.allow.some(function (r) { return /^(Edit|Write)$/.test(r); })) e.push('unscoped_write_allow');                  // Edit / Write は path 指定のみ
     ['Bash', 'WebFetch', 'WebSearch', 'Agent'].forEach(function (t) { if (p.deny.indexOf(t) === -1) e.push('deny_missing:' + t); });
   }
   return { ok: e.length === 0, errors: e };
@@ -692,6 +706,7 @@ module.exports = {
   FORBIDDEN_FLAGS: FORBIDDEN_FLAGS,
   PERMISSION_MODE: PERMISSION_MODE,
   RUNNER_ENV_ALLOWLIST: RUNNER_ENV_ALLOWLIST,
+  RUNNER_ENV_FIXED: RUNNER_ENV_FIXED,
   ASSUMED_ENVELOPE_FIELDS: ASSUMED_ENVELOPE_FIELDS,
   RUNNER_MAX_INVOCATIONS: RUNNER_MAX_INVOCATIONS,
   buildOutputSchema: buildOutputSchema,
