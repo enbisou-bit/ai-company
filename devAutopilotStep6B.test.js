@@ -112,6 +112,12 @@ const H64 = (c) => c.repeat(64);
     fs.mkdirSync(REPO); fs.mkdirSync(AUDIT); fs.mkdirSync(path.join(AUDIT, 'permits')); fs.mkdirSync(WT_ROOT);
     fixtureGit(REPO, ['init', '-q', '-b', 'main']);
     fixtureGit(REPO, ['config', 'user.name', 'devautopilot-fixture']); fixtureGit(REPO, ['config', 'user.email', 'devautopilot-fixture@example.invalid']); fixtureGit(REPO, ['config', 'commit.gpgsign', 'false']);
+    // Permit の repo identity は remote を必須とする（条件は緩めない）。fixture 用の到達不能な URL を設定するだけで fetch / push はしない
+    fixtureGit(REPO, [
+      'config',
+      'remote.origin.url',
+      'https://example.invalid/fixture/repo.git'
+    ]);
     rc.PROTECTED_PATHS.forEach(function (f) { fs.mkdirSync(path.dirname(path.join(REPO, f)), { recursive: true }); fs.writeFileSync(path.join(REPO, f), '{"fixture":"' + f + '"}\n'); });
     fs.mkdirSync(path.join(REPO, 'docs')); fs.writeFileSync(path.join(REPO, 'docs', 'guide.md'), '# guide\n');
     fixtureGit(REPO, ['add', '--', 'docs/guide.md', 'cost-logs.json', 'data/conversations/_meta.json']);   // 一部だけ tracked（本物と同じく残りは untracked）
