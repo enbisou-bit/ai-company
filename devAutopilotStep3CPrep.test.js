@@ -25,16 +25,24 @@ const PROTECTED_FILES = ['cost-logs.json', 'data/conversations/_meta.json', 'cla
   'data/conversations/user-cont-1_line_web.json', 'data/conversations/user-cont-2_line_estimate.json',
   'data/conversations/user-cont-3_line_leader.json', 'data/conversations/user-cont-4_line_video.json'];
 function md5(buf) { return crypto.createHash('md5').update(buf).digest('hex'); }
+// 実行場所（main / 隔離 worktree）は .git の構造だけで判定する（環境変数では切り替えない）。
+//   固定基準（fingerprint d1fd4bd36f69）の検証は常に main 側で行い、worktree で実行した場合は worktree 側の Protected も別に検証する
+const pc = require('./tools/devAutopilot/protectedCheck');
+const LAYOUT = pc.detectLayout(ROOT);
+const MAIN_ROOT = LAYOUT.mode === 'worktree' ? LAYOUT.mainRoot : ROOT;
 function protectedFingerprint() {
-  try { return md5(PROTECTED_FILES.map(function (f) { return md5(fs.readFileSync(path.join(ROOT, f))) + ' *' + f + '\n'; }).join('')).slice(0, 12); }
+  try { return md5(PROTECTED_FILES.map(function (f) { return md5(fs.readFileSync(path.join(MAIN_ROOT, f))) + ' *' + f + '\n'; }).join('')).slice(0, 12); }
   catch (e) { return 'unreadable:' + e.code; }
 }
 const fpBefore = protectedFingerprint();
+const protectedSnapBefore = pc.snapshot(ROOT);
 // Z-54: 本物の .autopilot（Permit root・Step 3C の audit artifact を含む）をこのテストが変更しないことの snapshot。
 //   監視範囲は <repo の親>\.autopilot 配下全体。Step 3C 以降は consumed Permit 等が意図的に残置されているため「存在しないこと」は前提にしない。
 //   比較するのは相対 path・種別・size・内容の sha256 だけ（Permit 本文は出力しない）。atime / mtime は同一性の条件にしない。
 //   link / junction・特殊ファイル・読取失敗は「変更なし」とみなさず snapshot 失敗（ok:false）とする。
-const REAL_AUTOPILOT_ROOT = path.join(path.dirname(ROOT), '.autopilot');
+//   worktree で実行した場合、監視先は main の親の .autopilot（worktree 自身 = 実行中の test の作業場所は除外し、差分は git status で検証する）
+const REAL_AUTOPILOT_ROOT = path.join(path.dirname(MAIN_ROOT), '.autopilot');
+const SNAPSHOT_EXCLUDE = LAYOUT.mode === 'worktree' ? path.resolve(ROOT).toLowerCase() : null;
 function snapshotTree(root) {
   const res = { ok: true, exists: false, entries: [], errors: [] };
   let st;
@@ -51,7 +59,7 @@ function snapshotTree(root) {
       let s;
       try { s = fs.lstatSync(p); } catch (e) { res.ok = false; res.errors.push('lstat:' + r + ':' + e.code); return; }
       if (s.isSymbolicLink()) { res.ok = false; res.errors.push('link:' + r); return; }
-      if (s.isDirectory()) { res.entries.push({ path: r, type: 'dir' }); walk(p, r); return; }
+      if (s.isDirectory()) { res.entries.push({ path: r, type: 'dir' }); if (SNAPSHOT_EXCLUDE !== null && path.resolve(p).toLowerCase() === SNAPSHOT_EXCLUDE) return; walk(p, r); return; }
       if (!s.isFile()) { res.ok = false; res.errors.push('special:' + r); return; }
       let h;
       try { h = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); } catch (e) { res.ok = false; res.errors.push('read:' + r + ':' + String(e.code || 'blocked')); return; }
@@ -126,7 +134,9 @@ function gitRead(args) {
 }
 function realSnapshot() {
   const st = exe.readRepoState(ROOT);
-  return { st: st, origin: gitRead(['rev-parse', 'origin/main']).trim(), fp: protectedFingerprint() };
+  // worktree で実行した場合は main repo の状態も read-only で取る（main 側の不変も検証する）
+  const mainSt = LAYOUT.mode === 'worktree' ? exe.readRepoState(MAIN_ROOT) : null;
+  return { st: st, mainSt: mainSt, origin: gitRead(['rev-parse', 'origin/main']).trim(), fp: protectedFingerprint() };
 }
 function cleanupSandbox(p) {
   if (typeof p !== 'string' || path.resolve(p).toLowerCase() !== path.resolve(SANDBOX).toLowerCase()) return { ok: false, error: 'not_exact_sandbox' };
@@ -156,6 +166,7 @@ const collected = [];   // secret / raw URL の漏洩確認用に result を集�
     caseHeader('0. 前提');
     realBefore = realSnapshot();
     assert(realBefore.st.ok && realBefore.fp === 'd1fd4bd36f69', '0-1. 本物の repo を read-only 実測（Protected ' + realBefore.fp + '）');
+    assert(LAYOUT.mode === 'main' || (LAYOUT.mode === 'worktree' && realBefore.mainSt && realBefore.mainSt.ok), '0-1b. 実行場所を .git の構造で判定（' + LAYOUT.mode + '）・不明なら失敗');
     assert(!insideDir(SANDBOX, ROOT) && insideDir(SANDBOX, os.tmpdir()), '0-2. sandbox は OS temp 配下で本物の repo の外');
 
     caseHeader('H. Canonical Status Hash');
@@ -409,6 +420,12 @@ const collected = [];   // secret / raw URL の漏洩確認用に result を集�
       assert(realBefore && after.st.head === realBefore.st.head && after.origin === realBefore.origin, 'Z-55. 本物の repo の HEAD / origin/main 不変');
       assert(realBefore && after.st.autopilotStatusHash === realBefore.st.autopilotStatusHash && after.st.displayStatusHash === realBefore.st.displayStatusHash, 'Z-56. autopilotStatusHash / displayStatusHash 不変');
       assert(after.fp === fpBefore && after.fp === 'd1fd4bd36f69', 'Z-57. Protected fingerprint 不変（' + after.fp + '）');
+      // 実行場所ごとの Protected 検証：main は開始時と同じ（固定基準は Z-57）・worktree は main 側の不変＋tracked の存在と不変・untracked の不在
+      const psAfter = pc.snapshot(ROOT);
+      const pv = pc.verify(protectedSnapBefore, psAfter, LAYOUT.mode === 'worktree' ? protectedSnapBefore.main : protectedSnapBefore.root);
+      assert(pv.ok && pc.fingerprint(LAYOUT.mode === 'worktree' ? psAfter.main : psAfter.root) === 'd1fd4bd36f69', 'Z-57b. Protected（' + pv.mode + '）の開始時・終了時の検証' + (pv.ok ? '' : '（' + pv.reasons.join(',') + '）'));
+      assert(LAYOUT.mode !== 'worktree' || (after.mainSt && after.mainSt.ok && after.mainSt.head === realBefore.mainSt.head && after.mainSt.autopilotStatusHash === realBefore.mainSt.autopilotStatusHash),
+        'Z-56b. worktree で実行した場合は main repo の HEAD・autopilotStatusHash も不変');
       assert(realBefore && after.st.branchRefs.length === realBefore.st.branchRefs.length && after.st.worktreeCount === realBefore.st.worktreeCount, 'Z-58. branch 数 / worktree 数 不変（' + after.st.branchRefs.length + ' / ' + after.st.worktreeCount + '）');
       assert(violations.length === 0, 'Z-59. sandbox 違反 0（network / sandbox 外 fs write / 危険 module / .env 読込）' + (violations.length ? ' ' + violations.join(',') : ''));
       assert(JSON.stringify(Object.keys(process.env).sort()) === envKeysBefore, 'Z-60. process.env を変更していない');

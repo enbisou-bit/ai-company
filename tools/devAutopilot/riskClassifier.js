@@ -59,6 +59,8 @@ var SAFETY_FOUNDATION_PATHS = Object.freeze([
   'tools/devAutopilot/auditGuard.js',
   'tools/devAutopilot/orchestrator.js',
   'tools/devAutopilot/testRunner.js',
+  'tools/devAutopilot/protectedCheck.js',
+  'tools/devAutopilot/runAutopilot.js',
 ]);
 
 // 提供者・課金・認可境界に関わる既存ファイル（architecture boundary）。

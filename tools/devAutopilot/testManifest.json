@@ -700,7 +700,8 @@
         "files": [
           "tools/devAutopilot/riskClassifier.js",
           "tools/devAutopilot/testSelector.js",
-          "tools/devAutopilot/testManifest.json"
+          "tools/devAutopilot/testManifest.json",
+          "tools/devAutopilot/protectedCheck.js"
         ],
         "npm": []
       }
@@ -711,7 +712,8 @@
       "reason": "sandbox（network・env・危険 module を遮断し、fs write は OS temp に作った自分の sandbox directory の内側だけ許可）＋ Protected hash 確認。Autopilot Step 2（runStore / State Machine）自身の test。自分の sandbox の後片付け失敗・残存は FAIL として報告する",
       "deps": {
         "files": [
-          "tools/devAutopilot/runStore.js"
+          "tools/devAutopilot/runStore.js",
+          "tools/devAutopilot/protectedCheck.js"
         ],
         "npm": []
       }
@@ -724,7 +726,8 @@
         "files": [
           "tools/devAutopilot/worktreeController.js",
           "tools/devAutopilot/runStore.js",
-          "tools/devAutopilot/testManifest.json"
+          "tools/devAutopilot/testManifest.json",
+          "tools/devAutopilot/protectedCheck.js"
         ],
         "npm": []
       }
@@ -738,7 +741,8 @@
           "tools/devAutopilot/realRepoPermit.js",
           "tools/devAutopilot/worktreeExecutor.js",
           "tools/devAutopilot/worktreeController.js",
-          "tools/devAutopilot/runStore.js"
+          "tools/devAutopilot/runStore.js",
+          "tools/devAutopilot/protectedCheck.js"
         ],
         "npm": []
       }
@@ -753,7 +757,8 @@
           "tools/devAutopilot/worktreeController.js",
           "tools/devAutopilot/riskClassifier.js",
           "tools/devAutopilot/testSelector.js",
-          "tools/devAutopilot/testManifest.json"
+          "tools/devAutopilot/testManifest.json",
+          "tools/devAutopilot/protectedCheck.js"
         ],
         "npm": []
       }
@@ -769,7 +774,8 @@
           "tools/devAutopilot/claudeExecutor.js",
           "tools/devAutopilot/claudeRunner.js",
           "tools/devAutopilot/riskClassifier.js",
-          "tools/devAutopilot/worktreeController.js"
+          "tools/devAutopilot/worktreeController.js",
+          "tools/devAutopilot/protectedCheck.js"
         ],
         "npm": []
       }
@@ -791,7 +797,9 @@
           "tools/devAutopilot/claudeExecutor.js",
           "tools/devAutopilot/claudeRunner.js",
           "tools/devAutopilot/riskClassifier.js",
-          "tools/devAutopilot/worktreeController.js"
+          "tools/devAutopilot/worktreeController.js",
+          "tools/devAutopilot/protectedCheck.js",
+          "tools/devAutopilot/runAutopilot.js"
         ],
         "npm": []
       }

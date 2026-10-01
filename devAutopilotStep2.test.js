@@ -30,15 +30,10 @@ const PROTECTED_BASELINE = {
   'data/conversations/user-cont-4_line_video.json': '12ab03f1cc7d686de163ae4483b01c54',
 };
 const PROTECTED_FILES = Object.keys(PROTECTED_BASELINE);
-function hashProtected() {
-  const out = {};
-  PROTECTED_FILES.forEach(function (rel) {
-    try { out[rel] = crypto.createHash('md5').update(fs.readFileSync(path.join(ROOT, rel))).digest('hex'); }
-    catch (e) { out[rel] = 'unreadable:' + e.code; }
-  });
-  return out;
-}
-const protectedBefore = hashProtected();
+// Protected の検証は共通 helper（main：固定基準と開始時・終了時とも一致／隔離 worktree：main 側の固定基準＋worktree 側の tracked 存在・不変と untracked 不在）。
+// 実行場所は .git の構造だけで判定し、環境変数では切り替えない（tools/devAutopilot/protectedCheck.js）
+const pc = require('./tools/devAutopilot/protectedCheck');
+const protectedBefore = pc.snapshot(ROOT);
 
 // ── OS temp の sandbox directory（blocker 導入前に作成）──
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'devAutopilotStep2-'));
@@ -431,8 +426,8 @@ function withCommitEvidence(run0) {
 
   caseHeader('P. Protected 10件 hash 不変・sandbox 違反 0・repo に runtime file なし');
   {
-    const after = hashProtected();
-    assert(PROTECTED_FILES.every(function (f) { return protectedBefore[f] === PROTECTED_BASELINE[f] && after[f] === PROTECTED_BASELINE[f]; }), 'P-1. Protected 10件の hash が開始時・終了時とも baseline 一致');
+    const pv = pc.verify(protectedBefore, pc.snapshot(ROOT), PROTECTED_BASELINE);
+    assert(pv.ok && PROTECTED_FILES.length === 10, 'P-1. Protected 10件の hash が開始時・終了時とも baseline 一致（' + pv.mode + (pv.ok ? '' : ' ' + pv.reasons.join(',')) + '）');
     assert(violations.length === 0, 'P-2. sandbox 違反 0（network / DB / provider / repo への fs write / env file）');
     let runsInRepo = true; try { fs.statSync(path.join(ROOT, 'runs')); } catch (e) { runsInRepo = false; }
     let tmpInRepo = true; try { fs.statSync(path.join(ROOT, 'tmp-runtime')); } catch (e) { tmpInRepo = false; }

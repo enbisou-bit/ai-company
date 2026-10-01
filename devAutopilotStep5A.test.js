@@ -27,15 +27,10 @@ const PROTECTED_BASELINE = {
   'data/conversations/user-cont-4_line_video.json': '12ab03f1cc7d686de163ae4483b01c54',
 };
 const PROTECTED_FILES = Object.keys(PROTECTED_BASELINE);
-function hashProtected() {
-  const out = {};
-  PROTECTED_FILES.forEach(function (rel) {
-    try { out[rel] = crypto.createHash('md5').update(fs.readFileSync(path.join(ROOT, rel))).digest('hex'); }
-    catch (e) { out[rel] = 'unreadable:' + e.code; }
-  });
-  return out;
-}
-const protectedBefore = hashProtected();
+// Protected の検証は共通 helper（main：固定基準と開始時・終了時とも一致／隔離 worktree：main 側の固定基準＋worktree 側の tracked 存在・不変と untracked 不在）。
+// 実行場所は .git の構造だけで判定し、環境変数では切り替えない（tools/devAutopilot/protectedCheck.js）
+const pc = require('./tools/devAutopilot/protectedCheck');
+const protectedBefore = pc.snapshot(ROOT);
 
 // ── sandbox（network / env file / fs write / module）──
 function blockedNetwork(name) { return function () { violations.push('network:' + name); throw new Error('SANDBOX_BLOCKED_NETWORK:' + name); }; }
@@ -959,8 +954,8 @@ const SNAP = { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD,
 
   caseHeader('Z. Protected 10件 hash 不変・sandbox 違反 0・env 不変');
   {
-    const after = hashProtected();
-    assert(PROTECTED_FILES.every(function (f) { return protectedBefore[f] === PROTECTED_BASELINE[f] && after[f] === PROTECTED_BASELINE[f]; }), 'Z-1. Protected 10件の hash が開始時・終了時とも baseline 一致');
+    const pv = pc.verify(protectedBefore, pc.snapshot(ROOT), PROTECTED_BASELINE);
+    assert(pv.ok && PROTECTED_FILES.length === 10, 'Z-1. Protected 10件の hash が開始時・終了時とも baseline 一致（' + pv.mode + (pv.ok ? '' : ' ' + pv.reasons.join(',')) + '）');
     assert(violations.length === 0, 'Z-2. sandbox 違反 0（network / fs write / child_process / env file）' + (violations.length ? ' ' + violations.join(',') : ''));
     assert(JSON.stringify(Object.keys(process.env).sort().map(function (k) { return [k, process.env[k]]; })) === envSnapshotBefore, 'Z-3. process.env を変更していない');
   }

@@ -28,15 +28,10 @@ const PROTECTED_BASELINE = {
   'data/conversations/user-cont-4_line_video.json': '12ab03f1cc7d686de163ae4483b01c54',
 };
 const PROTECTED_FILES = Object.keys(PROTECTED_BASELINE);
-function hashProtected() {
-  const out = {};
-  PROTECTED_FILES.forEach(function (rel) {
-    try { out[rel] = crypto.createHash('md5').update(fs.readFileSync(path.join(ROOT, rel))).digest('hex'); }
-    catch (e) { out[rel] = 'unreadable:' + e.code; }
-  });
-  return out;
-}
-const protectedBefore = hashProtected();
+// Protected の検証は共通 helper（main：固定基準と開始時・終了時とも一致／隔離 worktree：main 側の固定基準＋worktree 側の tracked 存在・不変と untracked 不在）。
+// 実行場所は .git の構造だけで判定し、環境変数では切り替えない（tools/devAutopilot/protectedCheck.js）
+const pc = require('./tools/devAutopilot/protectedCheck');
+const protectedBefore = pc.snapshot(ROOT);
 
 // ── sandbox（network / env file / fs write / module）──
 function blockedNetwork(name) { return function () { violations.push('network:' + name); throw new Error('SANDBOX_BLOCKED_NETWORK:' + name); }; }
@@ -629,14 +624,97 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
   caseHeader('F. Safety Foundation');
   {
     const cls = (p) => rc.classifyDevelopmentChange({ allowedPaths: ['tools/'], files: [{ path: p, status: 'modified', addedLines: ['var a = 1;'] }] }).classification;
-    assert(['orchestrator.js', 'humanApproval.js', 'approveCli.js', 'auditGuard.js', 'observers.js', 'testRunner.js', 'claudeExecutor.js', 'runStore.js', 'realRepoPermit.js', 'worktreeExecutor.js', 'transcriptCheck.js']
+    assert(['orchestrator.js', 'humanApproval.js', 'approveCli.js', 'auditGuard.js', 'observers.js', 'testRunner.js', 'claudeExecutor.js', 'runStore.js', 'realRepoPermit.js', 'worktreeExecutor.js', 'transcriptCheck.js', 'protectedCheck.js', 'runAutopilot.js']
       .every((f) => cls('tools/devAutopilot/' + f) === rc.CLASS.HUMAN) && cls('tools/devAutopilot/reportFormat.js') === rc.CLASS.AUTO, 'F-1. Runner 本体・承認管理・監査・Orchestrator の変更は Human 判断');
+  }
+
+  caseHeader('W. Protected 検証 helper（main は固定基準・worktree は main 側の固定基準＋存在区別と不変）');
+  {
+    const PCH = require('./tools/devAutopilot/protectedCheck');
+    const real = PCH.snapshot(ROOT);
+    assert(real.layout.mode === 'main' && PCH.verify(real, PCH.snapshot(ROOT), PROTECTED_BASELINE).ok && PCH.fingerprint(real.root) === 'd1fd4bd36f69'
+      && !PCH.verify(real, real, Object.assign({}, PROTECTED_BASELINE, { 'cost-logs.json': '0'.repeat(32) })).ok, 'W-1. 本物の repo（main）：固定基準と一致すれば ok・基準と違えば失敗（従来と同じ検証）');
+    // 偽 fs 上の main repo と linked worktree（Protected の内容は人工値）
+    const M = 'C:\\pc\\main', WT = 'C:\\pc\\.autopilot\\wt\\task-pc';
+    const build = (o) => {
+      const mf = memFs(), x = o || {};
+      mf.put(M + '\\.git\\HEAD', 'ref: refs/heads/main\n'); mf.mkdirSync(M + '\\.git\\worktrees\\task-pc');
+      mf.put(M + '\\.git\\worktrees\\task-pc\\gitdir', (x.backlink || WT.split('\\').join('/') + '/.git') + '\n');
+      mf.put(M + '\\.git\\worktrees\\task-pc\\commondir', '../..\n');
+      mf.put(WT + '\\.git', 'gitdir: ' + M.split('\\').join('/') + '/.git/worktrees/task-pc\n');
+      PCH.PROTECTED_PATHS.forEach((f) => mf.put(M + '\\' + f.split('/').join('\\'), 'main:' + f));
+      PCH.TRACKED_PROTECTED.forEach((f) => { if (!(x.dropTracked === f)) mf.put(WT + '\\' + f.split('/').join('\\'), 'head:' + f); });
+      if (x.addUntracked) mf.put(WT + '\\' + x.addUntracked.split('/').join('\\'), 'leak');
+      return mf;
+    };
+    const md5 = (s) => crypto.createHash('md5').update(s).digest('hex');
+    const BASE = {}; PCH.PROTECTED_PATHS.forEach((f) => { BASE[f] = md5('main:' + f); });
+    const run = (mf, mutate) => { const b = PCH.snapshot(WT, { fs: mf }); if (mutate) mutate(mf); return PCH.verify(b, PCH.snapshot(WT, { fs: mf }), BASE); };
+    const okv = run(build());
+    assert(PCH.detectLayout(WT, { fs: build() }).mode === 'worktree' && PCH.detectLayout(WT, { fs: build() }).mainRoot.toLowerCase() === M.toLowerCase() && okv.ok && okv.mode === 'worktree',
+      'W-2. worktree：.git の構造から main を特定し、main 側の固定基準・tracked の存在と不変・untracked の不在を満たせば ok');
+    const bad = [
+      ['main_mismatch', run(build(), (mf) => mf.put(M + '\\cost-logs.json', 'changed'))],
+      ['worktree_tracked_missing_or_changed', run(build({ dropTracked: 'cost-logs.json' }))],
+      ['worktree_tracked_missing_or_changed', run(build(), (mf) => mf.put(WT + '\\cost-logs.json', 'changed'))],
+      ['worktree_untracked_present_or_unreadable', run(build({ addUntracked: 'claude-cost-logs.json' }))],
+      ['layout_unknown', run(build({ backlink: 'C:/other/.git' }))],
+      ['main_mismatch', run(build(), (mf) => mf.unlinkSync(M + '\\claude-quality-history.json'))],
+    ];
+    assert(bad.every((b) => !b[1].ok && b[1].reasons.some((r) => r.indexOf(b[0]) === 0)), 'W-3. main の変更・tracked の欠落 / 変更・untracked の混入・逆参照の不一致・main 側の欠落はすべて失敗（欠落を正常扱いしない）');
+    const unk = memFs(); unk.mkdirSync('C:\\pc\\none');
+    const src = String(require('fs').readFileSync(path.join(ROOT, 'tools', 'devAutopilot', 'protectedCheck.js'), 'utf8'));
+    assert(PCH.verify(PCH.snapshot('C:\\pc\\none', { fs: unk }), PCH.snapshot('C:\\pc\\none', { fs: unk }), BASE).reasons[0].indexOf('layout_unknown') === 0
+      && src.indexOf('process.env') === -1 && src.indexOf('copyFile') === -1 && src.indexOf('writeFile') === -1, 'W-4. .git が無い等の不明な実行場所は失敗・環境変数で切り替える入口なし・Protected を copy / 作成しない');
+  }
+
+  caseHeader('N. 実接続用の入口（起動前の停止・既定は事前確認のみ・差し替えで確認）');
+  {
+    const ra = require('./tools/devAutopilot/runAutopilot');
+    const entryDeps = (w, extra) => Object.assign({
+      repoPath: REPO, auditRoot: AUDIT, worktreeRoot: WT_ROOT, store: w.store, auditFs: w.mf, approvalStore: { root: AUDIT, fs: w.mf }, permitStore: { root: AUDIT + '\\permits', repoPath: REPO },
+      fs: w.mf, git: Object.assign({ validateGitAvailable: () => ({ ok: true, version: 'git version 2.54.0' }) }, w.ctx.deps.git), permit: w.ctx.deps.permit, observers: w.ctx.deps.observers,
+      detectLayout: () => ({ mode: 'main', mainRoot: REPO }), orchestrator: orch, makeSpawn: () => { w.state.madeSpawn = (w.state.madeSpawn || 0) + 1; return w.ctx.deps.spawn; },
+      selectTests: w.ctx.deps.selectTests, readWorktreeLines: w.ctx.deps.readWorktreeLines, clock: () => new Date().toISOString(), randomUUID: w.ctx.deps.randomUUID, sleep: async () => {},
+      parentEnv: w.ctx.parentEnv, pid: 21,
+    }, extra || {});
+    const BF = 'C:\\enbisou-s4d-fake\\build.json';
+    const argv = (w, extra) => ['--task-id', w.taskId, '--permit-id', w.permitId, '--run-approval-id', U(900), '--exe', CLI.exePath, '--cli-version', CLI.cliVersion, '--build-file', BF].concat(extra || []);
+    const prep = (taskId, opts) => { const w = setupWorld(taskId, opts); w.mf.put(BF, JSON.stringify(BUILDS)); return w; };
+    const io = () => { const out = []; return { out: out, io: { write: (s) => out.push(s) } }; };
+    const untouched = (w, before) => runOf(w).revision === before.revision && runOf(w).lock === null && w.mf.has(AUDIT + '\\permits\\' + w.permitId + '.json') && !w.state.spawned && !w.state.madeSpawn;
+    const cases = [];
+    const add = async (label, w, args, extraDeps, code) => { const b = runOf(w); const o = io(); const c = await ra.main(args, o.io, entryDeps(w, extraDeps)); cases.push({ label: label, ok: c === 3 && untouched(w, b) && o.out.join('').indexOf(code) !== -1 }); };
+    const w0 = prep('task-6a-090'); await add('args', w0, ['--task-id', w0.taskId, '--start'], null, 'args_missing');
+    const w1 = prep('task-6a-091'); w1.state.origin = OTHER; await add('origin', w1, argv(w1, ['--start']), null, 'head_not_equal_origin_main');
+    const w2 = prep('task-6a-092', { soPolicy: { mode: 'conditional', exeSha256: CLI.exeSha256, cliVersion: CLI.cliVersion } }); await add('so', w2, argv(w2, ['--start']), null, 'structured_output_policy_not_adopted');
+    const w3 = prep('task-6a-093'); await add('exe', w3, argv(w3, ['--start']), { observers: Object.assign({}, w3.ctx.deps.observers, { hashFile: () => H64('b') }) }, 'cli_exe_mismatch');
+    const w4 = prep('task-6a-094'); await add('cliv', w4, ['--task-id', w4.taskId, '--permit-id', w4.permitId, '--run-approval-id', U(900), '--exe', CLI.exePath, '--cli-version', '2.1.169 (Claude Code)', '--build-file', BF, '--start'], null, 'cli_version_mismatch');
+    const w5 = prep('task-6a-095'); await add('approval', w5, ['--task-id', w5.taskId, '--permit-id', w5.permitId, '--run-approval-id', U(901), '--exe', CLI.exePath, '--cli-version', CLI.cliVersion, '--build-file', BF, '--start'], null, 'run_approval_unavailable');
+    const w6 = prep('task-6a-096'); w6.mf.renameSync(AUDIT + '\\permits\\' + w6.permitId + '.json', AUDIT + '\\permits\\' + w6.permitId + '.consumed.json');
+    { const b = runOf(w6); const o = io(); const c = await ra.main(argv(w6, ['--start']), o.io, entryDeps(w6)); cases.push({ label: 'permit', ok: c === 3 && o.out.join('').indexOf('permit_missing') !== -1 && runOf(w6).revision === b.revision && !w6.state.spawned }); }
+    const w7 = prep('task-6a-097'); await add('layout', w7, argv(w7, ['--start']), { detectLayout: () => ({ mode: 'worktree', mainRoot: REPO }) }, 'not_main_repo');
+    const w8 = prep('task-6a-098'); w8.mf.put(BF, JSON.stringify(Object.assign({}, BUILDS, { implementing: Object.assign({}, BUILD, { allowedPaths: ['server.js'] }) })));
+    await add('build', w8, argv(w8, ['--start']), null, 'build_file_shape');
+    const w9 = prep('task-6a-099'); await add('mainstate', w9, argv(w9, ['--start']), { observers: Object.assign({}, w9.ctx.deps.observers, { observeMain: () => Object.assign({ head: HEAD, originMain: HEAD, currentBranch: 'main', stagedCount: 0 }, MAIN_OK, { autopilotStatusHash: 'ec4ea8f0a985' }) }) }, 'main_state_mismatch');
+    assert(cases.length === 10 && cases.every((x) => x.ok), 'N-1. 引数不足・HEAD≠origin/main・StructuredOutput 方針≠block・exe / 版の不一致・承認なし・Permit 消費済み・main repo 以外・build 不正・main 状態不一致は起動前に停止（run・Permit 不変・spawn 0）'
+      + (cases.every((x) => x.ok) ? '' : ' ' + cases.filter((x) => !x.ok).map((x) => x.label).join(',')));
+    const wp = prep('task-6a-100'); const bp = runOf(wp); const op = io();
+    const cp0 = await ra.main(argv(wp), op.io, entryDeps(wp));
+    assert(cp0 === 0 && untouched(wp, bp) && op.out.join('').indexOf('事前確認のみ') !== -1, 'N-2. --start なしは事前確認だけ（read-only・spawn を用意しない・run / Permit 不変）');
+    const ws = prep('task-6a-101', { noAutoTestApproval: true }); const os2 = io();
+    const cs = await ra.main(argv(ws, ['--start']), os2.io, entryDeps(ws));
+    assert(cs === 1 && ws.state.madeSpawn === 1 && ws.state.spawned === 3 && ws.state.testsRun === 0 && runOf(ws).gate === 'human_approval_required'
+      && os2.out.join('').indexOf('test_execution_approval_required') !== -1, 'N-3. --start：差し替え環境で orchestrator を 1 回起動し、test の段階で Human gate に止まる（ホストでの test 実行なし・自動 retry なし）');
+    const rsrc = String(require('fs').readFileSync(path.join(ROOT, 'tools', 'devAutopilot', 'runAutopilot.js'), 'utf8'));
+    assert(violations.length === 0 && rsrc.indexOf('writeApprovalRecord') === -1 && rsrc.indexOf("'commit'") === -1 && rsrc.indexOf('runTests:') === -1 && rsrc.indexOf('allowRealSpawn') === -1,
+      'N-4. 入口は承認を発行せず、commit・ホストでの test 実行・allowRealSpawn の経路を持たない（読込時に child_process を読まない）');
   }
 
   caseHeader('Z. Protected 10件 hash 不変・sandbox 違反 0・env 不変');
   {
-    const after = hashProtected();
-    assert(PROTECTED_FILES.every(function (f) { return protectedBefore[f] === PROTECTED_BASELINE[f] && after[f] === PROTECTED_BASELINE[f]; }), 'Z-1. Protected 10件の hash が開始時・終了時とも baseline 一致');
+    const pv = pc.verify(protectedBefore, pc.snapshot(ROOT), PROTECTED_BASELINE);
+    assert(pv.ok && PROTECTED_FILES.length === 10, 'Z-1. Protected 10件の hash が開始時・終了時とも baseline 一致（' + pv.mode + (pv.ok ? '' : ' ' + pv.reasons.join(',')) + '）');
     assert(violations.length === 0, 'Z-2. sandbox 違反 0（network / fs write / child_process / env file）' + (violations.length ? ' ' + violations.join(',') : ''));
     assert(JSON.stringify(Object.keys(process.env).sort().map(function (k) { return [k, process.env[k]]; })) === envSnapshotBefore, 'Z-3. process.env を変更していない');
   }
