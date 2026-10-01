@@ -43,6 +43,16 @@ const protectedBefore = hashProtected();
 // ── OS temp の sandbox directory（blocker 導入前に作成）──
 const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'devAutopilotStep2-'));
 const ORIG_RM = fs.rmSync;
+const ORIG_STAT = fs.statSync;
+// 例外で途中終了した場合も、このテスト自身が作った sandbox だけを後始末し、失敗として報告する（正常終了時は P-4 で検証済み）
+process.on('exit', function (code) {
+  let left = true; try { ORIG_STAT(SANDBOX); } catch (e) { left = false; }
+  if (!left) return;
+  try { ORIG_RM(SANDBOX, { recursive: true, force: true }); } catch (e) { /* 下で残存を報告 */ }
+  let still = true; try { ORIG_STAT(SANDBOX); } catch (e) { still = false; }
+  console.log('  ❌ 途中終了のため自分の sandbox を後始末（' + (still ? '残存: ' : '削除: ') + path.basename(SANDBOX) + '）');
+  if (code === 0) process.exitCode = 1;
+});
 function insideSandbox(p) {
   if (typeof p !== 'string' && !(p instanceof URL)) return false;
   const rel = path.relative(SANDBOX.toLowerCase(), path.resolve(String(p)).toLowerCase());
@@ -120,6 +130,38 @@ function advance(run, stages, startMin) {
   return r;
 }
 const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing'];
+// Stage 4D：commit 承認待ちの条件（4 stage の検証済み invocation・最後の変更以降の test 全 pass・差分 hash）を満たす run を作る
+const DIFF = 'e'.repeat(64);
+const UID = (n) => '00000000-0000-4000-8000-' + String(n).padStart(12, '0');
+function okResult() {
+  return {
+    process: { exitCode: 0, signal: null, timedOut: false, bufferExceeded: false, errorClass: null, wallMs: 1000, stdoutBytes: 10, stderrBytes: 0, termination: 'exit_event_observed' },
+    cost: { basis: rs.COST_BASIS, state: 'known', cliReportedUsd: 0.01 },
+    envelope: { parse: 'ok', isError: false, subtype: 'success', apiErrorStatus: { state: 'null', value: null }, numTurns: 1, permissionDenials: 0, modelIds: [], unlistedModelCount: 0 },
+    schema: { ok: true, errorCodes: [], structuredSource: 'structured_output' }, session: 'match', diff: { result: 'ok', reasonCodes: [], changedCount: 0 },
+    safety: { result: 'ok', reasonCodes: [] },
+    transcript: { verdict: 'ok', toolCounts: { Read: 1, Glob: 0, Grep: 0, StructuredOutput: 0, other: 0 }, unparseable: 0, outside: 0, missingResults: 0, errorResults: 0, structuredOutputComparison: 'not_present' },
+    classification: { outcome: 'ok', reasonCodes: [] }, structuredOutputSha256: null,
+  };
+}
+function invoke(run, stage, n, m) {
+  const launch = { exeSha256: 'a'.repeat(64), cliVersion: '2.1.280 (Claude Code)', argvSha256: 'b'.repeat(64), promptSha256: 'c'.repeat(64), settingsSha256: 'd'.repeat(64),
+    childVarNames: ['PATH'], timeoutMs: 1000, maxBuffer: 1000, approvalId: UID(900), approvalSha256: 'f'.repeat(64) };
+  const b = rs.beginInvocation(run, { now: at(m), invocationId: UID(100 + n), sessionId: UID(200 + n), stage: stage, launch: launch });
+  if (!b.ok) throw new Error('begin failed: ' + b.error);
+  const c = rs.completeInvocation(b.run, { now: at(m), invocationId: UID(100 + n), state: 'finished', result: okResult(), changedPaths: [] });
+  if (!c.ok) throw new Error('complete failed: ' + c.error);
+  return c.run;
+}
+function withCommitEvidence(run0) {
+  let r = rs.markIsolationVerified(run0, { now: at(0), worktreeHead: HEAD }).run, m = 1, n = 1;
+  for (const s of ALL) {
+    r = rs.transitionStage(r, s, { now: at(m++) }).run;
+    if (s === 'testing') r = rs.recordTestResults(r, { now: at(m++), batchId: UID(300), diffSha256: DIFF, results: [{ file: 'devAutopilotStep2.test.js', exitCode: 0, timedOut: false }] }).run;
+    else r = invoke(r, s, n++, m++);
+  }
+  return r;
+}
 
 (function main() {
   console.log('\n=== devAutopilotStep2.test.js (Development Autopilot V1 Step 2: runStore / State Machine) ===');
@@ -159,9 +201,12 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     assert(s4.ok && s4.run.stage === 'testing', 'ST-5. testing へ遷移');
     const s5 = rs.transitionStage(s4.run, 'reviewing', { now: at(5) });
     assert(s5.ok && s5.run.stage === 'reviewing' && s5.run.completedStages.length === 4, 'ST-6. reviewing へ遷移');
-    const s6 = rs.markAwaitingCommitApproval(s5.run, { now: at(6) });
-    assert(s6.ok && s6.run.gate === 'awaiting_commit_approval' && s6.run.completedStages.length === 5 && rs.deriveRunStatus(s6.run, { now: at(6) }) === 'awaiting_human', 'ST-7. awaiting_commit_approval（derived: awaiting_human）');
-    assert(s6.run.stageHistory.filter(function (h) { return h.result === 'completed'; }).length === 5 && s6.run.updatedAt === at(6), 'ST-7b. stageHistory と updatedAt を記録');
+    const s6bare = rs.markAwaitingCommitApproval(s5.run, { now: at(6), currentDiffSha256: DIFF, safety: 'ok' });
+    assert(!s6bare.ok && s6bare.error === 'commit_evidence_insufficient', 'ST-6b. invocation・test 記録のない run は review に到達しても commit 承認待ちにできない（Stage 4D）');
+    const ev = withCommitEvidence(r0);
+    const s6 = rs.markAwaitingCommitApproval(ev, { now: at(30), currentDiffSha256: DIFF, safety: 'ok' });
+    assert(s6.ok && s6.run.gate === 'awaiting_commit_approval' && s6.run.completedStages.length === 5 && rs.deriveRunStatus(s6.run, { now: at(30) }) === 'awaiting_human', 'ST-7. awaiting_commit_approval（derived: awaiting_human）');
+    assert(s6.run.stageHistory.filter(function (h) { return h.result === 'completed'; }).length === 5 && s6.run.updatedAt === at(30), 'ST-7b. stageHistory と updatedAt を記録');
 
     const h1 = rs.requireHumanApproval(s3.run, 'risk:human_required', { now: at(7) });
     assert(h1.ok && h1.run.gate === 'human_approval_required' && h1.run.gateReason === 'risk:human_required' && rs.deriveRunStatus(h1.run, { now: at(7) }) === 'awaiting_human', 'ST-8. human_approval_required');
@@ -374,7 +419,7 @@ const ALL = ['researching', 'designing', 'implementing', 'testing', 'reviewing']
     assert(adv.result === 'human_approval_required' && adv.reasons.indexOf('origin_advanced') !== -1, 'RS-47. origin/main が進んだ → human_approval_required');
     const locked = rs.acquireLock(testing, { now: at(50), pid: 77 }).run;
     assert(rs.validateResume(locked, good, { now: at(55) }).result === 'blocked' && rs.validateResume(locked, good, { now: at(90) }).result === 'human_approval_required', 'RS-48. active lock → blocked（二重起動防止）・stale lock → human_approval_required');
-    const done = rs.markCompletedByHuman(rs.markAwaitingCommitApproval(advance(r0, ALL), { now: at(40) }).run, { now: at(41), actor: 'human', commitHash: 'abc1234' }).run;
+    const done = rs.markCompletedByHuman(rs.markAwaitingCommitApproval(withCommitEvidence(r0), { now: at(40), currentDiffSha256: DIFF, safety: 'ok' }).run, { now: at(41), actor: 'human', commitHash: 'abc1234' }).run;
     const blockedRun = rs.blockRun(testing, 'x', { now: at(41) }).run;
     assert(rs.validateResume(done, good, opt).result === 'blocked' && rs.validateResume(blockedRun, good, opt).result === 'blocked', 'RS-49. completed / blocked の run は resume しない');
     const gateRun = rs.requireHumanApproval(testing, 'risk', { now: at(41) }).run;

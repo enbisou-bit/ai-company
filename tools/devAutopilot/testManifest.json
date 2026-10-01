@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
   "expected": {
-    "total": 67,
-    "safe": 49,
-    "conditional": 14,
+    "total": 69,
+    "safe": 50,
+    "conditional": 15,
     "forbidden": 4
   },
   "baselineSnapshot": {
@@ -770,6 +770,52 @@
           "tools/devAutopilot/claudeRunner.js",
           "tools/devAutopilot/riskClassifier.js",
           "tools/devAutopilot/worktreeController.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "devAutopilotStep6A.test.js",
+      "class": "safe",
+      "reason": "Claude CLI・API・child_process・Git・network・fs write（OS temp を含む）を冒頭で封鎖した deterministic test。git・spawn・観測・Permit・test 実行はすべて差し替え、run / 承認 / audit はメモリ上の偽 fs だけに書く。process.env は変更しない＋ Protected hash 確認。Autopilot Stage 4D（observers・humanApproval・approveCli・auditGuard・orchestrator・testRunner・StructuredOutput 条件付き判定・commit 承認待ちの条件）自身の test",
+      "deps": {
+        "files": [
+          "tools/devAutopilot/orchestrator.js",
+          "tools/devAutopilot/humanApproval.js",
+          "tools/devAutopilot/approveCli.js",
+          "tools/devAutopilot/auditGuard.js",
+          "tools/devAutopilot/observers.js",
+          "tools/devAutopilot/testRunner.js",
+          "tools/devAutopilot/runStore.js",
+          "tools/devAutopilot/transcriptCheck.js",
+          "tools/devAutopilot/claudeExecutor.js",
+          "tools/devAutopilot/claudeRunner.js",
+          "tools/devAutopilot/riskClassifier.js",
+          "tools/devAutopilot/worktreeController.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "devAutopilotStep6B.test.js",
+      "class": "conditional",
+      "reason": "child_process で実際の Git mutation（init / config / add / commit / update-ref / worktree add）を OS temp の自己所有 sandbox の temp repo だけに行い、実 Git の observers・realRepoPermit・orchestrator の隔離と 4 stage（spawn 差し替え）を確認する。Claude CLI・推論・ホストでの test 実行は使わない。Stage 4D では準備のみ・未実行",
+      "conditions": [
+        "Human-controlled development test としてのみ明示実行すること（node devAutopilotStep6B.test.js）。Autopilot Runner から自動実行しない",
+        "実行前に、対象が使い捨て temp repo だけであること・git 設定と hooks の隔離（GIT_CONFIG_GLOBAL=NUL・core.hooksPath / init.templateDir の不在）を静的確認すること",
+        "本物の repo の worktree・Permit・audit（.autopilot）を使わないこと。実行前後で本物の repo の HEAD / status hash / branch 数 / worktree 数 / Protected fingerprint が一致することを test 内で確認すること",
+        "network 0（temp repo に remote なし・fetch / push 系の command kind なし）・Claude CLI 起動なし"
+      ],
+      "deps": {
+        "files": [
+          "tools/devAutopilot/orchestrator.js",
+          "tools/devAutopilot/observers.js",
+          "tools/devAutopilot/realRepoPermit.js",
+          "tools/devAutopilot/worktreeExecutor.js",
+          "tools/devAutopilot/worktreeController.js",
+          "tools/devAutopilot/runStore.js",
+          "tools/devAutopilot/humanApproval.js",
+          "tools/devAutopilot/auditGuard.js"
         ],
         "npm": []
       }

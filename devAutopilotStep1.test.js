@@ -245,11 +245,12 @@ function hasRule(r, rule) { return r.findings.some(function (f) { return f.rule 
     assert(selected.indexOf('devAutopilotStep1.test.js') !== -1 && ts.BASELINE_TESTS.every(function (b) { return selected.indexOf(b) !== -1; }), 'SL-26. Autopilot 自身の変更 → devAutopilot*.test.js と baseline を選択');
     const selfEntry = self.selected.filter(function (s) { return s.file === 'devAutopilotStep1.test.js'; })[0];
     assert(selfEntry && selfEntry.reasons.indexOf('require_closure') !== -1 && selfEntry.reasons.indexOf('autopilot_test_mapping') !== -1, 'SL-19. 直接 require の到達でも candidate 化（require_closure）');
-    // Step 3B の integration test（devAutopilotStep3B.test.js）は conditional のため、Autopilot 自身の変更では skippedUnsafe に入り Human 実行となる
-    const selfSkipped = self.skippedUnsafe.filter(function (s) { return s.file !== 'devAutopilotStep3B.test.js' || s.classification !== 'conditional'; });
+    // Step 3B / Stage 4D（Step 6B）の integration test は conditional のため、Autopilot 自身の変更では skippedUnsafe に入り Human 実行となる
+    const CONDITIONAL_INTEGRATION = ['devAutopilotStep3B.test.js', 'devAutopilotStep6B.test.js'];
+    const selfSkipped = self.skippedUnsafe.filter(function (s) { return CONDITIONAL_INTEGRATION.indexOf(s.file) === -1 || s.classification !== 'conditional'; });
     assert(self.uncoveredFiles.length === 0 && selfSkipped.length === 0
       && (self.skippedUnsafe.length === 0 ? self.requiresHumanApproval === false : self.humanApprovalReasons.join(',') === 'unsafe_candidates_skipped'),
-      'SL-26b. Autopilot 自身の変更は safe test で網羅。skip は conditional の Step 3B integration test だけ（その場合の Human 要求理由は unsafe_candidates_skipped のみ）');
+      'SL-26b. Autopilot 自身の変更は safe test で網羅。skip は conditional の integration test（Step 3B・Step 6B）だけ（その場合の Human 要求理由は unsafe_candidates_skipped のみ）');
 
     const idx = ts.selectTests({ changedFiles: ['index.html'], manifest: manifest, repoRoot: ROOT });
     const skipped = idx.skippedUnsafe.map(function (s) { return s.file; });

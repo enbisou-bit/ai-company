@@ -62,6 +62,11 @@ var KINDS = Object.freeze({
     if (!HEAD_RE.test(p.ancestor || '') || !HEAD_RE.test(p.descendant || '')) return null;
     return ['--no-optional-locks', '-C', p.dir, 'merge-base', '--is-ancestor', p.ancestor, p.descendant];
   },
+  // Stage 4D（observers）用の read-only kind
+  showToplevel: function (p) { return ['--no-optional-locks', '-C', p.dir, 'rev-parse', '--path-format=absolute', '--show-toplevel']; },
+  statusPorcelainZ: function (p) { return ['--no-optional-locks', '-C', p.dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all']; },
+  lsFilesZ: function (p) { return ['--no-optional-locks', '-C', p.dir, 'ls-files', '-z']; },
+  originMain: function (p) { return ['--no-optional-locks', '-C', p.dir, 'rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main']; },
   verifyDevRef: function (p) {
     if (!DEV_REF_RE.test(p.ref || '')) return null;
     return ['--no-optional-locks', '-C', p.dir, 'rev-parse', '--verify', '--quiet', p.ref];

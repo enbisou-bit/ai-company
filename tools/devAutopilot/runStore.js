@@ -231,7 +231,13 @@ var TRANSCRIPT_KEYS = ['verdict', 'toolCounts', 'unparseable', 'outside', 'missi
 // StructuredOutput の入力と envelope の structured_output の正規化 JSON 比較（完全一致の確認だけ。安全性・副作用不存在の証明ではない）
 var SO_COMPARISONS = ['not_present', 'match', 'mismatch', 'not_comparable'];
 var TRANSCRIPT_VERDICTS = ['ok', 'unverified_record_unparseable', 'unverified_unknown_tool', 'unverified_tool_error', 'unverified_expected_calls_missing',
-  'outside_reference_observed', 'not_analyzed'];
+  'outside_reference_observed', 'not_analyzed',
+  // Stage 4D：StructuredOutput を Human 承認に束縛した条件付き方針で受け入れた場合だけ（既定は unverified_unknown_tool のまま）
+  'ok_structured_output_conditional'];
+var VERIFIED_VERDICTS = ['ok', 'ok_structured_output_conditional'];
+// testResults の 1 件（Orchestrator が worktree で実行した mandatory safe test の結果。出力本文は保存しない）
+var TEST_RESULT_KEYS = ['batchId', 'file', 'passed', 'exitCode', 'timedOut', 'diffSha256', 'recordedAt'];
+var TEST_FILE_RE = /^[A-Za-z0-9._-]+\.test\.js$/;
 var TOOL_COUNT_KEYS = ['Read', 'Glob', 'Grep', 'StructuredOutput', 'other'];   // 未知の tool 名は保存せず 'other' に数える
 var CLASSIFICATION_KEYS = ['outcome', 'reasonCodes'];
 var CLASSIFICATION_OUTCOMES = ['ok', 'failed', 'blocked', 'human_approval_required'];
@@ -307,6 +313,9 @@ function _resultInputErrors(r, p) {
   if (!_exactKeys(t, TRANSCRIPT_KEYS) || !_in(TRANSCRIPT_VERDICTS, t.verdict) || !_exactKeys(t.toolCounts, TOOL_COUNT_KEYS)
     || !TOOL_COUNT_KEYS.every(function (k) { return _int0(t.toolCounts[k]); })
     || !_int0(t.unparseable) || !_int0(t.outside) || !_int0(t.missingResults) || !_int0(t.errorResults) || !_in(SO_COMPARISONS, t.structuredOutputComparison)) e.push(p + 'transcript');
+  // 条件付き受け入れは StructuredOutput 1 件・hash 一致・記録の不備なしの場合だけ（'other' は implement の Edit / Write も数えるため、未知 tool の判定は transcriptCheck 側で行う）
+  else if (t.verdict === 'ok_structured_output_conditional' && (t.structuredOutputComparison !== 'match' || t.toolCounts.StructuredOutput !== 1
+    || t.unparseable || t.outside || t.missingResults || t.errorResults)) e.push(p + 'transcript_conditional_inconsistent');
   var cl = r.classification;
   if (!_exactKeys(cl, CLASSIFICATION_KEYS) || !_in(CLASSIFICATION_OUTCOMES, cl.outcome) || !_codes(cl.reasonCodes)) e.push(p + 'classification');
   if (!(r.structuredOutputSha256 === null || _sha(r.structuredOutputSha256))) e.push(p + 'structuredOutputSha256');
@@ -349,6 +358,7 @@ function _validateV2(run, e) {
   if (missing.length) e.push('missing_keys:' + missing.join(','));
   if (!_exactKeys(run.budget, BUDGET_KEYS)) e.push('budget_keys');
   if (!_int0(run.revision)) e.push('revision');
+  if (Array.isArray(run.testResults) && !run.testResults.every(_testResultOk)) e.push('test_results_format');
   if (Array.isArray(run.filesChanged) && !run.filesChanged.every(_relOk)) e.push('files_changed_format');
   // lock：pid / startedAt / heartbeatAt ＋ 任意の ownerId（UUID）。所有者として保存する経路では ownerId を必須にする
   if (run.lock !== null && _isObj(run.lock)) {
@@ -420,6 +430,12 @@ function deriveRunStatus(run, opts) {
 }
 
 // ── transitions（純関数）──────────────────────────────
+function _testResultOk(t) {
+  return _exactKeys(t, TEST_RESULT_KEYS) && typeof t.batchId === 'string' && UUID_RE.test(t.batchId) && typeof t.file === 'string' && TEST_FILE_RE.test(t.file)
+    && typeof t.passed === 'boolean' && (t.exitCode === null || Number.isInteger(t.exitCode)) && typeof t.timedOut === 'boolean'
+    && t.passed === (t.exitCode === 0 && !t.timedOut) && _sha(t.diffSha256) && _isIso(t.recordedAt);
+}
+
 function _next(run, now, mutate) {
   if (!_isIso(now)) return _err('invalid_now');
   var v = validateRunState(run);
@@ -524,18 +540,78 @@ function failRun(run, reason, opts) {
   });
 }
 
+// Stage 4D：commit 承認待ちへ進む条件（保存済みの記録から判定する。呼び出し側が渡すのは最終 Safety の結果と現在の差分 hash だけ）
+//   opts: { now, currentDiffSha256（review 後に観測した worktree 差分の正規化 hash）, safety: 'ok'（Orchestrator の最終 Safety 確認結果） }
+//   ・research / design / implement / review の各 invocation があり、すべて finished・区分 none・検証済み（未検証なし）・Safety / diff / 分類 ok
+//   ・最後の invocation が review（保存済みの review 成功）
+//   ・最後の implement 完了以降、review 完了以前に記録した最新 test batch が全 pass で、その差分 hash が currentDiffSha256 と一致
+//     （review 後に差分が変われば不可）
+function commitEvidenceErrors(r, o) {
+  var e = [];
+  if (o.safety !== 'ok') e.push('safety_not_ok');
+  if (!_sha(o.currentDiffSha256)) e.push('current_diff_hash_invalid');
+  var invs = r.invocations;
+  ['researching', 'designing', 'implementing', 'reviewing'].forEach(function (st) {
+    if (!invs.some(function (x) { return x.stage === st; })) e.push('invocation_missing:' + st);
+  });
+  invs.forEach(function (x) {
+    if (x.state !== 'finished' || !x.result || x.result.disposition !== 'none' || VERIFIED_VERDICTS.indexOf(x.result.transcript.verdict) === -1
+      || x.result.safety.result !== 'ok' || x.result.diff.result !== 'ok' || x.result.classification.outcome !== 'ok') e.push('invocation_not_verified_success:' + x.invocationId);
+  });
+  var last = invs[invs.length - 1];
+  if (!last || last.stage !== 'reviewing') e.push('last_invocation_not_review');
+  var impl = invs.filter(function (x) { return x.stage === 'implementing' && x.completedAt; }).map(function (x) { return Date.parse(x.completedAt); });
+  var implAt = impl.length ? Math.max.apply(null, impl) : null;
+  var tr = r.testResults;
+  if (!tr.length) e.push('test_results_missing');
+  else {
+    var lastBatch = tr[tr.length - 1].batchId;
+    var batch = tr.filter(function (t) { return t.batchId === lastBatch; });
+    if (!batch.every(function (t) { return t.passed; })) e.push('tests_not_all_passed');
+    if (implAt === null || batch.some(function (t) { return Date.parse(t.recordedAt) < implAt; })) e.push('tests_not_after_last_change');
+    if (last && last.completedAt && batch.some(function (t) { return Date.parse(t.recordedAt) > Date.parse(last.completedAt); })) e.push('tests_after_review');
+    if (batch.some(function (t) { return t.diffSha256 !== o.currentDiffSha256; })) e.push('diff_changed_after_tests');
+  }
+  return e;
+}
 function markAwaitingCommitApproval(run, opts) {
-  var now = _isObj(opts) ? opts.now : undefined;
-  return _next(run, now, function (r) {
+  var o = _isObj(opts) ? opts : {};
+  return _next(run, o.now, function (r) {
     var t = _requireActive(r); if (t) return t;
     if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
     var u = _unfinalized(r); if (u) return u;
     if (r.stage !== 'reviewing') return _err('review_not_reached');
+    var ce = commitEvidenceErrors(r, o);
+    if (ce.length) return _err('commit_evidence_insufficient', { errors: ce });
     r.completedStages.push('reviewing');
     var last = r.stageHistory[r.stageHistory.length - 1];
-    if (last && last.stage === 'reviewing' && last.endedAt === null) { last.endedAt = now; last.result = 'completed'; }
+    if (last && last.stage === 'reviewing' && last.endedAt === null) { last.endedAt = o.now; last.result = 'completed'; }
     r.gate = 'awaiting_commit_approval';
     r.gateReason = 'commit_requires_human';
+  });
+}
+
+// Stage 4D：testing stage で実行した mandatory safe test の結果を 1 batch として記録する（純関数）。
+//   input: { now, batchId(UUID), diffSha256（実行時の worktree 差分の正規化 hash）, results: [{ file, exitCode, timedOut }] }
+//   passed は exitCode === 0 かつ timeout なしからだけ導く（呼び出し側の申告を使わない）。
+function recordTestResults(run, input) {
+  var i = _isObj(input) ? input : {};
+  if (!_exactKeys(i, ['now', 'batchId', 'diffSha256', 'results'])) return _err('input_keys_invalid');
+  if (typeof i.batchId !== 'string' || !UUID_RE.test(i.batchId) || !_sha(i.diffSha256)) return _err('input_invalid');
+  if (!Array.isArray(i.results) || !i.results.length || i.results.length > 200) return _err('results_invalid');
+  return _next(run, i.now, function (r) {
+    var t = _requireActive(r); if (t) return t;
+    if (r.gate !== 'none') return _err('gate_pending:' + r.gate);
+    if (r.stage !== 'testing') return _err('not_testing_stage');
+    if (r.testResults.some(function (x) { return x.batchId === i.batchId; })) return _err('duplicate_batch_id');
+    var seen = {};
+    for (var k = 0; k < i.results.length; k++) {
+      var x = i.results[k];
+      if (!_exactKeys(x, ['file', 'exitCode', 'timedOut']) || typeof x.file !== 'string' || !TEST_FILE_RE.test(x.file) || seen[x.file]
+        || !(x.exitCode === null || Number.isInteger(x.exitCode)) || typeof x.timedOut !== 'boolean') return _err('result_entry_invalid');
+      seen[x.file] = true;
+      r.testResults.push({ batchId: i.batchId, file: x.file, passed: x.exitCode === 0 && !x.timedOut, exitCode: x.exitCode, timedOut: x.timedOut, diffSha256: i.diffSha256, recordedAt: i.now });
+    }
   });
 }
 
@@ -632,7 +708,7 @@ function _deriveDisposition(state, res, budgetAfter) {
   if (res.transcript.verdict === 'outside_reference_observed') return { d: 'block', why: 'transcript:outside_reference_observed' };
   if (res.classification.outcome === 'blocked') return { d: 'block', why: 'classification:blocked' };
   // 未検証（transcript が ok 以外）は失敗より優先して block（終了状態）。失敗の詳細は result.classification に保持される
-  if (res.transcript.verdict !== 'ok') return { d: 'block', why: 'unverified:' + res.transcript.verdict };
+  if (VERIFIED_VERDICTS.indexOf(res.transcript.verdict) === -1) return { d: 'block', why: 'unverified:' + res.transcript.verdict };
   if (res.classification.outcome === 'failed') return { d: 'fail', why: 'classification:failed' };
   if (res.classification.outcome === 'human_approval_required') return { d: 'human_gate', why: 'classification:human_approval_required' };
   if (res.diff.result === 'human_approval_required') return { d: 'human_gate', why: 'diff:human_approval_required' };
@@ -1115,6 +1191,9 @@ module.exports = {
   beginInvocation: beginInvocation,
   completeInvocation: completeInvocation,
   markIsolationVerified: markIsolationVerified,
+  recordTestResults: recordTestResults,
+  commitEvidenceErrors: commitEvidenceErrors,
+  VERIFIED_VERDICTS: VERIFIED_VERDICTS,
   classifyResumeDiff: classifyResumeDiff,
   WORKTREE_STAGES: WORKTREE_STAGES,
   acquireOwnership: acquireOwnership,

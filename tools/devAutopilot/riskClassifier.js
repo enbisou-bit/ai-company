@@ -41,10 +41,24 @@ var PROTECTED_PATHS = Object.freeze([
 ]);
 
 // Safety Foundation 自身の変更は人の承認を要する（Autopilot が自分の安全装置を緩めない）。
+//   Stage 4D：Runner 本体・承認管理・監査・Orchestrator も対象（Autopilot が自分の実行境界を変更する場合は Human 判断）。
 var SAFETY_FOUNDATION_PATHS = Object.freeze([
   'tools/devAutopilot/riskClassifier.js',
   'tools/devAutopilot/testSelector.js',
   'tools/devAutopilot/testManifest.json',
+  'tools/devAutopilot/runStore.js',
+  'tools/devAutopilot/claudeRunner.js',
+  'tools/devAutopilot/claudeExecutor.js',
+  'tools/devAutopilot/transcriptCheck.js',
+  'tools/devAutopilot/realRepoPermit.js',
+  'tools/devAutopilot/worktreeController.js',
+  'tools/devAutopilot/worktreeExecutor.js',
+  'tools/devAutopilot/observers.js',
+  'tools/devAutopilot/humanApproval.js',
+  'tools/devAutopilot/approveCli.js',
+  'tools/devAutopilot/auditGuard.js',
+  'tools/devAutopilot/orchestrator.js',
+  'tools/devAutopilot/testRunner.js',
 ]);
 
 // 提供者・課金・認可境界に関わる既存ファイル（architecture boundary）。

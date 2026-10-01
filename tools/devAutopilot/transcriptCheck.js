@@ -150,8 +150,36 @@ function analyzeTranscript(text, opts) {
       missingResults: st.missingResults, errorResults: st.errorResults, structuredOutputComparison: 'not_present' },
     structuredOutputCount: soInputs.length,
     structuredOutputInputSha256: soInputs.length === 1 ? canonicalSha256(soInputs[0]) : null,
+    // 条件付き判定（evaluateStructuredOutputConditional）の材料。本文は含めない
+    structuredOutputDetail: {
+      count: soInputs.length,
+      isLastToolUse: uses.length > 0 && uses[uses.length - 1].name === 'StructuredOutput',
+      resultOk: soInputs.length === 1 && uses.some(function (u) { return u.name === 'StructuredOutput' && results[u.id] && !results[u.id].isError; }),
+      otherUnknownTools: uses.filter(function (u) { return u.name !== 'StructuredOutput' && o.allowedTools.indexOf(u.name) === -1; }).length,
+      recordBad: !!recordBad, outside: st.outside, errorResults: st.errorResults, expectedMissing: expectedMissing,
+    },
     calls: calls,
   };
+}
+
+// StructuredOutput の条件付き判定（既定では使わない。呼び出し側が Human 承認に束縛された方針でだけ呼ぶ）。
+//   受け入れ条件：単一・最後の tool 呼び出し・正常な対応結果・schema 適合（envelope 側で検証済み）・envelope との正規化 hash 一致・
+//   他の未知 tool なし・記録不正 / 外側参照 / tool エラー / 期待呼び出し欠落なし。CLI 版と SHA への束縛は呼び出し側で検査する。
+//   ★ 受け入れは「記録の整合の確認」であり、安全性・副作用不存在の証明ではない。
+function evaluateStructuredOutputConditional(analysis, input) {
+  var r = [];
+  var a = _isObj(analysis) && analysis.ok ? analysis : null;
+  var i = _isObj(input) ? input : {};
+  if (!a || !_isObj(a.structuredOutputDetail)) return { accepted: false, reasons: ['analysis_unavailable'] };
+  var d = a.structuredOutputDetail;
+  if (d.count !== 1) r.push('structured_output_not_single');
+  if (!d.isLastToolUse) r.push('structured_output_not_last');
+  if (!d.resultOk) r.push('structured_output_result_not_ok');
+  if (i.schemaOk !== true) r.push('structured_output_schema_not_ok');
+  if (compareStructuredOutput(a.structuredOutputInputSha256, i.envelopeSha256, d.count) !== 'match') r.push('structured_output_hash_not_match');
+  if (d.otherUnknownTools !== 0) r.push('other_unknown_tools');
+  if (d.recordBad || d.outside || d.errorResults || d.expectedMissing) r.push('transcript_not_clean');
+  return { accepted: r.length === 0, reasons: r };
 }
 
 module.exports = {
@@ -159,5 +187,6 @@ module.exports = {
   canonicalJson: canonicalJson,
   canonicalSha256: canonicalSha256,
   compareStructuredOutput: compareStructuredOutput,
+  evaluateStructuredOutputConditional: evaluateStructuredOutputConditional,
   normPath: normPath,
 };

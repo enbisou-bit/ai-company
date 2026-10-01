@@ -18,6 +18,9 @@
 //   ★ 'exit'（プロセス終了）と 'close'（出力の回収完了）を区別する。kill 後の exit 待ち・exit 後の close 待ちとも上限付き。
 //     stdout・stderr とも上限を超えて蓄積しない（stderr は byte 数だけ数え、本文は保持しない）。
 //   ★ 終了未確認・強制終了後の子孫プロセス不明・未検証（StructuredOutput を含む未知 tool）は block。自動 retry はしない。
+//   ★ StructuredOutput は既定で未検証 block。承認の structuredOutputPolicy が同じ CLI（exe SHA・版）に束縛された 'conditional' の場合だけ、
+//     単一・最後・schema 適合・正常な対応結果・envelope との正規化 hash 一致・他の未知 tool なしを満たすときに条件付きで受け入れる。
+//   ★ 次 stage の previousOutputs 用に、検証済みの stage 出力を戻り値（メモリ上）でだけ返す。run 記録には保存しない。
 //   ★ 結果は必ず 1 回だけ返す。監視・観測・完了処理の例外と保存失敗は別の error code で返し、いずれも started の記録と lock を残す（自動再開しない）。
 //   ★ 月額プラン内限定・追加課金禁止。--max-budget-usd と承認の上限は CLI 推定値に対する停止条件であり、追加課金の許可ではない。
 //     費用は CLI 推定値として記録する（請求額・月額利用枠ではない）。
@@ -46,7 +49,18 @@ var ENTRY_STATUS = ['added', 'modified', 'deleted', 'renamed', 'untracked'];
 var APPROVAL_KIND = 'enbisou-runner-invocation-approval';
 var BILLING_SCOPE = 'monthly_plan_only_no_extra_charge';   // 月額プラン内限定・追加課金禁止（ドル上限はこれを上書きしない）
 var APPROVAL_KEYS = ['kind', 'approvalId', 'approvedBy', 'taskId', 'runStartedAt', 'mainRepoPath', 'baseHead', 'branch', 'worktreePath', 'stages',
-  'exeSha256', 'cliVersion', 'maxInvocations', 'maxBudgetUsdPerInvocation', 'billingScope', 'mainAutopilotStatusHash', 'protectedFingerprint', 'issuedAt', 'expiresAt'];
+  'exeSha256', 'cliVersion', 'maxInvocations', 'maxBudgetUsdPerInvocation', 'billingScope', 'mainAutopilotStatusHash', 'protectedFingerprint', 'issuedAt', 'expiresAt',
+  'structuredOutputPolicy'];
+// StructuredOutput の扱い（承認に束縛）：既定 'block'（未検証 block）。
+//   { mode: 'conditional', exeSha256, cliVersion } の場合だけ、同じ CLI（exe SHA・版）で条件付き判定を行う（transcriptCheck.evaluateStructuredOutputConditional）。
+//   ★ 実運転で 'conditional' を有効にする Human 判断は未採用（approveCli は 'block' しか発行しない）。
+var SO_POLICY_BLOCK = 'block';
+function _soPolicyErrors(p, c) {
+  if (p === SO_POLICY_BLOCK) return [];
+  if (!_exactKeys(p, ['mode', 'exeSha256', 'cliVersion']) || p.mode !== 'conditional') return ['approval_structured_output_policy_invalid'];
+  if (p.exeSha256 !== c.exeSha256 || p.cliVersion !== c.cliVersion) return ['approval_structured_output_policy_cli_mismatch'];
+  return [];
+}
 var MAX_APPROVAL_MS = 24 * 60 * 60 * 1000;
 // runStore の stage 名 → claudeRunner の stage 名（= runStore の sessionIds の key）
 var RUNNER_STAGE = Object.freeze({ researching: 'research', designing: 'design', implementing: 'implement', reviewing: 'review' });
@@ -96,6 +110,7 @@ function validateApproval(a, c) {
   if (typeof a.maxBudgetUsdPerInvocation !== 'number' || !isFinite(a.maxBudgetUsdPerInvocation) || a.maxBudgetUsdPerInvocation <= 0
     || typeof c.maxBudgetUsd !== 'number' || c.maxBudgetUsd > a.maxBudgetUsdPerInvocation || c.maxBudgetUsd > run.budget.capUsd - run.budget.spentUsd) e.push('approval_budget');
   if (a.billingScope !== BILLING_SCOPE) e.push('approval_billing_scope');
+  e = e.concat(_soPolicyErrors(a.structuredOutputPolicy, c));
   var em = expectedMainFromRun(run);
   if (!em) e.push('run_main_record_unusable');
   else if (a.mainAutopilotStatusHash !== em.autopilotStatusHash || a.protectedFingerprint !== em.protectedFingerprint) e.push('approval_main_mismatch');
@@ -362,7 +377,7 @@ function _run(ctx, done) {
     if (p.ownershipLost) return fail('heartbeat', 'ownership_lost_or_heartbeat_save_failed', LEFT);
     if (p.heartbeatError) return fail('heartbeat', 'heartbeat_internal_error', LEFT);
     if (p.monitorError) return fail('monitor', 'monitor_internal_error', LEFT);
-    var now, state, result, changed;
+    var now, state, result, changed, stageOutput = null;
     try {
       now = clock();
       var termination = p.spawnError !== null && p.pid === null ? 'not_started'
@@ -376,6 +391,7 @@ function _run(ctx, done) {
       var envParse = env.ok ? 'ok' : (env.error === 'stdout_over_limit' ? 'over_limit' : env.error === 'stdout_unavailable' ? 'absent' : 'invalid');
       stdout = null;
       var ov = cr.validateStageOutput(rStage, env.ok ? env.structuredOutput : null);
+      stageOutput = env.ok && ov.ok ? env.structuredOutput : null;   // 次 stage の previousOutputs 用（メモリ上で返すだけ・保存しない）
       var mainAfter; try { mainAfter = d.observeMain(); } catch (e) { mainAfter = null; }
       var wtAfter; try { wtAfter = d.observeWorktree(); } catch (e) { wtAfter = null; }
       var snap = function (w, m) { return _isObj(w) && _isObj(m) ? Object.assign({}, w, { mainAutopilotStatusHash: m.autopilotStatusHash, mainProtectedFingerprint: m.protectedFingerprint }) : null; };
@@ -394,6 +410,9 @@ function _run(ctx, done) {
       var envSoSha = env.ok && _isObj(env.structuredOutput) ? tc.canonicalSha256(env.structuredOutput) : null;
       var tsum = an.ok ? an.summary : { verdict: 'unverified_record_unparseable', toolCounts: { Read: 0, Glob: 0, Grep: 0, StructuredOutput: 0, other: 0 }, unparseable: 0, outside: 0, missingResults: 0, errorResults: 0, structuredOutputComparison: 'not_present' };
       tsum.structuredOutputComparison = an.ok ? tc.compareStructuredOutput(an.structuredOutputInputSha256, envSoSha, an.structuredOutputCount) : 'not_present';
+      // 承認に束縛された条件付き方針の場合だけ、未知 tool が StructuredOutput 1 件だけの未検証を条件付きで受け入れる（既定 'block' では変えない）
+      if (c.approval.structuredOutputPolicy !== SO_POLICY_BLOCK && tsum.verdict === 'unverified_unknown_tool'
+        && tc.evaluateStructuredOutputConditional(an, { envelopeSha256: envSoSha, schemaOk: ov.ok === true }).accepted) tsum.verdict = 'ok_structured_output_conditional';
       var cls = cr.classifyRunnerFailure({ stage: rStage, exitCode: p.exitCode, timedOut: p.timedOut, envelope: env, outputValidation: ov, postRunDiff: diff,
         budget: { capUsd: run.budget.capUsd, spentUsd: run.budget.spentUsd, invocations: invocationsBefore, maxInvocations: run.budget.maxInvocations, costUnknown: run.budget.costUnknown },
         expectedSessionId: sessionId });
@@ -438,7 +457,8 @@ function _run(ctx, done) {
       try { inv = s.run.invocations.filter(function (x) { return x.invocationId === invocationId; })[0]; } catch (e) { inv = null; }
       if (!inv || !inv.result) return fail('complete', 'complete_result_unreadable', { recordSaved: true, lockLeft: true });
       done({ ok: true, invocationId: invocationId, sessionId: sessionId, state: inv.state, disposition: inv.result.disposition, dispositionReason: inv.result.dispositionReason,
-        revision: s.run.revision, runOutcome: s.run.outcome, runGate: s.run.gate });
+        revision: s.run.revision, runOutcome: s.run.outcome, runGate: s.run.gate,
+        stageOutput: inv.result.disposition === 'none' ? stageOutput : null });
     }, function () {
       fail('complete', 'complete_internal_error', LEFT);   // 完了処理（保存前後の組み立て）の例外
     }).then(null, function () { fail('complete', 'complete_internal_error', LEFT); });
