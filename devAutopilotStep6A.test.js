@@ -222,7 +222,7 @@ function setupWorld(taskId, opts) {
     onEvent: (e) => state.events.push(e),
     deps: {
       git: git, permit: permit, observers: observers, spawn: fakeSpawn,
-      runTests: o.noRunTests ? undefined : (x) => { state.testsRun++; return { ok: true, results: x.files.map((f) => ({ file: f, exitCode: o.failTests ? 1 : 0, timedOut: false, outputBytes: 10 })) }; },
+      runTests: o.noRunTests ? undefined : (x) => { state.testsRun++; state.lastTestApproval = x.testApproval; return { ok: true, results: x.files.map((f) => ({ file: f, exitCode: o.failTests ? 1 : 0, timedOut: false, outputBytes: 10 })) }; },
       selectTests: () => ({ selected: [{ file: 'devAutopilotStep5A.test.js' }, { file: 'apiAuthBoundary.test.js' }], skippedUnsafe: [], uncoveredFiles: [], requiresHumanApproval: false, errors: [] }),
       readWorktreeLines: (run, p) => (o.linesFor ? o.linesFor(p) : ['# guide', 'updated text']),
       randomUUID: (() => { let n = 7000; return () => U(n++); })(),
@@ -505,7 +505,18 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
     assert(c3 === 0 && made.ok && made.run.stage === null && permitWritten && la.ok && la.approval.structuredOutputPolicy === 'block' && la.approval.stages.length === 4
       && good.out.join('\n').indexOf('人間であることの証明ではありません') !== -1 && good.out.join('\n').indexOf('追加課金の許可ではありません') !== -1,
       'C-2. 確認コード一致で run・Permit・実行承認（StructuredOutput=block）を作成し、操作確認の限界と課金範囲を表示');
-    assert(String(require('fs').readFileSync(path.join(ROOT, 'tools', 'devAutopilot', 'approveCli.js'), 'utf8')).indexOf("'conditional'") === -1, 'C-3. approveCli は StructuredOutput の条件付き方針を発行しない');
+    // Decision 121：StructuredOutput の条件付き受け入れは --structured-output conditional を明示した場合だけ・承認する CLI（exe SHA・版）に束縛
+    const mfc = memFs(); mfc.mkdirSync(AUDIT); mfc.mkdirSync(AUDIT + '\\permits');
+    const depsC = Object.assign(deps(HEAD), { store: { runtimeRoot: AUDIT, repoPath: REPO, fs: mfc }, approvalStore: { root: AUDIT, fs: mfc } });
+    const argvC = argv.map((x) => (x === 'task-6a-040' ? 'task-6a-041' : x));
+    const cond = mk(true, '01234-56789');
+    const c4 = await cli.main(argvC.concat(['--structured-output', 'conditional']), cond.io, depsC);
+    const lc = ha.loadRunApproval({ root: AUDIT, fs: mfc }, U(8000));
+    const badOpt = mk(true, '01234-56789');
+    const c5 = await cli.main(argvC.map((x) => (x === 'task-6a-041' ? 'task-6a-042' : x)).concat(['--structured-output', 'always']), badOpt.io, depsC);
+    assert(c4 === 0 && lc.ok && JSON.stringify(lc.approval.structuredOutputPolicy) === JSON.stringify({ mode: 'conditional', exeSha256: H64('a'), cliVersion: CLI.cliVersion })
+      && cond.out.join('\n').indexOf('副作用がないことの証明ではありません') !== -1 && c5 === 3 && !rs.readRun({ runtimeRoot: AUDIT, repoPath: REPO, fs: mfc }, 'task-6a-042').ok,
+      'C-3. 条件付き受け入れは明示した場合だけ発行し、承認する CLI の exe SHA・版に束縛・限界を表示（不明な指定は何も作らない・既定は block：C-2）');
   }
 
   caseHeader('Q. StructuredOutput 条件付き判定（既定 block・承認に束縛した場合だけ・合成テスト）');
@@ -575,18 +586,27 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
       && rs.recordTestResults(pre, { now: iso(0), batchId: U(1), diffSha256: H64('1'), results: [{ file: 'a.test.js', exitCode: 0, timedOut: false }] }).error === 'not_testing_stage', 'R-5. test 結果は testing stage でだけ記録');
   }
 
-  caseHeader('T. testRunner（既定で無効・差し替え時も allowlist env・shell:false）');
+  caseHeader('T. testRunner（Decision 121：single-use のテスト実行承認がある場合だけ・allowlist env・shell:false）');
   {
-    const mf = memFs(); mf.put('C:\\wt\\t\\a.test.js', 'x');
-    const r0 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js'], parentEnv: { PATH: 'p' }, fs: mf });
+    const mf = memFs(); mf.put('C:\\wt\\t\\a.test.js', 'x'); mf.put('C:\\wt\\t\\b.test.js', 'x');
+    const TA = { kind: tr.TEST_APPROVAL_KIND, testFiles: ['a.test.js'], worktreePath: 'C:\\wt\\t', diffSha256: H64('3') };
     const seen = [];
     const fake = (exe, args, o) => { seen.push({ exe: exe, args: args, o: o }); return { status: args[0] === 'a.test.js' ? 0 : 1, stdout: Buffer.from('ok'), stderr: Buffer.alloc(0) }; };
-    const r1 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js'], parentEnv: { PATH: 'p', ANTHROPIC_API_KEY: 'sk-ant-SECRET', CLAUDE_CODE_OAUTH_TOKEN: 'x' }, spawnSync: fake, fs: mf });
-    const r2 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['missing.test.js'], parentEnv: {}, spawnSync: fake, fs: mf });
-    const r3 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['../x.test.js'], parentEnv: {}, spawnSync: fake, fs: mf });
-    assert(tr.HOST_TEST_EXECUTION_ADOPTED === false && !r0.ok && r0.error === 'host_test_execution_not_adopted' && violations.length === 0, 'T-1. 既定ではホストで test を実行しない（child_process を読み込まない）');
+    const r0 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js'], parentEnv: { PATH: 'p' }, fs: mf });
+    const r0b = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js', 'b.test.js'], testApproval: TA, parentEnv: {}, fs: mf });
+    const r0c = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js'], testApproval: Object.assign({}, TA, { worktreePath: 'C:\\wt\\other' }), parentEnv: {}, fs: mf });
+    const r0d = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js'], testApproval: Object.assign({}, TA, { kind: 'self-declared' }), parentEnv: {}, fs: mf });
+    assert(r0.error === 'test_approval_required' && r0b.error === 'test_approval_files_mismatch' && r0c.error === 'test_approval_worktree_mismatch' && r0d.error === 'test_approval_required'
+      && seen.length === 0 && violations.length === 0, 'T-1. テスト実行承認が無い・test 一覧 / 場所が一致しない・種別が違う場合は実行しない（child_process を読み込まない）');
+    const r1 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['a.test.js'], testApproval: TA, parentEnv: { PATH: 'p', ANTHROPIC_API_KEY: 'sk-ant-SECRET', CLAUDE_CODE_OAUTH_TOKEN: 'x' }, spawnSync: fake, fs: mf });
+    const TA2 = Object.assign({}, TA, { testFiles: ['missing.test.js'] }), TA3 = Object.assign({}, TA, { testFiles: ['../x.test.js'] });
+    const r2 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['missing.test.js'], testApproval: TA2, parentEnv: {}, spawnSync: fake, fs: mf });
+    const r3 = tr.runSafeTests({ worktreePath: 'C:\\wt\\t', files: ['../x.test.js'], testApproval: TA3, parentEnv: {}, spawnSync: fake, fs: mf });
     assert(r1.ok && r1.results[0].exitCode === 0 && seen[0].o.shell === false && seen[0].o.cwd === 'C:\\wt\\t' && Object.keys(seen[0].o.env).every((k) => !/ANTHROPIC|CLAUDE/i.test(k))
-      && Object.keys(r1.results[0]).sort().join() === 'exitCode,file,outputBytes,timedOut' && r2.error === 'test_file_missing' && r3.error === 'files_invalid', 'T-2. 差し替え時：cwd は worktree・shell:false・認証 env なし・出力本文を返さない・不正 / 欠落 file は拒否');
+      && Object.keys(r1.results[0]).sort().join() === 'exitCode,file,outputBytes,timedOut' && r2.error === 'test_file_missing' && r3.error === 'files_invalid',
+      'T-2. 承認と一致する場合だけ実行：cwd は worktree・shell:false・認証 env なし・出力本文を返さない・不正 / 欠落 file は拒否');
+    const tsrc = String(require('fs').readFileSync(path.join(ROOT, 'tools', 'devAutopilot', 'testRunner.js'), 'utf8'));
+    assert(tsrc.indexOf('OS レベルの隔離ではない') !== -1 && tsrc.indexOf('承認なしの自動実行はしない') !== -1, 'T-3. ホスト実行の限界（env 制限・Safety 監視は OS 隔離ではない）を明記');
   }
 
   caseHeader('B. observers（差し替え git / fs）');
@@ -676,7 +696,7 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
       fs: w.mf, git: Object.assign({ validateGitAvailable: () => ({ ok: true, version: 'git version 2.54.0' }) }, w.ctx.deps.git), permit: w.ctx.deps.permit, observers: w.ctx.deps.observers,
       detectLayout: () => ({ mode: 'main', mainRoot: REPO }), orchestrator: orch, makeSpawn: () => { w.state.madeSpawn = (w.state.madeSpawn || 0) + 1; return w.ctx.deps.spawn; },
       selectTests: w.ctx.deps.selectTests, readWorktreeLines: w.ctx.deps.readWorktreeLines, clock: () => new Date().toISOString(), randomUUID: w.ctx.deps.randomUUID, sleep: async () => {},
-      parentEnv: w.ctx.parentEnv, pid: 21,
+      parentEnv: w.ctx.parentEnv, pid: 21, runTests: w.ctx.deps.runTests,
     }, extra || {});
     const BF = 'C:\\enbisou-s4d-fake\\build.json';
     const argv = (w, extra) => ['--task-id', w.taskId, '--permit-id', w.permitId, '--run-approval-id', U(900), '--exe', CLI.exePath, '--cli-version', CLI.cliVersion, '--build-file', BF].concat(extra || []);
@@ -687,7 +707,7 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
     const add = async (label, w, args, extraDeps, code) => { const b = runOf(w); const o = io(); const c = await ra.main(args, o.io, entryDeps(w, extraDeps)); cases.push({ label: label, ok: c === 3 && untouched(w, b) && o.out.join('').indexOf(code) !== -1 }); };
     const w0 = prep('task-6a-090'); await add('args', w0, ['--task-id', w0.taskId, '--start'], null, 'args_missing');
     const w1 = prep('task-6a-091'); w1.state.origin = OTHER; await add('origin', w1, argv(w1, ['--start']), null, 'head_not_equal_origin_main');
-    const w2 = prep('task-6a-092', { soPolicy: { mode: 'conditional', exeSha256: CLI.exeSha256, cliVersion: CLI.cliVersion } }); await add('so', w2, argv(w2, ['--start']), null, 'structured_output_policy_not_adopted');
+    const w2 = prep('task-6a-092', { soPolicy: { mode: 'conditional', exeSha256: H64('b'), cliVersion: CLI.cliVersion } }); await add('so', w2, argv(w2, ['--start']), null, 'structured_output_policy_invalid');
     const w3 = prep('task-6a-093'); await add('exe', w3, argv(w3, ['--start']), { observers: Object.assign({}, w3.ctx.deps.observers, { hashFile: () => H64('b') }) }, 'cli_exe_mismatch');
     const w4 = prep('task-6a-094'); await add('cliv', w4, ['--task-id', w4.taskId, '--permit-id', w4.permitId, '--run-approval-id', U(900), '--exe', CLI.exePath, '--cli-version', '2.1.169 (Claude Code)', '--build-file', BF, '--start'], null, 'cli_version_mismatch');
     const w5 = prep('task-6a-095'); await add('approval', w5, ['--task-id', w5.taskId, '--permit-id', w5.permitId, '--run-approval-id', U(901), '--exe', CLI.exePath, '--cli-version', CLI.cliVersion, '--build-file', BF, '--start'], null, 'run_approval_unavailable');
@@ -697,18 +717,58 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
     const w8 = prep('task-6a-098'); w8.mf.put(BF, JSON.stringify(Object.assign({}, BUILDS, { implementing: Object.assign({}, BUILD, { allowedPaths: ['server.js'] }) })));
     await add('build', w8, argv(w8, ['--start']), null, 'build_file_shape');
     const w9 = prep('task-6a-099'); await add('mainstate', w9, argv(w9, ['--start']), { observers: Object.assign({}, w9.ctx.deps.observers, { observeMain: () => Object.assign({ head: HEAD, originMain: HEAD, currentBranch: 'main', stagedCount: 0 }, MAIN_OK, { autopilotStatusHash: 'ec4ea8f0a985' }) }) }, 'main_state_mismatch');
-    assert(cases.length === 10 && cases.every((x) => x.ok), 'N-1. 引数不足・HEAD≠origin/main・StructuredOutput 方針≠block・exe / 版の不一致・承認なし・Permit 消費済み・main repo 以外・build 不正・main 状態不一致は起動前に停止（run・Permit 不変・spawn 0）'
+    assert(cases.length === 10 && cases.every((x) => x.ok), 'N-1. 引数不足・HEAD≠origin/main・承認する CLI に束縛されていない StructuredOutput 方針・exe / 版の不一致・承認なし・Permit 消費済み・main repo 以外・build 不正・main 状態不一致は起動前に停止（run・Permit 不変・spawn 0）'
       + (cases.every((x) => x.ok) ? '' : ' ' + cases.filter((x) => !x.ok).map((x) => x.label).join(',')));
     const wp = prep('task-6a-100'); const bp = runOf(wp); const op = io();
     const cp0 = await ra.main(argv(wp), op.io, entryDeps(wp));
-    assert(cp0 === 0 && untouched(wp, bp) && op.out.join('').indexOf('事前確認のみ') !== -1, 'N-2. --start なしは事前確認だけ（read-only・spawn を用意しない・run / Permit 不変）');
+    const wq = prep('task-6a-100b', { soPolicy: { mode: 'conditional', exeSha256: CLI.exeSha256, cliVersion: CLI.cliVersion } }); const bq = runOf(wq); const oq = io();
+    const cq0 = await ra.main(argv(wq), oq.io, entryDeps(wq));
+    assert(cp0 === 0 && untouched(wp, bp) && op.out.join('').indexOf('事前確認のみ') !== -1 && op.out.join('').indexOf('StructuredOutput: block') !== -1
+      && cq0 === 0 && untouched(wq, bq) && oq.out.join('').indexOf('conditional（この CLI に限る）') !== -1,
+      'N-2. --start なしは事前確認だけ（read-only・spawn を用意しない・run / Permit 不変）・承認する CLI に束縛した conditional は受け付ける（既定は block）');
     const ws = prep('task-6a-101', { noAutoTestApproval: true }); const os2 = io();
     const cs = await ra.main(argv(ws, ['--start']), os2.io, entryDeps(ws));
     assert(cs === 1 && ws.state.madeSpawn === 1 && ws.state.spawned === 3 && ws.state.testsRun === 0 && runOf(ws).gate === 'human_approval_required'
-      && os2.out.join('').indexOf('test_execution_approval_required') !== -1, 'N-3. --start：差し替え環境で orchestrator を 1 回起動し、test の段階で Human gate に止まる（ホストでの test 実行なし・自動 retry なし）');
+      && os2.out.join('').indexOf('test_execution_approval_required') !== -1, 'N-3. --start：差し替え環境で orchestrator を 1 回起動し、テスト実行承認が無ければ test を実行せず Human gate に止まる（自動 retry なし）');
     const rsrc = String(require('fs').readFileSync(path.join(ROOT, 'tools', 'devAutopilot', 'runAutopilot.js'), 'utf8'));
-    assert(violations.length === 0 && rsrc.indexOf('writeApprovalRecord') === -1 && rsrc.indexOf("'commit'") === -1 && rsrc.indexOf('runTests:') === -1 && rsrc.indexOf('allowRealSpawn') === -1,
-      'N-4. 入口は承認を発行せず、commit・ホストでの test 実行・allowRealSpawn の経路を持たない（読込時に child_process を読まない）');
+    assert(violations.length === 0 && rsrc.indexOf('writeApprovalRecord') === -1 && rsrc.indexOf("'commit'") === -1 && rsrc.indexOf('testApproval: x.testApproval') !== -1 && rsrc.indexOf('allowRealSpawn') === -1,
+      'N-4. 入口は承認を発行せず、commit・allowRealSpawn の経路を持たない・test 実行は消費済みのテスト実行承認と一緒にだけ渡す（読込時に child_process を読まない）');
+    // テスト承認 gate からの再開（Human が approveCli approve-tests で承認・gate 解除）。implement・完了済み stage は再実行しない
+    const cliIo2 = () => { const out = []; return { out: out, io: { isTTY: { stdin: true, stdout: true }, write: (x) => out.push(x), readLine: async () => '01234-56789', now: () => new Date().toISOString(),
+      randomBytes: () => Buffer.from('0123456789', 'hex'), randomUUID: () => U(8600) } }; };
+    const gateWorld = async (taskId) => {
+      const w = prep(taskId, { noAutoTestApproval: true }); const o = io();
+      await ra.main(argv(w, ['--start']), o.io, entryDeps(w));
+      const out = o.out.join('');
+      const m = /"testApprovalId":"([0-9a-f-]{36})"/.exec(out);   // 入口の結果出力に表示される要求 ID（Human が approve-tests に渡す）
+      return { w: w, reqId: m ? m[1] : null, out: out };
+    };
+    const approveTests = (g) => cli.main(['approve-tests', '--task-id', g.w.taskId, '--approval-id', g.reqId], cliIo2().io,
+      { store: g.w.store, approvalStore: { root: AUDIT, fs: g.w.mf }, observers: g.w.ctx.deps.observers, selectTests: g.w.ctx.deps.selectTests });
+    const argvR = (w, reqId, extra) => ['--resume-testing', '--task-id', w.taskId, '--run-approval-id', U(900), '--test-approval-id', reqId, '--exe', CLI.exePath, '--cli-version', CLI.cliVersion, '--build-file', BF].concat(extra || []);
+    const g1 = await gateWorld('task-6a-102');
+    const ccode = await approveTests(g1);
+    const freshAgain = io(); const cFresh = await ra.main(argv(g1.w, ['--start']), freshAgain.io, entryDeps(g1.w));
+    const pre1 = io(); const cPre = await ra.main(argvR(g1.w, g1.reqId), pre1.io, entryDeps(g1.w));
+    const o5 = io(); const c5 = await ra.main(argvR(g1.w, g1.reqId, ['--start']), o5.io, entryDeps(g1.w));
+    const d5 = runOf(g1.w);
+    assert(g1.reqId && g1.out.indexOf(g1.reqId) !== -1 && ccode === 0 && cFresh === 3 && freshAgain.out.join('').indexOf('run_not_fresh') !== -1 && cPre === 0 && c5 === 0
+      && d5.gate === 'awaiting_commit_approval' && g1.w.state.spawned === 4 && d5.invocations.filter((x) => x.stage === 'implementing').length === 1 && d5.invocations.length === 4
+      && g1.w.state.testsRun === 1 && g1.w.state.lastTestApproval && g1.w.state.lastTestApproval.approvalId === g1.reqId && g1.w.state.lastTestApproval.diffSha256 === d5.testResults[0].diffSha256,
+      'N-5. テスト承認 gate → Human の承認 → --resume-testing で test → review → commit 承認待ち（implement 再実行なし・起動は合計 4 回・test は消費した承認と一緒にだけ実行・新規 run としての再起動は拒否）');
+    const o6 = io(); const c6 = await ra.main(argvR(g1.w, g1.reqId, ['--start']), o6.io, entryDeps(g1.w));
+    const g2 = await gateWorld('task-6a-103');
+    const o7 = io(); const c7 = await ra.main(argvR(g2.w, g2.reqId, ['--start']), o7.io, entryDeps(g2.w));
+    const g3 = await gateWorld('task-6a-104');
+    await approveTests(g3);
+    const o8 = io(); const c8 = await ra.main(argvR(g3.w, U(8999), ['--start']), o8.io, entryDeps(g3.w));
+    const o9 = io(); const c9 = await ra.main(argvR(g3.w, g3.reqId, ['--permit-id', g3.w.permitId, '--start']), o9.io, entryDeps(g3.w));
+    g3.w.state.origin = OTHER;
+    const o10 = io(); const c10 = await ra.main(argvR(g3.w, g3.reqId, ['--start']), o10.io, entryDeps(g3.w));
+    const T = (o, code) => o.out.join('').indexOf(code) !== -1;
+    assert(c6 === 3 && T(o6, 'run_not_waiting_after_test_gate') && T(o6, 'tests_already_recorded') && c7 === 3 && T(o7, 'test_gate_not_released_by_human') && c8 === 3 && T(o8, 'test_approval_missing')
+      && c9 === 3 && T(o9, 'args_unexpected') && c10 === 3 && T(o10, 'head_not_equal_origin_main') && g2.w.state.spawned === 3 && g3.w.state.spawned === 3 && g3.w.state.testsRun === 0,
+      'N-6. 再開の拒否：完了後の再実行・Human の gate 解除なし・テスト実行承認なし・余分な引数・HEAD≠origin/main（いずれも起動前に停止・再実行 0）');
   }
 
   caseHeader('Z. Protected 10件 hash 不変・sandbox 違反 0・env 不変');

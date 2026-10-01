@@ -4,7 +4,7 @@
 //
 //   node tools/devAutopilot/approveCli.js prepare-run   --task-id <id> --title <t> --goal <g> --allowed <a,b> [--forbidden <x,y>]
 //                                                        --cap-usd <n> --max-invocations <n> --max-budget-usd <n> --exe <path> --cli-version <v>
-//                                                        [--ttl-minutes <n>] [--permit-ttl-minutes <n>]
+//                                                        [--ttl-minutes <n>] [--permit-ttl-minutes <n>] [--structured-output block|conditional]
 //   node tools/devAutopilot/approveCli.js approve-tests --task-id <id> --approval-id <Orchestrator が通知した要求 ID> [--ttl-minutes <n>]
 //
 //   ★ stdin / stdout がともに TTY で、表示した確認コードを入力した場合だけ発行する。
@@ -12,7 +12,8 @@
 //     同じ OS ユーザーの権限で動く process は承認 file を直接作れる。偽造は防げない（V1 の既知の限界）。
 //     「子 process から発行できない」とは保証しない（Runner の子 process は Bash を持たず、audit 配下への書込みは auditGuard が検出する）。
 //   ★ prepare-run は run（未開始）・Permit（worktree add の single-use・最大 30 分）・run の実行承認（4 stage・回数上限）を 1 回の確認で作る。
-//     HEAD = origin/main（Decision 120 決定 15）でなければ発行しない。StructuredOutput 方針は 'block' 固定。
+//     HEAD = origin/main（Decision 120 決定 15）でなければ発行しない。StructuredOutput 方針は既定 'block'。
+//     --structured-output conditional を明示した場合だけ、承認する CLI の exe SHA・版に束縛した条件付き受け入れ方針を記録する（Decision 121。副作用がないことの証明ではない）。
 //   ★ approve-tests は、testing stage の run の現在の差分 hash と selector の test 一覧に束縛した single-use 承認を作る。
 //     Orchestrator が待機中なら承認 file だけ。テスト承認 gate で停止（所有権解放済み）なら、Human の操作として gate も解除する（再開は resume_testing）。
 //   ★ 失敗時に作成済みの記録を削除・巻き戻ししない（cleanup は Human-controlled）。
@@ -91,8 +92,10 @@ function prepareRunPlan(a, io, deps) {
   var bp = deps.permit.buildPermit({ repoIdentity: id.repoIdentity, expectedHead: m.head, expectedOriginMain: m.originMain, taskId: taskId, worktreeRoot: deps.worktreeRoot,
     protectedFingerprint: m.protectedFingerprint, autopilotStatusHash: m.autopilotStatusHash, approvedBy: 'human', approvedAt: now, ttlMs: pttl * 60000, now: now });
   if (!bp.ok) return { ok: false, error: 'permit_invalid', reasons: bp.errors || [bp.error] };
+  var so = a['structured-output'] === undefined ? 'block' : a['structured-output'];
+  if (so !== 'block' && so !== 'conditional') return { ok: false, error: 'structured_output_option_invalid' };
   var ap = ha.buildRunApproval({ approvalId: io.randomUUID(), run: cr.run, stages: orch.CLAUDE_STAGES.slice(), exeSha256: exeSha, cliVersion: a['cli-version'],
-    maxInvocations: maxInv, maxBudgetUsdPerInvocation: perInv, issuedAt: now, expiresAt: new Date(Date.parse(now) + ttl * 60000).toISOString() });
+    maxInvocations: maxInv, maxBudgetUsdPerInvocation: perInv, issuedAt: now, expiresAt: new Date(Date.parse(now) + ttl * 60000).toISOString(), structuredOutputPolicy: so });
   if (!ap.ok) return { ok: false, error: 'approval_invalid', reasons: ap.errors || [ap.error] };
   return {
     ok: true,
@@ -100,7 +103,9 @@ function prepareRunPlan(a, io, deps) {
       'allowed: ' + scope.allowedPaths.join(', ') + ' / forbidden: ' + (scope.forbiddenPaths.join(', ') || '(なし)'),
       'stages: ' + ap.approval.stages.join(' → ') + ' / 起動上限: ' + maxInv + ' / 1 回あたり上限(CLI 推定 USD): ' + perInv + ' / run 上限: ' + cap,
       '課金範囲: 月額プラン内限定・追加課金なし（USD 上限は CLI 推定値に対する停止条件で、追加課金の許可ではありません）',
-      'CLI: ' + a['cli-version'] + ' / exe SHA-256: ' + exeSha, 'StructuredOutput: block（条件付き受け入れは未採用）',
+      'CLI: ' + a['cli-version'] + ' / exe SHA-256: ' + exeSha,
+      so === 'conditional' ? 'StructuredOutput: 条件付き受け入れ（この CLI 版・exe SHA に限る。単一・最後・schema 適合・正常結果・hash 一致・他の未知 tool なしを満たさなければ block。副作用がないことの証明ではありません）'
+        : 'StructuredOutput: block（既定）',
       'Permit 有効期限: ' + bp.permit.expiresAt + ' / 実行承認 有効期限: ' + ap.approval.expiresAt],
     commit: function () {
       var c1 = rs.createRun(deps.store, cr.run);
@@ -140,7 +145,8 @@ function approveTestsPlan(a, io, deps) {
   return {
     ok: true,
     summary: ['== テスト実行承認（single-use）==', 'task: ' + run.taskId + ' / worktree: ' + run.worktreePath, '差分 hash: ' + bt.approval.diffSha256 + '（' + w.changedEntries.length + ' 件）',
-      'test: ' + files.join(', '), '注意: モデルが変更したコードをこの PC で実行します。差分を確認してから承認してください。', '有効期限: ' + bt.approval.expiresAt],
+      'test: ' + files.join(', '), '注意: モデルが変更したコードをこの PC 上で実行します。差分を確認してから承認してください（承認後に差分が変われば実行しません）。',
+      '注意: env の制限や Safety 監視は OS レベルの隔離ではありません（ファイル・ネットワーク・プロセスへのアクセスを完全には防げません）。', '有効期限: ' + bt.approval.expiresAt],
     commit: function () {
       var c1 = ha.writeApprovalRecord(deps.approvalStore, ha.wrapRecord(ha.KIND_TEST, bt.approval));
       if (!c1.ok) return { ok: false, error: 'approval_write_failed:' + c1.error };

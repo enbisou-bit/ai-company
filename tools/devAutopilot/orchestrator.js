@@ -402,7 +402,8 @@ async function runOrchestration(ctx) {
       : await stopBlock('testing', 'test_approval_rejected', { cause: cons.error, reasons: cons.reasons });
     if (typeof d.runTests !== 'function') return await stopGate('testing', 'host_test_execution_not_enabled');
     var before = obs.worktreeProtectedSnapshot(runSnap);
-    var out = d.runTests({ worktreePath: runSnap.worktreePath, files: testFiles });
+    // Decision 121：消費済みのテスト実行承認（差分 hash・test 一覧に束縛）を実行側にも渡し、一覧・場所の一致を再確認させる
+    var out = d.runTests({ worktreePath: runSnap.worktreePath, files: testFiles, testApproval: cons.approval });
     var after = obs.worktreeProtectedSnapshot(runSnap);
     if (!before || !before.ok || !after || !after.ok || JSON.stringify(before.entries) !== JSON.stringify(after.entries) || JSON.stringify(after.entries) !== JSON.stringify(wtProtBase.entries))
       return await stopBlock('testing', 'worktree_protected_changed');

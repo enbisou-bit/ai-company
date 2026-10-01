@@ -44,21 +44,26 @@ function _paths(store, approvalId) {
 }
 
 // ── 作成（純関数）──────────────────────────────────────
-// run の実行承認：run 記録から束縛値を取り、CLI 識別・上限・期間を加える。StructuredOutput は 'block' 固定（条件付き方針の採用は未決定）
-//   input: { approvalId, run, stages[], exeSha256, cliVersion, maxInvocations, maxBudgetUsdPerInvocation, issuedAt, expiresAt }
+// run の実行承認：run 記録から束縛値を取り、CLI 識別・上限・期間を加える。
+//   StructuredOutput（Decision 121）：既定 'block'。structuredOutputPolicy: 'conditional' を明示した場合だけ、承認する CLI の exe SHA・版に束縛した
+//   条件付き受け入れ方針を記録する（判定条件は transcriptCheck.evaluateStructuredOutputConditional。副作用がないことの証明ではない）。
+//   input: { approvalId, run, stages[], exeSha256, cliVersion, maxInvocations, maxBudgetUsdPerInvocation, issuedAt, expiresAt, structuredOutputPolicy? }
 function buildRunApproval(input) {
   var i = _isObj(input) ? input : {};
   var run = i.run;
   if (!_isObj(run)) return _err('run_required');
   var em = ex.expectedMainFromRun(run);
   if (!em) return _err('run_main_record_unusable');
+  var sop = i.structuredOutputPolicy === undefined || i.structuredOutputPolicy === 'block' ? 'block'
+    : i.structuredOutputPolicy === 'conditional' ? { mode: 'conditional', exeSha256: i.exeSha256, cliVersion: i.cliVersion } : null;
+  if (sop === null) return _err('run_approval_invalid', { errors: ['structured_output_policy'] });
   var a = {
     kind: 'enbisou-runner-invocation-approval', approvalId: i.approvalId, approvedBy: 'human', taskId: run.taskId, runStartedAt: run.startedAt,
     mainRepoPath: run.mainRepoPath, baseHead: run.baseHead, branch: run.branch, worktreePath: run.worktreePath,
     stages: Array.isArray(i.stages) ? i.stages.slice() : i.stages, exeSha256: i.exeSha256, cliVersion: i.cliVersion,
     maxInvocations: i.maxInvocations, maxBudgetUsdPerInvocation: i.maxBudgetUsdPerInvocation, billingScope: ex.BILLING_SCOPE,
     mainAutopilotStatusHash: em.autopilotStatusHash, protectedFingerprint: em.protectedFingerprint, issuedAt: i.issuedAt, expiresAt: i.expiresAt,
-    structuredOutputPolicy: 'block',
+    structuredOutputPolicy: sop,
   };
   var e = [];
   if (typeof a.approvalId !== 'string' || !UUID_RE.test(a.approvalId)) e.push('approval_id');
