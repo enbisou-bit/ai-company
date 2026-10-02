@@ -197,7 +197,8 @@ function setupWorld(taskId, opts) {
     const rstage = ex.RUNNER_STAGE[stage];
     setTimeout(function () {
       const wt = sopts.cwd;
-      const calls = [{ id: 'g1', name: 'Grep', input: { pattern: 'guide' } }, { id: 'r1', name: 'Read', input: { file_path: wt + '\\docs\\guide.md' } }];
+      const calls = o.globOnlyAt === stage ? [{ id: 'g1', name: 'Glob', input: { pattern: 'docs/**' } }]   // Read をしない探索だけの stage（回帰テスト用）
+        : [{ id: 'g1', name: 'Grep', input: { pattern: 'guide' } }, { id: 'r1', name: 'Read', input: { file_path: wt + '\\docs\\guide.md' } }];
       if (stage === 'implementing') { calls.push({ id: 'e1', name: 'Edit', input: { file_path: wt + '\\docs\\guide.md' } }); state.entries = [{ path: 'docs/guide.md', status: 'modified', hash: H64('1'), isSymlink: false }]; }
       if (o.duringSpawn) o.duringSpawn(stage, state, mf);
       let out = STAGE_OUT(rstage, stage === 'implementing' ? { files_changed: ['docs/guide.md'] } : {});
@@ -289,7 +290,9 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
     const f2 = setupWorld('task-6a-015', { wrongDiffApproval: true });
     const rf = await orch.runOrchestration(f2.ctx);
     assert(!rf.ok && rf.error === 'test_approval_rejected' && f2.state.testsRun === 0, 'S-6. 差分 hash が一致しないテスト実行承認は拒否（test を実行しない）');
-    const g2 = setupWorld('task-6a-016', { allowed: ['docs/', 'tools/'], linesFor: () => ['var a = 1;'] });
+    // implement の出力（files_changed）は実際の差分と一致させる（不一致は別途 K 節で拒否を確認）
+    const g2 = setupWorld('task-6a-016', { allowed: ['docs/', 'tools/'], linesFor: () => ['var a = 1;'],
+      outOverride: (stage, out) => (stage === 'implementing' ? Object.assign({}, out, { files_changed: ['tools/devAutopilot/orchestrator.js'] }) : out) });
     const g2opts = g2.ctx.deps.observers.observeWorktree;
     g2.ctx.deps.observers.observeWorktree = (run) => { const x = g2opts(run); if (x && g2.state.entries.length) x.changedEntries = [{ path: 'tools/devAutopilot/orchestrator.js', status: 'modified', hash: H64('2'), isSymlink: false }]; return x; };
     const rg = await orch.runOrchestration(g2.ctx);
@@ -646,6 +649,43 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
     const cls = (p) => rc.classifyDevelopmentChange({ allowedPaths: ['tools/'], files: [{ path: p, status: 'modified', addedLines: ['var a = 1;'] }] }).classification;
     assert(['orchestrator.js', 'humanApproval.js', 'approveCli.js', 'auditGuard.js', 'observers.js', 'testRunner.js', 'claudeExecutor.js', 'runStore.js', 'realRepoPermit.js', 'worktreeExecutor.js', 'transcriptCheck.js', 'protectedCheck.js', 'runAutopilot.js']
       .every((f) => cls('tools/devAutopilot/' + f) === rc.CLASS.HUMAN) && cls('tools/devAutopilot/reportFormat.js') === rc.CLASS.AUTO, 'F-1. Runner 本体・承認管理・監査・Orchestrator の変更は Human 判断');
+  }
+
+  caseHeader('K. files_read / files_changed の契約（Read した file・実際に変更した file だけ・正規化した相対 file path）');
+  {
+    const CR = require('./tools/devAutopilot/claudeRunner');
+    const re = new RegExp(CR.FILE_PATH_PATTERN);
+    const sch = CR.buildOutputSchema('research');
+    const V = (st, fr, fc) => CR.validateStageOutput(st, { stage: st, status: 'ok', summary: 's', files_read: fr, files_changed: fc || [], proposed_tests: [], risks: [], requires_human: false, stop_reason: null });
+    const bad = ['docs/', '/abs/x.md', 'C:/x.md', 'a' + String.fromCharCode(92) + 'b.md', '../x.md', 'a/./b.md', 'a//b.md', '.', '..', 'a/..', ''];
+    const good = ['docs/autopilot-e2e/e2e-trial-001.md', 'README.md', '.gitignore', 'a/.hidden/b.js', 'x..y.md', 'data/conversations/_meta.json', 'tools/devAutopilot/runStore.js'];
+    assert(sch.properties.files_read.items.pattern === CR.FILE_PATH_PATTERN && sch.properties.files_changed.items.pattern === CR.FILE_PATH_PATTERN && sch.properties.risks.items.pattern === undefined
+      && bad.every((p) => !re.test(p) && !V('research', [p]).ok) && good.every((p) => re.test(p) && V('research', [p]).ok) && V('research', []).ok
+      && !V('implement', [], ['docs/']).ok && V('implement', [], ['docs/autopilot-e2e/e2e-trial-001.md']).ok,
+      'K-1. schema の pattern と既存 validator が一致：docs/・絶対・drive・backslash・traversal・空 segment を拒否し、正当な相対 file path と空配列は通す（validator は緩めない）');
+    const pr = CR.buildStagePrompt({ taskId: 'task-6a-k', stage: 'research', worktreeRoot: WT_ROOT + '\\task-6a-k', allowedPaths: ['docs/'], forbiddenPaths: [], objective: 'o', acceptanceCriteria: ['a'], previousOutputs: {}, stopConditions: ['s'] });
+    assert(pr.ok && pr.prompt.indexOf('list only files you actually opened with the Read tool') !== -1 && pr.prompt.indexOf('Do not list directories or paths that you only found with Glob or Grep') !== -1
+      && pr.prompt.indexOf('never use a trailing slash') !== -1 && JSON.stringify(JSON.parse(pr.prompt).outputSchema) === JSON.stringify(sch), 'K-2. prompt に files_read / files_changed の契約を明記し、prompt 内の schema と CLI に渡す schema が一致');
+    // 統合：Glob だけの research は files_read=[] で通る・docs/ は schema で拒否・Read していない docs（ディレクトリ）や file の申告は拒否・files_changed の不一致も拒否
+    const k1 = setupWorld('task-6a-110', { globOnlyAt: 'researching', outOverride: (st, out) => (st === 'researching' ? Object.assign({}, out, { files_read: [] }) : out) });
+    const r1 = await orch.runOrchestration(k1.ctx);
+    const k2 = setupWorld('task-6a-111', { globOnlyAt: 'researching', outOverride: (st, out) => (st === 'researching' ? Object.assign({}, out, { files_read: ['docs/'] }) : out) });
+    const r2 = await orch.runOrchestration(k2.ctx);
+    const k3 = setupWorld('task-6a-112', { globOnlyAt: 'researching', outOverride: (st, out) => (st === 'researching' ? Object.assign({}, out, { files_read: ['docs'] }) : out) });
+    const r3 = await orch.runOrchestration(k3.ctx);
+    const k4 = setupWorld('task-6a-113', { globOnlyAt: 'researching', outOverride: (st, out) => (st === 'researching' ? Object.assign({}, out, { files_read: ['docs/guide.md'] }) : out) });
+    const r4 = await orch.runOrchestration(k4.ctx);
+    const k5 = setupWorld('task-6a-114', { outOverride: (st, out) => (st === 'implementing' ? Object.assign({}, out, { files_changed: ['docs/other.md'] }) : out) });
+    const r5 = await orch.runOrchestration(k5.ctx);
+    const sc = (w, st) => { const i = runOf(w).invocations.filter((x) => x.stage === st)[0]; return i && i.result ? i.result.schema : null; };
+    assert(r1.ok && runOf(k1).gate === 'awaiting_commit_approval', 'K-3. Read をしない（Glob だけの）research は files_read=[] で通り、commit 承認待ちまで進む');
+    assert(!r2.ok && r2.error === 'stage_not_successful' && sc(k2, 'researching').errorCodes.indexOf('files_read_invalid') !== -1 && k2.state.spawned === 1
+      && !r3.ok && sc(k3, 'researching').errorCodes.indexOf('files_read_not_read') !== -1 && k3.state.spawned === 1
+      && !r4.ok && sc(k4, 'researching').errorCodes.indexOf('files_read_not_read') !== -1 && k4.state.spawned === 1
+      && !r5.ok && sc(k5, 'implementing').errorCodes.indexOf('files_changed_not_changed') !== -1 && k5.state.spawned === 3 && k5.state.testsRun === 0,
+      'K-4. docs/ は形式で拒否・Read していないディレクトリ / file の files_read と実際の差分にない files_changed は照合で拒否（いずれも block・次へ進まない・自動補正しない）');
+    const an = tc.analyzeTranscript(tx(U(3201), [{ id: 'r', name: 'Read', input: { file_path: WT_ROOT + '\\t\\docs\\a.md' } }]), { sessionId: U(3201), worktreeRoot: WT_ROOT + '\\t', allowedTools: ['Read', 'Glob', 'Grep'], claimedFilesRead: ['docs/a.md', 'docs'] });
+    assert(an.filesReadUnmatched === 1 && JSON.stringify(an).indexOf('a.md') === -1, 'K-5. 照合結果は件数だけを返し、path を返さない');
   }
 
   caseHeader('W. Protected 検証 helper（main は固定基準・worktree は main 側の固定基準＋存在区別と不変）');

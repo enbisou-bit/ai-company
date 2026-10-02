@@ -73,17 +73,23 @@ var MAX_APPEND_PROMPT = 8000;
 var OUTPUT_KEYS = Object.freeze(['stage', 'status', 'summary', 'files_read', 'files_changed', 'proposed_tests', 'risks', 'requires_human', 'stop_reason']);
 var OUTPUT_STATUS = Object.freeze(['ok', 'stop', 'needs_human']);
 var LIMITS = Object.freeze({ summary: 4000, listItems: 500, itemLen: 400, risks: 50, tests: 50 });
+// files_read / files_changed の各要素：worktree 相対の正規化したファイル path（validateStageOutput の normRel と同じ規則）。
+//   絶対 path・drive・backslash・末尾 '/'・空 / '.' / '..' の segment・制御文字（tab / 改行を除く）を拒否する。
+//   ★ ディレクトリかどうかは文字列だけでは判定できないため、実行後に claudeExecutor が「Read した file」「実際の差分」と照合する。
+var FILE_PATH_PATTERN = '^(?![A-Za-z]:)(?!.*\\\\)(?!(?:.*/)?\\.{1,2}(?:/|$))[^/\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+(?:/[^/\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+)*$';
+var FILE_PATH_RE = new RegExp(FILE_PATH_PATTERN);
 function buildOutputSchema(stage) {
   if (CLAUDE_STAGES.indexOf(stage) === -1) return null;
   var strList = function (max) { return { type: 'array', maxItems: max, items: { type: 'string', maxLength: LIMITS.itemLen } }; };
+  var fileList = function (max) { return { type: 'array', maxItems: max, items: { type: 'string', maxLength: LIMITS.itemLen, pattern: FILE_PATH_PATTERN } }; };
   return {
     type: 'object', additionalProperties: false, required: OUTPUT_KEYS.slice(),
     properties: {
       stage: { type: 'string', enum: [stage] },
       status: { type: 'string', enum: OUTPUT_STATUS.slice() },
       summary: { type: 'string', maxLength: LIMITS.summary },
-      files_read: strList(LIMITS.listItems),
-      files_changed: strList(LIMITS.listItems),
+      files_read: fileList(LIMITS.listItems),
+      files_changed: fileList(LIMITS.listItems),
       proposed_tests: strList(LIMITS.tests),
       risks: strList(LIMITS.risks),
       requires_human: { type: 'boolean' },
@@ -357,6 +363,9 @@ function buildStagePrompt(ctx) {
       pol.writes ? 'Edit or write only files inside allowedPaths and never inside forbiddenPaths.' : 'This stage is read-only: do not edit or write any file.',
       'Do not run shell commands, tests, git, npm, network access or MCP tools. Propose tests in proposed_tests only.',
       'Never read or write .env files, credentials, or Protected files.',
+      'files_read: list only files you actually opened with the Read tool, as worktree-relative file paths such as "docs/a.md". Do not list directories or paths that you only found with Glob or Grep. Use [] if you did not read any file.',
+      'files_changed: list only files you created or modified, as worktree-relative file paths. Use [] if you changed nothing.',
+      'In files_read and files_changed never use a trailing slash, an absolute path, a drive letter, backslashes, "." or "..".',
       'If any stop condition applies or the task cannot be done safely, return status "stop" with stop_reason. If a human decision is needed, return status "needs_human" with requires_human true.',
       'Return only the structured output that matches outputSchema.',
     ],
@@ -380,7 +389,7 @@ function validateStageOutput(stage, out) {
   if (OUTPUT_STATUS.indexOf(out.status) === -1) e.push('status_invalid');
   if (typeof out.summary !== 'string' || !out.summary.trim() || out.summary.length > LIMITS.summary || CTRL_RE.test(out.summary)) e.push('summary_invalid');
   ['files_read', 'files_changed'].forEach(function (f) {
-    if (!Array.isArray(out[f]) || out[f].length > LIMITS.listItems || !out[f].every(function (p) { return normRel(p) === p; })) e.push(f + '_invalid');
+    if (!Array.isArray(out[f]) || out[f].length > LIMITS.listItems || !out[f].every(function (p) { return normRel(p) === p && FILE_PATH_RE.test(p); })) e.push(f + '_invalid');
   });
   if (!Array.isArray(out.proposed_tests) || out.proposed_tests.length > LIMITS.tests || !out.proposed_tests.every(function (t) { return typeof t === 'string' && /^[A-Za-z0-9._-]+\.test\.js$/.test(t); })) e.push('proposed_tests_invalid');
   if (!Array.isArray(out.risks) || out.risks.length > LIMITS.risks || !out.risks.every(function (r) { return typeof r === 'string' && r.length <= LIMITS.itemLen && !CTRL_RE.test(r); })) e.push('risks_invalid');
@@ -709,6 +718,7 @@ module.exports = {
   RUNNER_ENV_FIXED: RUNNER_ENV_FIXED,
   ASSUMED_ENVELOPE_FIELDS: ASSUMED_ENVELOPE_FIELDS,
   RUNNER_MAX_INVOCATIONS: RUNNER_MAX_INVOCATIONS,
+  FILE_PATH_PATTERN: FILE_PATH_PATTERN,
   buildOutputSchema: buildOutputSchema,
   buildRunnerArgs: buildRunnerArgs,
   validateRunnerArgs: validateRunnerArgs,

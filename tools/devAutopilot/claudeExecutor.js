@@ -405,8 +405,18 @@ function _run(ctx, done) {
       }
       var safety = { result: !_isObj(mainAfter) ? 'unverified' : (safetyReasons.length ? 'violated' : 'ok'), reasonCodes: _codes(safetyReasons) };
       var text = null; try { text = d.readTranscript(sessionId); } catch (e) { text = null; }
-      var an = tc.analyzeTranscript(text, { sessionId: sessionId, worktreeRoot: run.worktreePath, allowedTools: cr.STAGE_POLICY[rStage].tools });
+      var an = tc.analyzeTranscript(text, { sessionId: sessionId, worktreeRoot: run.worktreePath, allowedTools: cr.STAGE_POLICY[rStage].tools,
+        claimedFilesRead: env.ok && ov.ok ? env.structuredOutput.files_read : undefined });
       text = null;
+      // files_read / files_changed の照合（transcript を完全に解析できた場合だけ。解析不能は transcript の未検証として block される）
+      //   files_read は Read が成功した worktree 内の file だけ、files_changed は実際の差分の file だけ。ディレクトリや Glob / Grep だけの path は不一致として拒否する
+      if (ov.ok && env.ok && an.ok && _isObj(an.structuredOutputDetail) && !an.structuredOutputDetail.recordBad) {
+        var claimErr = [];
+        var diffSet = (Array.isArray(diff.changedPaths) ? diff.changedPaths : []).map(function (x) { return String(x).toLowerCase(); });
+        if (an.filesReadUnmatched !== 0) claimErr.push('files_read_not_read');
+        if (env.structuredOutput.files_changed.some(function (x) { return diffSet.indexOf(x.toLowerCase()) === -1; })) claimErr.push('files_changed_not_changed');
+        if (claimErr.length) { ov = { ok: false, errors: claimErr }; stageOutput = null; }
+      }
       var envSoSha = env.ok && _isObj(env.structuredOutput) ? tc.canonicalSha256(env.structuredOutput) : null;
       var tsum = an.ok ? an.summary : { verdict: 'unverified_record_unparseable', toolCounts: { Read: 0, Glob: 0, Grep: 0, StructuredOutput: 0, other: 0 }, unparseable: 0, outside: 0, missingResults: 0, errorResults: 0, structuredOutputComparison: 'not_present' };
       tsum.structuredOutputComparison = an.ok ? tc.compareStructuredOutput(an.structuredOutputInputSha256, envSoSha, an.structuredOutputCount) : 'not_present';

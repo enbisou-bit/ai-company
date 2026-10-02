@@ -113,7 +113,7 @@ function analyzeTranscript(text, opts) {
       });
     });
   }
-  var calls = [], soInputs = [];
+  var calls = [], soInputs = [], readTargets = [];
   uses.forEach(function (u) {
     var key = COUNTED.indexOf(u.name) !== -1 ? u.name : 'other';
     counts[key]++;
@@ -126,6 +126,11 @@ function analyzeTranscript(text, opts) {
     var r = results[u.id];
     if (!r) st.missingResults++; else if (r.isError) st.errorResults++;
     calls.push({ tool: key, target: t, result: r ? (r.isError ? 'error' : 'ok') : 'missing' });
+    // files_read の照合用：Read が成功した worktree 内の file（正規化した絶対 path・小文字）。関数の外へは返さない
+    if (u.name === 'Read' && t === 'inside' && r && !r.isError) {
+      var rp = normPath(u.input.file_path, o.worktreeRoot);
+      if (rp) readTargets.push(rp);
+    }
   });
   Object.keys(results).forEach(function (id) { if (!byId[id]) st.orphanResults++; });
   var expectedMissing = false;
@@ -159,6 +164,11 @@ function analyzeTranscript(text, opts) {
       recordBad: !!recordBad, outside: st.outside, errorResults: st.errorResults, expectedMissing: expectedMissing,
     },
     calls: calls,
+    // opts.claimedFilesRead（出力の files_read）のうち、Read が成功した worktree 内の file と一致しないものの件数（path は返さない）。
+    //   Glob / Grep で見つけただけの path・ディレクトリは Read の成功記録が無いため不一致になる。照合材料が無い場合は null
+    filesReadUnmatched: Array.isArray(o.claimedFilesRead)
+      ? o.claimedFilesRead.filter(function (c) { var n = typeof c === 'string' ? normPath(c, o.worktreeRoot) : null; return !n || readTargets.indexOf(n) === -1; }).length
+      : null,
   };
 }
 
