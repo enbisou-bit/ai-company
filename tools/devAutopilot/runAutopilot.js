@@ -12,7 +12,8 @@
 //   ★ 既定は「事前確認だけ」（read-only。run・Permit・承認・Git を変更しない）。--start を付けた場合だけ、全条件を満たしたときに orchestrator を 1 回起動する。
 //   ★ 起動前に停止する条件：必須引数の欠落・main repo 以外（worktree 等）からの実行・Git 不可・run の状態が mode と合わない・実行承認が無い / 不一致 / 期限切れ・
 //     StructuredOutput 方針が 'block' でも「承認する CLI に束縛した conditional」でもない・Permit が無い / 消費済み（新規）・テスト実行承認が無い / 消費済み（再開）・
-//     HEAD ≠ origin/main（Decision 120 決定 15）・main の状態が run 記録と不一致・CLI の exe SHA / 版が承認と不一致・build file が不正。
+//     HEAD ≠ origin/main（Decision 120 決定 15）・main の状態が run 記録と不一致・CLI の exe SHA / 版が承認と不一致・build file が不正・
+//     子へ渡す env の名前集合が executor の契約と不一致（Permit 消費・所有権取得・worktree 作成より前に止める。名前だけを表示し、値は出さない）。
 //   ★ 再開は research / design / implement を再実行しない（orchestrator の resume_testing：3 stage が各 1 回成功・test 未実行・Human が gate 解除済みの run だけ）。
 //   ★ ホストでの test 実行（Decision 121）は、Human が差分を確認して発行した single-use のテスト実行承認を orchestrator が消費した後だけ testRunner が行う。
 //     env の制限や Safety 監視は OS レベルの隔離ではない。
@@ -24,6 +25,7 @@ var fs = require('fs');
 var crypto = require('crypto');
 var rs = require('./runStore');
 var ex = require('./claudeExecutor');
+var cr = require('./claudeRunner');
 var ha = require('./humanApproval');
 var pc = require('./protectedCheck');
 
@@ -35,6 +37,17 @@ var REQUIRED_RESUME = ['task-id', 'run-approval-id', 'test-approval-id', 'exe', 
 var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function _isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+// 結果表示の cause / invocationPhase：コードから確認した固定値の集合に含まれる値だけをそのまま出し、それ以外は 'unrecognized' に置き換える
+//   （形だけの判定はしない・コロン付きの合成コードは分割せず集合外として扱う。集合外の既存コードは表示上省略される）
+//   invocationPhase：claudeExecutor の fail(phase, …) と内部例外の phase。cause：executor の起動前検証・予約・内部例外のコード
+var KNOWN_INVOCATION_PHASES = Object.freeze(['preflight', 'reserve', 'observe', 'heartbeat', 'monitor', 'complete', 'unknown']);
+var KNOWN_CAUSES = Object.freeze([
+  'owner_id_invalid', 'real_spawn_disabled', 'deps_incomplete', 'run_unreadable', 'run_read_only_v1', 'run_not_active', 'stage_not_invocable', 'isolation_not_verified',
+  'not_owner', 'lock_not_active', 'run_invocation_limit_reached', 'cli_exe_mismatch', 'approval_invalid', 'execution_scope_invalid', 'env_not_allowlisted',
+  'main_state_mismatch', 'worktree_unobservable', 'worktree_state_mismatch', 'settings_build_failed', 'prompt_build_failed', 'args_build_failed',
+  'reserve_rejected', 'reserve_save_failed', 'executor_internal_error',
+]);
+function _known(set, v) { return v === undefined || v === null ? undefined : (typeof v === 'string' && set.indexOf(v) !== -1 ? v : 'unrecognized'); }
 function parseArgs(argv) {
   var out = { _: [] };
   for (var i = 0; i < argv.length; i++) {
@@ -124,6 +137,13 @@ function preflight(a, deps) {
   if (builds !== null && (!_isObj(builds) || Object.keys(builds).sort().join() !== BUILD_STAGES.slice().sort().join()
     || !BUILD_STAGES.every(function (s) { return _isObj(builds[s]) && Object.keys(builds[s]).every(function (k) { return BUILD_KEYS.indexOf(k) !== -1; }); }))) r.push('build_file_shape');
   if (builds !== null && rs.findSecrets(builds).length) r.push('build_file_contains_secret');
+  // 子へ渡す env：executor の起動前検証と同じ判定（cr.checkRunnerEnvNames）。不足は契約上の既知名、契約外は件数だけを返す
+  var envCheck = cr.checkRunnerEnvNames(cr.buildRunnerEnv(_isObj(deps.parentEnv) ? deps.parentEnv : {}));
+  if (!envCheck.ok) {
+    r.push('env_not_allowlisted');
+    envCheck.missing.forEach(function (k) { r.push('env_missing:' + k); });
+    if (envCheck.extraCount) r.push('env_extra_count:' + envCheck.extraCount);
+  }
   var w = a['test-approval-wait-minutes'];
   var waitMs = w === undefined || a.resume ? 0 : Number(w) * 60000;
   if (!(Number.isFinite(waitMs) && waitMs >= 0 && waitMs <= 60 * 60000)) r.push('test_approval_wait_invalid');
@@ -151,7 +171,7 @@ async function main(argv, io, deps) {
     deps: { git: deps.git, permit: deps.permit, observers: deps.observers, spawn: spawn, selectTests: deps.selectTests, readWorktreeLines: deps.readWorktreeLines,
       runTests: deps.runTests, randomUUID: deps.randomUUID, sleep: deps.sleep },
   });
-  w('結果: ' + JSON.stringify({ ok: res.ok, phase: res.phase, error: res.error, gate: res.gate, testApprovalId: res.testApprovalId }));
+  w('結果: ' + JSON.stringify({ ok: res.ok, phase: res.phase, error: res.error, cause: _known(KNOWN_CAUSES, res.cause), invocationPhase: _known(KNOWN_INVOCATION_PHASES, res.invocationPhase), gate: res.gate, testApprovalId: res.testApprovalId }));
   return res.ok ? 0 : 1;   // 自動 retry しない
 }
 

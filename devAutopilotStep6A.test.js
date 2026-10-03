@@ -809,6 +809,35 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
     assert(c6 === 3 && T(o6, 'run_not_waiting_after_test_gate') && T(o6, 'tests_already_recorded') && c7 === 3 && T(o7, 'test_gate_not_released_by_human') && c8 === 3 && T(o8, 'test_approval_missing')
       && c9 === 3 && T(o9, 'args_unexpected') && c10 === 3 && T(o10, 'head_not_equal_origin_main') && g2.w.state.spawned === 3 && g3.w.state.spawned === 3 && g3.w.state.testsRun === 0,
       'N-6. 再開の拒否：完了後の再実行・Human の gate 解除なし・テスト実行承認なし・余分な引数・HEAD≠origin/main（いずれも起動前に停止・再実行 0）');
+    // e2e-trial-002 の回帰：子へ渡す env の不足（HOME 欠落）は事前確認で止め、Permit・所有権・worktree・spawn に触れない。env の値は表示しない
+    const envNoHome = (w) => { const e = Object.assign({}, w.ctx.parentEnv, { PATH: 'ENV-VALUE-MARKER-7' }); delete e.HOME; return e; };
+    const we1 = prep('task-6a-105'); const be1 = runOf(we1); const oe1 = io();
+    const ce1 = await ra.main(argv(we1), oe1.io, entryDeps(we1, { parentEnv: envNoHome(we1) }));
+    const te1 = oe1.out.join('');
+    const pfFull = ra.preflight(ra.parseArgs(argv(we1)), entryDeps(we1));
+    const pfNo = ra.preflight(ra.parseArgs(argv(we1)), entryDeps(we1, { parentEnv: envNoHome(we1) }));
+    assert(ce1 === 3 && te1.indexOf('env_not_allowlisted') !== -1 && te1.indexOf('env_missing:HOME') !== -1 && te1.indexOf('ENV-VALUE-MARKER') === -1 && te1.indexOf('sk-ant') === -1 && untouched(we1, be1)
+      && pfFull.ok === true && !pfNo.ok && pfNo.reasons.filter((x) => x.indexOf('env_missing:') === 0).join() === 'env_missing:HOME',
+      'N-7. 事前確認（--start なし）：HOME 欠落は env_not_allowlisted・不足キー名だけを表示して停止（値・認証 env を出さない）、必要なキーがそろえば env 検査を通る');
+    const we2 = prep('task-6a-106'); const be2 = runOf(we2); const oe2 = io();
+    const ce2 = await ra.main(argv(we2, ['--start']), oe2.io, entryDeps(we2, { parentEnv: envNoHome(we2) }));
+    assert(ce2 === 3 && oe2.out.join('').indexOf('env_missing:HOME') !== -1 && untouched(we2, be2) && !we2.state.created && we2.state.calls.filter((x) => x.kind === 'worktreeAdd').length === 0
+      && we2.state.consumed.length === 0 && !we2.mf.has(AUDIT + '\\runs\\' + we2.taskId + '\\owner.lock') && we2.mf.has(AUDIT + '\\runs\\' + we2.taskId + '\\run.json'),
+      'N-8. --start でも env 不足なら所有権取得（owner.lock を作らない）・Permit 消費・worktree 作成・spawn の前に停止');
+    const stubOrch = (r) => ({ runOrchestration: async () => r });
+    const wd = prep('task-6a-107'); const od1 = io(); const od2 = io();
+    await ra.main(argv(wd, ['--start']), od1.io, entryDeps(wd, { orchestrator: stubOrch({ ok: false, phase: 'stage:researching', error: 'invocation_failed', cause: 'env_not_allowlisted', invocationPhase: 'preflight' }) }));
+    await ra.main(argv(wd, ['--start']), od2.io, entryDeps(wd, { orchestrator: stubOrch({ ok: false, phase: 'stage:researching', error: 'invocation_failed', cause: 'C:\\Users\\x\\secret sk-ant-LEAK', invocationPhase: { detail: 'sk-ant-LEAK2' } }) }));
+    const od3 = io();   // 正規表現なら通る形だが許可集合に無い値（hex 風の値・未知のコード・コロン付きの合成コード）
+    await ra.main(argv(wd, ['--start']), od3.io, entryDeps(wd, { orchestrator: stubOrch({ ok: false, phase: 'stage:researching', error: 'invocation_failed', cause: 'abcdef0123456789abcdef0123456789', invocationPhase: 'spawn_internal' }) }));
+    const od4 = io();
+    await ra.main(argv(wd, ['--start']), od4.io, entryDeps(wd, { orchestrator: stubOrch({ ok: false, phase: 'stage:researching', error: 'invocation_failed', cause: 'mutex_failed:lock_create_failed', invocationPhase: 'reserve' }) }));
+    const td1 = od1.out.join(''), td2 = od2.out.join(''), td3 = od3.out.join(''), td4 = od4.out.join('');
+    assert(td1.indexOf('"cause":"env_not_allowlisted"') !== -1 && td1.indexOf('"invocationPhase":"preflight"') !== -1
+      && td2.indexOf('"cause":"unrecognized"') !== -1 && td2.indexOf('"invocationPhase":"unrecognized"') !== -1 && td2.indexOf('sk-ant') === -1 && td2.indexOf('secret') === -1
+      && td3.indexOf('"cause":"unrecognized"') !== -1 && td3.indexOf('"invocationPhase":"unrecognized"') !== -1 && td3.indexOf('abcdef0123456789') === -1 && td3.indexOf('spawn_internal') === -1
+      && td4.indexOf('"cause":"unrecognized"') !== -1 && td4.indexOf('"invocationPhase":"reserve"') !== -1 && td4.indexOf('mutex_failed') === -1 && td4.indexOf('lock_create_failed') === -1,
+      'N-9. 結果表示：許可集合の cause / invocationPhase だけを表示し、集合外（正規表現なら通る値・コロン付きの合成コード・path・例外本文・object・秘密情報）は unrecognized');
   }
 
   caseHeader('Z. Protected 10件 hash 不変・sandbox 違反 0・env 不変');

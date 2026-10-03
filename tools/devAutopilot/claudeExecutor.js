@@ -262,8 +262,7 @@ function _run(ctx, done) {
   if (!scope.ok) return fail('preflight', 'execution_scope_invalid', { reasons: scope.reasons });
   var em = expectedMainFromRun(run);   // validateApproval で承認の値と一致済み
   var ev = cr.buildRunnerEnv(d.parentEnv || {});
-  var expectEnv = cr.RUNNER_ENV_ALLOWLIST.concat(Object.keys(cr.RUNNER_ENV_FIXED)).slice().sort().join('|');
-  if (!ev.ok || ev.containsCredential || ev.envNames.map(function (k) { return k.toUpperCase(); }).sort().join('|') !== expectEnv) return fail('preflight', 'env_not_allowlisted');
+  if (!cr.checkRunnerEnvNames(ev).ok) return fail('preflight', 'env_not_allowlisted');   // allowlist 全件＋固定 env との完全一致（runAutopilot の事前確認と同じ判定）
   var mainBefore; try { mainBefore = d.observeMain(); } catch (e) { mainBefore = null; }
   if (!_isObj(mainBefore) || mainBefore.autopilotStatusHash !== em.autopilotStatusHash || mainBefore.protectedFingerprint !== em.protectedFingerprint) return fail('preflight', 'main_state_mismatch');
   var wtBefore; try { wtBefore = d.observeWorktree(); } catch (e) { wtBefore = null; }

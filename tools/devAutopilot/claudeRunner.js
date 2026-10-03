@@ -259,6 +259,18 @@ function buildRunnerEnv(parentEnv, opts) {
   Object.keys(RUNNER_ENV_FIXED).forEach(function (k) { env[k] = RUNNER_ENV_FIXED[k]; });
   return { ok: true, env: env, envNames: Object.keys(env).sort(), dropped: dropped, containsCredential: Object.keys(env).some(function (k) { return k.toUpperCase() === 'ANTHROPIC_API_KEY'; }), unverifiedNecessity: RUNNER_ENV_UNVERIFIED_NECESSITY.slice() };
 }
+// 子へ渡す env の名前集合が契約（allowlist 全件＋固定 env）と完全一致するかの判定（executor の起動前検証と runAutopilot の事前確認で共通）。
+//   ev は buildRunnerEnv の戻り値。値は見ない。missing は契約上の既知名だけ、契約外の名前は件数だけ返す（未知の名前をそのまま返さない）
+function checkRunnerEnvNames(ev) {
+  var expected = RUNNER_ENV_ALLOWLIST.concat(Object.keys(RUNNER_ENV_FIXED)).slice().sort();
+  if (!_isObj(ev) || ev.ok !== true || !Array.isArray(ev.envNames)) return { ok: false, missing: [], extraCount: 0 };
+  var got = ev.envNames.map(function (k) { return String(k).toUpperCase(); }).sort();
+  return {
+    ok: !ev.containsCredential && got.join('|') === expected.join('|'),
+    missing: expected.filter(function (k) { return got.indexOf(k) === -1; }),
+    extraCount: got.filter(function (k) { return expected.indexOf(k) === -1; }).length,
+  };
+}
 
 // ── buildRunnerSettings（Autopilot 専用 --settings の JSON）──────────
 // input: { stage, worktreeRoot, mainRepoRoot, allowedPaths, forbiddenPaths }
@@ -723,6 +735,7 @@ module.exports = {
   buildRunnerArgs: buildRunnerArgs,
   validateRunnerArgs: validateRunnerArgs,
   buildRunnerEnv: buildRunnerEnv,
+  checkRunnerEnvNames: checkRunnerEnvNames,
   buildRunnerSettings: buildRunnerSettings,
   validateRunnerSettings: validateRunnerSettings,
   buildStagePrompt: buildStagePrompt,

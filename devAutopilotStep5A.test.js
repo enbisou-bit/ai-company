@@ -737,6 +737,15 @@ const SNAP = { baseHeadExists: true, currentHead: HEAD, currentOriginMain: HEAD,
     assert(rn.error === 'stage_not_invocable' && rt.error === 'isolation_not_verified' && sp.calls.length === 0, 'U-3. stage 未開始・隔離未検証（worktree HEAD 不一致）の run では起動しない（main では起動しない）');
     assert(ex.validateApproval(base.approval, { run: rs.readRun(s.st, s.T).run, now: new Date().toISOString(), exeSha256: H64('a'), cliVersion: '2.1.280 (Claude Code)', maxBudgetUsd: 0.5 }).length === 0
       && ex.validateApproval(Object.assign({}, base.approval, { issuedAt: at(0), expiresAt: at(90000) }), { run: rs.readRun(s.st, s.T).run, now: at(10), exeSha256: H64('a'), cliVersion: '2.1.280 (Claude Code)', maxBudgetUsd: 0.5 }).indexOf('approval_window_invalid') !== -1, 'U-4. 承認の有効期間は 24 時間以内（長すぎる承認は拒否）');
+    // 子へ渡す env の完全一致（allowlist 全件＋固定 env）は executor 側でも維持する（e2e-trial-002：HOME 欠落の回帰）
+    const crm = require('./tools/devAutopilot/claudeRunner');
+    const noHome = Object.assign({}, base.deps.parentEnv); delete noHome.HOME;
+    const rh = await ex.runInvocation(ctxFor(s, sp, { deps: Object.assign({}, base.deps, { parentEnv: noHome }) }));
+    const chkNo = crm.checkRunnerEnvNames(crm.buildRunnerEnv(noHome)), chkFull = crm.checkRunnerEnvNames(crm.buildRunnerEnv(base.deps.parentEnv));
+    const chkKey = crm.checkRunnerEnvNames(crm.buildRunnerEnv(base.deps.parentEnv, { allowAnthropicApiKey: true }));
+    assert(!rh.ok && rh.error === 'env_not_allowlisted' && rh.phase === 'preflight' && sp.calls.length === 0 && runFile(s) === before
+      && !chkNo.ok && JSON.stringify(chkNo.missing) === '["HOME"]' && chkFull.ok && chkFull.missing.length === 0 && !chkKey.ok && chkKey.extraCount === 1
+      && !crm.checkRunnerEnvNames({ ok: false }).ok, 'U-5. env 名が allowlist 全件＋固定 env と完全一致しなければ起動しない（HOME 欠落・認証 env の混入・不正入力を拒否、予約・起動 0 回）');
   }
 
   caseHeader('V. 起動前の隔離 worktree 検証（予約・起動 0 回）');
