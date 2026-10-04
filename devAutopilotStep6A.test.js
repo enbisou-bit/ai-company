@@ -663,6 +663,53 @@ const w_consumed = (mf, id) => mf.has(AUDIT + '\\approvals\\' + id + '.consumed.
       && bad.every((p) => !re.test(p) && !V('research', [p]).ok) && good.every((p) => re.test(p) && V('research', [p]).ok) && V('research', []).ok
       && !V('implement', [], ['docs/']).ok && V('implement', [], ['docs/autopilot-e2e/e2e-trial-001.md']).ok,
       'K-1. schema の pattern と既存 validator が一致：docs/・絶対・drive・backslash・traversal・空 segment を拒否し、正当な相対 file path と空配列は通す（validator は緩めない）');
+    // e2e-trial-004 の回帰：proposed_tests の形式（test file 名だけ）を schema・prompt・validator でそろえる（validator の条件は変えない）
+    const tre = new RegExp(CR.TEST_FILE_PATTERN);
+    const VT = (pt) => CR.validateStageOutput('research', { stage: 'research', status: 'ok', summary: 's', files_read: [], files_changed: [], proposed_tests: pt, risks: [], requires_human: false, stop_reason: null });
+    const tGood = ['apiAuthBoundary.test.js', 'devAutopilotStep6A.test.js', 'a-b_c.1.test.js'];
+    const tBad = ['Verify docs/autopilot-e2e/e2e-trial-004.md creation in next stage uses correct path and format', 'node apiAuthBoundary.test.js', 'npm run dev-check', 'tests/apiAuthBoundary.test.js',
+      'dir' + String.fromCharCode(92) + 'x.test.js', 'apiAuthBoundary.test.ts', 'apiAuthBoundary.spec.js', 'apiAuthBoundary.js', '.test.js', ''];
+    const schemas = ['research', 'design', 'implement', 'review'].map((st) => CR.buildOutputSchema(st));
+    const prK = CR.buildStagePrompt({ taskId: 'task-6a-k2', stage: 'research', worktreeRoot: WT_ROOT + '\\task-6a-k2', allowedPaths: ['docs/'], forbiddenPaths: [], objective: 'o', acceptanceCriteria: ['a'], previousOutputs: {}, stopConditions: ['s'] });
+    const pi = schemas[0].properties.proposed_tests;
+    assert(CR.TEST_FILE_PATTERN === '^[A-Za-z0-9._-]+' + String.fromCharCode(92) + '.test' + String.fromCharCode(92) + '.js$'
+      && schemas.every((s) => s.properties.proposed_tests.items.pattern === CR.TEST_FILE_PATTERN && s.properties.proposed_tests.maxItems === 50 && s.properties.proposed_tests.items.maxLength === 400)
+      && tGood.every((t) => tre.test(t) && VT([t]).ok) && VT([]).ok && VT(tGood).ok
+      && tBad.every((t) => !tre.test(t) && VT([t]).errors.indexOf('proposed_tests_invalid') !== -1)
+      && prK.ok && prK.prompt.indexOf('proposed_tests: list only test file names such as') !== -1 && prK.prompt.indexOf('apiAuthBoundary.test.js') !== -1
+      && prK.prompt.indexOf('Use [] if you have no proposal') !== -1 && prK.prompt.indexOf('does not replace the human approval of test execution') !== -1 && prK.prompt.indexOf('do not invent test file names') !== -1,
+      'K-1b. proposed_tests：schema の pattern は validator と同じ（全 stage）・test file 名と [] は通し、文章・コマンド・directory 付き path・不正な拡張子は拒否・prompt に形式と [] と提案扱いを明記');
+    const otherProps = JSON.stringify(Object.assign({}, schemas[0].properties, { proposed_tests: null }));
+    assert(otherProps === JSON.stringify({ stage: { type: 'string', enum: ['research'] }, status: { type: 'string', enum: ['ok', 'stop', 'needs_human'] }, summary: { type: 'string', maxLength: 4000, pattern: CR.NON_BLANK_PATTERN },
+      files_read: { type: 'array', maxItems: 500, items: { type: 'string', maxLength: 400, pattern: CR.FILE_PATH_PATTERN } }, files_changed: { type: 'array', maxItems: 500, items: { type: 'string', maxLength: 400, pattern: CR.FILE_PATH_PATTERN } },
+      proposed_tests: null, risks: { type: 'array', maxItems: 50, items: { type: 'string', maxLength: 400 } }, requires_human: { type: 'boolean' }, stop_reason: { type: ['string', 'null'], maxLength: 400, pattern: CR.NON_BLANK_PATTERN } })
+      && schemas[0].additionalProperties === false && JSON.stringify(schemas[0].required) === JSON.stringify(['stage', 'status', 'summary', 'files_read', 'files_changed', 'proposed_tests', 'risks', 'requires_human', 'stop_reason']),
+      'K-1c. 意図した変更（proposed_tests・summary・stop_reason の pattern）以外の出力契約（型・上限・pattern・必須・追加プロパティ禁止）は変更していない');
+    // summary・stop_reason：schema の pattern（空白以外を 1 つ以上）を validator の trim() 判定とそろえる（validator は不変）／status との関係は prompt＋validator で担保
+    const nb = new RegExp(CR.NON_BLANK_PATTERN);
+    const OUT = (o) => Object.assign({ stage: 'research', status: 'ok', summary: 's', files_read: [], files_changed: [], proposed_tests: [], risks: [], requires_human: false, stop_reason: null }, o);
+    const VS = (st, o) => CR.validateStageOutput(st, Object.assign(OUT(o), { stage: st }));
+    const blanks = ['', ' ', '   ', String.fromCharCode(9), String.fromCharCode(10, 13), String.fromCharCode(12288), String.fromCharCode(160), String.fromCharCode(65279)];
+    const texts = ['x', ' x ', 'done.', String.fromCharCode(12354)];
+    const stages = ['research', 'design', 'implement', 'review'];
+    const schemaOk = stages.every((st) => { const p = CR.buildOutputSchema(st).properties; return p.summary.pattern === CR.NON_BLANK_PATTERN && p.summary.maxLength === 4000 && p.summary.type === 'string'
+      && p.stop_reason.pattern === CR.NON_BLANK_PATTERN && p.stop_reason.maxLength === 400 && JSON.stringify(p.stop_reason.type) === '["string","null"]'; });
+    const sameAsTrim = blanks.concat(texts).every((s) => nb.test(s) === (s.trim() !== ''));
+    const summaryCmp = stages.every((st) => blanks.every((s) => !nb.test(s) && VS(st, { summary: s }).errors.indexOf('summary_invalid') !== -1) && texts.every((s) => nb.test(s) && VS(st, { summary: s }).ok)
+      && VS(st, { summary: null }).errors.indexOf('summary_invalid') !== -1 && VS(st, { summary: 'x'.repeat(4001) }).errors.indexOf('summary_invalid') !== -1);
+    const stopCmp = stages.every((st) => blanks.every((s) => !nb.test(s) && VS(st, { status: 'stop', stop_reason: s }).errors.indexOf('stop_reason_invalid') !== -1)
+      && texts.every((s) => nb.test(s) && VS(st, { status: 'stop', stop_reason: s }).ok) && VS(st, { stop_reason: null }).ok && VS(st, { status: 'stop', stop_reason: 'x'.repeat(401) }).errors.indexOf('stop_reason_invalid') !== -1);
+    const has = (r, c) => !r.ok && r.errors.indexOf(c) !== -1;
+    const combos = stages.every((st) => VS(st, {}).ok && has(VS(st, { requires_human: true }), 'ok_inconsistent') && has(VS(st, { stop_reason: 'x' }), 'ok_inconsistent')
+      && VS(st, { status: 'stop', stop_reason: 'blocked by stop condition' }).ok && has(VS(st, { status: 'stop', stop_reason: null }), 'stop_requires_reason')
+      && VS(st, { status: 'needs_human', requires_human: true }).ok && VS(st, { status: 'needs_human', requires_human: true, stop_reason: 'why' }).ok && has(VS(st, { status: 'needs_human', requires_human: false }), 'needs_human_requires_flag'));
+    const ctrlLayer = VS('research', { summary: 'a' + String.fromCharCode(1) }).errors.indexOf('summary_invalid') !== -1 && nb.test('a' + String.fromCharCode(1));
+    const prS = CR.buildStagePrompt({ taskId: 'task-6a-k3', stage: 'research', worktreeRoot: WT_ROOT + '\\task-6a-k3', allowedPaths: ['docs/'], forbiddenPaths: [], objective: 'o', acceptanceCriteria: ['a'], previousOutputs: {}, stopConditions: ['s'] });
+    const promptOk = prS.ok && prS.prompt.indexOf('status \\"ok\\" requires requires_human false and stop_reason null') !== -1 && prS.prompt.indexOf('status \\"stop\\" requires a stop_reason string') !== -1
+      && prS.prompt.indexOf('status \\"needs_human\\" requires requires_human true') !== -1 && prS.prompt.indexOf('never an empty or whitespace-only string') !== -1;
+    assert(schemaOk && sameAsTrim && summaryCmp && stopCmp && combos && ctrlLayer && promptOk,
+      'K-1d. summary・stop_reason：全 stage の schema pattern が validator の trim() 判定と一致（空文字・空白だけは拒否、正常文字列は許可、stop_reason の null は許可）・上限維持・status との組み合わせは prompt に明記し validator が判定（制御文字は validator 層で拒否）'
+      + ' ' + JSON.stringify({ schemaOk, sameAsTrim, summaryCmp, stopCmp, combos, ctrlLayer, promptOk }));
     const pr = CR.buildStagePrompt({ taskId: 'task-6a-k', stage: 'research', worktreeRoot: WT_ROOT + '\\task-6a-k', allowedPaths: ['docs/'], forbiddenPaths: [], objective: 'o', acceptanceCriteria: ['a'], previousOutputs: {}, stopConditions: ['s'] });
     assert(pr.ok && pr.prompt.indexOf('list only files you actually opened with the Read tool') !== -1 && pr.prompt.indexOf('Do not list directories or paths that you only found with Glob or Grep') !== -1
       && pr.prompt.indexOf('never use a trailing slash') !== -1 && JSON.stringify(JSON.parse(pr.prompt).outputSchema) === JSON.stringify(sch), 'K-2. prompt に files_read / files_changed の契約を明記し、prompt 内の schema と CLI に渡す schema が一致');

@@ -78,6 +78,11 @@ var LIMITS = Object.freeze({ summary: 4000, listItems: 500, itemLen: 400, risks:
 //   ★ ディレクトリかどうかは文字列だけでは判定できないため、実行後に claudeExecutor が「Read した file」「実際の差分」と照合する。
 var FILE_PATH_PATTERN = '^(?![A-Za-z]:)(?!.*\\\\)(?!(?:.*/)?\\.{1,2}(?:/|$))[^/\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+(?:/[^/\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]+)*$';
 var FILE_PATH_RE = new RegExp(FILE_PATH_PATTERN);
+// proposed_tests の各要素・Test Boundary の test file 名：repo 直下の test file 名だけ（schema の pattern と validator・selectRunnerTests で共通）
+var TEST_FILE_PATTERN = '^[A-Za-z0-9._-]+\\.test\\.js$';
+var TEST_FILE_RE = new RegExp(TEST_FILE_PATTERN);
+// summary・stop_reason（null 以外）：空白以外の文字を 1 つ以上含む（validator の trim() 判定と同じ。JSON Schema の pattern は文字列だけに適用され null は対象外）
+var NON_BLANK_PATTERN = '\\S';
 function buildOutputSchema(stage) {
   if (CLAUDE_STAGES.indexOf(stage) === -1) return null;
   var strList = function (max) { return { type: 'array', maxItems: max, items: { type: 'string', maxLength: LIMITS.itemLen } }; };
@@ -87,13 +92,13 @@ function buildOutputSchema(stage) {
     properties: {
       stage: { type: 'string', enum: [stage] },
       status: { type: 'string', enum: OUTPUT_STATUS.slice() },
-      summary: { type: 'string', maxLength: LIMITS.summary },
+      summary: { type: 'string', maxLength: LIMITS.summary, pattern: NON_BLANK_PATTERN },
       files_read: fileList(LIMITS.listItems),
       files_changed: fileList(LIMITS.listItems),
-      proposed_tests: strList(LIMITS.tests),
+      proposed_tests: { type: 'array', maxItems: LIMITS.tests, items: { type: 'string', maxLength: LIMITS.itemLen, pattern: TEST_FILE_PATTERN } },
       risks: strList(LIMITS.risks),
       requires_human: { type: 'boolean' },
-      stop_reason: { type: ['string', 'null'], maxLength: LIMITS.itemLen },
+      stop_reason: { type: ['string', 'null'], maxLength: LIMITS.itemLen, pattern: NON_BLANK_PATTERN },
     },
   };
 }
@@ -378,7 +383,9 @@ function buildStagePrompt(ctx) {
       'files_read: list only files you actually opened with the Read tool, as worktree-relative file paths such as "docs/a.md". Do not list directories or paths that you only found with Glob or Grep. Use [] if you did not read any file.',
       'files_changed: list only files you created or modified, as worktree-relative file paths. Use [] if you changed nothing.',
       'In files_read and files_changed never use a trailing slash, an absolute path, a drive letter, backslashes, "." or "..".',
+      'proposed_tests: list only test file names such as "apiAuthBoundary.test.js" (a file name ending in .test.js, without any directory). Do not write descriptions, commands or paths with directories, and do not invent test file names. Use [] if you have no proposal. proposed_tests is only a proposal: it does not select the tests to run and does not replace the human approval of test execution.',
       'If any stop condition applies or the task cannot be done safely, return status "stop" with stop_reason. If a human decision is needed, return status "needs_human" with requires_human true.',
+      'status and other fields must be consistent: status "ok" requires requires_human false and stop_reason null; status "stop" requires a stop_reason string; status "needs_human" requires requires_human true. summary, and stop_reason when it is not null, must contain at least one non-whitespace character (never an empty or whitespace-only string).',
       'Return only the structured output that matches outputSchema.',
     ],
   };
@@ -403,7 +410,7 @@ function validateStageOutput(stage, out) {
   ['files_read', 'files_changed'].forEach(function (f) {
     if (!Array.isArray(out[f]) || out[f].length > LIMITS.listItems || !out[f].every(function (p) { return normRel(p) === p && FILE_PATH_RE.test(p); })) e.push(f + '_invalid');
   });
-  if (!Array.isArray(out.proposed_tests) || out.proposed_tests.length > LIMITS.tests || !out.proposed_tests.every(function (t) { return typeof t === 'string' && /^[A-Za-z0-9._-]+\.test\.js$/.test(t); })) e.push('proposed_tests_invalid');
+  if (!Array.isArray(out.proposed_tests) || out.proposed_tests.length > LIMITS.tests || !out.proposed_tests.every(function (t) { return typeof t === 'string' && TEST_FILE_RE.test(t); })) e.push('proposed_tests_invalid');
   if (!Array.isArray(out.risks) || out.risks.length > LIMITS.risks || !out.risks.every(function (r) { return typeof r === 'string' && r.length <= LIMITS.itemLen && !CTRL_RE.test(r); })) e.push('risks_invalid');
   if (typeof out.requires_human !== 'boolean') e.push('requires_human_invalid');
   if (!(out.stop_reason === null || (typeof out.stop_reason === 'string' && out.stop_reason.trim() && out.stop_reason.length <= LIMITS.itemLen))) e.push('stop_reason_invalid');
@@ -689,7 +696,7 @@ function validateInvocationPlan(history, opts) {
 // ── Test Boundary：実行対象 = mandatory safe tests + Claude 提案のうち manifest で safe かつ scope 内 ────
 // input: { selectorResult:{selected[], skippedUnsafe[], uncoveredFiles[], requiresHumanApproval, errors[]}, proposedTests[], manifest }
 //   ★ 積集合ではなく和集合。Claude の提案が空でも mandatory safe tests は削らない。conditional / forbidden / dev-check は自動実行しない。
-var TEST_FILE_RE = /^[A-Za-z0-9._-]+\.test\.js$/;
+//   test file 名の判定は TEST_FILE_RE（output schema の TEST_FILE_PATTERN と共通）
 function selectRunnerTests(input) {
   if (!_isObj(input)) return _err('input_invalid');
   var sr = input.selectorResult, m = input.manifest;
@@ -731,6 +738,8 @@ module.exports = {
   ASSUMED_ENVELOPE_FIELDS: ASSUMED_ENVELOPE_FIELDS,
   RUNNER_MAX_INVOCATIONS: RUNNER_MAX_INVOCATIONS,
   FILE_PATH_PATTERN: FILE_PATH_PATTERN,
+  TEST_FILE_PATTERN: TEST_FILE_PATTERN,
+  NON_BLANK_PATTERN: NON_BLANK_PATTERN,
   buildOutputSchema: buildOutputSchema,
   buildRunnerArgs: buildRunnerArgs,
   validateRunnerArgs: validateRunnerArgs,
