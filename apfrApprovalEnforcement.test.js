@@ -4,6 +4,7 @@
 // API呼び出し0件 / DB変更なし / 実AI 0 / 本番案件への操作0
 // index.html内の _apfrEvaluateMobileApprovalCompliance() / canApprove算出 / approveInstagramPackage()の
 // submit直前再評価と等価なロジックをNode環境で再現して検証する（既存apfr*.test.jsと同一パターン）。
+// 下流（_mapDerivedStatus / _prcResolveStatus / markInstagramPublished）は写し関数ではなく index.html の実装関数を vm で実行する。
 // あわせて実ソース（index.html）へのstatic検証を行い、
 //   ・Enforcementが _apfrEvaluateComplianceAssessment() を唯一の判定源としていること（detector再実装0）
 //   ・Publishing Ready / markInstagramPublished / OUTPUT_STATUS.READY / Quality Gate /
@@ -80,24 +81,47 @@ function approveInstagramPackage(state, env, allChecked, reviewApproved) {
   return { pushed: pushed, rerendered: true, complianceBlocked: false };
 }
 
-// 下流（既存ロジック・本工程で変更していないことの再現確認用）
+// 下流（Mobile Approval → Publishing Ready）: 写し関数ではなく index.html の実装関数を vm 上で実行する。
+//   外部副作用（描画・承認POST）だけ記録用 stub に置き換える（network / DB / DOM へ出ない）。
+const vm = require('vm');
+const _DOWNSTREAM = (function () {
+  const src = fs.readFileSync(indexHtmlPath, 'utf8').replace(/\r\n/g, '\n');
+  function fn(name) {
+    const s = src.indexOf('\nfunction ' + name + '(');
+    if (s === -1) throw new Error('function not found: ' + name);
+    return src.slice(s + 1, src.indexOf('\n}\n', s + 1) + 2);
+  }
+  function decl(name) {
+    const m = new RegExp('\\n(?:var|let|const) ' + name + ' = ').exec(src);
+    if (!m) throw new Error('decl not found: ' + name);
+    const s = m.index + 1;
+    const firstLine = src.slice(s, src.indexOf('\n', s));
+    const text = /;\s*(\/\/.*)?$/.test(firstLine) ? firstLine : src.slice(s, src.indexOf('\n];', s) + 3);
+    return text.replace(/^(?:let|const) /, 'var ');
+  }
+  const ctx = { _lastOutputDraft: null, _approvalSyncLastLocalChangeAt: 0, __pushes: [] };
+  vm.createContext(ctx);
+  vm.runInContext(['MAP_CHECKLIST', '_mobileApprovalState', '_publishingReadyState'].map(decl).join('\n') + '\n'
+    + ['_mapReviewApproved', '_mapAllChecked', '_mapDerivedStatus', '_prcResolveStatus', 'markInstagramPublished'].map(fn).join('\n') + '\n'
+    + 'function _prcRerender() {}\nfunction getCurrentApprovalCaseId() { return "case-1"; }\n'
+    + 'function pushApprovalToServer(caseId, reason) { __pushes.push(reason); }', ctx);
+  return ctx;
+})();
 function mapDerivedStatus(state, allChecked, reviewApproved) {
-  if (state.decision === 'approved') return 'approved';
-  if (state.decision === 'rejected') return 'rejected';
-  if (allChecked && reviewApproved) return 'ready';
-  return 'draft';
+  const checklist = {};
+  if (allChecked) _DOWNSTREAM.MAP_CHECKLIST.forEach(function (c) { checklist[c.key] = true; });
+  _DOWNSTREAM._mobileApprovalState = { checklist: checklist, decision: state.decision, approvedAt: state.approvedAt, approveBlocked: false };
+  return _DOWNSTREAM._mapDerivedStatus({ reviewStatus: reviewApproved ? 'approved' : 'reviewing' });
 }
-function prcResolveStatus(approvalStatus, published, archived) {
-  if (archived) return 'archived';
-  if (published) return 'published';
-  if (approvalStatus === 'approved') return 'ready';
-  if (approvalStatus === 'ready') return 'preparing';
-  return 'draft';
+function prcResolveStatus(approvalStatus, published, archived, imagesReviewed) {
+  _DOWNSTREAM._publishingReadyState = { published: !!published, publishedAt: null, archived: !!archived };
+  return _DOWNSTREAM._prcResolveStatus(approvalStatus, imagesReviewed);
 }
 function markInstagramPublished(state, approvalStatus) {
-  var approved = approvalStatus === 'approved';
-  if (!approved) return { executed: false };
-  return { executed: true };
+  _DOWNSTREAM._publishingReadyState = { published: false, publishedAt: null, archived: false };
+  _DOWNSTREAM._lastOutputDraft = { fields: {}, mobileApproval: { publishingReadyInput: { approvalStatus: approvalStatus } } };
+  _DOWNSTREAM.markInstagramPublished();
+  return { executed: _DOWNSTREAM._publishingReadyState.published === true };
 }
 
 // テスト用env生成
@@ -234,6 +258,7 @@ caseHeader('12-13. Publishing Ready / markInstagramPublished が自動追従（�
   const approvalStatus = mapDerivedStatus(state, true, true);
   assert(approvalStatus !== 'approved', '12-1. approvalStatusがapprovedにならない');
   assert(prcResolveStatus(approvalStatus, false, false) !== 'ready', '12-2. Publishing Readyが"ready"へ到達しない（既存ロジックで自動追従）');
+  assert(prcResolveStatus(approvalStatus, false, false, true) !== 'ready', '12-2b. 全画像Image Review完了でも未承認なら"ready"へ到達しない');
   assert(markInstagramPublished(state, approvalStatus).executed === false, '13-1. markInstagramPublished()が実行されない（既存hard guardで自動）');
 }
 
@@ -243,7 +268,9 @@ caseHeader('14. clear時は下流が正常に到達する（過剰ブロック�
   approveInstagramPackage(state, makeEnv('clear'), true, true);
   const approvalStatus = mapDerivedStatus(state, true, true);
   assert(approvalStatus === 'approved', '14-1. clear時はapprovalStatus=approved');
-  assert(prcResolveStatus(approvalStatus, false, false) === 'ready', '14-2. Publishing Ready=ready');
+  // Mobile Approval は文案・構成の承認のみ。公開準備完了（ready）は画像生成＋Image Review（全画像OK）後に判定する。
+  assert(prcResolveStatus(approvalStatus, false, false) === 'preparing', '14-2. 承認のみ（画像未確認）ではPublishing Ready=preparing（公開準備完了にしない）');
+  assert(prcResolveStatus(approvalStatus, false, false, true) === 'ready', '14-2b. 承認済み＋全画像Image Review完了でPublishing Ready=ready（過剰ブロックしていない）');
   assert(markInstagramPublished(state, approvalStatus).executed === true, '14-3. markInstagramPublished()実行可能');
 }
 

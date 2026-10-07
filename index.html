@@ -38713,7 +38713,9 @@ function appendMobileReviewCenterToExportJson(payload) {
 // ============================================================
 // Phase50-6: Mobile Approval（Decision 039・Version1完成条件「スマホだけで承認まで完結する」工程）
 // 目的: Phase50-5 Mobile Review Center の mobileApprovalInput をもとに、iPhone/Androidブラウザから
-//   最終確認/承認/投稿準備完了/Publishing Readyへの引き渡し（publishingReadyInput生成）を行う。
+//   画像生成前の文案・構成の最終確認/承認と、Publishing Readyへの文案引き渡し（publishingReadyInput生成）を行う。
+//   ★ この承認は「文案・構成の承認」であり、実画像の確認や公開準備完了を要求・記録しない。
+//     公開準備完了は Publishing Ready が画像生成＋Image Review（全画像 imageReviewOk===true）後に判定する。
 // 承認状態・チェック状態はメモリ保持のみ。実際の投稿・画像生成・Instagram API接続・外部AI実行は一切行わない（Approval Only）。
 // 既存関数（Mobile Review Center / Publishing / Carousel Builder等）は読み取り専用で参照する（中身は変更しない）。
 // ============================================================
@@ -38731,10 +38733,12 @@ var MAP_CHECKLIST = [
   { key: 'caption', label: '投稿文' },
   { key: 'cta', label: 'CTA' },
   { key: 'hashtags', label: 'ハッシュタグ' },
-  { key: 'design', label: 'デザイン' },
+  { key: 'design', label: 'デザイン設計（生成前）' },
   { key: 'slides', label: 'スライド' },
   { key: 'noRevision', label: '修正依頼なし' },
-  { key: 'ready', label: '投稿準備完了' },
+  // 旧 { key: 'ready', label: '投稿準備完了' } は公開準備完了と誤認させるため置換した。
+  //   保存済みの旧 checklist.ready は書き換えず・新キーへ自動移行／自動チェックもしない（旧記録の意味を変えない）。
+  { key: 'copyStructure', label: '文案・構成（画像は生成後に確認）' },
 ];
 
 // 承認状態はメモリ保持のみ（DB/localStorage/Learningへは書き込まない）
@@ -38781,7 +38785,7 @@ function createMobileApprovalDraft(outputDraft) {
     else if (c.key === 'design') hint = 'Design ' + mai.designScore;
     else if (c.key === 'slides') hint = compactSlides.length + '枚';
     else if (c.key === 'noRevision') hint = revisionCount === 0 ? '修正なし' : '修正 ' + revisionCount + '件あり';
-    else if (c.key === 'ready') hint = mai.reviewStatus === 'approved' ? 'レビュー承認済' : 'レビュー未承認';
+    else if (c.key === 'copyStructure') hint = mai.reviewStatus === 'approved' ? 'レビュー承認済' : 'レビュー未承認';
     return { key: c.key, label: c.label, checked: !!_mobileApprovalState.checklist[c.key], hint: hint };
   });
 
@@ -38827,11 +38831,11 @@ function createMobileApprovalDraft(outputDraft) {
 
   var version1Review = [
     { label: 'Instagram収益化へ直接つながるか', note: '承認済みパッケージのみをPublishing Readyへ渡す最終ゲート。収益導線付き完成物を手動投稿工程へ確実に接続' },
-    { label: 'Version1完成条件へ近づいたか', note: 'スマホだけで最終確認→承認→投稿準備完了まで完結。Version1完成条件「iPhone承認」を実装' },
+    { label: 'Version1完成条件へ近づいたか', note: 'スマホだけで文案・構成の最終確認→承認まで完結。Version1完成条件「iPhone承認」を実装（公開準備完了は画像確認後に判定）' },
     { label: 'iPhone運用へ近づいたか', note: 'モバイル最適化UI（44px以上ボタン・レスポンシブ）でiPhoneから承認可能。実投稿は承認後の手動を維持' },
   ];
 
-  var warnings = ['本Phaseは承認とPublishing Readyへの引き渡しのみです。実際の投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行いません（承認後の投稿は手動）。'];
+  var warnings = ['本Phaseは画像生成前の文案・構成の承認のみです。実画像の確認と公開準備完了の判定は、画像生成後のImage Review・Publishing Readyで行います。実際の投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行いません（投稿は手動）。'];
   if (_mobileApprovalState.approveBlocked) warnings.push('承認できません。全チェック項目の完了とMobile Review Centerでの承認（reviewStatus=承認済）が必要です。');
   if (approvalStatus !== 'approved' && revisionCount > 0) warnings.push('Mobile Review Centerに未対応の修正依頼が' + revisionCount + '件あります。');
   // APFR Step C-1C-2b-1: Compliance blocked時は理由と復旧導線を表示する（override UIは設けない）。
@@ -39224,7 +39228,7 @@ function buildMobileApprovalHtml(outputDraft) {
   }).join('');
 
   var approveBtn = (draft.approvalStatus === 'approved')
-    ? '<button class="oe-map-approvebtn done">✅ 承認済み（Publishing Ready）</button>'
+    ? '<button class="oe-map-approvebtn done">✅ 文案・構成 承認済み</button>'
     : '<button class="oe-map-approvebtn" onclick="approveInstagramPackage()"' + (draft.canApprove ? '' : ' disabled') + '>この内容で承認する</button>';
   var actionsHtml = '<div class="oe-map-actions">' + approveBtn
     + (draft.approvalStatus === 'approved'
@@ -39233,9 +39237,25 @@ function buildMobileApprovalHtml(outputDraft) {
           + (draft.approvalStatus === 'rejected' ? '<button class="oe-map-cancelbtn" onclick="cancelApproval()">下書きに戻す</button>' : ''))
     + '</div>';
 
+  // 画像の状態は固定文言にせず、描画時点の fields.carouselAssets から判定する（生成後・全画像OK後に「未生成」を残さない）
+  var _mapIr = _prcEvaluateImageReadiness(outputDraft.fields);
+  var _mapImgNext, _mapImgText;
+  if (_mapIr.reviewed) {
+    _mapImgNext = '画像確認済み — Publishing Readyへ';
+    _mapImgText = '実画像は生成済みで、Image Reviewで全' + _mapIr.slideCount + '枚OKです。公開準備の状態はPublishing Readyで確認してください。';
+  } else if (_mapIr.generated) {
+    _mapImgNext = '次は Image Review';
+    _mapImgText = '実画像は生成済み・Image Review未完了です（OK ' + _mapIr.okCount + ' / ' + _mapIr.slideCount + '）。公開準備完了は、全画像OKの後にPublishing Readyで判定します。';
+  } else if (_mapIr.assetCount > 0) {
+    _mapImgNext = '画像の状態を確認してください';
+    _mapImgText = '実画像が全スライド分そろっていないか、状態が不完全です（' + _mapIr.assetCount + '件 / ' + _mapIr.slideCount + '枚）。公開準備完了にはなりません。';
+  } else {
+    _mapImgNext = '次は Carousel Image Production';
+    _mapImgText = '実画像は未生成・未確認です。公開準備完了は、画像生成とImage Review（全画像OK）の後にPublishing Readyで判定します。';
+  }
   var readyHtml = (draft.approvalStatus === 'approved')
-    ? '<div class="oe-map-ready"><div class="oe-map-ready-title">🚀 Publishing Ready — 投稿準備完了</div>'
-      + '<div class="oe-map-meta">投稿文・CTA・ハッシュタグ・' + draft.slides.length + '枚のスライド設計が承認されました。実際の投稿はユーザーが手動で行ってください（自動投稿なし）。</div></div>'
+    ? '<div class="oe-map-ready"><div class="oe-map-ready-title">✅ 文案・構成 承認済み — ' + esc(_mapImgNext) + '</div>'
+      + '<div class="oe-map-meta">投稿文・CTA・ハッシュタグ・' + draft.slides.length + '枚のスライド設計が承認されました。' + esc(_mapImgText) + '実際の投稿はユーザーが手動で行ってください（自動投稿なし）。</div></div>'
     : '';
 
   var reviewHtml = draft.version1Review.map(function(c) {
@@ -39345,12 +39365,53 @@ function resetApprovalStatesToDefault() {
   try { if (typeof renderOutputEnginePanel === 'function') renderOutputEnginePanel(); } catch (e) { /* 描画失敗時も既存表示維持 */ }
 }
 
-function _prcResolveStatus(approvalStatus) {
+// 公開準備完了（ready）は「文案・構成の承認済み」かつ「全画像の生成・Image Review完了」の両方を満たす時だけ。
+//   承認済みでも画像確認が未完了なら preparing。published／archived の優先順位は既存のまま。
+function _prcResolveStatus(approvalStatus, imagesReviewed) {
   if (_publishingReadyState.archived) return 'archived';
   if (_publishingReadyState.published) return 'published';
-  if (approvalStatus === 'approved') return 'ready';
+  if (approvalStatus === 'approved') return imagesReviewed === true ? 'ready' : 'preparing';
   if (approvalStatus === 'ready') return 'preparing';
   return 'draft';
+}
+
+// 画像の生成・Image Review 完了判定（読み取りのみ・保存しない）。
+//   判定源は保存済みメタデータ fields.carouselAssets（server 書込み形式: slideIndex / status / storagePath / sha256 / imageReviewOk）と
+//   fields.slides の枚数だけ。署名URL（_irState.urls・期限あり）は参照しないため、URL期限切れを画像消失と判定しない。
+//   重複・欠落・範囲外・空/不正 asset・status!=='ready'（pending/generating/error/stale）は完了扱いにしない。
+function _prcEvaluateImageReadiness(fields) {
+  var slides = (fields && Array.isArray(fields.slides)) ? fields.slides : [];
+  var assets = (fields && Array.isArray(fields.carouselAssets)) ? fields.carouselAssets : [];
+  var n = slides.length;
+  var r = { slideCount: n, assetCount: assets.length, okCount: 0, generated: false, reviewed: false, reason: null };
+  if (n === 0) { r.reason = 'no_slides'; return r; }
+  if (assets.length === 0) { r.reason = 'not_generated'; return r; }
+  var seen = {};
+  for (var i = 0; i < assets.length; i++) {
+    var a = assets[i];
+    if (!a || typeof a !== 'object') { r.reason = 'invalid_asset'; return r; }
+    var idx = a.slideIndex;
+    if (typeof idx !== 'number' || !isFinite(idx) || Math.floor(idx) !== idx || idx < 1 || idx > n) { r.reason = 'invalid_asset'; return r; }
+    if (seen[idx]) { r.reason = 'duplicate_slide'; return r; }
+    seen[idx] = true;
+    if (a.status !== 'ready') { r.reason = 'asset_not_ready'; return r; }
+    if (typeof a.storagePath !== 'string' || !a.storagePath || typeof a.sha256 !== 'string' || !a.sha256) { r.reason = 'invalid_asset'; return r; }
+    if (a.imageReviewOk === true) r.okCount++;
+  }
+  if (assets.length !== n) { r.reason = 'count_mismatch'; return r; }
+  r.generated = true;
+  if (r.okCount !== n) { r.reason = 'review_incomplete'; return r; }
+  r.reviewed = true;
+  return r;
+}
+
+// Publishing Ready の取得口（描画・コピー・エクスポート・Learning・Asset Library 共通）。
+//   outputDraft.publishingReady（描画キャッシュ）を判定に使わず、毎回 現在の承認状態・投稿記録・画像情報
+//   （fields.carouselAssets）から再計算する。描画を経ずに出力しても古い ready を出さない。
+//   読み取りのみ（キャッシュ・DB・fields は書き換えない）。
+function _prcCurrentDraft(outputDraft) {
+  if (!outputDraft || !outputDraft.fields) return null;
+  return createPublishingReadyDraft(outputDraft);
 }
 
 // Phase50-7: 投稿準備度を8軸100点満点で評価する
@@ -39377,9 +39438,14 @@ function scorePublishingReady(d) {
   };
 }
 
-function _prcBuildSummary(approvalStatus, pri, slides, caption, hashtags, published) {
+function _prcBuildSummary(approvalStatus, pri, slides, caption, hashtags, published, imageReadiness) {
+  var ir = imageReadiness || { generated: false, reviewed: false, okCount: 0, slideCount: 0 };
+  var publishReady = (approvalStatus === 'approved' && ir.reviewed === true);
   return [
-    { label: 'Instagram Ready', value: approvalStatus === 'approved' ? '✓ 承認済' : '未承認', ok: approvalStatus === 'approved' },
+    // Instagram Ready = 公開準備完了（文案・構成の承認 ＋ 全画像の Image Review 完了）。承認だけでは ✓ にしない。
+    { label: 'Instagram Ready', value: publishReady ? '✓ 公開準備完了'
+        : (approvalStatus === 'approved' ? '未完了（文案・構成のみ承認済・画像確認待ち）' : '未承認'), ok: publishReady },
+    { label: 'Images', value: ir.reviewed ? '✓ 全画像OK' : (ir.generated ? 'Image Review ' + ir.okCount + ' / ' + ir.slideCount : '未生成／不完全'), ok: ir.reviewed === true },
     { label: 'Instagram Manual Posting', value: '手動のみ（自動投稿なし）', ok: true },
     { label: 'Slides', value: slides.length + '/10', ok: slides.length === 10 },
     { label: 'Caption', value: caption ? '✓' : '—', ok: !!caption },
@@ -39427,7 +39493,10 @@ function _prcBuildSaveMarkdown(pkg, checklist, notes) {
 // Phase50-7: Publishing Ready Center Draft生成（Mobile ApprovalのpublishingReadyInput/approvalPackageを参照。null draftでも例外なし）
 function createPublishingReadyDraft(outputDraft) {
   if (!outputDraft || !outputDraft.fields) return null;
-  var approval = outputDraft.mobileApproval || createMobileApprovalDraft(outputDraft);
+  var approval = outputDraft.mobileApproval;
+  // 承認の正本は _mobileApprovalState.decision。Mobile Approval キャッシュの承認有無がそれと食い違う場合は使わず再計算する
+  //   （古い承認／未承認のまま公開準備を判定しない）。キャッシュ自体は書き換えない。
+  if (!approval || (approval.approvalStatus === 'approved') !== (_mobileApprovalState.decision === 'approved')) approval = createMobileApprovalDraft(outputDraft);
   if (!approval || !approval.publishingReadyInput) return null;
   var pri = approval.publishingReadyInput;
   var pkg = approval.approvalPackage;
@@ -39436,7 +39505,9 @@ function createPublishingReadyDraft(outputDraft) {
   var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
 
   var approvalStatus = pri.approvalStatus;
-  var status = _prcResolveStatus(approvalStatus);
+  var imageReadiness = _prcEvaluateImageReadiness(outputDraft.fields);
+  var status = _prcResolveStatus(approvalStatus, imageReadiness.reviewed);
+  var publishReady = (approvalStatus === 'approved' && imageReadiness.reviewed === true);
   var published = _publishingReadyState.published;
 
   var title = (pub && pub.title) || (pri.template ? pri.template.name : 'Instagram投稿');
@@ -39452,8 +39523,8 @@ function createPublishingReadyDraft(outputDraft) {
   var publishDateTime = (pub && pub.publishTimeSuggestion) || '平日 12:00-13:00 または 19:00-21:00（目安・要調整）';
 
   var postingChecklist = [
-    { label: 'カルーセル画像を生成（手動・ユーザー承認後）', done: false },
-    { label: '背景＋文字レイアウトを確認', done: false },
+    { label: 'カルーセル画像を生成（全スライド分・Mobile Approval承認後）', done: imageReadiness.generated === true },
+    { label: 'Image Reviewで全画像OK（背景＋文字レイアウトを確認）', done: imageReadiness.reviewed === true },
     { label: '投稿本文（Caption）を貼り付け', done: !!caption },
     { label: 'ハッシュタグを貼り付け', done: hashtags.length > 0 },
     { label: 'CTA/プロフィール導線を確認', done: !!cta },
@@ -39463,7 +39534,7 @@ function createPublishingReadyDraft(outputDraft) {
 
   var notes = [
     'Version1では自動投稿は行いません。Instagramアプリ/Webから手動で投稿してください。',
-    '画像生成・文字入れはユーザー承認後の手動作業です（本Phaseでは生成しません）。',
+    '画像生成はMobile Approval（文案・構成の承認）後に Carousel Image Production で行い、Image Reviewで確認します（本Phaseでは生成しません）。',
     'アフィリエイトはPR表記を守ってください。',
   ];
 
@@ -39490,16 +39561,17 @@ function createPublishingReadyDraft(outputDraft) {
   var saveMarkdown = _prcBuildSaveMarkdown(packageObj, postingChecklist, notes);
   var saveJson = JSON.stringify(packageObj, null, 2);
 
-  var summary = _prcBuildSummary(approvalStatus, pri, slides, caption, hashtags, published);
+  var summary = _prcBuildSummary(approvalStatus, pri, slides, caption, hashtags, published, imageReadiness);
 
   var version1Review = [
     { label: 'Instagram収益化へ直接つながるか', note: '投稿に必要な収益導線付き一式（本文/CTA/ハッシュタグ/カルーセル/プロンプト）を1画面へ集約し、手動投稿で収益化を開始できる状態にする' },
-    { label: 'Version1完成条件へ近づいたか', note: '市場分析→…→承認→投稿準備完了までの「投稿直前」を完成。手動投稿→Learning→Asset Library保存へ接続' },
+    { label: 'Version1完成条件へ近づいたか', note: '市場分析→…→文案・構成の承認→画像生成→Image Review→公開準備完了までの「投稿直前」を完成。手動投稿→Learning→Asset Library保存へ接続' },
     { label: 'iPhone運用へ近づいたか', note: 'モバイル最適化UIで投稿一式をコピー→Instagramアプリへ貼り付け可能。「投稿しました」ボタンで手動投稿を記録' },
   ];
 
   var warnings = ['本Phaseは投稿直前パッケージの集約のみです。自動投稿・画像生成・Instagram API接続・外部AI実行・自動課金は一切行いません（投稿は手動）。'];
-  if (approvalStatus !== 'approved' && !published) warnings.push('Mobile Approvalで承認されていません。承認後に投稿準備が完了します。');
+  if (approvalStatus !== 'approved' && !published) warnings.push('Mobile Approval（文案・構成の承認）が未完了です。承認後、画像生成とImage Review（全画像OK）を経て公開準備完了になります。');
+  if (approvalStatus === 'approved' && !publishReady && !published) warnings.push('公開準備は未完了です（' + (imageReadiness.generated ? 'Image Review未完了: OK ' + imageReadiness.okCount + ' / ' + imageReadiness.slideCount : '全スライド分の画像が未生成または不完全') + '）。文案・構成の承認だけでは公開準備完了になりません。');
 
   return {
     version: PUBLISHING_READY_VERSION,
@@ -39507,6 +39579,8 @@ function createPublishingReadyDraft(outputDraft) {
     outputType: outputDraft.type,
     publishingStatus: status,
     canPublish: approvalStatus === 'approved',
+    publishReady: publishReady,
+    imageReadiness: imageReadiness,
     published: published,
     publishedAt: _publishingReadyState.publishedAt,
     archived: _publishingReadyState.archived,
@@ -39606,7 +39680,7 @@ function _prcCopyToClipboard(text) {
 // Phase50-7: コピー（Caption / Hashtags / CTA / Prompt / Markdown / JSON / Full Package）
 function copyPublishingReadyField(type) {
   if (!_lastOutputDraft) return;
-  var draft = _lastOutputDraft.publishingReady || createPublishingReadyDraft(_lastOutputDraft);
+  var draft = _prcCurrentDraft(_lastOutputDraft);   // キャッシュではなく現在状態から判定（古い ready を出力しない）
   if (!draft) return;
   var text = '';
   if (type === 'caption') text = draft.caption || '';
@@ -40211,7 +40285,8 @@ function buildImageReviewHtml(outputDraft) {
 function buildPublishingReadyHtml(outputDraft) {
   outputDraft = outputDraft || _lastOutputDraft;
   if (!outputDraft || !outputDraft.fields) return '';
-  var draft = outputDraft.publishingReady || createPublishingReadyDraft(outputDraft);
+  // 描画のたびに現在の承認状態・画像情報から判定する（キャッシュの古い ready を表示しない）
+  var draft = _prcCurrentDraft(outputDraft);
   if (!draft) return '';
   outputDraft.publishingReady = draft;
   var esc = escapeHtml;
@@ -40225,7 +40300,7 @@ function buildPublishingReadyHtml(outputDraft) {
   var axisKeys = ['readiness', 'caption', 'cta', 'hashtag', 'carousel', 'approval', 'learning', 'archive'];
   var axisChips = axisKeys.map(function(k) { return '<span class="oe-prc-chip">' + esc(PRC_AXIS_LABELS[k]) + ' ' + sd[k] + '</span>'; }).join('');
   var scoreBar = '<div class="oe-prc-scorebar"><span class="oe-prc-scorebig">' + draft.publishingScore + '</span>'
-    + '<div><div class="oe-prc-scorelabel">Publishing Score（投稿準備度・0〜100）</div><div class="oe-prc-chips">' + axisChips + '</div></div></div>';
+    + '<div><div class="oe-prc-scorelabel">Publishing Score（文案・構成段階の指標・画像確認は含まない・0〜100）</div><div class="oe-prc-chips">' + axisChips + '</div></div></div>';
 
   var summaryHtml = '<div class="oe-prc-summary">' + draft.summary.map(function(r) {
     return '<div class="oe-prc-sumcell"><span class="oe-prc-sumk">' + esc(r.label) + '</span><span class="oe-prc-sumv' + (r.ok ? ' ok' : '') + '">' + esc(r.value) + '</span></div>';
@@ -40255,7 +40330,9 @@ function buildPublishingReadyHtml(outputDraft) {
       + (draft.archived ? '' : '<button class="oe-prc-subbtn" onclick="archivePublishingReady()">Asset Libraryへ保存済みにする（Archived）</button>')
       + '<button class="oe-prc-subbtn" onclick="resetPublishingReadyStatus()">状態をリセット</button>';
   } else if (draft.canPublish) {
-    pubBtn = '<button class="oe-prc-pubbtn" onclick="markInstagramPublished()">投稿しました（手動投稿を記録）</button>';
+    // canPublish / markInstagramPublished の条件は無変更（Humanによる投稿済みの事実記録）。画像確認未完了時は公開準備未完了を明示する。
+    pubBtn = '<button class="oe-prc-pubbtn" onclick="markInstagramPublished()">投稿しました（手動投稿を記録）</button>'
+      + (draft.publishReady ? '' : '<div class="oe-prc-meta">⚠ 公開準備は未完了です（画像の生成またはImage Reviewが未完了）。このボタンは実際に投稿した事実の記録用です。</div>');
   } else {
     pubBtn = '<button class="oe-prc-pubbtn" disabled>投稿しました（Mobile Approvalで承認後に有効）</button>';
   }
@@ -40308,7 +40385,7 @@ function buildPublishingReadyHtml(outputDraft) {
 // Phase50-7: Export反映
 function appendPublishingReadyToExportMarkdown(lines) {
   if (!_lastOutputDraft) return;
-  var draft = _lastOutputDraft.publishingReady || createPublishingReadyDraft(_lastOutputDraft);
+  var draft = _prcCurrentDraft(_lastOutputDraft);   // キャッシュではなく現在状態から判定（古い ready を出力しない）
   if (!draft) return;
   lines.push('');
   lines.push('## Publishing Ready (Phase50-7)');
@@ -40331,7 +40408,7 @@ function appendPublishingReadyToExportMarkdown(lines) {
 
 function appendPublishingReadyToExportJson(payload) {
   if (!_lastOutputDraft) return;
-  var draft = _lastOutputDraft.publishingReady || createPublishingReadyDraft(_lastOutputDraft);
+  var draft = _prcCurrentDraft(_lastOutputDraft);   // キャッシュではなく現在状態から判定（古い ready を出力しない）
   if (!draft) return;
   payload.publishingReady = {
     version: draft.version,
@@ -40528,7 +40605,7 @@ function _ilcBuildHistorySummary() {
 // Phase51-1: Instagram Learning Center Draft生成（Publishing Readyを参照。実績未入力でも入力フォームを返す。null draftでも例外なし）
 function createInstagramLearningDraft(outputDraft) {
   if (!outputDraft || !outputDraft.fields) return null;
-  var pr = outputDraft.publishingReady || (typeof createPublishingReadyDraft === 'function' ? createPublishingReadyDraft(outputDraft) : null);
+  var pr = (typeof _prcCurrentDraft === 'function') ? _prcCurrentDraft(outputDraft) : null;   // 現在状態から判定（古いキャッシュを使わない）
   var context = pr ? {
     postTitle: pr.title, template: pr.package && pr.package.template ? pr.package.template.name : (pr.assetLibraryReady && pr.assetLibraryReady.template ? pr.assetLibraryReady.template.name : ''),
     designScore: pr.scoreDetail ? (pr.package ? pr.package.scores.designScore : 0) : 0,
@@ -40817,7 +40894,7 @@ function scoreAssetLibrarySave(d) {
 function createAssetLibrarySaveDraft(outputDraft) {
   if (!outputDraft || !outputDraft.fields) return null;
   var learning = outputDraft.instagramLearning || createInstagramLearningDraft(outputDraft);
-  var pr = outputDraft.publishingReady || (typeof createPublishingReadyDraft === 'function' ? createPublishingReadyDraft(outputDraft) : null);
+  var pr = (typeof _prcCurrentDraft === 'function') ? _prcCurrentDraft(outputDraft) : null;   // 現在状態から判定（古いキャッシュを使わない）
   var builder = outputDraft.instagramCarouselBuilder || createInstagramCarouselBuilderDraft(outputDraft);
   if (!learning && !pr) return null;
 
