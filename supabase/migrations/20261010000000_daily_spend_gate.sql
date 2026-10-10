@@ -2,7 +2,8 @@
 -- supabase/migrations/20261010000000_daily_spend_gate.sql
 -- Instagram Daily Production — 永続的な予算予約ストア（lib/spendGate.js の契約を PostgreSQL で実装）
 --
---   ★★ 未実行。本番・検証環境とも未適用。適用はユーザーの明示承認後のみ。
+--   ★★ ローカル PostgreSQL の隔離検証 DB にだけ適用して結合テスト済み（Supabase 固有の挙動は未検証）。
+--       本番（Supabase）には未適用。本番への適用はユーザーの明示承認後のみ。
 --   ★★ 予算上限の具体額はここに入れない（本番用の値もテスト値も登録しない）。
 --       spend_limit_scopes の行は、適用後に Human が別途登録する。行が無い間は予約できない（fail-closed）。
 --
@@ -72,7 +73,7 @@ create index if not exists spend_reservations_month_idx         on public.spend_
 create index if not exists spend_reservations_purpose_day_idx   on public.spend_reservations (purpose, day_key);
 create index if not exists spend_reservations_purpose_month_idx on public.spend_reservations (purpose, month_key);
 
--- RLS を有効にし、ポリシーは作らない（anon / authenticated は行を読めない・書けない）
+-- RLS を有効にし、ポリシーは service_role 用だけを作る（下記。anon / authenticated 用は作らない＝行を読めない・書けない）
 alter table public.spend_limit_scopes enable row level security;
 alter table public.spend_reservations enable row level security;
 revoke all on table public.spend_limit_scopes from public, anon, authenticated;
