@@ -23,8 +23,9 @@
 --       停止の解除はこの migration では実装しない（Human の照合後に別工程で行う）。
 --     - anon / authenticated / public からは表にも関数にも直接アクセスできない。service_role だけが関数を実行できる。
 --       関数は SECURITY INVOKER（呼び出し元の権限で実行）。search_path を固定し、参照先は public.* で修飾する。
---       service_role に必要な表権限（SELECT / INSERT / UPDATE。DELETE は付与しない）と RLS ポリシーを明示し、
---       既定の表権限や BYPASSRLS には依存しない。
+--       service_role も含めて表・関数の権限をいったん全て取り消してから、必要な表権限（SELECT / INSERT / UPDATE。
+--       DELETE / TRUNCATE は付与しない）と EXECUTE を明示する（既定の権限で余分な権限が付いていても残さない）。
+--       RLS ポリシーも明示するが、Supabase の service_role は BYPASSRLS を持つため、service_role の制限は権限で担保する。
 --     - 呼び出し側（spendGate）が想定する用途別の上限を照合し、DB の値と一致しなければ limits_mismatch で拒否する。
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -76,10 +77,10 @@ create index if not exists spend_reservations_purpose_month_idx on public.spend_
 -- RLS を有効にし、ポリシーは service_role 用だけを作る（下記。anon / authenticated 用は作らない＝行を読めない・書けない）
 alter table public.spend_limit_scopes enable row level security;
 alter table public.spend_reservations enable row level security;
-revoke all on table public.spend_limit_scopes from public, anon, authenticated;
-revoke all on table public.spend_reservations from public, anon, authenticated;
+revoke all on table public.spend_limit_scopes from public, anon, authenticated, service_role;
+revoke all on table public.spend_reservations from public, anon, authenticated, service_role;
 
--- service_role に必要な権限だけを明示（DELETE は付与しない。上限の行は Human が管理者権限で登録する）
+-- service_role に必要な権限だけを明示（DELETE / TRUNCATE は付与しない。上限の行は Human が管理者権限で登録する）
 grant select, update         on table public.spend_limit_scopes to service_role;
 grant select, insert, update on table public.spend_reservations to service_role;
 create policy spend_limit_scopes_service_role on public.spend_limit_scopes for all to service_role using (true) with check (true);
@@ -271,13 +272,13 @@ begin
 end;
 $$;
 
--- ── 権限: public / anon / authenticated から実行不可。service_role のみ ───────────
-revoke all on function public.reserve_spend(text, text, text, bigint, text, text, text, text, bigint, bigint, bigint) from public, anon, authenticated;
-revoke all on function public.mark_spend_invoked(text)                                      from public, anon, authenticated;
-revoke all on function public.release_spend(text, text)                                     from public, anon, authenticated;
-revoke all on function public.mark_spend_unknown(text, text)                                from public, anon, authenticated;
-revoke all on function public.settle_spend(text, bigint, text)                              from public, anon, authenticated;
-revoke all on function public.get_spend_reservation(text)                                   from public, anon, authenticated;
+-- ── 権限: public / anon / authenticated から実行不可。service_role のみ（全て取り消してから EXECUTE だけ付与）──
+revoke all on function public.reserve_spend(text, text, text, bigint, text, text, text, text, bigint, bigint, bigint) from public, anon, authenticated, service_role;
+revoke all on function public.mark_spend_invoked(text)                                      from public, anon, authenticated, service_role;
+revoke all on function public.release_spend(text, text)                                     from public, anon, authenticated, service_role;
+revoke all on function public.mark_spend_unknown(text, text)                                from public, anon, authenticated, service_role;
+revoke all on function public.settle_spend(text, bigint, text)                              from public, anon, authenticated, service_role;
+revoke all on function public.get_spend_reservation(text)                                   from public, anon, authenticated, service_role;
 grant execute on function public.reserve_spend(text, text, text, bigint, text, text, text, text, bigint, bigint, bigint) to service_role;
 grant execute on function public.mark_spend_invoked(text)                                      to service_role;
 grant execute on function public.release_spend(text, text)                                     to service_role;
