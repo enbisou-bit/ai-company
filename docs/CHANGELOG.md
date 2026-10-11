@@ -4,6 +4,27 @@
 
 ---
 
+## Instagram Daily Production ─ 永続の制作認可・確認記録・case 確認（2026-10-11・**未 commit・未 push・本番未適用**・新Decisionなし・Tag未作成）
+
+- **追加**：Human 確認記録と1回限りの制作認可の表・関数・トリガー（migration `20261011000000`）、rpc の認可アダプター、case の ID 確認、1回実行ツール（偽 Writer・実通信の入口なし）。
+- **検証**：偽 HTTP／偽 DB 72/0・45/0、専用ローカル Supabase で権限・同時消費・並列制作（判定修正後 7/0）・再起動後の使用済み保持（6/0）。本番・実 OpenAI は未実施。
+- Version／Phase 変更なし。
+
+---
+## Instagram Daily Production ─ Writer・計数・費用・認可・新規保存の接続コード（2026-10-11・**未 commit・未 push・本番未反映**・新Decisionなし・Tag未作成）
+
+- **接続コード**：OpenAI Writer アダプター（依存注入・再試行なし・timeout 明示・refusal／incomplete／HTTP エラーの区別）、入力トークン計数 API による予約額、usage による精算、制作認可の1回限り消費、output_drafts への新規挿入（上書きなし）を追加。
+- **検証**：偽 HTTP・偽 DB の結合テスト 72 passed（外部通信 0）。実 Writer・本番 DB・本番の認可ストアは未接続（本番モードは拒否される）。
+- Version／Phase 変更なし。
+
+---
+## Instagram Daily Production ─ 予算予約ストアのローカル Supabase 隔離検証（2026-10-10〜11・**未 commit・未 push・本番未反映**・新Decisionなし・Tag未作成）
+
+- **migration の権限修正（未 commit）**：`20261010000000_daily_spend_gate.sql` の REVOKE 対象に `service_role` を追加（Supabase の既定権限で service_role に DELETE／TRUNCATE／上限 INSERT が残る欠陥を修正）。SHA-256 `a91f868a…366c`。
+- **ローカル Supabase 隔離検証**：権限（既定権限あり／なし）・rpc・JWT（認証失敗と権限不足の区別）・結果不明の保持・rpc 経由の競合をローカルで確認。secret キーのブラウザ拒否は SKIPPED。クラウド／本番・実 Writer は未実施（詳細は docs/02PHASE_PROGRESS.md）。
+- Version／Phase 変更なし。
+
+---
 ## Development Autopilot V1 ─ Git Isolation / Real Repo Boundary（2026-09-28〜29・Decision 120・origin/main `0c8941c`・Tag未作成）
 
 - **本番反映**：Step 1 Safety Foundation（`735e39d`）・Step 2 Run Store / State Machine（`fe391a1`）・Step 3A Pure Git Isolation Contract（`1bcbaac`）・Step 3B Temp Repo Git Integration（`16d5128`）・Decision 120（`005386a`）・Step 3C Preparation Explicit Real Repo Permit（`0c8941c`）の 6 commit を main へ fast-forward push。Render commit `0c8941c` Live（ユーザー実測）。Production Smoke 5/5 PASS（未認証 GET のみ）。
