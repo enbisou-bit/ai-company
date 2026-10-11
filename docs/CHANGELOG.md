@@ -4,6 +4,11 @@
 
 ---
 
+## Instagram Daily Production ─ 1回実行ツールの実通信の入口（2026-10-11・**未 commit・未 push・本番未反映**・新Decisionなし・Tag未作成）
+
+- 実行許可（hash・通信回数・期限）・鍵ファイル・通信回数の予算を通した real モードを追加。本番の実証フラグが false のため実通信は不可のまま。偽 HTTP で 31/0。
+
+---
 ## Instagram Daily Production ─ 永続の制作認可・確認記録・case 確認（2026-10-11・**未 commit・未 push・本番未適用**・新Decisionなし・Tag未作成）
 
 - **追加**：Human 確認記録と1回限りの制作認可の表・関数・トリガー（migration `20261011000000`）、rpc の認可アダプター、case の ID 確認、1回実行ツール（偽 Writer・実通信の入口なし）。
