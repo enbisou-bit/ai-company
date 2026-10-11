@@ -12,11 +12,20 @@
 //     dry-run   … 偽 HTTP の Writer・メモリ内の予算ストア・メモリ内の認可（local_fake）・メモリ内の case と Draft 保存
 //     local-db  … 偽 HTTP の Writer ＋ 専用ローカル Supabase（127.0.0.1 のみ）の予算ストア・永続認可・cases・output_drafts
 //                 鍵は --local-keys で指定したファイルから読む（環境変数は読まない）。本番 URL は拒否。
-//     real      … 未実装・常に拒否
+//     real      … 実 OpenAI（計数 API 1回・生成 最大1回）＋ 本番 Supabase。次がすべて揃わない限り通信しない:
+//                 実行許可ファイル（--permit：run／case／output／認可 ID・確定リクエストの hash・設定の hash・
+//                 許可された通信回数 {inputTokenCount:1, generate:1}・有効期限）、鍵ファイルの明示指定、
+//                 本番の依存の実証（productionVerified・atomicityVerified）。実証フラグが false の間は必ず拒否される。
+//                 HTTP は「回数の予算」で包み、許可外の経路・回数は送信前に止める（自動再試行・fallback なし）。
+//   --mode を省略したときは dry-run。
+//   ★ 鍵は --openai-key-file／--supabase-key-file のファイルからだけ読む（値を引数に書かない・表示しない）。
+//     repo の .env・既存の本番設定・環境変数は読まない。
 //
 //   使い方:
 //     node tools/dailyProduction/runConnectedOnce.js --mode dry-run --plan <plan.json> --pack <pack.json>
 //     node --experimental-websocket tools/dailyProduction/runConnectedOnce.js --mode local-db --plan <plan.json> --pack <pack.json> --local-keys <keys.json>
+//     node tools/dailyProduction/runConnectedOnce.js --mode real --plan <plan.json> --pack <pack.json> --permit <permit.json> \
+//          --openai-key-file <file> --supabase-url <https://….supabase.co> --supabase-key-file <file>
 
 const fs = require('fs');
 const crypto = require('crypto');
@@ -141,12 +150,158 @@ async function runConnectedOnce({ mode, plan, pack, localKeys, fakeWriter, clien
   return { ok: true, mode, result, fakeWriterCalls: Object.assign({}, http.calls), draftRows: mode === 'dry-run' ? draftClient.rows : null };
 }
 
+// ── real モード: 実行許可・鍵・本番実証を確かめてから、回数の予算つきで1本だけ制作する ─────────────
+const OPENAI_V1 = 'https://api.openai.com/v1/';
+const ALLOWED_CALLS = Object.freeze({ inputTokenCount: 1, generate: 1 });
+const PERMIT_MAX_VALIDITY_MS = 24 * 3600 * 1000;
+const HASH_RE = /^[a-f0-9]{64}$/;
+
+// 実行許可に書く hash（通信なしで計算できる）。requestHash は生成リクエストの最終形、settingsHash は設定一式
+function computePlanHashes(plan, pack) {
+  const contract = require('../../shared/dailyProductionContract');
+  const reqLib = require('../../lib/dailyWriterRequest');
+  const built = contract.buildProductionSpec(pack);
+  if (!built.ok) return { ok: false, reason: 'spec:' + built.reason };
+  const instruction = contract.buildWriterInstruction(built.spec, pack);
+  const r = reqLib.buildWriterRequest(instruction, built.spec, plan.writer);
+  if (!r.ok) return { ok: false, reason: 'request:' + r.reason };
+  return {
+    ok: true,
+    contentHash: computePackHash(pack),
+    requestHash: r.requestHash,
+    settingsHash: reqLib.sha256Canonical({ writerProvider: plan.writerProvider, writer: plan.writer, pricing: plan.pricing, limits: plan.limits }),
+  };
+}
+
+// 実行許可の検証（通信の前）。不一致・期限切れ・回数の違いは理由の一覧で拒否
+function validatePermit(permit, plan, hashes, now) {
+  const errs = [];
+  if (!_isPlainObject(permit)) return { ok: false, errors: ['permit_missing'] };
+  if (permit.permitVersion !== 1) errs.push('permitVersion');
+  ['runId', 'caseId', 'outputId'].forEach(k => { if (permit[k] !== plan[k]) errs.push('permit.' + k + '_mismatch'); });
+  if (!_isNonEmptyString(permit.authorizationId)) errs.push('permit.authorizationId');
+  if (!HASH_RE.test(String(permit.requestHash)) || permit.requestHash !== hashes.requestHash) errs.push('permit.requestHash_mismatch');
+  if (!HASH_RE.test(String(permit.settingsHash)) || permit.settingsHash !== hashes.settingsHash) errs.push('permit.settingsHash_mismatch');
+  if (!HASH_RE.test(String(permit.contentHash)) || permit.contentHash !== hashes.contentHash) errs.push('permit.contentHash_mismatch');
+  const ac = permit.allowedCalls;
+  if (!_isPlainObject(ac) || ac.inputTokenCount !== 1 || ac.generate !== 1 || Object.keys(ac).length !== 2) errs.push('permit.allowedCalls(1/1)');
+  if (!_isNonEmptyString(permit.approvedBy)) errs.push('permit.approvedBy');
+  const t = (now || new Date()).getTime(), ap = Date.parse(permit.approvedAt), ex = Date.parse(permit.expiresAt);
+  if (!isFinite(ap) || !isFinite(ex) || ap > t) errs.push('permit.approvedAt');
+  else if (ex <= ap || ex - ap > PERMIT_MAX_VALIDITY_MS) errs.push('permit.validity(<=24h)');
+  else if (t >= ex) errs.push('permit_expired');
+  return { ok: errs.length === 0, errors: errs };
+}
+
+// 鍵ファイルの読み込み（値は返り値の中だけ。エラー・ログに含めない）
+function readSecretFile(p) {
+  if (!_isNonEmptyString(p)) return { ok: false, reason: 'path_missing' };
+  let v;
+  try { v = fs.readFileSync(p, 'utf8').trim(); } catch (e) { return { ok: false, reason: 'unreadable' }; }
+  if (v.length < 20 || /\s/.test(v)) return { ok: false, reason: 'invalid_format' };
+  return { ok: true, value: v };
+}
+
+// 通信回数の予算（許可外の経路・回数は送信前に例外。計数の例外は生成へ進まない／生成の例外は結果不明として予約を保持）
+function createCallBudgetHttp(inner, allowed) {
+  const used = { inputTokenCount: 0, generate: 0, blocked: [] };
+  return {
+    used,
+    async post(url, body, opts) {
+      const kind = typeof url !== 'string' || url.indexOf(OPENAI_V1) !== 0 ? null
+        : /\/responses\/input_tokens$/.test(url) ? 'inputTokenCount' : /\/responses$/.test(url) ? 'generate' : null;
+      if (!kind) { used.blocked.push('path'); throw new Error('call_blocked:path'); }
+      if (kind === 'generate' && used.inputTokenCount !== 1) { used.blocked.push('generate_without_count'); throw new Error('call_blocked:generate_without_count'); }
+      if (used[kind] >= allowed[kind]) { used.blocked.push(kind); throw new Error('call_blocked:' + kind); }
+      used[kind]++;
+      return inner.post(url, body, opts);
+    },
+  };
+}
+
+// 本番の依存（既定）: Supabase の予算ストア・永続認可・cases・output_drafts。実証フラグは false のまま（→ 接続部が拒否）
+function defaultProductionStores(client, plan) {
+  const { createSpendGate } = require('../../lib/spendGate');
+  const { createSpendStoreSupabase } = require('../../lib/spendStoreSupabase');
+  const { createSupabaseAuthorizationStore } = require('../../lib/dailyAuthorizationStoreSupabase');
+  const { createCaseBoundaryFromDb } = require('../../lib/dailyProductionConnect');
+  return {
+    spendGate: createSpendGate({ mode: 'production', store: createSpendStoreSupabase({ client }), limits: Object.assign({ amountUnit: 'micro_jpy', timeZone: 'Asia/Tokyo' }, plan.limits) }),
+    authorizationStore: createSupabaseAuthorizationStore({ client }),
+    caseBoundary: createCaseBoundaryFromDb({ dailyCaseId: plan.dailyCaseId, client }),
+    draftClient: client,
+  };
+}
+
+async function runRealOnce({ plan, pack, permit, secrets, factories, now }) {
+  factories = factories || {};
+  const refuse = (stage, errors) => ({ ok: false, stage, errors, networkCalls: { inputTokenCount: 0, generate: 0 } });
+  const v = validatePlan('local-db', plan);
+  if (!v.ok) return refuse('plan', v.errors);
+  if (!_isPlainObject(pack)) return refuse('plan', ['pack']);
+  const hashes = computePlanHashes(plan, pack);
+  if (!hashes.ok) return refuse('plan', [hashes.reason]);
+  const pv = validatePermit(permit, plan, hashes, now);
+  if (!pv.ok) return refuse('permit', pv.errors);
+  const s = _isPlainObject(secrets) ? secrets : {};
+  if (!_isNonEmptyString(s.supabaseUrl) || !/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(s.supabaseUrl)) return refuse('secrets', ['supabase-url(https://<ref>.supabase.co)']);
+  const ok = readSecretFile(s.openaiKeyFile), sk = readSecretFile(s.supabaseKeyFile);
+  if (!ok.ok || !sk.ok) return refuse('secrets', [].concat(ok.ok ? [] : ['openai-key-file:' + ok.reason], sk.ok ? [] : ['supabase-key-file:' + sk.reason]));
+
+  // ここまで通信なし。クライアントと HTTP を作る（作成だけでは通信しない）
+  const client = (factories.supabaseClient || ((url, key) => {
+    const { createClient } = require('@supabase/supabase-js');
+    return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  }))(s.supabaseUrl, sk.value);
+  const inner = (factories.http || (() => require('../../lib/dailyWriterOpenAI').createAxiosHttp(require('axios'))))();
+  const http = createCallBudgetHttp(inner, ALLOWED_CALLS);
+  const stores = (factories.stores || defaultProductionStores)(client, plan);
+  // 認可は実行許可の認可 ID と一致するものだけを使う
+  const store = stores.authorizationStore;
+  if (store && typeof store.getAuthorization === 'function') {
+    const g0 = store.getAuthorization;
+    store.getAuthorization = async x => {
+      const r = await g0(x);
+      if (r && r.authorized === true && r.authorizationId !== permit.authorizationId) return { authorized: false, reason: 'permit_authorization_mismatch' };
+      return r;
+    };
+  }
+  const { createDailyProductionDeps } = require('../../lib/dailyProductionConnect');
+  const contentValueQuality = require('../../shared/contentValueQuality');
+  const built = createDailyProductionDeps({
+    mode: 'production',
+    writer: { http, apiKey: ok.value, config: plan.writer, pricing: plan.pricing },
+    spendGate: stores.spendGate, authorizationStore: store, caseBoundary: stores.caseBoundary, draftClient: stores.draftClient,
+    computePackHash, evaluateContentValue: async (d, o) => contentValueQuality.evaluateContentValue(d, o),
+  });
+  if (!built.ok) return Object.assign(refuse('deps', built.missing || []), { reason: built.reason });
+  const service = require('../../lib/dailyProductionService');
+  const input = { runId: plan.runId, caseId: plan.caseId, outputId: plan.outputId, topicId: pack.topicId, packVersion: plan.packVersion,
+    contentHash: hashes.contentHash, pack, period: plan.period || tokyoPeriod(now), writerProvider: plan.writerProvider };
+  const result = await service.runDailyProduction(input, built.deps);
+  return { ok: true, mode: 'real', result, networkCalls: { inputTokenCount: http.used.inputTokenCount, generate: http.used.generate }, blocked: http.used.blocked.slice() };
+}
+
 if (require.main === module) {
   const args = parseArgs(process.argv.slice(2));
   const fail = (msg, extra) => { console.error(msg + (extra ? ' ' + JSON.stringify(extra) : '')); process.exit(2); };
   if (args.error) fail('引数が不正です', args.error);
-  if (args.mode === 'real') fail('実通信モードは無効です（未実装・未承認）。偽 Writer の dry-run／local-db だけを使えます。');
-  if (MODES.indexOf(args.mode) === -1) fail('--mode は dry-run または local-db を指定してください');
+  if (args.mode === undefined) args.mode = 'dry-run';   // 既定は dry-run（通信なし）
+  if (MODES.indexOf(args.mode) === -1) fail('--mode は dry-run／local-db／real のいずれかです');
+  if (args.mode === 'real') {
+    if (!args.plan || !args.pack || !args.permit) fail('real には --plan・--pack・--permit が必須です（実行していません）');
+    let plan, pack, permit;
+    try { plan = JSON.parse(fs.readFileSync(args.plan, 'utf8')); pack = JSON.parse(fs.readFileSync(args.pack, 'utf8')); permit = JSON.parse(fs.readFileSync(args.permit, 'utf8')); } catch (e) { fail('plan／pack／permit を読めません'); }
+    runRealOnce({ plan, pack, permit, secrets: { openaiKeyFile: args['openai-key-file'], supabaseUrl: args['supabase-url'], supabaseKeyFile: args['supabase-key-file'] } }).then(out => {
+      console.log('【計数モードの1本制作（real）】');
+      if (!out.ok) { console.log('停止（通信していません）: ' + out.stage + ' ' + JSON.stringify(out.errors) + (out.reason ? ' ' + out.reason : '')); process.exit(1); }
+      const r = out.result;
+      r.stages.forEach(x => console.log('  ' + (x.status === 'ok' ? '✅' : '❌') + ' ' + x.stage + (x.reason ? '：' + x.reason : '')));
+      console.log('結果: ' + r.status + ' ／ approval: ' + r.approval + ' ／ 通信: 計数 ' + out.networkCalls.inputTokenCount + '回・生成 ' + out.networkCalls.generate + '回 ／ 予算: ' + r.billing.state);
+      process.exit(r.status === 'awaiting_human_review' ? 0 : 1);
+    }).catch(() => { console.error('実行エラー（詳細は出力しません）'); process.exit(1); });
+    return;
+  }
   if (!args.plan || !args.pack) fail('--plan と --pack は必須です');
   if (args.mode === 'local-db' && !args['local-keys']) fail('local-db には --local-keys が必須です（環境変数は読みません）');
   let plan, pack, localKeys = null;
@@ -162,8 +317,13 @@ if (require.main === module) {
     r.stages.forEach(s => console.log('  ' + (s.status === 'ok' ? '✅' : '❌') + ' ' + s.stage + (s.reason ? '：' + s.reason : '')));
     console.log('結果: ' + r.status + ' ／ approval: ' + r.approval + ' ／ 認可: ' + (r.authorization ? r.authorization.kind : '-'));
     console.log('偽 Writer の呼び出し: 計数 ' + out.fakeWriterCalls.count + '回・生成 ' + out.fakeWriterCalls.generate + '回 ／ 予算: ' + r.billing.state + '（' + r.billing.mode + '）');
+    const h = computePlanHashes(plan, pack);
+    if (h.ok) console.log('実行許可に書く hash（この plan／pack の場合）: requestHash=' + h.requestHash + ' settingsHash=' + h.settingsHash + ' contentHash=' + h.contentHash);
     process.exit(r.status === 'awaiting_human_review' ? 0 : 1);
   }).catch(e => { console.error('実行エラー:', e && e.message); process.exit(1); });
 }
 
-module.exports = { MODES, LOCAL_API_URL, parseArgs, validatePlan, tokyoPeriod, createFakeWriterHttp, computePackHash, runConnectedOnce };
+module.exports = {
+  MODES, LOCAL_API_URL, parseArgs, validatePlan, tokyoPeriod, createFakeWriterHttp, computePackHash, runConnectedOnce,
+  ALLOWED_CALLS, PERMIT_MAX_VALIDITY_MS, computePlanHashes, validatePermit, readSecretFile, createCallBudgetHttp, defaultProductionStores, runRealOnce,
+};
