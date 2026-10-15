@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "description": "Development Autopilot V1 Test Safety Manifest。safe のみ自動実行候補。conditional / forbidden は自動実行しない。dev-check 等は testSelector の RESERVED_FORBIDDEN_COMMANDS で禁止。",
   "expected": {
-    "total": 69,
-    "safe": 50,
-    "conditional": 15,
+    "total": 80,
+    "safe": 53,
+    "conditional": 23,
     "forbidden": 4
   },
   "baselineSnapshot": {
@@ -1090,6 +1090,218 @@
           "lib/publicStatic.js"
         ],
         "npm": [
+          "express"
+        ]
+      }
+    },
+    {
+      "file": "dailyProductionContract.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "shared/dailyCopyValidator.js",
+          "shared/dailyProductionContract.js",
+          "shared/dailyTopicPack.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "spendGate.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test",
+      "deps": {
+        "files": [
+          "lib/spendGate.js"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "spendStoreSupabase.test.js",
+      "class": "safe",
+      "reason": "DB / provider / costTracker / server に到達しない純粋または静的読み取りの test（migration SQL は文字列として読むだけ・store は偽 client）",
+      "deps": {
+        "files": [
+          "lib/spendGate.js",
+          "lib/spendStoreSupabase.js",
+          "supabase/migrations/20261010000000_daily_spend_gate.sql"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "dailyProductionService.test.js",
+      "class": "conditional",
+      "reason": "画像 provider client（lib/carouselImageClient.js・axios）を shared/carouselImageCore.js 経由で読み込む（呼び出しはしない）。DB・server・costTracker には到達しない",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node dailyProductionService.test.js）。Autopilot Runner から自動実行しない",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）"
+      ],
+      "deps": {
+        "files": [
+          "lib/dailyProductionService.js",
+          "shared/carouselImageCore.js",
+          "shared/dailyDraftAdapter.js",
+          "shared/dailyProductionContract.js",
+          "tools/dailyProduction/runOnce.js",
+          "lib/carouselImageClient.js"
+        ],
+        "npm": [
+          "axios"
+        ]
+      }
+    },
+    {
+      "file": "mobileApprovalPublishingSeparation.test.js",
+      "class": "conditional",
+      "reason": "画像 provider client（lib/carouselImageClient.js・axios）を shared/carouselImageCore.js 経由で読み込む（呼び出しはしない）。index.html は vm で静的に評価",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node mobileApprovalPublishingSeparation.test.js）。Autopilot Runner から自動実行しない",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）"
+      ],
+      "deps": {
+        "files": [
+          "lib/carouselAssetStorage.js",
+          "shared/carouselImageCore.js",
+          "lib/carouselImageClient.js",
+          "index.html"
+        ],
+        "npm": [
+          "axios"
+        ]
+      }
+    },
+    {
+      "file": "dailyAuthorizationPersistence.test.js",
+      "class": "conditional",
+      "reason": "Supabase client に到達（lib/casesDb.js → lib/caseDraftSupabase.js → @supabase/supabase-js を読み込む。client は作らない）。http／https／net／fetch は test 内で遮断、rpc は偽物",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node dailyAuthorizationPersistence.test.js）。Autopilot Runner から自動実行しない",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）"
+      ],
+      "deps": {
+        "files": [
+          "lib/casesDb.js",
+          "lib/caseDraftSupabase.js",
+          "lib/dailyAuthorizationStoreSupabase.js",
+          "lib/dailyProductionConnect.js",
+          "tools/dailyProduction/runConnectedOnce.js",
+          "tools/dailyProduction/runOnce.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js"
+        ]
+      }
+    },
+    {
+      "file": "dailyWriterConnection.test.js",
+      "class": "conditional",
+      "reason": "Supabase client に到達（lib/outputDraftsDb.js → lib/caseDraftSupabase.js → @supabase/supabase-js を読み込む。client は作らない）。Writer は偽 HTTP、http／https／net／fetch は test 内で遮断",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node dailyWriterConnection.test.js）。Autopilot Runner から自動実行しない",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）"
+      ],
+      "deps": {
+        "files": [
+          "lib/dailyAuthorizationStore.js",
+          "lib/dailyProductionConnect.js",
+          "lib/dailyProductionService.js",
+          "lib/dailyWriterOpenAI.js",
+          "lib/dailyWriterPricing.js",
+          "lib/dailyWriterRequest.js",
+          "lib/spendGate.js",
+          "lib/outputDraftsDb.js",
+          "lib/caseDraftSupabase.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js"
+        ]
+      }
+    },
+    {
+      "file": "dailyWriterRealEntry.test.js",
+      "class": "conditional",
+      "reason": "child_process で tools/dailyProduction/runConnectedOnce.js を別プロセス起動する（子プロセスには network 遮断が掛からない。必須入力の不足で通信前に停止する前提）。OS temp に偽の鍵・計画ファイルを書く。Supabase client に到達",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node dailyWriterRealEntry.test.js）。Autopilot Runner から自動実行しない",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）。子プロセスへ渡す環境にも本物の鍵が無いこと",
+        "実行前後で Protected の md5 が一致することを確認すること"
+      ],
+      "deps": {
+        "files": [
+          "lib/dailyAuthorizationStore.js",
+          "lib/spendGate.js",
+          "tools/dailyProduction/runConnectedOnce.js",
+          "tools/dailyProduction/runOnce.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "axios"
+        ]
+      }
+    },
+    {
+      "file": "spendStorePostgres.integration.test.js",
+      "class": "conditional",
+      "reason": "child_process の psql で専用ローカル PostgreSQL（127.0.0.1・spend_gate_verify）へ接続し、DDL と同時実行を確認する integration test。SPEND_VERIFY_* が無ければ SKIPPED",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node spendStorePostgres.integration.test.js）。Autopilot Runner から自動実行しない",
+        "専用ローカル検証 DB（127.0.0.1・DB 名 spend_gate_verify・ユーザー verify_admin）だけを対象にすること。本番 Supabase の接続情報を SPEND_VERIFY_* に設定しない"
+      ],
+      "deps": {
+        "files": [
+          "lib/spendGate.js",
+          "lib/spendStoreSupabase.js",
+          "supabase/migrations/20261010000000_daily_spend_gate.sql"
+        ],
+        "npm": []
+      }
+    },
+    {
+      "file": "dailyProductionEvidence.test.js",
+      "class": "conditional",
+      "reason": "OS temp に TEST FIXTURE の証拠ファイル・偽の鍵ファイルを書く。Supabase client に到達（保存経路で lib/caseDraftSupabase.js を読み込む。client は作らない）。http／https／net／fetch は test 内で遮断",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node dailyProductionEvidence.test.js）。Autopilot Runner から自動実行しない",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）"
+      ],
+      "deps": {
+        "files": [
+          "lib/dailyProductionEvidence.js",
+          "lib/dailyAuthorizationStoreSupabase.js",
+          "lib/spendStoreSupabase.js",
+          "tools/dailyProduction/runConnectedOnce.js",
+          "tools/dailyProduction/runOnce.js",
+          "lib/caseDraftSupabase.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js"
+        ]
+      }
+    },
+    {
+      "file": "caseDraftAccessBoundary.test.js",
+      "class": "conditional",
+      "reason": "server.js を読み込んで案件 route を偽 req／res で呼ぶ（costTracker・openaiClient・claudeClient・lib/supabase.js 等に到達）。fs の書き込み・http／https／net／fetch・dotenv を test 内で遮断し、Supabase は偽 client だけを使う",
+      "conditions": [
+        "Human-controlled development test として明示実行すること（node caseDraftAccessBoundary.test.js）。Autopilot Runner から自動実行しない",
+        "実行前後で Protected の md5（tools/devAutopilot/protectedCheck.hashProtected）が一致することを確認すること",
+        "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）"
+      ],
+      "deps": {
+        "files": [
+          "lib/caseDraftSupabase.js",
+          "lib/casesDb.js",
+          "lib/outputDraftsDb.js",
+          "lib/publicStatic.js",
+          "lib/webSession.js",
+          "server.js"
+        ],
+        "npm": [
+          "@supabase/supabase-js",
+          "dotenv",
           "express"
         ]
       }

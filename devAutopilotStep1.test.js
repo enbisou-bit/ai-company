@@ -203,9 +203,37 @@ function hasRule(r, rule) { return r.findings.some(function (f) { return f.rule 
     assert(Number.isInteger(exp.total) && repoTests.length === exp.total && v.counts.total === exp.total && v.counts.safe === exp.safe
       && v.counts.conditional === exp.conditional && v.counts.forbidden === exp.forbidden,
       'MF-12b. manifest.expected と repo 実測が一致（total ' + repoTests.length + ' / safe ' + v.counts.safe + ' / conditional ' + v.counts.conditional + ' / forbidden ' + v.counts.forbidden + '）');
+    // Safety Freeze 後に追加した Autopilot 以外の test は、ファイル名と分類をここに明示して登録する（manifest の実数を期待値にしない）。
+    //   一覧に無い Autopilot 以外の test を manifest に足すと、Freeze 分が 60 を超えて MF-12c が不合格になる。
+    const POST_FREEZE_ADDITIONS = {
+      'dailyProductionContract.test.js': 'safe',
+      'spendGate.test.js': 'safe',
+      'spendStoreSupabase.test.js': 'safe',
+      'dailyProductionService.test.js': 'conditional',
+      'mobileApprovalPublishingSeparation.test.js': 'conditional',
+      'dailyAuthorizationPersistence.test.js': 'conditional',
+      'dailyWriterConnection.test.js': 'conditional',
+      'dailyWriterRealEntry.test.js': 'conditional',
+      'spendStorePostgres.integration.test.js': 'conditional',
+      'dailyProductionEvidence.test.js': 'conditional',
+      'caseDraftAccessBoundary.test.js': 'conditional',
+    };
     const pre = manifest.tests.filter(function (t) { return !/^devAutopilot/.test(t.file); });
-    const preCount = pre.reduce(function (a, t) { a[t.class]++; return a; }, { safe: 0, conditional: 0, forbidden: 0 });
-    assert(pre.length === 60 && preCount.safe === 43 && preCount.conditional === 13 && preCount.forbidden === 4, 'MF-12c. 既存 test は Safety Freeze 実測どおり 60（43 / 13 / 4）');
+    const frozen = pre.filter(function (t) { return !Object.prototype.hasOwnProperty.call(POST_FREEZE_ADDITIONS, t.file); });
+    const added = pre.filter(function (t) { return Object.prototype.hasOwnProperty.call(POST_FREEZE_ADDITIONS, t.file); });
+    const preCount = frozen.reduce(function (a, t) { a[t.class]++; return a; }, { safe: 0, conditional: 0, forbidden: 0 });
+    const bs = manifest.baselineSnapshot || {};
+    assert(frozen.length === 60 && preCount.safe === 43 && preCount.conditional === 13 && preCount.forbidden === 4
+      && bs.total === 60 && bs.safe === 43 && bs.conditional === 13 && bs.forbidden === 4,
+      'MF-12c. 既存 test は Safety Freeze 実測どおり 60（43 / 13 / 4）。Freeze 後の追加は明示一覧の ' + Object.keys(POST_FREEZE_ADDITIONS).length + ' 本だけ');
+    const addedWrong = Object.keys(POST_FREEZE_ADDITIONS).filter(function (f) {
+      const e = added.filter(function (t) { return t.file === f; })[0];
+      return !e || e.class !== POST_FREEZE_ADDITIONS[f] || repoTests.indexOf(f) === -1;
+    });
+    assert(added.length === Object.keys(POST_FREEZE_ADDITIONS).length && addedWrong.length === 0,
+      'MF-12c2. Freeze 後の追加 test は実在し、明示一覧どおりの分類で登録（不一致 ' + addedWrong.join(',') + '）');
+    assert(added.every(function (t) { return !/supabase\.co|api\.openai\.com/.test(JSON.stringify(t.conditions || [])) && (t.class === 'safe' ? !/@supabase|axios|server\.js/.test(JSON.stringify(t.deps || {})) : true); }),
+      'MF-12c3. Freeze 後の追加で safe にしたものは Supabase client・HTTP client・server に依存しない（それ以外は conditional）');
     const forb = manifest.tests.filter(function (t) { return t.class === 'forbidden'; }).map(function (t) { return t.file; }).sort();
     assert(JSON.stringify(forb) === JSON.stringify(['costTracker.eea8.test.js', 'costTrackerGpt54Mini.test.js', 'costTrackerTestIsolation.test.js', 'server.test.js']), 'MF-12d. 既知 forbidden 4件（server / costTracker 群）');
     const cond = manifest.tests.filter(function (t) { return t.class === 'conditional'; }).map(function (t) { return t.file; });
