@@ -25,7 +25,10 @@
 //     node tools/dailyProduction/runConnectedOnce.js --mode dry-run --plan <plan.json> --pack <pack.json>
 //     node --experimental-websocket tools/dailyProduction/runConnectedOnce.js --mode local-db --plan <plan.json> --pack <pack.json> --local-keys <keys.json>
 //     node tools/dailyProduction/runConnectedOnce.js --mode real --plan <plan.json> --pack <pack.json> --permit <permit.json> \
-//          --openai-key-file <file> --supabase-url <https://….supabase.co> --supabase-key-file <file>
+//          --openai-key-file <file> --supabase-url <https://….supabase.co> --supabase-key-file <file> \
+//          [--evidence-spend-file <file> --evidence-auth-file <file> --evidence-case-file <file>]
+//     証拠ファイルは lib/dailyProductionEvidence.js で照合する（実行許可の permit.evidence の hash が信頼元）。
+//     証拠が無い・1つでも照合できない場合、本番の依存は有効にならず通信しない。
 
 const fs = require('fs');
 const crypto = require('crypto');
@@ -186,6 +189,12 @@ function validatePermit(permit, plan, hashes, now) {
   const ac = permit.allowedCalls;
   if (!_isPlainObject(ac) || ac.inputTokenCount !== 1 || ac.generate !== 1 || Object.keys(ac).length !== 2) errs.push('permit.allowedCalls(1/1)');
   if (!_isNonEmptyString(permit.approvedBy)) errs.push('permit.approvedBy');
+  // 本番での実証の証拠（任意）。書く場合は3項目すべての完全 SHA-256（この許可が証拠の信頼元になる）
+  if (permit.evidence !== undefined) {
+    const ev = permit.evidence;
+    const keys = ['spendStore', 'authorizationStore', 'caseBoundary'];
+    if (!_isPlainObject(ev) || Object.keys(ev).length !== keys.length || !keys.every(k => HASH_RE.test(String(ev[k])))) errs.push('permit.evidence(3 hashes)');
+  }
   const t = (now || new Date()).getTime(), ap = Date.parse(permit.approvedAt), ex = Date.parse(permit.expiresAt);
   if (!isFinite(ap) || !isFinite(ex) || ap > t) errs.push('permit.approvedAt');
   else if (ex <= ap || ex - ap > PERMIT_MAX_VALIDITY_MS) errs.push('permit.validity(<=24h)');
@@ -253,9 +262,38 @@ async function runRealOnce({ plan, pack, permit, secrets, factories, now }) {
     const { createClient } = require('@supabase/supabase-js');
     return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
   }))(s.supabaseUrl, sk.value);
+  // 本番での実証の証拠: 実行許可の hash を信頼元に、3項目すべてが照合できた場合だけ有効化する（1つでも欠ければ有効化しない）
+  const evFiles = _isPlainObject(s.evidenceFiles) ? s.evidenceFiles : {};
+  const evGiven = ['spendStore', 'authorizationStore', 'caseBoundary'].filter(k => _isNonEmptyString(evFiles[k]));
+  let verifications = null;
+  if (permit.evidence !== undefined || evGiven.length > 0) {
+    if (permit.evidence === undefined || evGiven.length !== 3) return refuse('evidence', ['evidence_incomplete']);
+    const evidence = require('../../lib/dailyProductionEvidence');
+    const repoRoot = require('path').join(__dirname, '..', '..');
+    verifications = {};
+    const errs = [];
+    for (const k of evidence.COMPONENTS) {
+      let text = null;
+      try { text = fs.readFileSync(evFiles[k], 'utf8'); } catch (e) { errs.push(k + ':evidence_unreadable'); continue; }
+      const v = evidence.verifyEvidence({ component: k, evidenceText: text, approvedSha256: permit.evidence[k], supabaseUrl: s.supabaseUrl,
+        repoRoot, readFile: p => fs.readFileSync(p), now });
+      if (!v.ok) errs.push(k + ':' + v.reason); else verifications[k] = v;
+    }
+    if (errs.length) return refuse('evidence', errs);
+  }
   const inner = (factories.http || (() => require('../../lib/dailyWriterOpenAI').createAxiosHttp(require('axios'))))();
   const http = createCallBudgetHttp(inner, ALLOWED_CALLS);
-  const stores = (factories.stores || defaultProductionStores)(client, plan);
+  let stores = (factories.stores || defaultProductionStores)(client, plan);
+  if (verifications) {
+    const evidence = require('../../lib/dailyProductionEvidence');
+    stores = Object.assign({}, stores);
+    const gateLimits = Object.assign({ amountUnit: 'micro_jpy', timeZone: 'Asia/Tokyo' }, plan.limits);
+    const { createSpendGate } = require('../../lib/spendGate');
+    const { createSpendStoreSupabase } = require('../../lib/spendStoreSupabase');
+    stores.spendGate = createSpendGate({ mode: 'production', store: evidence.elevateSpendStore(createSpendStoreSupabase({ client }), verifications.spendStore), limits: gateLimits });
+    stores.authorizationStore = evidence.elevateAuthorizationStore(stores.authorizationStore, verifications.authorizationStore);
+    stores.caseBoundary = evidence.elevateCaseBoundary(stores.caseBoundary, verifications.caseBoundary);
+  }
   // 認可は実行許可の認可 ID と一致するものだけを使う
   const store = stores.authorizationStore;
   if (store && typeof store.getAuthorization === 'function') {
@@ -292,7 +330,8 @@ if (require.main === module) {
     if (!args.plan || !args.pack || !args.permit) fail('real には --plan・--pack・--permit が必須です（実行していません）');
     let plan, pack, permit;
     try { plan = JSON.parse(fs.readFileSync(args.plan, 'utf8')); pack = JSON.parse(fs.readFileSync(args.pack, 'utf8')); permit = JSON.parse(fs.readFileSync(args.permit, 'utf8')); } catch (e) { fail('plan／pack／permit を読めません'); }
-    runRealOnce({ plan, pack, permit, secrets: { openaiKeyFile: args['openai-key-file'], supabaseUrl: args['supabase-url'], supabaseKeyFile: args['supabase-key-file'] } }).then(out => {
+    runRealOnce({ plan, pack, permit, secrets: { openaiKeyFile: args['openai-key-file'], supabaseUrl: args['supabase-url'], supabaseKeyFile: args['supabase-key-file'],
+      evidenceFiles: { spendStore: args['evidence-spend-file'], authorizationStore: args['evidence-auth-file'], caseBoundary: args['evidence-case-file'] } } }).then(out => {
       console.log('【計数モードの1本制作（real）】');
       if (!out.ok) { console.log('停止（通信していません）: ' + out.stage + ' ' + JSON.stringify(out.errors) + (out.reason ? ' ' + out.reason : '')); process.exit(1); }
       const r = out.result;
