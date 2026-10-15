@@ -215,7 +215,7 @@ function req(runId, amount, purpose, period) { return { runId, purpose: purpose 
     assert(/v_overrun := p_settled_amount > r\.amount/.test(code) && /set stopped = true/.test(code) && /scope in \('global', v_purpose\)/.test(code), '7-11. 精算超過は切り捨てずに記録し、global と用途別を停止');
     assert(!/stopped = false,|set stopped = false/.test(code), '7-12. 停止の解除は実装しない');
     assert(/now\(\) at time zone g\.time_zone/.test(code) && /period_mismatch/.test(code), '7-13. 期間は DB の時刻で決め、申告と違えば拒否');
-    assert((code.match(/from public, anon, authenticated;/g) || []).length === 8 && (code.match(/^grant execute on function .* to service_role;$/gm) || []).length === 6, '7-14. 表2つ・関数6つで anon/authenticated/public を剥奪し、関数は service_role だけに付与');
+    assert((code.match(/from public, anon, authenticated, service_role;/g) || []).length === 8 && !/from public, anon, authenticated;/.test(code) && (code.match(/^grant execute on function .* to service_role;$/gm) || []).length === 6, '7-14. 表2つ・関数6つで public/anon/authenticated/service_role の権限をいったん全て剥奪し（9342088 で強化）、関数は service_role だけに付与');
     assert(/grant select, update\s+on table public\.spend_limit_scopes to service_role;/.test(code) && /grant select, insert, update on table public\.spend_reservations to service_role;/.test(code) && !/grant[^;]*delete/i.test(code), '7-14b. service_role の表権限を明示（DELETE なし・上限表は INSERT なし）');
     const pols = code.match(/create policy [^;]*;/gi) || [];
     assert((code.match(/enable row level security/g) || []).length === 2 && pols.length === 2 && pols.every(p => / to service_role /.test(p)), '7-15. RLS を有効にし、ポリシーは service_role 向けの2つだけ');
