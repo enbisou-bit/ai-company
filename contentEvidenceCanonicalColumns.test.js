@@ -136,6 +136,9 @@ let currentFake = null;
 const fakeClientProxy = { from: function (t) { return currentFake.from(t); } };
 const SUPABASE_PATH = path.join(ROOT, 'lib', 'supabase.js');
 require.cache[SUPABASE_PATH] = { id: SUPABASE_PATH, filename: SUPABASE_PATH, loaded: true, exports: { supabase: fakeClientProxy } };
+// 既存表のアクセス境界: lib/casesDb.js・lib/outputDraftsDb.js は server-only の lib/caseDraftSupabase.js を使うため、同じ fake を事前注入する（実ファイルは評価しない）。
+const CASE_DRAFT_PATH = path.join(ROOT, 'lib', 'caseDraftSupabase.js');
+require.cache[CASE_DRAFT_PATH] = { id: CASE_DRAFT_PATH, filename: CASE_DRAFT_PATH, loaded: true, exports: { caseDraftClient: fakeClientProxy, caseDraftDbStatus: function () { return 'ready'; }, SERVER_KEY_MISSING: 'server_key_missing' } };
 
 const BLOCKED_BARE = new Set(['axios', 'dotenv', '@supabase/supabase-js', 'http', 'https', 'net', 'tls', 'http2', 'undici',
   'node:http', 'node:https', 'node:net', 'node:tls', 'node:http2', 'child_process', 'node:child_process']);
