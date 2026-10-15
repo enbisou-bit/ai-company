@@ -4,6 +4,38 @@
 
 ---
 
+## テスト一覧の整合（2026-10-15・**ローカルのみ**・新Decisionなし・Tag未作成）
+
+- **変更**：manifest に未登録 11 本を登録（safe 3／conditional 8）。MF-12c を Freeze 60 本＋明示した追加 11 本へ。spendStoreSupabase 7-14 を強化済み migration に合わせた。
+- **検証**：devAutopilotStep1 59／0・Step4B 168／0・Step3A 125／0・spendStoreSupabase 49／0。検出の維持をメモリ上の改変で確認。
+
+---
+## 案件 API の認証境界（2026-10-15・**ローカル実装のみ**・本番／Render は無変更・新Decisionなし・Tag未作成）
+
+- **変更**：`GET／POST /api/cases`・`/api/case-memory/:caseId` に既存 requireSession（共有 session・所有者確認ではない）。ログイン後に案件一覧を再同期。本番で URL・サーバー用キーが無いときは拒否。
+- **検証**：偽 DB で未ログインは DB・ファイル操作 0、ログイン済みは従来どおり（76 件）。
+- **未実施**：本番反映。manifest 登録は判断待ち。
+
+---
+## 既存表 cases／output_drafts のアクセス境界（2026-10-15・**ローカル実装のみ**・本番 DB／Render は無変更・新Decisionなし・Tag未作成）
+
+- **追加**：`lib/caseDraftSupabase.js`（2 表専用の server-only client・キーが無ければ拒否）、migration 案 `20261015000000_case_draft_access_boundary.sql`（未適用）、本番反映資料（repo 外）。
+- **検証**：偽 client 32 件、専用ローカル Supabase で権限 73 項目・操作 17 件・取り消し後の完全一致。
+- **未実施**：コード反映・本番の権限変更。API のサーバー経由の認可（cases の GET／POST 等）は未対応。
+
+---
+## Instagram Daily Production ─ 証拠による3項目の個別有効化（2026-10-15・**ローカル実装のみ**・本番 DB／アプリは無変更・Decision 125 は提案・Tag未作成）
+
+- **追加**：`lib/dailyProductionEvidence.js`、1回実行ツールの `permit.evidence` と証拠ファイルの照合。不足・改変・接続先違い・期限切れ・コード変更では生成通信へ進まない（偽 HTTP／偽 Supabase で 38 件）。
+- **未実施**：本番での実証・証拠の発行・既存表の境界の変更。実運用の3項目は無効のまま。
+
+---
+## Instagram Daily Production ─ 予算・認可 migration の本番適用（2026-10-15・**本番 DB に反映**・アプリは未 push・新Decisionなし・Tag未作成）
+
+- **本番適用**：予算 migration（20261010000000）・認可 migration（20261011000000）を Human が SQL Editor で適用。適用後の確認 129 項目が全件一致。
+- **未実証**：本番 rpc の同時実行・1回限り消費・実 Writer。実証フラグは false。既存表のアクセス境界・計数 API の料金は未解決。
+
+---
 ## Instagram Daily Production ─ 1回実行ツールの実通信の入口（2026-10-11・**未 commit・未 push・本番未反映**・新Decisionなし・Tag未作成）
 
 - 実行許可（hash・通信回数・期限）・鍵ファイル・通信回数の予算を通した real モードを追加。本番の実証フラグが false のため実通信は不可のまま。偽 HTTP で 31/0。
