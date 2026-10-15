@@ -53,7 +53,7 @@ const MUST_STAY_OPEN = [
   ['post', '/webhook'],
   ['get', '/api/auth-required'],
   ['get', '/'],
-  ['get', '/api/cases'],
+  // ['get', '/api/cases'] は 2026-10-15 の案件データ認証境界で CASE_ROUTES へ移した（S3-B1b 時点の scope 固定から外す）
   ['get', '/api/task-history'],
   ['get', '/api/approvals'],
   ['get', '/api/cost'],
@@ -65,6 +65,13 @@ const MUST_STAY_OPEN = [
   ['get', '/api/tasks'],
   ['get', '/api/customers'],
   ['get', '/api/customers/:id'],
+];
+// 2026-10-15 案件データ（cases）の認証境界で保護を追加した route（共有 session による利用者の制限・案件ごとの所有者確認ではない）
+const CASE_ROUTES = [
+  ['get', '/api/cases'],
+  ['post', '/api/cases'],
+  ['get', '/api/case-memory/:caseId'],
+  ['post', '/api/case-memory/:caseId'],
 ];
 // S2 で既に保護済み（回帰確認）
 const S2_ROUTES = [
@@ -234,9 +241,9 @@ function runChain(middleware, handlerSpy, cookieHeader) {
   caseHeader('6. requireSession 適用 route 数が設計と一致（意図しない拡大の検出）');
   {
     const applied = (SERVER_SRC.match(/^app\.(get|post|put|patch|delete)\('[^']*',\s*require\('\.\/lib\/webSession'\)\.requireSession\(\)/gm) || []);
-    assert(applied.length === 14,
-      '6a. ★requireSession 適用は 14 route（S2 の 3 ＋ S3-B1b の 11）: ' + applied.length);
-    const expected = S2_ROUTES.concat(PAID_ROUTES, DESTRUCTIVE_ROUTES);
+    assert(applied.length === 18,
+      '6a. ★requireSession 適用は 18 route（S2 の 3 ＋ S3-B1b の 11 ＋ 案件データの 4）: ' + applied.length);
+    const expected = S2_ROUTES.concat(PAID_ROUTES, DESTRUCTIVE_ROUTES, CASE_ROUTES);
     expected.forEach(function (r) {
       assert(hasSession(r[0], r[1]), '6b. 期待どおり適用: ' + r[0].toUpperCase() + ' ' + r[1]);
     });

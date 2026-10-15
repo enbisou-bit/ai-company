@@ -11499,6 +11499,8 @@ async function submitLogin() {
       // S2: login 前の startup 復元は 401 で失敗しているため、ここで1回だけ再取得する。
       //   既存 scheduleOutputDraftRestore の多重実行防止・stale guard をそのまま使う（新機構を作らない）。
       try { scheduleOutputDraftRestore('login'); } catch (e) { /* 復元失敗でもログインは継続 */ }
+      // 認証境界: GET /api/cases も session 必須になったため、login 前の起動時同期（401 → local 維持）を login 後に1回だけやり直す。
+      try { syncCasesFromServer(); } catch (e) { /* 同期失敗でもログインは継続（local 維持） */ }
     } else {
       errEl.textContent = '認証失敗：合言葉が違います';
       input.value = '';

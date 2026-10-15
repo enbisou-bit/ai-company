@@ -1679,7 +1679,9 @@ function detectGenre(text) {
 // 案件 API（Supabase永続化）
 // ══════════════════════════════════════════════════════════════
 // GET /api/cases?memberId=
-app.get('/api/cases', async (req, res) => {
+// 認証境界: 既存 requireSession を再利用（新しい認証方式は作らない）。未ログインは DB・fallback 処理より前に 401。
+//   ★ 共有の合言葉ログインによる「利用者の制限」であり、案件ごとの所有者の確認ではない（cases に所有者列は無い）。
+app.get('/api/cases', require('./lib/webSession').requireSession(), async (req, res) => {
   const { memberId } = req.query;
   try {
     const result = await getCasesDb().getCases({ memberId });
@@ -1689,7 +1691,7 @@ app.get('/api/cases', async (req, res) => {
 });
 
 // POST /api/cases  { id, title, userText, genre, memberIds }
-app.post('/api/cases', express.json(), async (req, res) => {
+app.post('/api/cases', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   const { id, title, userText, genre, memberIds } = req.body || {};
   if (!id || !title) return res.status(400).json({ ok: false, error: 'id / title は必須です' });
   try {
@@ -1699,7 +1701,7 @@ app.post('/api/cases', express.json(), async (req, res) => {
 });
 
 // GET /api/case-memory/:caseId
-app.get('/api/case-memory/:caseId', async (req, res) => {
+app.get('/api/case-memory/:caseId', require('./lib/webSession').requireSession(), async (req, res) => {
   try {
     const result = await getCasesDb().getCases({});
     const found = result.cases.find(c => c.id === req.params.caseId);
@@ -1708,7 +1710,7 @@ app.get('/api/case-memory/:caseId', async (req, res) => {
 });
 
 // POST /api/case-memory/:caseId  { purpose?, members?, proposal?, result? }
-app.post('/api/case-memory/:caseId', express.json(), async (req, res) => {
+app.post('/api/case-memory/:caseId', require('./lib/webSession').requireSession(), express.json(), async (req, res) => {
   const { purpose, members, proposal, result } = req.body || {};
   try {
     const dbResult = await getCasesDb().updateCasePurpose(req.params.caseId, { purpose, proposal, result });
