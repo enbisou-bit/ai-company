@@ -1223,7 +1223,7 @@
     {
       "file": "dailyWriterRealEntry.test.js",
       "class": "conditional",
-      "reason": "child_process で tools/dailyProduction/runConnectedOnce.js を別プロセス起動する（子プロセスには network 遮断が掛からない。必須入力の不足で通信前に停止する前提）。OS temp に偽の鍵・計画ファイルを書く。Supabase client に到達",
+      "reason": "child_process で tools/dailyProduction/runConnectedOnce.js を別プロセス起動する（親と CLI 子プロセス 3 つで対象の Node 通信関数 10 経路をテスト内で遮断し、全ケース終了後に自己確認以外の試行 0 件を確認する。2026-11-01 の 72 件の検証記録に基づく）。OS temp に偽の鍵・計画ファイルを書く。Supabase client に到達",
       "conditions": [
         "Human-controlled development test として明示実行すること（node dailyWriterRealEntry.test.js）。Autopilot Runner から自動実行しない",
         "OPENAI_API_KEY・SUPABASE_*・NEXT_PUBLIC_SUPABASE_*・RENDER が未設定の環境で実行すること（.env.local は読まない test）。子プロセスへ渡す環境にも本物の鍵が無いこと",

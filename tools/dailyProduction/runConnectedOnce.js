@@ -242,7 +242,153 @@ function defaultProductionStores(client, plan) {
   };
 }
 
-async function runRealOnce({ plan, pack, permit, secrets, factories, now }) {
+// ── 結果記録（UTF-8 の JSON を repo 外へ直接保存）──────────────────────────────
+//   ★ 画面出力を経由しない。既存のファイルは上書きしない（作成は排他の 'wx'）。書き込めることは通信の前に確かめる。
+//   ★ 保存するのは許可した項目だけ（鍵・認証ヘッダー・cookie・環境変数・HTTP クライアントの内部情報は持たない）。
+//     保存前に鍵の値と "Bearer "（大文字小文字を問わない）が含まれないことを確かめ、含まれれば文案と工程の詳細を除いた記録に切り替える。
+//   ★ 通信回数は OpenAI への呼び出しを送出前に数える既存カウンターの値（試行回数。応答受信・課金成立とは別）。
+//     取得できない値は null（不明）とし、0 には変換しない。
+//   ★ 文案検査に不合格の文案は調査用の記録としてだけ残す（Draft には保存しない＝制作の流れは変えない）。
+const RECORD_VERSION = 1;
+const REPO_ROOT = require('path').resolve(__dirname, '..', '..');
+
+// target が root 自身または root の下にあるか（path.relative が Windows の大文字小文字・区切りの違いを吸収する）
+function _isInsideDir(root, target) {
+  const path = require('path');
+  const rel = path.relative(root, target);
+  return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
+}
+
+// 保存先の実体を確かめる。指定先は新規ファイルなので、存在する親と repo ルートを実体パスに解決して比べる（ジャンクション等を経由しても repo 内なら拒否）
+function _resolveResultFile(p, repoRoot) {
+  const path = require('path');
+  if (!_isNonEmptyString(p) || !path.isAbsolute(p)) return { reason: 'result_file_path_not_absolute' };
+  const abs = path.resolve(p);
+  if (_isInsideDir(repoRoot, abs)) return { reason: 'result_file_inside_repo' };
+  if (path.extname(abs).toLowerCase() !== '.json') return { reason: 'result_file_not_json' };
+  let realRoot, realParent;
+  try { realRoot = fs.realpathSync.native(repoRoot); } catch (e) { return { reason: 'result_file_repo_unresolved' }; }
+  try { realParent = fs.realpathSync.native(path.dirname(abs)); } catch (e) { return { reason: 'result_file_not_writable' }; }
+  const real = path.join(realParent, path.basename(abs));
+  if (_isInsideDir(realRoot, real)) return { reason: 'result_file_inside_repo' };
+  return { path: real };
+}
+
+// 通信の前に、実体の出力先へ排他で書き込めることを確かめる（初期の記録を書く）。以後はこの実体パスへ書く
+function openResultFile(p, head, repoRoot) {
+  const target = _resolveResultFile(p, repoRoot || REPO_ROOT);
+  if (!target.path) return { ok: false, reason: target.reason };
+  try {
+    fs.writeFileSync(target.path, JSON.stringify(Object.assign({ recordVersion: RECORD_VERSION, status: 'started' }, head), null, 2) + '\n', { encoding: 'utf8', flag: 'wx' });
+  } catch (e) {
+    return { ok: false, reason: e && e.code === 'EEXIST' ? 'result_file_exists' : 'result_file_not_writable' };
+  }
+  return { ok: true, path: target.path };
+}
+
+function _usageNumbers(u) {
+  if (!_isPlainObject(u)) return null;
+  const n = v => (Number.isSafeInteger(v) ? v : null);
+  return {
+    input_tokens: n(u.input_tokens), output_tokens: n(u.output_tokens), total_tokens: n(u.total_tokens),
+    cached_tokens: _isPlainObject(u.input_tokens_details) ? n(u.input_tokens_details.cached_tokens) : null,
+    reasoning_tokens: _isPlainObject(u.output_tokens_details) ? n(u.output_tokens_details.reasoning_tokens) : null,
+  };
+}
+
+// 通信回数を計数・生成ごとに写す（取得できない値は null＝不明。0 に変換しない）
+function _callCounts(nc) {
+  const n = v => (Number.isSafeInteger(v) && v >= 0 ? v : null);
+  return _isPlainObject(nc) ? { inputTokenCount: n(nc.inputTokenCount), generate: n(nc.generate) } : { inputTokenCount: null, generate: null };
+}
+
+// 記録の本体（許可した項目だけを組み立てる）
+function buildResultRecord({ head, out, capture, startedAt, finishedAt }) {
+  const r = out && _isPlainObject(out.result) ? out.result : null;
+  const w = capture && capture.writer ? capture.writer : null;
+  const cc = r && _isPlainObject(r.copyCheck) ? r.copyCheck : null;
+  const plainStages = r && Array.isArray(r.stages) ? JSON.parse(JSON.stringify(r.stages)) : null;
+  return Object.assign({ recordVersion: RECORD_VERSION, status: 'finished' }, head, {
+    startedAt, finishedAt,
+    outcome: {
+      ok: !!(out && out.ok), refusedStage: out && !out.ok ? out.stage || null : null, refusalErrors: out && !out.ok ? (out.errors || []) : [],
+      refusalReason: out && out.reason ? out.reason : null,
+      status: r ? r.status : null, failedStage: r ? r.failedStage || null : null, reason: r ? r.reason || null : null, approval: r ? r.approval || null : null,
+    },
+    networkCalls: _callCounts(out && out.networkCalls),
+    networkCallsBasis: 'OpenAI への呼び出し試行の回数（送出前に数える）。応答受信・課金成立とは別。null は不明',
+    blockedCalls: out && Array.isArray(out.blocked) ? out.blocked : [],
+    request: r && _isPlainObject(r.request) ? r.request : null,
+    writer: w ? {
+      called: true, outcome: w.outcome || null, exception: w.exception || null, httpStatus: w.httpStatus || null, incompleteReason: w.incompleteReason || null,
+      responseModel: w.responseModel || null, responseId: w.responseId || null, usage: w.usage || null,
+      text: typeof w.text === 'string' ? w.text : null, textChars: typeof w.text === 'string' ? w.text.length : null,
+    } : { called: false },
+    copyCheck: cc ? {
+      ruleCheck: cc.ruleCheck || null,
+      issues: Array.isArray(cc.issues) ? cc.issues.map(i => ({ code: i.code, path: i.path, message: i.message })) : [],
+      semanticReviewRequired: Array.isArray(cc.semanticReviewRequired) ? cc.semanticReviewRequired.map(s => s.item) : [],
+    } : null,
+    billing: r && _isPlainObject(r.billing) ? r.billing : null,
+    draft: { saved: !!(plainStages && plainStages.some(s => s.stage === 'save' && s.status === 'ok')), outputId: head.target ? head.target.outputId : null,
+      note: '文案検査に不合格の文案はこの記録にだけ残し、Draft には保存しない' },
+    stages: plainStages,
+  });
+}
+
+// 保存（秘密の値が混ざっていないことを確かめてから、自分が作ったファイルへ書く）
+function finalizeResultFile(p, record, secretValues) {
+  let text = JSON.stringify(record, null, 2) + '\n';
+  const leaked = s => secretValues.some(v => _isNonEmptyString(v) && s.indexOf(v) !== -1) || /bearer\s/i.test(s);
+  if (leaked(text)) {
+    const safe = Object.assign({}, record, { secretScan: 'redacted', stages: null, request: null });
+    if (safe.writer && safe.writer.called) safe.writer = Object.assign({}, safe.writer, { text: null, textRedacted: true });
+    text = JSON.stringify(safe, null, 2) + '\n';
+    if (leaked(text)) return { ok: false, reason: 'result_secret_scan_failed' };
+  }
+  try { fs.writeFileSync(p, text, { encoding: 'utf8', flag: 'w' }); } catch (e) { return { ok: false, reason: 'result_file_write_failed' }; }
+  return { ok: true };
+}
+
+// real モードの入口。resultFile を渡すと、通信の前に出力先を確かめ、終了時に結果を記録する
+async function runRealOnce(args) {
+  args = _isPlainObject(args) ? args : {};
+  if (args.resultFile === undefined) return _runRealOnceCore(args, null);
+  const startedAt = new Date().toISOString();
+  const pm = _isPlainObject(args.permit) ? args.permit : {};
+  const pl = _isPlainObject(args.plan) ? args.plan : {};
+  let toolSha256 = null;
+  try { toolSha256 = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'); } catch (e) { toolSha256 = null; }
+  const ref = _isPlainObject(args.secrets) && typeof args.secrets.supabaseUrl === 'string' ? (/^https:\/\/([a-z0-9-]+)\.supabase\.co\/?$/.exec(args.secrets.supabaseUrl) || [])[1] || null : null;
+  // 最初の記録は固定の状態だけを書く。ID・hash は実行許可の検査を通った場合にだけ最終の記録へ載せる（未検証の入力を転記しない）
+  const base = { tool: 'tools/dailyProduction/runConnectedOnce.js', toolSha256 };
+  const unverified = { target: null, permitHashes: null, evidenceHashes: null, model: null, pricing: null };
+  const verified = () => ({
+    target: { runId: pl.runId || null, caseId: pl.caseId || null, outputId: pl.outputId || null, authorizationId: pm.authorizationId || null,
+      topicId: _isPlainObject(args.pack) ? args.pack.topicId || null : null, packVersion: pl.packVersion || null, supabaseProjectRef: ref },
+    permitHashes: { contentHash: pm.contentHash || null, requestHash: pm.requestHash || null, settingsHash: pm.settingsHash || null },
+    evidenceHashes: _isPlainObject(pm.evidence) ? pm.evidence : null,
+    model: _isPlainObject(pl.writer) ? pl.writer.model || null : null,
+    pricing: _isPlainObject(pl.pricing) ? { pricingVersion: pl.pricing.pricingVersion || null, rateVersion: pl.pricing.rateVersion || null } : null,
+  });
+  const opened = openResultFile(args.resultFile, Object.assign({ startedAt }, base), _isPlainObject(args.factories) ? args.factories.repoRoot : undefined);
+  if (!opened.ok) return { ok: false, stage: 'result_file', errors: [opened.reason], networkCalls: { inputTokenCount: 0, generate: 0 } };
+  const capture = { writer: null, secretValues: [], callCounter: null, permitVerified: false };
+  let out;
+  try { out = await _runRealOnceCore(args, capture); }
+  catch (e) {
+    // 想定外の例外: 既存カウンターが作られていればその値を写す（作られる前なら不明＝null。0 とはしない）
+    const c = capture.callCounter;
+    out = { ok: false, stage: 'exception', errors: ['unexpected_exception'],
+      networkCalls: c ? { inputTokenCount: c.inputTokenCount, generate: c.generate } : null, blocked: c && Array.isArray(c.blocked) ? c.blocked.slice() : [] };
+  }
+  const head = Object.assign({}, base, capture.permitVerified ? verified() : unverified);
+  const record = buildResultRecord({ head, out, capture, startedAt, finishedAt: new Date().toISOString() });
+  const fin = finalizeResultFile(opened.path, record, capture.secretValues);
+  return Object.assign({}, out, { resultFile: fin.ok ? { ok: true, path: opened.path } : { ok: false, reason: fin.reason, path: opened.path } });
+}
+
+async function _runRealOnceCore({ plan, pack, permit, secrets, factories, now }, capture) {
   factories = factories || {};
   const refuse = (stage, errors) => ({ ok: false, stage, errors, networkCalls: { inputTokenCount: 0, generate: 0 } });
   const v = validatePlan('local-db', plan);
@@ -252,10 +398,12 @@ async function runRealOnce({ plan, pack, permit, secrets, factories, now }) {
   if (!hashes.ok) return refuse('plan', [hashes.reason]);
   const pv = validatePermit(permit, plan, hashes, now);
   if (!pv.ok) return refuse('permit', pv.errors);
+  if (capture) capture.permitVerified = true;
   const s = _isPlainObject(secrets) ? secrets : {};
   if (!_isNonEmptyString(s.supabaseUrl) || !/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(s.supabaseUrl)) return refuse('secrets', ['supabase-url(https://<ref>.supabase.co)']);
   const ok = readSecretFile(s.openaiKeyFile), sk = readSecretFile(s.supabaseKeyFile);
   if (!ok.ok || !sk.ok) return refuse('secrets', [].concat(ok.ok ? [] : ['openai-key-file:' + ok.reason], sk.ok ? [] : ['supabase-key-file:' + sk.reason]));
+  if (capture) capture.secretValues = [ok.value, sk.value];   // 記録に混ざっていないかの照合だけに使う（記録しない）
 
   // ここまで通信なし。クライアントと HTTP を作る（作成だけでは通信しない）
   const client = (factories.supabaseClient || ((url, key) => {
@@ -283,6 +431,7 @@ async function runRealOnce({ plan, pack, permit, secrets, factories, now }) {
   }
   const inner = (factories.http || (() => require('../../lib/dailyWriterOpenAI').createAxiosHttp(require('axios'))))();
   const http = createCallBudgetHttp(inner, ALLOWED_CALLS);
+  if (capture) capture.callCounter = http.used;   // 記録用に既存カウンターを参照するだけ（更新位置・通信制御は変えない）
   let stores = (factories.stores || defaultProductionStores)(client, plan);
   if (verifications) {
     const evidence = require('../../lib/dailyProductionEvidence');
@@ -313,6 +462,24 @@ async function runRealOnce({ plan, pack, permit, secrets, factories, now }) {
     computePackHash, evaluateContentValue: async (d, o) => contentValueQuality.evaluateContentValue(d, o),
   });
   if (!built.ok) return Object.assign(refuse('deps', built.missing || []), { reason: built.reason });
+  // 記録用に Writer の応答（本文・分類・使用量・応答モデル・応答 ID）だけを写し取る。応答はそのまま返し、流れは変えない
+  if (capture) {
+    const callWriter0 = built.deps.callWriter;
+    built.deps.callWriter = async (a) => {
+      let w;
+      try { w = await callWriter0(a); }
+      catch (e) { capture.writer = { exception: e && e.name === 'WriterOutcomeUnknownError' ? 'writer_outcome_unknown:' + e.code : 'writer_exception' }; throw e; }
+      if (_isPlainObject(w)) {
+        capture.writer = {
+          outcome: typeof w.outcome === 'string' ? w.outcome : (w.notSent ? 'not_sent' : null), httpStatus: Number.isInteger(w.httpStatus) ? w.httpStatus : null,
+          incompleteReason: typeof w.incompleteReason === 'string' ? w.incompleteReason : null,
+          responseModel: typeof w.responseModel === 'string' ? w.responseModel : null, responseId: typeof w.responseId === 'string' ? w.responseId : null,
+          usage: _isPlainObject(w.usage) ? _usageNumbers(w.usage.raw) : null, text: typeof w.text === 'string' ? w.text : null,
+        };
+      }
+      return w;
+    };
+  }
   const service = require('../../lib/dailyProductionService');
   const input = { runId: plan.runId, caseId: plan.caseId, outputId: plan.outputId, topicId: pack.topicId, packVersion: plan.packVersion,
     contentHash: hashes.contentHash, pack, period: plan.period || tokyoPeriod(now), writerProvider: plan.writerProvider };
@@ -328,16 +495,22 @@ if (require.main === module) {
   if (MODES.indexOf(args.mode) === -1) fail('--mode は dry-run／local-db／real のいずれかです');
   if (args.mode === 'real') {
     if (!args.plan || !args.pack || !args.permit) fail('real には --plan・--pack・--permit が必須です（実行していません）');
+    if (!args['result-file']) fail('real には --result-file（repo 外・新しい .json の絶対パス）が必須です（実行していません）');
     let plan, pack, permit;
     try { plan = JSON.parse(fs.readFileSync(args.plan, 'utf8')); pack = JSON.parse(fs.readFileSync(args.pack, 'utf8')); permit = JSON.parse(fs.readFileSync(args.permit, 'utf8')); } catch (e) { fail('plan／pack／permit を読めません'); }
     runRealOnce({ plan, pack, permit, secrets: { openaiKeyFile: args['openai-key-file'], supabaseUrl: args['supabase-url'], supabaseKeyFile: args['supabase-key-file'],
-      evidenceFiles: { spendStore: args['evidence-spend-file'], authorizationStore: args['evidence-auth-file'], caseBoundary: args['evidence-case-file'] } } }).then(out => {
+      evidenceFiles: { spendStore: args['evidence-spend-file'], authorizationStore: args['evidence-auth-file'], caseBoundary: args['evidence-case-file'] } },
+      resultFile: args['result-file'] }).then(out => {
       console.log('【計数モードの1本制作（real）】');
-      if (!out.ok) { console.log('停止（通信していません）: ' + out.stage + ' ' + JSON.stringify(out.errors) + (out.reason ? ' ' + out.reason : '')); process.exit(1); }
+      if (out.stage === 'result_file') { console.log('停止（通信していません）: result_file ' + JSON.stringify(out.errors)); process.exit(1); }
+      const rf = out.resultFile;
+      console.log(rf && rf.ok ? '結果の記録（UTF-8 JSON）: ' + rf.path : '★ 結果の記録に失敗: ' + (rf ? rf.reason : 'unknown') + '（再実行しないこと）');
+      if (out.stage === 'exception') { console.log('想定外の例外で停止（通信回数は結果の記録で確認。再実行しないこと）'); process.exit(1); }
+      if (!out.ok) { console.log('停止（通信していません）: '+ out.stage + ' ' + JSON.stringify(out.errors) + (out.reason ? ' ' + out.reason : '')); process.exit(1); }
       const r = out.result;
       r.stages.forEach(x => console.log('  ' + (x.status === 'ok' ? '✅' : '❌') + ' ' + x.stage + (x.reason ? '：' + x.reason : '')));
       console.log('結果: ' + r.status + ' ／ approval: ' + r.approval + ' ／ 通信: 計数 ' + out.networkCalls.inputTokenCount + '回・生成 ' + out.networkCalls.generate + '回 ／ 予算: ' + r.billing.state);
-      process.exit(r.status === 'awaiting_human_review' ? 0 : 1);
+      process.exit(r.status === 'awaiting_human_review' && rf && rf.ok ? 0 : 1);
     }).catch(() => { console.error('実行エラー（詳細は出力しません）'); process.exit(1); });
     return;
   }
@@ -365,4 +538,5 @@ if (require.main === module) {
 module.exports = {
   MODES, LOCAL_API_URL, parseArgs, validatePlan, tokyoPeriod, createFakeWriterHttp, computePackHash, runConnectedOnce,
   ALLOWED_CALLS, PERMIT_MAX_VALIDITY_MS, computePlanHashes, validatePermit, readSecretFile, createCallBudgetHttp, defaultProductionStores, runRealOnce,
+  RECORD_VERSION, openResultFile, buildResultRecord, finalizeResultFile,
 };
