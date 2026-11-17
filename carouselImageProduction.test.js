@@ -2182,6 +2182,116 @@ function run(overrides) {
     assert(!/\bignore\b|\boverride\b|\bsystem\b/i.test(bpInj) && bpInj.indexOf('タオル') !== -1, 'PA-24. injection 除去 かつ タオル 保持（既存 :205 契約）');
   }
 
+  caseHeader('D128. 読みやすい描画（本文の拡大・自然な改行・チェック枠の適用範囲・収まらない場合の停止）');
+  {
+    const approved = { approval_decision: 'approved', published: false, case_id: 'c-d128', output_id: 'o-d128' };
+    const planOf = fields => core.planCarouselImageJob({ caseId: 'c-d128', outputId: 'o-d128', quality: 'low',
+      draftRow: { case_id: 'c-d128', output_id: 'o-d128', fields }, approvalRow: approved });
+    const slides5 = [1, 2, 3, 4, 5].map(i => '【' + i + '枚目】タイトル：見出し' + i + ' / 本文：ぬるま湯で顔をぬらす\n洗顔料を指先でなじませて洗う');
+    const daily = planOf({ slides: slides5, cta: '保存して見返してください。',
+      dailyProduction: { slideRoles: ['scene_problem', 'verified_reason', 'steps', 'additional_action_or_caution', 'checklist'] } });
+    assert(daily.ok && daily.items.map(i => i.layout.isChecklist).join() === 'false,false,false,false,true', 'D128-1. 日次の Draft は役割が checklist の枚だけにチェック枠');
+    const app = planOf({ slides: slides5, cta: '保存して見返してください。' });
+    assert(app.ok && app.items.every(i => i.layout.isChecklist === false), 'D128-2. 役割の記録がない Draft（アプリ型）にはチェック枠を付けない（最後の枚でも付けない）');
+    const svgLast = renderer.renderSlideOverlaySvg(Object.assign({}, app.items[4], { layout: app.items[4].layout }), { totalSlides: 5 });
+    assert(!/data-role="checkBox"/.test(svgLast), 'D128-3. アプリ型の最後の枚の SVG にチェック枠がない');
+    const svgCheck = renderer.renderSlideOverlaySvg(daily.items[4], { totalSlides: 5 });
+    assert((svgCheck.match(/data-role="checkBox"/g) || []).length === 2, 'D128-4. チェック枠は本文の項目の数だけ');
+    const svgBody = renderer.renderSlideOverlaySvg(daily.items[2], { totalSlides: 5 });
+    const bodyText = [...svgBody.matchAll(/data-role="body"[^>]*data-text="([^"]*)"/g)].map(m => m[1])[0];
+    assert(bodyText === 'ぬるま湯で顔をぬらす洗顔料を指先でなじませて洗う', 'D128-5. 本文は省略・欠落なく data-text に保持');
+    const long = 'タオルやスポンジなど指先以外で洗うと、肌を刺激することがある';
+    const w = renderer.smartWrap(long, 888, renderer.TYPO.bodyPx, 'regular');
+    assert(w.join('') === long && w.length === 2 && w[0].endsWith('、'), 'D128-6. 1 行に収まらない文は読点の後で折り、文字を変えない');
+    const tail = renderer.smartWrap('肌のことで気になることがあれば、皮膚科医に相談する', 888, 36, 'regular');
+    assert(tail.every(l => Array.from(l).length >= 3), 'D128-7. 末尾 1〜2 文字だけの行を作らない');
+    const numbered = planOf({ slides: ['【1枚目】タイトル：表紙 / 本文：本文', '【2枚目】タイトル：1. 手順 / 本文：本文です', '【3枚目】タイトル：まとめ / 本文：まとめ'], cta: '保存' });
+    assert(/data-role="badge"/.test(renderer.renderSlideOverlaySvg(numbered.items[1], { totalSlides: 3 })), 'D128-8. 番号付きの見出しのバッジを維持');
+    const huge = '洗顔料を指先でなじませて、ぬるま湯でやさしく洗い流します。'.repeat(12);
+    const over = planOf({ slides: ['【1枚目】タイトル：表紙 / 本文：本文', '【2枚目】タイトル：長文 / 本文：' + huge, '【3枚目】タイトル：まとめ / 本文：まとめ'], cta: '保存' });
+    assert(over.ok === false && over.reason === 'text_overflow' && JSON.stringify(over.slides) === '[2]', 'D128-9. 36px でも収まらない枚があれば、有料生成の前に text_overflow で止める');
+    let thrown = null;
+    try { renderer.renderSlideOverlaySvg({ slideIndex: 2, headline: '長文', body: huge, layout: {} }, { totalSlides: 3 }); } catch (e) { thrown = e; }
+    assert(thrown && thrown.code === 'text_overflow', 'D128-10. 描画でも収まらない場合は文字を欠落させず止める');
+    const m = renderer.measureSlideLayout(daily.items[2], { totalSlides: 5 });
+    assert(m.fits && m.bodyPx === renderer.TYPO.bodyPx && renderer.TYPO.bodyPx === 46 && renderer.BODY_PX_MIN === 36, 'D128-11. 本文は 46px（収まらないときだけ 36px まで縮小）');
+    const a = renderer.renderSlideOverlaySvg(daily.items[4], { totalSlides: 5 }), b = renderer.renderSlideOverlaySvg(daily.items[4], { totalSlides: 5 });
+    assert(a === b, 'D128-12. 同一入力 → 同一 SVG（決定的）');
+  }
+
+  caseHeader('D130. 見せ方の指定（本文の hash に束縛した太字の範囲・手順番号）');
+  {
+    const approved = { approval_decision: 'approved', published: false, case_id: 'c-d130', output_id: 'o-d130' };
+    const planOf = fields => core.planCarouselImageJob({ caseId: 'c-d130', outputId: 'o-d130', quality: 'low',
+      draftRow: { case_id: 'c-d130', output_id: 'o-d130', fields }, approvalRow: approved });
+    const H = 'a'.repeat(64);
+    const roles = ['scene_problem', 'verified_reason', 'steps', 'additional_action_or_caution', 'checklist'];
+    const s = [
+      '【1枚目】タイトル：洗い方は、なんとなく？ / 本文：洗うときも、拭くときも、こすっていない？',
+      '【2枚目】タイトル：気をつけたいのは「こすること」 / 本文：肌をこすると、刺激になる\n指先以外のスポンジや布で洗うのも、刺激になることがある',
+      '【3枚目】タイトル：指先で洗い、押さえて拭く / 本文：ぬるま湯で顔をぬらす\n洗顔料は指先でなじませる\nぬるま湯ですすぐ\nやわらかいタオルを押し当てて、水気を取る',
+      '【4枚目】タイトル：洗う回数と、洗ったあとのケア / 本文：洗顔は朝と夜の1日2回にとどめる\n乾燥やかゆみがあれば、保湿剤を塗る',
+      '【5枚目】タイトル：次の洗顔で確認すること / 本文：洗うときは指先で。拭くときは押し当てる\n肌で気になることは皮膚科医に相談',
+    ];
+    const pres = { presentationVersion: 1, copySha256: H, slides: [
+      { index: 2, emphasis: [{ line: 0, text: '刺激になる' }, { line: 1, text: '刺激になることがある' }] },
+      { index: 3, stepMarkers: true, emphasis: [{ line: 1, text: '指先で' }, { line: 3, text: '押し当てて' }] }] };
+    const withPres = (p, dpOver) => planOf({ slides: s, cta: '保存して見返してください。', dailyProduction: Object.assign({ slideRoles: roles, revisedCopySha256: H, presentation: p }, dpOver || {}) });
+    const ok = withPres(pres);
+    assert(ok.ok && ok.items[2].layout.stepMarkers === true && Array.isArray(ok.items[1].layout.emphasis), 'D130-1. 本文の hash と一致する指定だけを layout に渡す');
+    const plain = planOf({ slides: s, cta: '保存して見返してください。', dailyProduction: { slideRoles: roles } });
+    assert(plain.ok && plain.items.every(i => !('stepMarkers' in i.layout) && !('emphasis' in i.layout)), 'D130-2. 指定が無い Draft の layout は従来の鍵だけ（従来どおり描く）');
+    const r3 = withPres(pres, { revisedCopySha256: 'b'.repeat(64) });
+    assert(!r3.ok && r3.reason === 'presentation_invalid' && r3.details.includes('presentation_unbound_to_copy_hash'), 'D130-3. 本文の hash と一致しなければ描かない（有料生成の前に止める）');
+    const r4 = withPres(pres, { revisedCopySha256: undefined });
+    assert(!r4.ok && r4.details.includes('presentation_unbound_to_copy_hash'), 'D130-4. 文案の hash の記録が無い Draft には指定を使わない');
+    const bad = (mut) => { const p = JSON.parse(JSON.stringify(pres)); mut(p); return withPres(p); };
+    const r5 = bad(p => { p.slides[0].emphasis[1].text = '刺激になる'; });
+    assert(!r5.ok && r5.details.some(x => /limiter_outside:ことがある/.test(x)), 'D130-5. 限定語（ことがある）を太字の範囲から外す指定は拒否');
+    const r6 = bad(p => { p.slides[1].emphasis[0].text = '別の語'; });
+    assert(!r6.ok && r6.details.some(x => /not_in_line/.test(x)), 'D130-6. 本文に無い文字列の太字は拒否（文字を足さない）');
+    const r7 = bad(p => { p.slides[1].emphasis[0] = { line: 0, text: 'ぬ' }; });
+    assert(!r7.ok && r7.details.some(x => /ambiguous/.test(x)), 'D130-7. 行の中に 2 回以上ある文字列は拒否（範囲が一意に決まらない）');
+    const r8 = bad(p => { p.slides.push({ index: 5, stepMarkers: true }); });
+    assert(!r8.ok && r8.details.some(x => /stepMarkers_only_on_steps_role/.test(x)), 'D130-8. 手順番号は役割が steps の枚だけ（チェックリスト等には付けない）');
+    const r9 = bad(p => { p.slides[0].emphasis[0].line = 9; });
+    assert(!r9.ok, 'D130-9. 存在しない行の指定は拒否');
+    // 描画：手順番号と太字。本文の文字は変えない（data-text は本文のまま・太字の部分も元の文字）
+    const it2 = ok.items[1], it3 = ok.items[2];
+    const svg2 = renderer.renderSlideOverlaySvg(it2, { totalSlides: 5 }), svg3 = renderer.renderSlideOverlaySvg(it3, { totalSlides: 5 });
+    assert((svg3.match(/data-role="stepMarker"/g) || []).length === 4 && /data-role="stepMarker" data-text="4"/.test(svg3), 'D130-10. 手順の枚に 1〜4 の手順番号（項目の順序から付ける印）');
+    assert((svg2.match(/data-role="stepMarker"/g) || []).length === 0, 'D130-11. 手順番号を指定していない枚には付けない');
+    assert((svg2.match(/data-emphasis="1"/g) || []).length >= 2 && (svg3.match(/data-emphasis="1"/g) || []).length >= 2, 'D130-12. 指定した範囲だけ太字で描く');
+    const bodyText = svg => (svg.match(/data-role="body"[^>]*data-text="([^"]*)"/) || [])[1];
+    assert(bodyText(svg3) === it3.body.split('\n').join('') && bodyText(svg2) === it2.body.split('\n').join(''), 'D130-13. 本文の文字は変えない（記録の本文と一致）');
+    const m3 = renderer.measureSlideLayout(it3, { totalSlides: 5 });
+    assert(m3.fits && m3.items.map(x => x.join('')).join('\n') === it3.body, 'D130-14. はみ出しの検査は指定込みの幅で行い、文字を欠落させない');
+    assert(renderer.renderSlideOverlaySvg(it3, { totalSlides: 5 }) === svg3, 'D130-15. 同一入力 → 同一 SVG（決定的）');
+    const noPres = renderer.renderSlideOverlaySvg(plain.items[2], { totalSlides: 5 });
+    assert(!/stepMarker|data-emphasis/.test(noPres), 'D130-16. 指定が無ければ番号・太字の要素を描かない');
+  }
+
+  caseHeader('D131. 手順番号のある最後の枚は左寄せ（番号と本文が重ならない・CTA は中央）');
+  {
+    const minX = d => { const n = d.replace(/[A-Za-z]/g, ' ').trim().split(/[\s,]+/).map(Number); let m = Infinity; for (let k = 0; k + 1 < n.length; k += 2) if (isFinite(n[k])) m = Math.min(m, n[k]); return m; };
+    const last = { slideIndex: 5, slideId: 'd131-5', headline: '次の洗顔はこの順番で',
+      body: '使用量・泡立て方などは、製品の説明に従う\nぬるま湯で顔をぬらす\n指の腹でやさしくなじませ、こすらずに洗う\n水をやさしくかけ、すすぎ残しなく流す\nやわらかいタオルで押さえて水気を取る',
+      layout: { isCta: true, ctaText: '保存して、次の洗顔でこの順番で洗ってみてください。', isChecklist: false, stepMarkers: true } };
+    const svg = renderer.renderSlideOverlaySvg(last, { totalSlides: 5 });
+    const markerRight = Math.max(...[...svg.matchAll(/<g data-role="stepMarker" data-text="\d+"><circle cx="([\d.]+)" cy="[\d.]+" r="([\d.]+)"/g)].map(x => +x[1] + +x[2]));
+    const body = (svg.match(/<g data-role="body"[^>]*>([\s\S]*?)<\/g><g data-role="cta"/) || [])[1] || '';
+    const textMin = Math.min(...[...body.replace(/<g data-role="stepMarker"[\s\S]*?<\/g>/g, '').matchAll(/<path d="([^"]+)"/g)].map(x => minX(x[1])));
+    assert((svg.match(/data-role="stepMarker"/g) || []).length === 5 && textMin > markerRight, 'D131-1. 最後の枚でも、本文は手順番号の右から始まる（重ならない）');
+    const ctaG = (svg.match(/<g data-role="cta"[^>]*>([\s\S]*?)<\/g>/) || [])[1] || '';
+    const ctaMin = Math.min(...[...ctaG.matchAll(/<path d="([^"]+)"/g)].map(x => minX(x[1])));
+    assert(ctaMin > renderer.SAFE.left + 40, 'D131-2. CTA は中央寄せのまま（左端に寄らない）');
+    const noMarkers = Object.assign({}, last, { layout: Object.assign({}, last.layout, { stepMarkers: false }) });
+    const svg2 = renderer.renderSlideOverlaySvg(noMarkers, { totalSlides: 5 });
+    const body2 = (svg2.match(/<g data-role="body"[^>]*>([\s\S]*?)<\/g><g data-role="cta"/) || [])[1] || '';
+    const textMin2 = Math.min(...[...body2.matchAll(/<path d="([^"]+)"/g)].map(x => minX(x[1])));
+    assert(textMin2 > renderer.SAFE.left + 20, 'D131-3. 手順番号の無い最後の枚は従来どおり中央寄せ');
+  }
+
   console.log('\n' + '─'.repeat(60));
   console.log('結果: ' + _passed + ' passed / ' + _failed + ' failed');
   if (_failed > 0) { console.log('🔴 FAILED'); process.exitCode = 1; }

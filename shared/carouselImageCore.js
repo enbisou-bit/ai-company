@@ -209,6 +209,21 @@ function assertSlideIsolation(prevAssets, nextAssets, changedIndex) {
 }
 
 // ── plan: 「何を生成すべきか」（実行なし・純関数） ──────────────
+// ── Decision 130: 見せ方の指定（fields.dailyProduction.presentation）の検査 ──────────────
+//   { presentationVersion: 1, copySha256, slides: [{ index, stepMarkers?, emphasis?: [{ line, text }] }] }
+//   ・本文の hash に束縛する：copySha256 が、この Draft の文案の hash（dailyProduction.revisedCopySha256）と一致すること
+//   ・手順番号は、制作仕様の役割が steps の枚だけ（数量・回数の数字は本文側の検査の対象のまま）
+//   ・太字は本文中の文字列で指定し、その行に 1 回だけ現れること。限定語を含む行は、限定語を太字の範囲に含めること
+//   ・指定が無ければ { ok: true, bySlide: {} }（従来どおり）。不正なら描画しない（有料生成の前に止める）
+var presentationCheck = require('./carouselPresentation');
+var PRESENTATION_LIMITERS = presentationCheck.PRESENTATION_LIMITERS;
+function resolvePresentation(dp, slides, slideRoles) {
+  var p = dp && typeof dp === 'object' ? dp.presentation : undefined;
+  var slideLines = slides.map(function (raw) { return String(parseFieldSlide(raw).body || '').split('\n').filter(function (x) { return x.length > 0; }); });
+  return presentationCheck.validatePresentation({ presentation: p, boundCopySha256: dp && typeof dp.revisedCopySha256 === 'string' ? dp.revisedCopySha256 : null,
+    slideLines: slideLines, slideRoles: slideRoles });
+}
+
 function planCarouselImageJob(input) {
   var caseId = input.caseId, outputId = input.outputId;
   var draftRow = input.draftRow || {};
@@ -238,6 +253,13 @@ function planCarouselImageJob(input) {
   if (!q.ok) return { ok: false, reason: q.reason };
 
   var total = slides.length;
+  // Decision 128: チェック枠は、日次制作の Draft が記録した役割（fields.dailyProduction.slideRoles）が
+  //   'checklist' の枚だけに付ける。役割の記録がない Draft（アプリで作った Draft など）には付けない。
+  var dp = fields.dailyProduction;
+  var slideRoles = dp && typeof dp === 'object' && Array.isArray(dp.slideRoles) ? dp.slideRoles : [];
+  // Decision 130: 見せ方の指定（太字の範囲・手順番号）。本文の hash に束縛され、検査に通ったときだけ使う（有料生成の前に止める）
+  var pres = resolvePresentation(dp, slides, slideRoles);
+  if (!pres.ok) return { ok: false, reason: 'presentation_invalid', details: pres.errors };
   var items = slides.map(function (raw, i) {
     var idx = i + 1;
     var parsed = parseFieldSlide(raw);
@@ -252,7 +274,13 @@ function planCarouselImageJob(input) {
       badgeNumber: badgeNumberFromHeadline(parsed.headline),
       isCta: idx === total,
       ctaText: idx === total ? sliceCtaText(fields.cta) : null,
+      isChecklist: slideRoles[i] === 'checklist',
     };
+    // 指定がある枚だけ鍵を足す（指定が無い Draft の layout は従来と同じ内容のまま）
+    if (pres.bySlide[idx]) {
+      if (pres.bySlide[idx].stepMarkers) layout.stepMarkers = true;
+      if (pres.bySlide[idx].emphasis) layout.emphasis = pres.bySlide[idx].emphasis;
+    }
     return {
       slideIndex: idx,
       slideId: entry.slideId,
@@ -262,6 +290,12 @@ function planCarouselImageJob(input) {
       asset: entry,
     };
   });
+
+  // Decision 128: 文字が画像に収まるかを、有料の生成の前に判定する（文字を省略して収めない）。
+  var overflow = items.filter(function (it) {
+    return !renderer.measureSlideLayout({ slideIndex: it.slideIndex, headline: it.headline, body: it.body, layout: it.layout }, { totalSlides: total }).fits;
+  }).map(function (it) { return it.slideIndex; });
+  if (overflow.length) return { ok: false, reason: 'text_overflow', slides: overflow };
 
   return {
     ok: true,
@@ -820,6 +854,8 @@ async function runCarouselImageJob(input, deps) {
 }
 
 module.exports = {
+  PRESENTATION_LIMITERS: PRESENTATION_LIMITERS,
+  resolvePresentation: resolvePresentation,
   TARGET: TARGET,
   ID_RE: ID_RE,
   draftFingerprint: draftFingerprint,

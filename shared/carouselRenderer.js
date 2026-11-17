@@ -30,15 +30,28 @@ var SAFE = { top: 160, bottom: 160, left: 96, right: 96 };
 //   出典: instagramDesignSystem template（titleSize 40 / bodySize 22 / margin 44 / padding 28 /
 //   cornerRadius 8 / accentColor #111111 / backgroundColor #FFFFFF）。
 //   ※ fontFamily は Phase 2-B で廃止（同梱フォントの glyph path を使うため SVG に書かない）。
+//   Decision 128（2026-11-07）：スマホでの読みやすさのため、見出し 72→76px・本文 36→46px（収まらない枚は 36px まで縮小）・
+//   CTA 34→40px・本文の行間 1.6→1.45 に変更し、本文の項目の間・見出しと本文の間の余白を加えた。
 var TYPO = {
-  titlePx: 72,   // 40px 基準 → 1080幅で 72
-  bodyPx: 36,    // 22px 基準 → 見出しの 50%
+  titlePx: 76,
+  bodyPx: 46,    // 収まらないときは BODY_PX_MIN まで 2px ずつ小さくする
   pageNumPx: 24,
   badgePx: 40,
-  ctaPx: 34,
+  ctaPx: 40,
   titleLineHeight: 1.3,
-  bodyLineHeight: 1.6,
+  bodyLineHeight: 1.45,
+  ctaLineHeight: 1.5,
+  itemGapPx: 26,   // 本文の項目（本文の 1 行）の間
+  headGapPx: 76,   // 見出しと本文の間（間に見出しの下の線を置く）
+  ctaGapPx: 48,    // 本文と CTA の間
 };
+var BODY_PX_MIN = 36;
+var BADGE = { size: 88, gap: 24 };
+var HEAD_RULE = { width: 72, height: 5, offset: 22 };
+var CHECK_BOX = { size: 40, gap: 22 };
+// Decision 130: 手順番号の印（丸の中の数字・本文の文字ではない）と、太字の範囲がある項目の折り返し幅の余裕
+var STEP_MARK = { size: 52, gap: 22, numPx: 30, stroke: 3 };
+var EMPHASIS_SLACK_PX = 28;
 
 // weight は必ず明示する（carouselFont 側で未指定・未対応は throw）。
 var WEIGHT = { title: 'bold', body: 'regular', badge: 'bold', pageNum: 'regular', cta: 'bold' };
@@ -148,6 +161,27 @@ function linePath(line, opts) {
   return '<path d="' + d + '" fill="' + fill + '"/>';
 }
 
+// ── Decision 130: 明示された太字の範囲だけを bold にして 1 行を描く（左寄せの本文のみ・文字の順序と内容は変えない） ──
+//   ranges: [{ start, end }]（項目の先頭からの文字位置・呼び出し側で検査済み）。offset: この行の先頭が項目の何文字目か。
+function emphasisLinePaths(line, offset, ranges, x, baselineY, fontPx, fill) {
+  var chars = Array.from(line);
+  var segs = [], cur = '', curB = null;
+  for (var i = 0; i < chars.length; i++) {
+    var pos = offset + i;
+    var b = ranges.some(function (r) { return pos >= r.start && pos < r.end; });
+    if (curB === null || b === curB) { cur += chars[i]; curB = b; } else { segs.push([cur, curB]); cur = chars[i]; curB = b; }
+  }
+  if (cur) segs.push([cur, curB]);
+  var xx = x, parts = [];
+  for (var s = 0; s < segs.length; s++) {
+    var w = segs[s][1] ? 'bold' : WEIGHT.body;
+    var d = F.textToPathData(segs[s][0], xx, baselineY, fontPx, w);
+    if (d) parts.push('<path d="' + d + '" fill="' + fill + '"' + (segs[s][1] ? ' data-emphasis="1"' : '') + '/>');
+    xx += F.measureTextPx(segs[s][0], fontPx, w);
+  }
+  return parts.join('');
+}
+
 // ── 複数行ブロック（Output Draft 本文はここで改変しない） ──────────────
 //   blockTop から lineHeight 刻みで baseline を計算する。
 //   baseline = 行の上端 + ascender比 × fontPx（carouselFont.ascenderRatio を明示利用）。
@@ -170,9 +204,107 @@ function textBlockPaths(lines, opts) {
     + '" data-text="' + xmlEscape(lines.join('')) + '">' + parts.join('') + '</g>';
 }
 
+// ── 読みやすい改行（Decision 128・2026-11-07） ──────────────
+//   1 行に収まらない文は、読点・句点の後か助詞の後で折る。2 行で収まる文は 2 行の長さが近くなる位置、
+//   それより長い文は行をなるべく埋める位置（幅の 6 割以上）を選ぶ。末尾が 1〜2 文字だけの行は作らない。
+//   候補が無いときだけ既存の文字単位の折り返し（wrapText）を使う。どの場合も文字の順序・内容は変えない。
+var BREAK_PARTICLES = new Set(['は', 'を', 'に', 'で', 'と', 'が', 'も', 'や', 'へ']);
+var BREAK_HEAD_AVOID = new Set(['、', '。', '，', '．', '）', '」', '』', '】', '〕', '！', '？', '・', 'ー',
+  'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ', 'っ', 'ゃ', 'ゅ', 'ょ', 'ァ', 'ィ', 'ゥ', 'ェ', 'ォ', 'ッ', 'ャ', 'ュ', 'ョ']);
+var MIN_TAIL_CHARS = 3;
+
+function smartWrap(text, maxWidthPx, fontPx, weight) {
+  var s = String(text == null ? '' : text);
+  if (s === '') return [];
+  if (F.measureTextPx(s, fontPx, weight) <= maxWidthPx) return [s];
+  var chars = Array.from(s);
+  var cands = [];
+  for (var i = 1; i <= chars.length - MIN_TAIL_CHARS; i++) {
+    var prev = chars[i - 1], next = chars[i];
+    if (BREAK_HEAD_AVOID.has(next)) continue;
+    var head = chars.slice(0, i).join('');
+    var headW = F.measureTextPx(head, fontPx, weight);
+    if (headW > maxWidthPx) break;
+    var score = (prev === '、' || prev === '。') ? 0 : ((BREAK_PARTICLES.has(prev) && !BREAK_PARTICLES.has(next)) ? 1 : null);
+    if (score === null) continue;
+    var tail = chars.slice(i).join('');
+    var tailW = F.measureTextPx(tail, fontPx, weight);
+    cands.push({ score: score, head: head, tail: tail, headW: headW, tailW: tailW, diff: Math.abs(headW - tailW) });
+  }
+  var best = null;
+  if (F.measureTextPx(s, fontPx, weight) <= 2 * maxWidthPx) {
+    var fit = cands.filter(function (c) { return c.tailW <= maxWidthPx; });
+    fit.sort(function (a, b) { return a.score - b.score || a.diff - b.diff; });
+    best = fit[0] || null;
+  }
+  if (!best) {
+    var full = cands.filter(function (c) { return c.headW >= 0.6 * maxWidthPx; });
+    var pool = full.length ? full : cands;
+    pool.sort(function (a, b) { return a.score - b.score || b.headW - a.headW; });
+    best = pool[0] || null;
+  }
+  if (!best) {
+    var lines = wrapText(s, maxWidthPx, fontPx, weight);
+    if (lines.length >= 2 && Array.from(lines[lines.length - 1]).length < MIN_TAIL_CHARS) {
+      var both = Array.from(lines[lines.length - 2] + lines[lines.length - 1]);
+      var mid = Math.ceil(both.length / 2);
+      lines.splice(lines.length - 2, 2, both.slice(0, mid).join(''), both.slice(mid).join(''));
+    }
+    return lines;
+  }
+  return [best.head].concat(smartWrap(best.tail, maxWidthPx, fontPx, weight));
+}
+
+// ── 1 スライドの配置の計算（描画の前に、収まるかを判定する） ──────────────
+//   本文は 46px から 2px ずつ 36px まで小さくして収まる大きさを探す。36px でも収まらなければ fits=false。
+//   文字を省略・削除して収めることはしない。呼び出し側（planCarouselImageJob）は fits=false を有料生成の前に止める。
+function measureSlideLayout(slide, ctx) {
+  ctx = ctx || {};
+  var total = ctx.totalSlides || 7;
+  var idx = slide.slideIndex;
+  var layout = slide.layout || {};
+  var headline = String(slide.headline == null ? '' : slide.headline);
+  var body = String(slide.body == null ? '' : slide.body);
+  var isCta = !!layout.isCta;
+  var isChecklist = layout.isChecklist === true;
+  var ctaText = isCta && layout.ctaText ? String(layout.ctaText) : '';
+  var badgeNum = layout.badgeNumber != null ? String(layout.badgeNumber) : null;
+  var contentWidth = CANVAS.width - SAFE.left - SAFE.right;
+  var available = CANVAS.height - SAFE.top - SAFE.bottom;
+  // Decision 130: 手順番号（手順の枚だけ・呼び出し側で検査済み）と、明示された太字の範囲。指定が無ければ従来どおり。
+  var stepMarkers = layout.stepMarkers === true && !isChecklist;
+  var emphasis = Array.isArray(layout.emphasis) ? layout.emphasis : null;
+  var itemWidth = contentWidth - (isChecklist ? CHECK_BOX.size + CHECK_BOX.gap : 0) - (stepMarkers ? STEP_MARK.size + STEP_MARK.gap : 0);
+  var headLines = smartWrap(headline, contentWidth, TYPO.titlePx, WEIGHT.title);
+  var ctaLines = ctaText ? smartWrap(ctaText, contentWidth, TYPO.ctaPx, WEIGHT.cta) : [];
+  var sentences = body.split('\n').filter(function (x) { return x.length > 0; });
+  var result = null;
+  for (var px = TYPO.bodyPx; px >= BODY_PX_MIN; px -= 2) {
+    var items = sentences.map(function (t, k) {
+      // 太字は通常の文字より幅が広いので、太字の範囲がある項目は少し狭い幅で折る
+      var hasEm = emphasis && Array.isArray(emphasis[k]) && emphasis[k].length > 0;
+      return smartWrap(t, itemWidth - (hasEm ? EMPHASIS_SLACK_PX : 0), px, WEIGHT.body);
+    });
+    var lineCount = items.reduce(function (a, it) { return a + it.length; }, 0);
+    var bodyH = lineCount * px * TYPO.bodyLineHeight + Math.max(0, items.length - 1) * TYPO.itemGapPx;
+    var totalH = (badgeNum ? BADGE.size + BADGE.gap : 0)
+      + headLines.length * TYPO.titlePx * TYPO.titleLineHeight
+      + (items.length ? TYPO.headGapPx : 0) + bodyH
+      + (ctaLines.length ? TYPO.ctaGapPx + ctaLines.length * TYPO.ctaPx * TYPO.ctaLineHeight : 0);
+    result = { bodyPx: px, headLines: headLines, items: items, ctaLines: ctaLines, totalH: totalH, available: available,
+      fits: totalH <= available, isCta: isCta, isChecklist: isChecklist, badgeNumber: badgeNum, slideIndex: idx, totalSlides: total };
+    if (stepMarkers) result.stepMarkers = true;
+    if (emphasis) result.emphasis = emphasis;
+    if (result.fits) break;
+  }
+  return result;
+}
+
 // ── メイン: 1 スライドの overlay SVG（背景は透過。合成側で背景 PNG の上に重ねる想定） ──
 //   slide: { slideIndex, slideId, headline, body, layout }
-//   layout（Design System 由来・任意）: { badgeNumber, isCta, ctaText }
+//   layout（Design System 由来・任意）: { badgeNumber, isCta, ctaText, isChecklist }
+//   配置：表紙と最後の枚は中央寄せで縦の中央。チェックリストの枚（isChecklist）は左寄せ・枠付きで縦の中央。
+//         それ以外は従来どおり左上から（写真の被写体は中央からずらす指示で作るため、本文の枚の位置は変えない）。
 function renderSlideOverlaySvg(slide, ctx) {
   ctx = ctx || {};
   var total = ctx.totalSlides || 7;
@@ -181,7 +313,6 @@ function renderSlideOverlaySvg(slide, ctx) {
 
   var contentLeft = SAFE.left;
   var contentRight = CANVAS.width - SAFE.right;
-  var contentWidth = contentRight - contentLeft;
   var contentTop = SAFE.top;
   var contentBottom = CANVAS.height - SAFE.bottom;
 
@@ -196,6 +327,14 @@ function renderSlideOverlaySvg(slide, ctx) {
   if (body) F.assertGlyphCoverage(body, WEIGHT.body);
   if (ctaText) F.assertGlyphCoverage(ctaText, WEIGHT.cta);
 
+  // 収まらない場合は描かずに止める（文字を欠落させた画像を作らない）
+  var m = measureSlideLayout(slide, ctx);
+  if (!m.fits) {
+    var err = new Error('text_overflow: slide ' + idx);
+    err.code = 'text_overflow';
+    throw err;
+  }
+
   var parts = [];
 
   // F-3: dark theme のみ、最背面（文字・バッジ・ページ番号より前）へ scrim を敷く。
@@ -204,73 +343,97 @@ function renderSlideOverlaySvg(slide, ctx) {
     parts.push(darkScrimSvg());
   }
 
+  // Decision 131：手順番号のある最後の枚は左寄せ（中央寄せだと番号と本文が重なる）。CTA は中央のまま
+  var centered = (idx === 1) || (isCta && !m.isChecklist && !m.stepMarkers);
+  var anchor = centered ? 'middle' : 'start';
+  var textX = centered ? CANVAS.width / 2 : contentLeft;
+  var startY = (centered || m.isChecklist)
+    ? contentTop + Math.max(0, (m.available - m.totalH) / 2)
+    : contentTop;
+
   // 番号バッジ（本文 slide のみ・見出しの「N.」に一致する数字を使う。①②③ は使わない）
-  var badgeNum = layout.badgeNumber != null ? String(layout.badgeNumber) : null;
-  var badgeBottom = contentTop;
-  if (badgeNum) {
-    F.assertGlyphCoverage(badgeNum, WEIGHT.badge);
-    var bSize = 88;
-    // 枠（装飾図形はそのまま rect）
-    parts.push('<rect x="' + n(contentLeft) + '" y="' + n(contentTop) + '" width="' + bSize + '" height="' + bSize + '" '
+  if (m.badgeNumber) {
+    F.assertGlyphCoverage(m.badgeNumber, WEIGHT.badge);
+    var bSize = BADGE.size;
+    var bLeft = centered ? CANVAS.width / 2 - bSize / 2 : contentLeft;
+    parts.push('<rect x="' + n(bLeft) + '" y="' + n(startY) + '" width="' + bSize + '" height="' + bSize + '" '
       + 'rx="8" fill="none" stroke="' + theme.accent + '" stroke-width="3"/>');
-    // 数字は path（中央寄せ・baseline は em box 中心へ寄せる）
-    var bw = F.measureTextPx(badgeNum, TYPO.badgePx, WEIGHT.badge);
-    var bx = contentLeft + bSize / 2 - bw / 2;
-    var by = contentTop + bSize / 2 + TYPO.badgePx * 0.36;
-    parts.push('<g data-role="badge" data-weight="' + WEIGHT.badge + '" data-text="' + xmlEscape(badgeNum) + '">'
-      + '<path d="' + F.textToPathData(badgeNum, bx, by, TYPO.badgePx, WEIGHT.badge) + '" fill="' + theme.text + '"/></g>');
-    badgeBottom = contentTop + bSize + 24;
+    var bw = F.measureTextPx(m.badgeNumber, TYPO.badgePx, WEIGHT.badge);
+    var bx = bLeft + bSize / 2 - bw / 2;
+    var by = startY + bSize / 2 + TYPO.badgePx * 0.36;
+    parts.push('<g data-role="badge" data-weight="' + WEIGHT.badge + '" data-text="' + xmlEscape(m.badgeNumber) + '">'
+      + '<path d="' + F.textToPathData(m.badgeNumber, bx, by, TYPO.badgePx, WEIGHT.badge) + '" fill="' + theme.text + '"/></g>');
+    startY += bSize + BADGE.gap;
   }
 
-  var isCoverCenter = (idx === 1);
-
-  var headLines = wrapText(headline, contentWidth, TYPO.titlePx, WEIGHT.title);
-  var bodyLines = wrapText(body, contentWidth, TYPO.bodyPx, WEIGHT.body);
-
-  var headBlockH = headLines.length * TYPO.titlePx * TYPO.titleLineHeight;
-  var bodyBlockH = bodyLines.length * TYPO.bodyPx * TYPO.bodyLineHeight;
-  var gap = 40;
-
-  var anchor = 'start';
-  var textX = contentLeft;
-  var startY;
-
-  if (isCoverCenter || isCta) {
-    // 中央寄せ（S1 表紙 / S7 まとめ）
-    anchor = 'middle';
-    textX = CANVAS.width / 2;
-    var totalH = headBlockH + gap + bodyBlockH + (isCta ? (gap + TYPO.ctaPx * 1.6) : 0);
-    startY = contentTop + Math.max(0, (contentBottom - contentTop - totalH) / 2);
-  } else {
-    startY = Math.max(badgeBottom, contentTop);
-  }
-
-  if (headLines.length) {
-    parts.push(textBlockPaths(headLines, {
+  // 見出し
+  if (m.headLines.length) {
+    parts.push(textBlockPaths(m.headLines, {
       x: textX, blockTop: startY, fontPx: TYPO.titlePx, lineHeight: TYPO.titleLineHeight,
       anchor: anchor, weight: WEIGHT.title, fill: theme.text, role: 'headline',
     }));
   }
+  var headBottom = startY + m.headLines.length * TYPO.titlePx * TYPO.titleLineHeight;
 
-  var bodyY = startY + headBlockH + gap;
-  if (bodyLines.length) {
-    parts.push(textBlockPaths(bodyLines, {
-      x: textX, blockTop: bodyY, fontPx: TYPO.bodyPx, lineHeight: TYPO.bodyLineHeight,
-      anchor: anchor, weight: WEIGHT.body, fill: theme.text, role: 'body',
-    }));
+  // 見出しの下の短い線（見出しと本文の強弱。装飾図形なので rect）
+  if (m.headLines.length && m.items.length) {
+    var ruleX = centered ? CANVAS.width / 2 - HEAD_RULE.width / 2 : contentLeft;
+    parts.push('<rect data-role="headRule" x="' + n(ruleX) + '" y="' + n(headBottom + HEAD_RULE.offset) + '" width="' + HEAD_RULE.width
+      + '" height="' + HEAD_RULE.height + '" fill="' + theme.accent + '"/>');
   }
 
-  // CTA（S7 のみ・下線様式）
-  if (isCta && ctaText) {
-    var ctaLines = wrapText(ctaText, contentWidth, TYPO.ctaPx, WEIGHT.cta);
-    var ctaY = bodyY + bodyBlockH + gap;
-    parts.push(textBlockPaths(ctaLines, {
-      x: textX, blockTop: ctaY, fontPx: TYPO.ctaPx, lineHeight: 1.6,
-      anchor: anchor, weight: WEIGHT.cta, fill: theme.text, role: 'cta',
+  // 本文（本文の 1 行 ＝ 1 項目。項目の間に余白。data-text は本文全体を保持する）
+  var y = headBottom + (m.items.length ? TYPO.headGapPx : 0);
+  var lh = m.bodyPx * TYPO.bodyLineHeight;
+  var bodyParts = [];
+  var itemX = m.isChecklist ? contentLeft + CHECK_BOX.size + CHECK_BOX.gap
+    : (m.stepMarkers ? contentLeft + STEP_MARK.size + STEP_MARK.gap : textX);
+  var asc = F.ascenderRatio(WEIGHT.body);
+  for (var k = 0; k < m.items.length; k++) {
+    if (m.isChecklist) {
+      bodyParts.push('<rect data-role="checkBox" x="' + n(contentLeft) + '" y="' + n(y + (lh - CHECK_BOX.size) / 2) + '" width="' + CHECK_BOX.size
+        + '" height="' + CHECK_BOX.size + '" rx="6" fill="none" stroke="' + theme.text + '" stroke-width="3"/>');
+    }
+    if (m.stepMarkers) {
+      // 手順番号：手順の枚の項目の順序から付ける印（本文の文字ではない・本文の数字の検査とは別）
+      var num = String(k + 1);
+      F.assertGlyphCoverage(num, WEIGHT.badge);
+      var mcx = contentLeft + STEP_MARK.size / 2, mcy = y + lh / 2;
+      var nw = F.measureTextPx(num, STEP_MARK.numPx, WEIGHT.badge);
+      bodyParts.push('<g data-role="stepMarker" data-text="' + num + '"><circle cx="' + n(mcx) + '" cy="' + n(mcy) + '" r="' + n(STEP_MARK.size / 2)
+        + '" fill="none" stroke="' + theme.text + '" stroke-width="' + STEP_MARK.stroke + '"/>'
+        + '<path d="' + F.textToPathData(num, mcx - nw / 2, mcy + STEP_MARK.numPx * 0.36, STEP_MARK.numPx, WEIGHT.badge) + '" fill="' + theme.text + '"/></g>');
+    }
+    var ranges = m.emphasis && Array.isArray(m.emphasis[k]) ? m.emphasis[k] : null;
+    var offset = 0;
+    for (var j = 0; j < m.items[k].length; j++) {
+      var baseY = y + j * lh + asc * m.bodyPx;
+      if (ranges && ranges.length && anchor === 'start') {
+        bodyParts.push(emphasisLinePaths(m.items[k][j], offset, ranges, itemX, baseY, m.bodyPx, theme.text));
+      } else {
+        var p = linePath(m.items[k][j], { x: itemX, baselineY: baseY, fontPx: m.bodyPx, weight: WEIGHT.body, fill: theme.text, anchor: anchor });
+        if (p) bodyParts.push(p);
+      }
+      offset += Array.from(m.items[k][j]).length;
+    }
+    y += m.items[k].length * lh + TYPO.itemGapPx;
+  }
+  if (bodyParts.length) {
+    parts.push('<g data-role="body" data-weight="' + WEIGHT.body + '" data-body-px="' + m.bodyPx + '" data-text="'
+      + xmlEscape(body.split('\n').join('')) + '">' + bodyParts.join('') + '</g>');
+  }
+  var bodyBottom = m.items.length ? y - TYPO.itemGapPx : headBottom;
+
+  // CTA（最後の枚のみ・下線様式）
+  if (m.ctaLines.length) {
+    var ctaY = bodyBottom + TYPO.ctaGapPx;
+    parts.push(textBlockPaths(m.ctaLines, {
+      x: CANVAS.width / 2, blockTop: ctaY, fontPx: TYPO.ctaPx, lineHeight: TYPO.ctaLineHeight,
+      anchor: 'middle', weight: WEIGHT.cta, fill: theme.text, role: 'cta',
     }));
     // 下線（1 行目の実幅・装飾図形なので rect のまま）
-    var ulW = F.measureTextPx(ctaLines[0] || '', TYPO.ctaPx, WEIGHT.cta);
-    var ulX = anchor === 'middle' ? (textX - ulW / 2) : textX;
+    var ulW = F.measureTextPx(m.ctaLines[0] || '', TYPO.ctaPx, WEIGHT.cta);
+    var ulX = CANVAS.width / 2 - ulW / 2;
     var ulY = ctaY + F.ascenderRatio(WEIGHT.cta) * TYPO.ctaPx + TYPO.ctaPx * 0.18;
     parts.push('<rect x="' + n(ulX) + '" y="' + n(ulY) + '" width="' + n(ulW) + '" height="3" fill="' + theme.text + '"/>');
   }
@@ -309,6 +472,11 @@ module.exports = {
   WEIGHT: WEIGHT,
   slideTheme: slideTheme,
   wrapText: wrapText,
+  smartWrap: smartWrap,
+  measureSlideLayout: measureSlideLayout,
+  BODY_PX_MIN: BODY_PX_MIN,
+  STEP_MARK: STEP_MARK,
+  EMPHASIS_SLACK_PX: EMPHASIS_SLACK_PX,
   xmlEscape: xmlEscape,
   renderSlideOverlaySvg: renderSlideOverlaySvg,
   renderSlideStandaloneSvg: renderSlideStandaloneSvg,
