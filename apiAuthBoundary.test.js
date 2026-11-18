@@ -55,7 +55,7 @@ const MUST_STAY_OPEN = [
   ['get', '/'],
   // ['get', '/api/cases'] は 2026-10-15 の案件データ認証境界で CASE_ROUTES へ移した（S3-B1b 時点の scope 固定から外す）
   ['get', '/api/task-history'],
-  ['get', '/api/approvals'],
+  // ['get', '/api/approvals'] は 2026-11-19 の承認 API 認証境界で APPROVAL_ROUTES へ移した
   ['get', '/api/cost'],
   ['get', '/api/claude-cost'],
   ['get', '/api/company-memory'],
@@ -72,6 +72,11 @@ const CASE_ROUTES = [
   ['post', '/api/cases'],
   ['get', '/api/case-memory/:caseId'],
   ['post', '/api/case-memory/:caseId'],
+];
+// 2026-11-19 承認 API の認証境界で保護を追加した route（共有 session による利用者の制限・案件ごとの所有者確認ではない）
+const APPROVAL_ROUTES = [
+  ['get', '/api/approvals'],
+  ['post', '/api/approvals'],
 ];
 // S2 で既に保護済み（回帰確認）
 const S2_ROUTES = [
@@ -241,9 +246,9 @@ function runChain(middleware, handlerSpy, cookieHeader) {
   caseHeader('6. requireSession 適用 route 数が設計と一致（意図しない拡大の検出）');
   {
     const applied = (SERVER_SRC.match(/^app\.(get|post|put|patch|delete)\('[^']*',\s*require\('\.\/lib\/webSession'\)\.requireSession\(\)/gm) || []);
-    assert(applied.length === 18,
-      '6a. ★requireSession 適用は 18 route（S2 の 3 ＋ S3-B1b の 11 ＋ 案件データの 4）: ' + applied.length);
-    const expected = S2_ROUTES.concat(PAID_ROUTES, DESTRUCTIVE_ROUTES, CASE_ROUTES);
+    assert(applied.length === 20,
+      '6a. ★requireSession 適用は 20 route（S2 の 3 ＋ S3-B1b の 11 ＋ 案件データの 4 ＋ 承認 API の 2）: ' + applied.length);
+    const expected = S2_ROUTES.concat(PAID_ROUTES, DESTRUCTIVE_ROUTES, CASE_ROUTES, APPROVAL_ROUTES);
     expected.forEach(function (r) {
       assert(hasSession(r[0], r[1]), '6b. 期待どおり適用: ' + r[0].toUpperCase() + ' ' + r[1]);
     });
@@ -300,6 +305,74 @@ function runChain(middleware, handlerSpy, cookieHeader) {
     const body = SERVER_SRC.slice(i, i + 700);
     assert(body.indexOf("['writer', 'reviewer', 'strategy']") !== -1, '11b. agent 検証ロジック不変');
     assert(body.indexOf('testClaudeAgent(agentId)') !== -1, '11c. testClaudeAgent 呼出形不変（削除していない）');
+  }
+
+  caseHeader('13. 承認 API（2026-11-19）: server.js の実 route 定義を偽 app に登録して実行（実 DB なし）');
+  {
+    // server.js から route 宣言の塊（app.xxx('/api/approvals' 〜 最初の行頭 "});"）を取り出し、
+    //   偽 app・偽 getApprovalsDb（呼出を記録する spy）で評価する。middleware は本物の requireSession。
+    function routeBlock(method) {
+      const start = SERVER_SRC.indexOf('app.' + method + "('/api/approvals'");
+      const end = SERVER_SRC.indexOf('\n});', start);
+      return start === -1 || end === -1 ? null : SERVER_SRC.slice(start, end + 4);
+    }
+    function loadRoute(method, dbSpy) {
+      const registered = [];
+      const fakeApp = { get(p, ...h) { registered.push({ m: 'get', p, h }); }, post(p, ...h) { registered.push({ m: 'post', p, h }); } };
+      new Function('app', 'require', 'getApprovalsDb', routeBlock(method))(fakeApp, require, function () { return dbSpy; });
+      return registered[0];
+    }
+    async function call(route, cookieHeader, query, body) {
+      const { req, res } = fakeReqRes(cookieHeader);
+      req.query = query || {}; req.body = body || {};
+      let i = 0;
+      async function next() { const h = route.h[i++]; if (h) await h(req, res, next); }
+      await next();
+      return res;
+    }
+    function spyDb() {
+      const s = { calls: [],
+        async getApproval(c, o) { s.calls.push(['getApproval', c, o]); return { approval: { case_id: c, output_id: o, approval_decision: null }, source: 'db' }; },
+        async getApprovals() { s.calls.push(['getApprovals']); return { approvals: [], source: 'db' }; },
+        async upsertApproval(row) { s.calls.push(['upsertApproval', row]); return { error: null }; } };
+      return s;
+    }
+    await withSessionSecret(TEST_SECRET, async () => {
+      const issued = webSession.issueSessionToken({ secret: TEST_SECRET, now: Date.now() });
+      const cookie = webSession.SESSION_COOKIE_NAME + '=' + issued.token;
+      const body = { caseId: 'case-x', outputId: 'out-x', approvalDecision: 'approved', approvedAt: '2026-11-19T00:00:00Z', published: false, checklist: { caption: true }, reviewStatus: 'approved' };
+
+      let db = spyDb(); let r = loadRoute('get', db);
+      assert(r && r.p === '/api/approvals' && r.h.length === 2, '13a. GET /api/approvals = requireSession ＋ handler');
+      let res = await call(r, null, { caseId: 'case-x', outputId: 'out-x' });
+      assert(res._status === 401 && res._json && res._json.reason === 'unauthorized' && db.calls.length === 0, '13b. ★未認証 GET（caseId 指定）→ 401・DB 読み取り 0', db.calls);
+      res = await call(r, null, {});
+      assert(res._status === 401 && db.calls.length === 0, '13c. ★未認証 GET（全件）→ 401・DB 読み取り 0');
+      res = await call(r, cookie, { caseId: 'case-x', outputId: 'out-x' });
+      assert(res._status === null && res._json && res._json.ok === true && res._json.approval && res._json.approval.output_id === 'out-x'
+        && db.calls.length === 1 && db.calls[0][0] === 'getApproval' && db.calls[0][1] === 'case-x' && db.calls[0][2] === 'out-x',
+        '13d. 認証済み GET は従来どおり getApproval(caseId, outputId) の結果を返す', db.calls);
+
+      db = spyDb(); r = loadRoute('post', db);
+      assert(r && r.p === '/api/approvals' && r.h.length === 2, '13e. POST /api/approvals = requireSession ＋ handler');
+      res = await call(r, null, null, body);
+      assert(res._status === 401 && db.calls.length === 0, '13f. ★未認証 POST → 401・upsertApproval 呼出 0（保存処理に到達しない）', db.calls);
+      res = await call(r, webSession.SESSION_COOKIE_NAME + '=' + issued.token.slice(0, -3) + 'AAA', null, body);
+      assert(res._status === 401 && db.calls.length === 0, '13g. ★署名改竄 cookie の POST → 401・upsertApproval 呼出 0');
+      res = await call(r, cookie, null, body);
+      const up = db.calls[0];
+      assert(res._json && res._json.ok === true && db.calls.length === 1 && up[0] === 'upsertApproval'
+        && JSON.stringify(Object.keys(up[1]).sort()) === JSON.stringify(['approvalDecision', 'approvedAt', 'archived', 'caseId', 'checklist', 'outputId', 'published', 'publishedAt', 'reviewStatus'])
+        && up[1].caseId === 'case-x' && up[1].outputId === 'out-x' && up[1].approvalDecision === 'approved',
+        '13h. 認証済み POST は従来どおり同じ 9 項目で upsertApproval を 1 回呼ぶ', db.calls);
+      res = await call(r, cookie, null, { outputId: 'out-x' });
+      assert(res._status === 400 && db.calls.length === 1, '13i. 認証済みでも caseId なしは従来どおり 400（保存しない）');
+    });
+    await withSessionSecret(undefined, async () => {
+      const db = spyDb(); const r = loadRoute('post', db);
+      const res = await call(r, webSession.SESSION_COOKIE_NAME + '=s1.x.y', null, { caseId: 'case-x' });
+      assert(res._status === 401 && db.calls.length === 0, '13j. WEB_SESSION_SECRET 未設定 → POST も常に 401（bypass なし）');
+    });
   }
 
   caseHeader('12. 実 provider / 実 DB を一切 require していない（本テストの安全性）');

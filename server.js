@@ -1739,7 +1739,9 @@ app.delete('/api/cases/:id', require('./lib/webSession').requireSession(), async
 // GET /api/approvals            → 全件
 // GET /api/approvals?caseId=xxx → 1件
 // GET /api/approvals?caseId=xxx&outputId=out_xxx → Phase54-1f: case_id + output_id 一致の1件（outputIdは任意）
-app.get('/api/approvals', async (req, res) => {
+// 認証境界: 既存 requireSession を再利用（新しい認証方式は作らない）。未ログインは DB 処理より前に 401。
+//   ★ 共有の合言葉ログインによる「利用者の制限」であり、案件ごとの所有者の確認ではない。
+app.get('/api/approvals', require('./lib/webSession').requireSession(), async (req, res) => {
   const { caseId, outputId } = req.query;   // Phase54-1f: outputId は任意（未指定時は従来動作）
   try {
     if (caseId) {
@@ -1754,7 +1756,8 @@ app.get('/api/approvals', async (req, res) => {
 // POST /api/approvals { caseId, outputId?, approvalDecision, approvedAt, published, publishedAt, archived, checklist, reviewStatus }
 // ※ server.js は app.use(express.json()) をグローバル設定済みのため、per-route express.json() は付けない
 // ※ Phase54-1f: outputId は任意（未指定の旧クライアントは従来どおり動作し、既存 output_id を保持する）
-app.post('/api/approvals', async (req, res) => {
+// 認証境界: 承認の書き込みも requireSession 必須（未ログインは upsertApproval を呼ぶ前に 401）。
+app.post('/api/approvals', require('./lib/webSession').requireSession(), async (req, res) => {
   const { caseId, outputId, approvalDecision, approvedAt, published, publishedAt, archived, checklist, reviewStatus } = req.body || {};
   if (!caseId) return res.status(400).json({ ok: false, error: 'caseId は必須です' });
   try {

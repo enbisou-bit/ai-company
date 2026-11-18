@@ -220,7 +220,8 @@ function extractFn(name) {
   caseHeader('10. S3 スコープへ拡大していない（他 read API は今回閉じない）');
   {
     // '/api/cases' は 2026-10-15 の案件データ認証境界で保護を追加したため、この「今回閉じない」一覧から外す（apiAuthBoundary の CASE_ROUTES で固定）
-    ['/api/approvals', '/api/company-memory', '/api/knowledge-library',
+    // '/api/approvals' は 2026-11-19 の承認 API 認証境界で保護を追加したため外す（apiAuthBoundary の APPROVAL_ROUTES で固定）
+    ['/api/company-memory', '/api/knowledge-library',
       '/api/task-history', '/api/cost', '/api/affiliate-evaluations'].forEach(function (r) {
       const i = SERVER_SRC.indexOf("app.get('" + r + "'");
       if (i === -1) { assert(true, '10. ' + r + '（GET 定義なし）'); return; }
@@ -231,7 +232,7 @@ function extractFn(name) {
     //   S2 時点の「3 route のみ」前提は更新する（S2 の 3 route は下の 10y で個別に固定し続ける）。
     //   S3-B2 対象（上の MUST_STAY_OPEN 群）を閉じていないことは上のループが担保する。
     const n = (SERVER_SRC.match(/requireSession\(\)/g) || []).length;
-    assert(n === 18, '10z. requireSession 適用は 18 route（S2 の 3 ＋ S3-B1b の 11 ＋ 2026-10-15 案件データの 4）: ' + n);
+    assert(n === 20, '10z. requireSession 適用は 20 route（S2 の 3 ＋ S3-B1b の 11 ＋ 2026-10-15 案件データの 4 ＋ 2026-11-19 承認 API の 2）: ' + n);
     ["app.get('/api/session-status'", "app.get('/api/output-drafts'", "app.post('/api/output-drafts'"].forEach(function (d) {
       const i = SERVER_SRC.indexOf(d);
       assert(i !== -1 && SERVER_SRC.slice(i, i + 200).indexOf("require('./lib/webSession').requireSession()") !== -1,
