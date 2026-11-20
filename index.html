@@ -1108,7 +1108,7 @@
   .oe-mrc-phone-role { position: absolute; top: 12px; right: 12px; font-size: 9px; font-weight: 700; opacity: 0.85; }
   .oe-mrc-accentbar  { height: 5px; width: 46px; border-radius: 3px; margin: 26px 0 14px; }
   .oe-mrc-phone-headline { font-size: 21px; font-weight: 800; line-height: 1.35; }
-  .oe-mrc-phone-body { font-size: 14px; line-height: 1.6; margin-top: 10px; opacity: 0.92; }
+  .oe-mrc-phone-body { font-size: 14px; line-height: 1.6; margin-top: 10px; opacity: 0.92; white-space: pre-line; }
   .oe-mrc-phone-cta  { margin-top: auto; align-self: flex-start; font-size: 13px; font-weight: 700; padding: 9px 16px; border-radius: 999px; }
   .oe-mrc-nav        { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
   .oe-mrc-navbtn     { flex: 1; min-height: 44px; background: rgba(80,210,140,0.12); border: 1px solid rgba(80,210,140,0.35); border-radius: 12px; color: rgba(150,240,190,0.95); font-size: 15px; font-weight: 700; cursor: pointer; }
@@ -38584,6 +38584,22 @@ function copyMobileReviewField(type) {
   _mrcCopyToClipboard(text);
 }
 
+// Mobile Review プレビューの本文欄と CTA 欄（表示だけ・保存内容／承認／画像生成の入力は変えない）
+//   ★ 最後の枚（role 'cta'）でも本文があれば本文を出す（日次制作の手順の枚など）。本文が無い CTA 枚は従来どおり本文欄なし。
+//   ★ CTA 欄は表示対象 Draft の fields.cta を出す。空のときだけ従来どおり見出しへフォールバックする。
+//   ★ 本文・CTA は esc（escapeHtml）を通す。改行は CSS（.oe-mrc-phone-body の white-space: pre-line）で保つ。
+//   ★ 最後の枚の役割判定（_icbSlidesFromOutputFields）と、点数・設計要約は変更しない。
+function _mrcPhoneBodyAndCtaHtml(current, outputDraft, esc) {
+  var isCta = current.role === 'cta';
+  var ctaField = (outputDraft && outputDraft.fields && typeof outputDraft.fields.cta === 'string') ? outputDraft.fields.cta.trim() : '';
+  var ctaHtml = (isCta || current.ctaPosition && current.ctaPosition !== 'なし')
+    ? '<div class="oe-mrc-phone-cta" style="background:' + esc(current.accentColor) + ';color:#fff;">' + esc(isCta ? (ctaField || current.headline) : 'CTA: ' + current.ctaPosition) + '</div>'
+    : '';
+  var bodyText = current.subtitle || current.bodyText || '';
+  var phoneBody = (isCta && !bodyText) ? '' : '<div class="oe-mrc-phone-body">' + esc(bodyText) + '</div>';
+  return { phoneBody: phoneBody, ctaHtml: ctaHtml };
+}
+
 // Phase50-5: Mobile Review Center HTML生成（Instagram Design Systemの直後に表示。モバイル最適化UI。データ不足でも安全に空文字を返す）
 function buildMobileReviewHtml(outputDraft) {
   outputDraft = outputDraft || _lastOutputDraft;
@@ -38603,10 +38619,9 @@ function buildMobileReviewHtml(outputDraft) {
 
   var current = draft.slides.filter(function(s) { return s.slideId === draft.currentSlideId; })[0] || draft.slides[0];
 
-  var ctaHtml = (current.role === 'cta' || current.ctaPosition && current.ctaPosition !== 'なし')
-    ? '<div class="oe-mrc-phone-cta" style="background:' + esc(current.accentColor) + ';color:#fff;">' + esc(current.role === 'cta' ? current.headline : 'CTA: ' + current.ctaPosition) + '</div>'
-    : '';
-  var phoneBody = (current.role === 'cta') ? '' : '<div class="oe-mrc-phone-body">' + esc(current.subtitle || current.bodyText || '') + '</div>';
+  var _mrcParts = _mrcPhoneBodyAndCtaHtml(current, outputDraft, esc);
+  var ctaHtml = _mrcParts.ctaHtml;
+  var phoneBody = _mrcParts.phoneBody;
   var phone = '<div class="oe-mrc-phone-wrap">'
     + '<div class="oe-mrc-phone" style="background:' + esc(current.backgroundColor) + ';color:' + esc(current.textColor) + ';" ontouchstart="_mrcTouchStart(event)" ontouchend="_mrcTouchEnd(event)">'
     +   '<span class="oe-mrc-phone-num" style="background:' + esc(current.accentColor) + ';color:#fff;">' + current.slideNumber + '/' + draft.slides.length + '</span>'

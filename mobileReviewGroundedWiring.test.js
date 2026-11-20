@@ -168,6 +168,75 @@ caseHeader('6. _icbSlidesFromOutputFields は抽出のみ（新規文字列を�
   assert(s.every(x => !x.headline || joined.indexOf(x.headline) !== -1), '6-2. headline はすべて fields.slides の部分文字列');
 }
 
+// ── 7. Mobile Review プレビュー: 最後の枚の本文・CTA・改行（2026-11-21） ──
+caseHeader('7. _mrcPhoneBodyAndCtaHtml(): 最後の枚の本文と fields.cta を表示・改行を保つ・エスケープ維持');
+{
+  // eslint-disable-next-line no-eval
+  const escapeHtml = eval('(' + extractFn('function escapeHtml(s) {') + ')');
+  // eslint-disable-next-line no-eval
+  const parts = eval('(' + extractFn('function _mrcPhoneBodyAndCtaHtml(') + ')');
+  const bodyOf = h => { const m = h.match(/<div class="oe-mrc-phone-body">([\s\S]*?)<\/div>/); return m ? m[1] : null; };
+  const ctaOf = h => { const m = h.match(/<div class="oe-mrc-phone-cta"[^>]*>([\s\S]*?)<\/div>/); return m ? m[1] : null; };
+  const V5 = {
+    slides: [
+      '【1枚目】タイトル：洗顔、ゴシゴシしないと皮脂が落ちない？ / 本文：こすらない方がいい理由と、皮脂を落とす仕組み',
+      '【2枚目】タイトル：強くこすって洗うと / 本文：ゴシゴシ洗いは、肌への刺激になる\nタオルやスポンジでこすると、刺激になることがある\nニキビがある人は、ゴシゴシ洗いで悪化させることがある',
+      '【3枚目】タイトル：洗浄成分が皮脂を落とす仕組み / 本文：洗浄成分は皮脂などの油を包む\n水に混ざりやすくして、すすぎで流す\n洗顔料はこすらず指先でなじませる',
+      '【4枚目】タイトル：泡を置く時間は、洗顔料で違う / 本文：泡をしばらくのせる使い方を案内する洗顔料もある\n置く時間を書いていない洗顔料もある\n洗浄成分の組み合わせは製品ごとに違う\nある製品の置き時間が、ほかの製品にも当てはまるとは限りません',
+      '【5枚目】タイトル：次の洗顔はこの順番で / 本文：使用量や泡立て方は、製品の説明に従う\nぬるま湯で顔をぬらす\n洗顔料をこすらず指先でなじませる\nぬるま湯ですすぐ\nやわらかいタオルで押さえて拭く',
+    ],
+    cta: '次の洗顔で、製品の説明どおりに洗ってみてください。',
+  };
+  const draft = { fields: V5 };
+  const icb = _icbSlidesFromOutputFields(V5);
+  // design 層と同じ形（subtitle は hook のみ・ctaPosition は役割表）にそろえる
+  const cur = icb.map(s => Object.assign({}, s, {
+    subtitle: s.role === 'hook' ? (s.bodyText || '') : '',
+    ctaPosition: s.role === 'cta' ? '下部中央(強調・大・prominent)' : 'なし',
+    accentColor: '#111111',
+  }));
+  const p5 = parts(cur[4], draft, escapeHtml);
+  assert(cur[4].role === 'cta' && cur[4].headline === '次の洗顔はこの順番で', '7-1. 5枚目の役割判定は従来どおり cta（今回変更しない）');
+  assert(bodyOf(p5.phoneBody) === V5.slides[4].split('本文：')[1], '7-2. ★v5 5枚目: 手順 5 行が本文欄に出る（改行文字を保持）');
+  assert(bodyOf(p5.phoneBody).split('\n').length === 5, '7-3. 5枚目の本文は 5 行');
+  assert(ctaOf(p5.ctaHtml) === V5.cta, '7-4. ★v5 5枚目: CTA 欄 = fields.cta（見出しの重複なし）');
+  assert(ctaOf(p5.ctaHtml) !== cur[4].headline, '7-5. CTA 欄に見出しを出さない');
+  [0, 1, 2, 3].forEach(i => {
+    const p = parts(cur[i], draft, escapeHtml);
+    const expected = i === 0 ? cur[0].subtitle : cur[i].bodyText;
+    assert(bodyOf(p.phoneBody) === expected && p.ctaHtml === '', '7-6. ' + (i + 1) + '枚目: 本文は従来と同じ値・CTA 欄なし');
+  });
+  assert(bodyOf(parts(cur[1], draft, escapeHtml).phoneBody).split('\n').length === 3, '7-7. 2枚目の複数行本文は改行文字を保持（3 行）');
+  const IDX = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert(/\.oe-mrc-phone-body \{[^}]*white-space: pre-line;[^}]*\}/.test(IDX), '7-8. .oe-mrc-phone-body に white-space: pre-line（改行を表示）');
+
+  // 従来の CTA 用スライド（テンプレ由来・本文あり／本文なし）と、fields.cta が空の場合
+  const tplCta = { role: 'cta', headline: 'プロフィールをチェック', bodyText: '👉 プロフィールのリンクから詳しくチェック（PR）', subtitle: '', ctaPosition: '下部中央(強調・大・prominent)', accentColor: '#111111' };
+  const pA = parts(tplCta, { fields: { cta: 'リンクからどうぞ' } }, escapeHtml);
+  assert(bodyOf(pA.phoneBody) === tplCta.bodyText && ctaOf(pA.ctaHtml) === 'リンクからどうぞ', '7-9. 従来の CTA 枚（本文あり）: 本文と fields.cta を表示');
+  const pB = parts(Object.assign({}, tplCta, { bodyText: '' }), { fields: { cta: '' } }, escapeHtml);
+  assert(pB.phoneBody === '' && ctaOf(pB.ctaHtml) === 'プロフィールをチェック', '7-10. 本文なし・fields.cta 空: 本文欄なし・CTA は従来どおり見出しへフォールバック');
+  const pC = parts(tplCta, { fields: { cta: '   ' } }, escapeHtml);
+  assert(ctaOf(pC.ctaHtml) === 'プロフィールをチェック', '7-11. fields.cta が空白だけでも見出しへフォールバック');
+  const pD = parts(tplCta, { fields: {} }, escapeHtml);
+  assert(ctaOf(pD.ctaHtml) === 'プロフィールをチェック', '7-12. fields.cta 未設定でも見出しへフォールバック');
+  const pE = parts({ role: 'howto', headline: 'h', bodyText: 'b', subtitle: '', ctaPosition: 'インライン(保存促進)', accentColor: '#111111' }, draft, escapeHtml);
+  assert(ctaOf(pE.ctaHtml) === 'CTA: インライン(保存促進)' && bodyOf(pE.phoneBody) === 'b', '7-13. CTA 以外の枚の CTA 位置表示は従来どおり');
+
+  // エスケープ維持
+  const evil = { role: 'cta', headline: 'h', bodyText: '<img src=x onerror=alert(1)>\n& 2行目', subtitle: '', ctaPosition: 'x', accentColor: '#111111' };
+  const pF = parts(evil, { fields: { cta: '<script>alert(1)</script>' } }, escapeHtml);
+  assert(pF.phoneBody.indexOf('<img') === -1 && bodyOf(pF.phoneBody) === '&lt;img src=x onerror=alert(1)&gt;\n&amp; 2行目', '7-14. 本文は escapeHtml を通す');
+  assert(pF.ctaHtml.indexOf('<script>') === -1 && ctaOf(pF.ctaHtml) === '&lt;script&gt;alert(1)&lt;/script&gt;', '7-15. CTA は escapeHtml を通す');
+
+  // 配線と非変更
+  const b = extractFn('function buildMobileReviewHtml(');
+  assert(b.indexOf('_mrcPhoneBodyAndCtaHtml(current, outputDraft, esc)') !== -1, '7-16. buildMobileReviewHtml がこの部品を使う');
+  assert(b.indexOf("current.role === 'cta' ? current.headline") === -1, '7-17. CTA 欄に見出しを直接出す旧式が残っていない');
+  const s = extractFn('function _mrcPhoneBodyAndCtaHtml(');
+  assert(!/fetch\(|pushReviewStateToServer|pushApprovalToServer|pushOutputDraftToServer|_lastOutputDraft\s*=/.test(s), '7-18. 部品は表示だけ（保存・承認の送信・Draft の置き換えなし）');
+}
+
 console.log('\n' + '─'.repeat(60));
 console.log(`結果: ${_passed} passed / ${_failed} failed`);
 console.log(_failed === 0 ? '🟢 All Mobile Review Grounded Output Wiring cases passed' : '🔴 FAILED');
